@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "golem",
   "displayName": "Golem",
-  "version": "4.5.3",
+  "version": "4.5.4",
   "description": "Thin orchestration layer over native Claude Code: central per-project journaling, an auto-populated project registry, ntfy push notifications, opus worker/reviewer/researcher sub-agents, and the golem channel MCP.",
   "author": {
     "name": "Lavee Singh",
