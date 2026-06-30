@@ -1,14 +1,14 @@
 // smoke-exhaustive.mjs — full browser walkthrough, hunting for bugs
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 import fs from 'node:fs';
 const OUT = '/tmp/golem-ui-smoke';
 const log = (...a) => console.log('[x]', ...a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const { browser, cleanup } = await acquireChrome();
 const ctx = browser.contexts()[0];
-const page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420'));
-await page.bringToFront();
+let page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420') || p.url().includes('dashboard.golem.localhost:7420')); if (!page) { page = await ctx.newPage(); await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' }); } if (!page) { page = await ctx.newPage(); await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' }); }
+/* bringToFront is a no-op on headless Chrome (TKT-0187) */
 await page.setViewportSize({ width: 1440, height: 900 });
 const shot = (n) => page.screenshot({ path: `${OUT}/x-${n}.png`, fullPage: false });
 
@@ -186,5 +186,5 @@ if (errors.length > 0) {
   for (const e of errors) log(' -', e);
 }
 
-await browser.close();
+await cleanup();
 log('done.');

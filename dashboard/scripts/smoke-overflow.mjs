@@ -1,9 +1,9 @@
 // smoke-overflow.mjs — find the 1459px-wide element inside the wrap
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 const log = (...a) => console.log('[o]', ...a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const { browser, cleanup } = await acquireChrome();
 const ctx = browser.contexts()[0];
 const page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420'));
 await page.setViewportSize({ width: 1440, height: 900 });
@@ -49,5 +49,5 @@ log('top-level body children:', JSON.stringify(topChildren, null, 2));
 const bodyHTML = await page.evaluate(() => document.querySelector('.td-md')?.outerHTML.substring(0, 2000));
 log('body html snippet:', bodyHTML);
 
-await browser.close();
+await cleanup();
 log('done.');
