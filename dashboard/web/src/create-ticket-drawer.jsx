@@ -79,7 +79,7 @@ function snapshot(fields) {
 // Apply a loaded draft (or a blank default) to the field setters. `fallbackPid`
 // is the opener's preselect — used when there's no draft so the project dropdown
 // is still preselected (not blank).
-function applyDraft(d, setProjectId, setters, fallbackPid) {
+function applyDraft(d, setProjectId, setters, fallbackPid, bodyTemplateIdRef) {
   setProjectId(d?.project_id || fallbackPid || '');
   setters.setKind(d?.kind || 'work-item');
   setters.setTitle(d?.title || '');
@@ -96,6 +96,12 @@ function applyDraft(d, setProjectId, setters, fallbackPid) {
   })));
   setters.setError(null);
   setters.setSubmitting(false);
+  // TKT-0181: a restored draft's body is user-typed content (the body of
+  // an unsaved draft). Mark it as user-edited so subsequent template
+  // changes preserve it instead of overwriting. No-draft path leaves
+  // the ref alone — the open will auto-fill the body via the type→template
+  // effect and the ref will be set then.
+  if (d && bodyTemplateIdRef) bodyTemplateIdRef.current = null;
 }
 
 function CreateTicketDrawer({ open, preselectProject, onClose }) {
@@ -132,6 +138,12 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
   // the type changes (so a fresh type-change gets the new default), and set
   // to true on explicit dropdown picks via `onTemplateChange`.
   const [templateOverride, setTemplateOverride] = React.useState(false);
+  // TKT-0181: tracks which template's scaffold the body currently matches.
+  // `null` means the body is either empty or has been user-edited (diverged
+  // from any known template). The body-fill effect only swaps when this
+  // ref is set to a known template id — so user-typed content is preserved
+  // through type-changes and template re-picks.
+  const bodyTemplateIdRef = React.useRef(null);
   const bodyRef = React.useRef(null);
 
   // Drawer width preset (persisted).
@@ -188,6 +200,7 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
         const insert = `${before === after ? '' : ''}\n${md}\n`;
         setBody((cur) => {
           const next = cur.slice(0, before) + insert + cur.slice(after);
+          bodyTemplateIdRef.current = null; // pasted content = user-edited
           requestAnimationFrame(() => {
             if (bodyRef.current) {
               const pos = before + insert.length;
@@ -209,7 +222,7 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
     for (const f of files) {
       try {
         const { md } = await uploadOne(f);
-        setBody((cur) => cur + (cur.endsWith('\n') ? '' : '\n') + md + '\n');
+        setBody((cur) => { bodyTemplateIdRef.current = null; return cur + (cur.endsWith('\n') ? '' : '\n') + md + '\n'; });
       } catch (err) { /* surfaced in uploads strip */ }
     }
   }, [uploadOne]);
@@ -224,7 +237,7 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
     let draft = null;
     if (pid) draft = window.CtDraft.migrateToProject(pid) || window.CtDraft.load(pid);
     else draft = window.CtDraft.load('');
-    applyDraft(draft, setProjectId, setters, pid);
+    applyDraft(draft, setProjectId, setters, pid, bodyTemplateIdRef);
     setRestored(!!(draft && ((draft.title && draft.title.trim()) || (draft.body && draft.body.trim()))));
   }, []);
 
@@ -326,24 +339,64 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
   }, [open, kind]);
 
   // When the template picker value changes (whether by type-change above or
-  // by manual dropdown selection), fill the body IF it is empty. This
-  // prevents clobbering user-typed content.
+  // by manual dropdown selection), fill the body IF it is empty OR if the
+  // body still matches a known template's scaffold (i.e. the user has NOT
+  // hand-edited it — they may have a scaffold from a prior template pick).
+  // User-typed content diverges from every known template and is preserved.
+  // The bodyTemplateIdRef tracks which scaffold the body currently matches
+  // so re-selecting the same template is a no-op (no churn, no undo flash).
   React.useEffect(() => {
     if (!open || !templateId || !templates.length) return;
     const t = templates.find((x) => x.id === templateId);
-    if (t) setBody((cur) => (cur.trim() ? cur : t.body));
+    if (!t) return;
+    setBody((cur) => {
+      if (!cur.trim()) {
+        // Empty body — always fill.
+        bodyTemplateIdRef.current = t.id;
+        return t.body;
+      }
+      if (bodyTemplateIdRef.current === t.id) {
+        // Body already matches this template (user picked the same template
+        // again, or type-change matched prior pick) — no-op.
+        return cur;
+      }
+      // If we can prove the body came from any known template, swap.
+      if (bodyTemplateIdRef.current) {
+        bodyTemplateIdRef.current = t.id;
+        return t.body;
+      }
+      // Body is non-empty and we don't know its source — assume user-edited
+      // and preserve.
+      return cur;
+    });
   }, [open, templateId, templates]);
 
-  // TKT-0180: manual dropdown pick. Sets templateOverride so a subsequent
-  // type-change does NOT clobber the user's choice. Still no-clobber the
-  // body when it has content.
+  // TKT-0181: manual dropdown pick. Sets templateOverride so a subsequent
+  // type-change does NOT clobber the user's choice. A manual pick is
+  // explicit user intent to use that template — but only swaps the body
+  // if the body is still a clean template scaffold (per the rules above).
+  // If the body has been user-edited, the manual pick still changes the
+  // templateId dropdown but the body is left alone (the user can clear
+  // the body manually to trigger a fresh fill).
   const onTemplateChange = (e) => {
     const id = e.target.value;
     setTemplateId(id);
     setTemplateOverride(true);
     if (!id) return;
     const t = templates.find((x) => x.id === id);
-    if (t) setBody((cur) => (cur.trim() ? cur : t.body));
+    if (!t) return;
+    setBody((cur) => {
+      if (!cur.trim()) {
+        bodyTemplateIdRef.current = t.id;
+        return t.body;
+      }
+      if (bodyTemplateIdRef.current === t.id) return cur;
+      if (bodyTemplateIdRef.current) {
+        bodyTemplateIdRef.current = t.id;
+        return t.body;
+      }
+      return cur;
+    });
   };
 
   if (!open) return null;
@@ -367,14 +420,15 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
     onClose && onClose();
   };
 
-  const discard = () => {
+const discard = () => {
     // Clear the in-progress content but keep the project context — discarding
     // a draft shouldn't also wipe the project dropdown the user just picked.
     window.CtDraft.discard(projectId);
     setKind('work-item'); setTitle(''); setBody(''); setPriority('');
     setStreamId(''); setAssignee(''); setDispatchSession('');
     setUploads([]); setError(null); setSubmitting(false); setRestored(false);
-    setTemplateId('');
+    setTemplateId(''); setTemplateOverride(false);
+    bodyTemplateIdRef.current = null;
   };
 
   const onProjectChange = (e) => {
@@ -483,8 +537,8 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
           <div className="ct-field">
             <label className="ct-label">Body <span className="ct-label-hint">Markdown · paste or drop images</span></label>
             <textarea ref={bodyRef} className="orch-modal-textarea" rows={5} value={body}
-              placeholder="Details, context, acceptance… (Markdown is rendered; empty body fills with the selected template)"
-              onChange={(e) => setBody(e.target.value)}
+              placeholder="Details, context, acceptance… (Markdown is rendered; empty body fills with the selected template; manually edited bodies are preserved through template changes)"
+              onChange={(e) => { bodyTemplateIdRef.current = null; setBody(e.target.value); }}
               onPaste={onPaste}
               onDrop={onDrop}
               onDragOver={(e) => { if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) e.preventDefault(); }}
