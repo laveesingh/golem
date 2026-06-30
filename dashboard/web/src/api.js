@@ -210,6 +210,12 @@
     listStreams: (projectId) => getJSON(`/api/streams${qs({ project: projectId })}`),
     createStream: (body) => postJSON('/api/streams', body),
     updateStream: (id, patch) => patchJSON(`/api/streams/${encodeURIComponent(id)}`, patch),
+    // TKT-0194: human gate verdicts (approve | deny | cancel) on a gate file
+    // under ~/.config/golem/gates/<project_id>/. The server re-reads gates
+    // on the next projects-list request so the UI updates without a full
+    // page reload.
+    gateVerdict: (projectId, gateId, decision) =>
+      postJSON(`/api/projects/${encodeURIComponent(projectId)}/gates/${encodeURIComponent(gateId)}/${encodeURIComponent(decision)}`, {}),
     // Genre template scaffolds (feature/bug/design-doc/prd/brainstorm/decision)
     // served as Markdown bodies from plugin/skills/tracker/templates/. Used by
     // the create-ticket composer's template picker to pre-fill an empty body.

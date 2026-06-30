@@ -249,6 +249,24 @@
     }
   }
 
+  // TKT-0194: refresh the projects list (re-fetch from /api/projects) so
+  // gate-verdict changes (which mutate a gate file on disk but don't trigger
+  // a WS project-update event) are reflected in the UI. The server
+  // re-discovers projects on its 30s timer, but calling this gives an
+  // instant refresh for the verdict the user just issued.
+  async function refreshProjects() {
+    try {
+      const list = await window.SubstrateAPI.projects();
+      if (Array.isArray(list)) {
+        state.projects = list;
+        recomputeMilestones();
+        notify();
+      }
+    } catch (err) {
+      console.error('refreshProjects failed', err);
+    }
+  }
+
   function getNativeSessionPeek(sessionId) {
     return sessionId ? (state.nativeSessionPeek.get(sessionId) ?? null) : null;
   }
@@ -342,6 +360,7 @@
     upsertTrackerTicket,
     getRole,
     loadNativeSessionPeek,
+    refreshProjects,
     getNativeSessionPeek,
     getNativeSessionById: (sessionId) =>
       sessionId ? (state.nativeSessions.find((s) => s.session_id === sessionId) ?? null) : null,

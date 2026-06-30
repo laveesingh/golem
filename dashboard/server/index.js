@@ -15,6 +15,7 @@ import { createChat } from './chat.js';
 import { readNativeSessionPeek } from './native-session-peek.js';
 import { openTrackerDb } from './tracker-db.js';
 import { readChannels } from './channels.js';
+import { applyGateVerdict } from './projects.js';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const WEB_ROOT = path.resolve(__dirname, '..', 'web');
@@ -319,6 +320,22 @@ async function main() {
     const plan = state.projectPlan(req.params.id);
     if (!plan) return { title: null, total: 0, done: 0, items: [] };
     return plan;
+  });
+
+  // TKT-0194: apply a human verdict to a gate (approve | deny | cancel).
+  // Writes the new status to the gate file and returns the new state. The
+  // dashboard refreshes the projects list (which re-reads gates on the
+  // next request) to show the updated verdict.
+  fastify.post('/api/projects/:id/gates/:gateId/:decision', async (req, reply) => {
+    const p = state.project(req.params.id);
+    if (!p) return reply.code(404).send({ error: 'project_not_found' });
+    try {
+      const result = await applyGateVerdict(p.gatesDir, req.params.gateId, req.params.decision);
+      return result;
+    } catch (err) {
+      if (err && err.status) return reply.code(err.status).send({ error: err.message });
+      throw err;
+    }
   });
 
   // v4: all native Claude Code sessions on this machine (merged CLI + registry,
