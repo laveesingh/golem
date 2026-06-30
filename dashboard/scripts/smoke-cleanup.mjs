@@ -1,9 +1,9 @@
 // smoke-cleanup.mjs — clean up test data, then final visual
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 const log = (...a) => console.log('[c]', ...a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const { browser, cleanup } = await acquireChrome();
 const ctx = browser.contexts()[0];
 const page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420'));
 await page.setViewportSize({ width: 1440, height: 900 });
@@ -36,5 +36,5 @@ const counts = await page.evaluate(() => ({
 log('final counts:', JSON.stringify(counts));
 
 await page.screenshot({ path: '/tmp/golem-ui-smoke/clean.png' });
-await browser.close();
+await cleanup();
 log('done.');

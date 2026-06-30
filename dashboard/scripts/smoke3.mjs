@@ -1,10 +1,10 @@
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function main() {
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+  const { browser, cleanup } = await acquireChrome();
   const ctx = browser.contexts()[0];
-  let page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420'));
-  await page.bringToFront();
+  let page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420') || p.url().includes('dashboard.golem.localhost:7420')); if (!page) { page = await ctx.newPage(); await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' }); };
+  /* bringToFront is a no-op on headless Chrome (TKT-0187) */
   await page.setViewportSize({ width: 1440, height: 900 });
   page.on('console', (msg) => console.log('[browser]', msg.type(), msg.text()));
   page.on('pageerror', (err) => console.log('[browser-error]', err.message));
@@ -84,5 +84,6 @@ async function main() {
     }
   });
   await wait(400);
+  await cleanup();
 }
 main().catch((e) => { console.error('FATAL', e); process.exit(1); });

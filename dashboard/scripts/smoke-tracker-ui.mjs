@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 import fs from 'node:fs';
 
 const OUT = '/tmp/golem-ui-smoke';
@@ -9,14 +9,20 @@ const log = (...a) => console.log('[smoke]', ...a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+  // TKT-0187: acquire a per-process headless Chrome (not a non-headless
+  // one on 9222) so this script doesn't grab focus from the user's
+  // terminal / editor / other windows. The helper skips any port that's
+  // already in use by a non-headless Chrome.
+  const { cdpUrl, browser, cleanup } = await acquireChrome();
+  log('headless Chrome at', cdpUrl);
   const ctx = browser.contexts()[0];
-  let page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420'));
+  let page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420') || p.url().includes('dashboard.golem.localhost:7420'));
   if (!page) {
     page = await ctx.newPage();
     await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' });
   }
-  await page.bringToFront();
+  // bringToFront is a no-op for headless Chrome; kept for symmetry.
+  try { await page.bringToFront(); } catch {}
   await page.setViewportSize({ width: 1440, height: 900 });
 
   // TKT-0176: stale-cache trap. A long-running CDP Chrome can hold a
@@ -256,6 +262,7 @@ async function main() {
 
   fs.writeFileSync(`${OUT}/issues.json`, JSON.stringify(issues, null, 2));
   log('DONE. Issues written to', `${OUT}/issues.json`);
+  await cleanup();
 }
 
 main().catch((err) => { console.error('FATAL', err); process.exit(1); });

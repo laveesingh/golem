@@ -1,12 +1,12 @@
 // smoke-where.mjs — find where the ceo-composer form is being rendered in DOM tree
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 const log = (...a) => console.log('[s]', ...a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const { browser, cleanup } = await acquireChrome();
 const ctx = browser.contexts()[0];
-const page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420'));
-await page.bringToFront();
+let page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420') || p.url().includes('dashboard.golem.localhost:7420')); if (!page) { page = await ctx.newPage(); await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' }); } if (!page) { page = await ctx.newPage(); await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' }); }
+/* bringToFront is a no-op on headless Chrome (TKT-0187) */
 await page.setViewportSize({ width: 1440, height: 900 });
 
 await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' });
@@ -79,5 +79,5 @@ const formChain = await page.evaluate(() => {
 });
 log('ceo-composer chains:', JSON.stringify(formChain, null, 2));
 
-await browser.close();
+await cleanup();
 log('done.');

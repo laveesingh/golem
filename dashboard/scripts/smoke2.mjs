@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 import fs from 'node:fs';
 
 const OUT = '/tmp/golem-ui-smoke';
@@ -6,10 +6,10 @@ const log = (...a) => console.log('[smoke2]', ...a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+  const { browser, cleanup } = await acquireChrome();
   const ctx = browser.contexts()[0];
   let page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420')) || await ctx.newPage();
-  await page.bringToFront();
+  /* bringToFront is a no-op on headless Chrome (TKT-0187) */
   await page.setViewportSize({ width: 1440, height: 900 });
 
   page.on('pageerror', (err) => log('PAGE ERROR:', err.message));
@@ -140,6 +140,7 @@ async function main() {
   await shot('07-toggle-resolved');
 
   log('done.');
+  await cleanup();
 }
 
 main().catch((e) => { console.error('FATAL', e); process.exit(1); });

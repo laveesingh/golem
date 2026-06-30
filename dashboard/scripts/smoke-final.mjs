@@ -1,9 +1,9 @@
 // smoke-final.mjs — visual + edge case pass
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 const log = (...a) => console.log('[f]', ...a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const { browser, cleanup } = await acquireChrome();
 const ctx = browser.contexts()[0];
 const page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420'));
 await page.setViewportSize({ width: 1440, height: 900 });
@@ -90,5 +90,5 @@ log('pill pos after mid-page select:', JSON.stringify(pillPos, null, 2));
 
 await page.screenshot({ path: '/tmp/golem-ui-smoke/final.png' });
 
-await browser.close();
+await cleanup();
 log('done.');

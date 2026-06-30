@@ -1,14 +1,14 @@
 // smoke-composer.mjs — focused diagnostic for "+ New doesn't open composer" bug.
 // Captures rail structure, button clicks, and whether the Composer actually renders.
-import { chromium } from 'playwright-core';
+import { acquireChrome } from './_chrome.mjs';
 const log = (...a) => console.log('[s]', ...a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const { browser, cleanup } = await acquireChrome();
 const ctx = browser.contexts()[0];
-const page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420'));
+let page = ctx.pages().find((p) => p.url().includes('127.0.0.1:7420') || p.url().includes('dashboard.golem.localhost:7420')); if (!page) { page = await ctx.newPage(); await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' }); } if (!page) { page = await ctx.newPage(); await page.goto('http://127.0.0.1:7420/', { waitUntil: 'domcontentloaded' }); }
 if (!page) { console.error('NO PAGE'); process.exit(1); }
-await page.bringToFront();
+/* bringToFront is a no-op on headless Chrome (TKT-0187) */
 await page.setViewportSize({ width: 1440, height: 900 });
 
 page.on('console', (msg) => log('console.' + msg.type() + ':', msg.text()));
@@ -82,5 +82,5 @@ const listChildren = await page.evaluate(() => {
 });
 log('list children:', JSON.stringify(listChildren, null, 2));
 
-await browser.close();
+await cleanup();
 log('done.');
