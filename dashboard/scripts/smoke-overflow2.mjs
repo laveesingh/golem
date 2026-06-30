@@ -36,7 +36,7 @@ log('nodes with scrollWidth > 1099:');
 for (const w of wide) log(' -', JSON.stringify(w));
 
 // Specifically check code elements
-const codes = await page.evaluate(() => Array.from(document.querySelectorAll('.td-html-body code')).map((c) => ({
+const codes = await page.evaluate(() => Array.from(document.querySelectorAll('.td-md code')).map((c) => ({
   text: c.textContent,
   scrollWidth: c.scrollWidth,
   clientWidth: c.clientWidth,

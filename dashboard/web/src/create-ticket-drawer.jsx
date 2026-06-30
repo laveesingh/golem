@@ -25,6 +25,22 @@ const CT_PRIORITIES = [
   { value: 'P3', label: 'P3' },
 ];
 
+// TKT-0180: default genre template per ticket type. The template picker
+// defaults to the type's scaffold but the user can override via the dropdown
+// (e.g. pick prd/brainstorm for a work-item). 'question' has no default —
+// the user picks a template explicitly if they want one.
+//
+// This map is the ONLY place the type→template default lives. The drawer's
+// `setTemplateIdByType` effect consults it whenever the user changes type;
+// if the user has manually picked a different template since the last
+// type-change, that override sticks (see `templateOverride` below).
+const TYPE_TEMPLATE = {
+  'work-item': 'feature',
+  'fix': 'bug',
+  'spec': 'design-doc',
+  'decision': 'decision',
+};
+
 // Drawer width presets (percentage of viewport). Persisted in localStorage so
 // a refresh keeps the user's choice. Order is wide→narrow, matching the icon
 // button group left-to-right. Mirrors ticket-drawer.jsx's TD_WIDTHS.
@@ -107,6 +123,15 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
   // submit.
   const [restored, setRestored] = React.useState(false);
   const [uploads, setUploads] = React.useState([]); // [{ id, name, status, url? }]
+  // TKT-0180: genre templates fetched once per open; the body is pre-filled
+  // with the type's default scaffold ONLY when the body is empty.
+  const [templates, setTemplates] = React.useState([]);
+  const [templateId, setTemplateId] = React.useState('');
+  // TKT-0180: when the user manually picks a template from the dropdown, that
+  // choice sticks across subsequent type changes. Reset to false every time
+  // the type changes (so a fresh type-change gets the new default), and set
+  // to true on explicit dropdown picks via `onTemplateChange`.
+  const [templateOverride, setTemplateOverride] = React.useState(false);
   const bodyRef = React.useRef(null);
 
   // Drawer width preset (persisted).
@@ -276,6 +301,51 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
     window.CtDraft.scheduleSave(projectId, snapshot({ projectId, kind, title, body, priority, streamId, assignee, dispatchSession, uploads }));
   }, [open, projectId, kind, title, body, priority, streamId, assignee, dispatchSession, uploads]);
 
+  // ── TKT-0174: genre templates ─────────────────────────────────────────────
+  // Fetch the 6 scaffolds once per open; default-by-kind sets the dropdown,
+  // and the body is pre-filled ONLY when empty (never clobbers a draft or
+  // typed content).
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    window.SubstrateAPI.getTemplates()
+      .then((list) => { if (!cancelled) setTemplates(Array.isArray(list) ? list : []); })
+      .catch(() => { if (!cancelled) setTemplates([]); });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // TKT-0180: when the type changes, the template picker snaps back to that
+  // type's default UNLESS the user has manually overridden it since the last
+  // type-change. A type-change always resets the override flag — even if the
+  // new default happens to coincide with the user's prior pick — so a
+  // deliberate type change is always a deliberate "re-default".
+  React.useEffect(() => {
+    if (!open) return;
+    setTemplateOverride(false);
+    setTemplateId(TYPE_TEMPLATE[kind] || '');
+  }, [open, kind]);
+
+  // When the template picker value changes (whether by type-change above or
+  // by manual dropdown selection), fill the body IF it is empty. This
+  // prevents clobbering user-typed content.
+  React.useEffect(() => {
+    if (!open || !templateId || !templates.length) return;
+    const t = templates.find((x) => x.id === templateId);
+    if (t) setBody((cur) => (cur.trim() ? cur : t.body));
+  }, [open, templateId, templates]);
+
+  // TKT-0180: manual dropdown pick. Sets templateOverride so a subsequent
+  // type-change does NOT clobber the user's choice. Still no-clobber the
+  // body when it has content.
+  const onTemplateChange = (e) => {
+    const id = e.target.value;
+    setTemplateId(id);
+    setTemplateOverride(true);
+    if (!id) return;
+    const t = templates.find((x) => x.id === id);
+    if (t) setBody((cur) => (cur.trim() ? cur : t.body));
+  };
+
   if (!open) return null;
 
   const canDispatch = sessions.length > 0;
@@ -304,6 +374,7 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
     setKind('work-item'); setTitle(''); setBody(''); setPriority('');
     setStreamId(''); setAssignee(''); setDispatchSession('');
     setUploads([]); setError(null); setSubmitting(false); setRestored(false);
+    setTemplateId('');
   };
 
   const onProjectChange = (e) => {
@@ -381,7 +452,7 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
 
           <div className="ct-row">
             <div className="ct-field">
-              <label className="ct-label">Kind</label>
+              <label className="ct-label">Type</label>
               <select className="ct-input" value={kind} onChange={(e) => setKind(e.target.value)} disabled={submitting}>
                 {CT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
               </select>
@@ -401,9 +472,18 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
           </div>
 
           <div className="ct-field">
-            <label className="ct-label">Body <span className="ct-label-hint">HTML · paste or drop images</span></label>
+            <label className="ct-label">Template</label>
+            <select className="ct-input" value={templateId} onChange={onTemplateChange}
+              disabled={submitting || !templates.length}>
+              <option value="">None</option>
+              {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+            </select>
+          </div>
+
+          <div className="ct-field">
+            <label className="ct-label">Body <span className="ct-label-hint">Markdown · paste or drop images</span></label>
             <textarea ref={bodyRef} className="orch-modal-textarea" rows={5} value={body}
-              placeholder="Details, context, acceptance… (HTML is rendered; plain text auto-wraps into paragraphs)"
+              placeholder="Details, context, acceptance… (Markdown is rendered; empty body fills with the selected template)"
               onChange={(e) => setBody(e.target.value)}
               onPaste={onPaste}
               onDrop={onDrop}

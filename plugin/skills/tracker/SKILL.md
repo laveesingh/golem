@@ -10,48 +10,65 @@ dashboard owns the SQLite DB (single writer); you read/write it through the
 golem channel MCP tools below. Your session id and project are injected for you,
 so you rarely pass ids.
 
-Agents: send HTML. The server tolerates plain text and markdown for human
-authors, but you (the agent) should always send a body that starts with an HTML
-tag.
+Agents: send Markdown. The server stores it verbatim and the dashboard renders
+it client-side: headings, lists, GFM tables, fenced code, fenced ```mermaid
+diagrams, and GitHub-style admonitions (`> [!NOTE]` / `> [!WARNING]` /
+`> [!IMPORTANT]`). Plain text is tolerated but prefer Markdown — it's cheaper
+and renders correctly everywhere.
 
-```html
-<header class="hero">
-  <div class="kicker">Workstream · category</div>
-  <h1>Headline goes here<span class="l2">with an accent line.</span></h1>
-  <p class="blurb">Single paragraph summarising the ticket. One or two sentences is plenty.</p>
-</header>
+````markdown
+# Headline goes here
 
-<section>
-  <div class="kicker">01 — Context</div>
-  <h2>Why this matters</h2>
-  <p class="lead">A one-paragraph thesis that the rest of the section supports.</p>
-  <p>Body paragraph. Use additional paragraphs, lists, or tables as needed.</p>
-  <div class="note"><div class="h">Default callout</div><p>Use .note for neutral, .note.no for risks, .note.go for wins, .note.solid for summaries.</p></div>
-</section>
+Single paragraph summarising the ticket. One or two sentences is plenty.
 
-<section>
-  <div class="kicker">02 — Acceptance</div>
-  <h2>What done looks like</h2>
-  <ul>
-    <li>First concrete outcome.</li>
-    <li>Second concrete outcome.</li>
-  </ul>
-</section>
+## Why this matters
+
+A one-paragraph thesis that the rest of the section supports. Body paragraph,
+then a list or table as needed.
+
+- First concrete outcome.
+- Second concrete outcome.
+
+| Phase | State |
+|-------|-------|
+| today | pain |
+| proposed | fixed |
+
+```mermaid
+flowchart LR
+  A[Today] --> B[pain point] -.proposed.-> C[fixed]
 ```
 
-Full vocabulary: see the `html-report` skill (SKILL.md and template.html at
-`~/.claude/skills/html-report/`). The dashboard's `.td-html-body` CSS already
-styles hero, kicker, h2, p.lead, .note, .card, .statgrid, .profile, .quote,
-.badge, table, inline SVG — copy any of those class names from the html-report
-template and they will render correctly.
+> [!NOTE]
+> Use `[!NOTE]` for neutral callouts, `[!WARNING]` for risks, `[!IMPORTANT]`
+> for load-bearing context.
 
-If the `html-report` skill isn't loaded in this session, request it (e.g. via
-the Skill tool) so you can see the full template and component list.
+## What done looks like
+
+- [ ] Outcome 1
+- [ ] Outcome 2
+````
+
+**Genre templates.** Pick the template that matches the ticket kind and fill
+it in — they're tension-forcing scaffolds, not cages:
+
+- `work-item` → `templates/feature.md` — Problem / Appetite / Solution sketch / Rabbit holes / No-gos / Acceptance
+- `fix` → `templates/bug.md` — Repro / Expected / Actual / Environment / Suspected cause / Fix
+- `spec` → `templates/design-doc.md` — arc42 MVP + C4 container diagram + ADRs
+- `decision` → `templates/decision.md` — MADR bare-minimum: Status / Context / Decision / Consequences / Rejected alternatives
+- `prd` → `templates/prd.md` — Problem / Audience / Success criteria / Non-goals
+- `brainstorm` → `templates/brainstorm.md` — Question / Options with tradeoffs / Verdicts
+
+Files live at `plugin/skills/tracker/templates/*.md` in this repo, or query
+`GET /api/templates` on the dashboard for the live list. The create-ticket UI
+picks a default by kind (work-item→feature, fix→bug, spec→design-doc,
+decision→decision; prd/brainstorm selectable) and pre-fills the body only when
+it's empty.
 
 | Tool | Use |
 |------|-----|
 | `ticket_list({mine:true})` | find work assigned to YOU |
-| `ticket_get({id})` | read a ticket: HTML body, anchored comments, thread, history |
+| `ticket_get({id})` | read a ticket: Markdown body, anchored comments, thread, history |
 | `ticket_create({title, body, …})` | create a ticket (defaults to your project; you = created_by) |
 | `ticket_update({id, state})` | transition state / patch fields (you = actor) |
 | `ticket_comment({id, body, …})` | progress note with mechanical evidence (you = author) |
@@ -70,7 +87,7 @@ Comment status: `open | resolved`.
 ## Flow on a brief / dispatch
 
 1. **Find your work** — `ticket_list({mine:true})`, or the ticket id named in the
-   dispatch brief. `ticket_get` it to read the full HTML body + thread.
+   dispatch brief. `ticket_get` it to read the full Markdown body + thread.
 2. **Claim it** — `ticket_update({id, state:'in_progress'})`. One in-progress
    ticket at a time per work-stream.
 3. **Do the work**, then `ticket_comment` progress with MECHANICAL evidence
@@ -92,20 +109,29 @@ Comment status: `open | resolved`.
 - The human answers via a comment on that ticket. **Resume** by re-reading it
   with `ticket_get`; act on the answer and continue.
 
-## Annotating the HTML body
+## Annotating the body
 
 Inline comments on the ticket body share the same `comments` table as thread
-comments. To anchor a comment to a selection in the HTML body, include:
+comments. The dashboard UI assigns each rendered block (heading, paragraph,
+list, table, code block, diagram, callout) a `block_id` of the form
+`<heading-slug>#<index-within-section>` and offers a block-hover "+" affordance
+to comment on the whole block; text-select→pill lets you comment on a sub-range.
+So in practice you usually just write the body and let the UI handle anchoring.
+If you POST a comment via MCP and want it anchored, the anchor fields mean:
 
-- `quote`: the exact selected text.
-- `prefix`/`suffix`: a short text snippet immediately before and after the quote
-  (helps disambiguate repeated phrases).
-- `section` / `section_id`: optional heading or id of the section containing the
-  selection.
+- `block_id`: primary anchor — `<heading-slug>#<index>` for the block (the UI
+  assigns this on render; you rarely set it by hand).
+- `quote`: the selected text, or the first ~120 chars of the block as a fallback.
+  Used to re-locate the comment if the `block_id` goes stale after an edit.
+- `prefix`/`suffix`: short text immediately before/after the quote, to
+  disambiguate repeated phrases.
+- `section` / `section_id`: optional heading text / slug of the containing
+  section.
 - `tag`: what kind of annotation it is (`confirmed`, `partial`, `disputed`,
   `fix`, `risk`, `question`, `note`).
 
-Plain thread comments leave these anchor fields empty.
+Resolution is `block_id` primary → `quote` fallback → orphan. Plain thread
+comments leave all anchor fields empty.
 
 ## Discipline
 

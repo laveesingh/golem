@@ -51,7 +51,7 @@ async function main() {
 
   // 3. Programmatically select text inside the body, dispatch mouseup, then click pill
   const selectResult = await page.evaluate(() => {
-    const root = document.querySelector('.td-html-body');
+    const root = document.querySelector('.td-md');
     if (!root) return 'no body';
     const target = root.querySelector('p, li, h2, h3');
     if (!target) return 'no target';

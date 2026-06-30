@@ -15,7 +15,7 @@ await wait(2500);
 // List direct children of .td-annotate-wrap and check each for inline overflow
 const allWide = await page.evaluate(() => {
   const wrap = document.querySelector('.td-annotate-wrap');
-  const body = wrap.querySelector('.td-html-body');
+  const body = wrap.querySelector('.td-md');
   // Check all elements in the document for scrollWidth > body width
   const cw = body?.clientWidth;
   const out = [];

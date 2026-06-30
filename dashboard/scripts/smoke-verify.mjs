@@ -45,7 +45,7 @@ if (taCount > 0) {
 
 // Test text selection -> pill -> click pill -> quote composer
 const selResult = await page.evaluate(() => {
-  const root = document.querySelector('.td-html-body');
+  const root = document.querySelector('.td-md');
   if (!root) return 'no body';
   const target = root.querySelector('p, h2, h3, li');
   if (!target) return 'no target';

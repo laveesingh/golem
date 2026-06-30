@@ -17,6 +17,17 @@ const CT_PRIORITIES = [
   { value: 'P3', label: 'P3' },
 ];
 
+// TKT-0180: default genre template per ticket type. The template picker
+// defaults to the type's scaffold but the user can override via the dropdown
+// (e.g. pick prd/brainstorm for a work-item). 'question' has no default —
+// the user picks a template explicitly if they want one.
+const TYPE_TEMPLATE = {
+  'work-item': 'feature',
+  'fix': 'bug',
+  'spec': 'design-doc',
+  'decision': 'decision',
+};
+
 function CreateTicket() {
   useStore();
   const projects = window.Store.getProjects();
@@ -38,6 +49,10 @@ function CreateTicket() {
   // TKT-0106: image paste/drop. Tracks in-flight + completed uploads so we can
   // show previews above the textarea and clear them on submit/reset.
   const [uploads, setUploads] = React.useState([]); // [{ id, name, status, url? }]
+  // TKT-0174: genre templates fetched once per open; the body is pre-filled
+  // with the kind's default scaffold ONLY when the body is empty.
+  const [templates, setTemplates] = React.useState([]);
+  const [templateId, setTemplateId] = React.useState('');
   const bodyRef = React.useRef(null);
 
   // Upload a single File via SubstrateAPI.uploadAsset. Returns the markdown
@@ -119,6 +134,7 @@ function CreateTicket() {
     setKind('work-item'); setTitle(''); setBody(''); setPriority('');
     setStreamId(''); setAssignee(''); setDispatchSession('');
     setError(null); setSubmitting(false); setUploads([]);
+    setTemplateId('');
   }, []);
 
   // Open on event; preselect project if provided.
@@ -140,6 +156,45 @@ function CreateTicket() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
+
+  // TKT-0174: fetch the genre templates once per open.
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    window.SubstrateAPI.getTemplates()
+      .then((list) => { if (!cancelled) setTemplates(Array.isArray(list) ? list : []); })
+      .catch(() => { if (!cancelled) setTemplates([]); });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // TKT-0180: default-by-type — when the type changes (or on open), set the
+  // dropdown to the type's default template, UNLESS the user has manually
+  // overridden the template since the last type-change. A type-change resets
+  // the override flag. 'question' has no default.
+  const [templateOverride, setTemplateOverride] = React.useState(false);
+  React.useEffect(() => {
+    if (!open) return;
+    setTemplateOverride(false);
+    setTemplateId(TYPE_TEMPLATE[kind] || '');
+  }, [open, kind]);
+
+  // TKT-0180: pre-fill the body from the selected template ONLY when the
+  // body is empty (never clobbers typed content). Runs when the template
+  // selection changes or templates arrive.
+  React.useEffect(() => {
+    if (!open || !templateId || !templates.length) return;
+    const t = templates.find((x) => x.id === templateId);
+    if (t) setBody((cur) => (cur.trim() ? cur : t.body));
+  }, [open, templateId, templates]);
+
+  const onTemplateChange = (e) => {
+    const id = e.target.value;
+    setTemplateId(id);
+    setTemplateOverride(true);
+    if (!id) return;
+    const t = templates.find((x) => x.id === id);
+    if (t) setBody((cur) => (cur.trim() ? cur : t.body));
+  };
 
   // On project change (and on open), refetch streams + dispatchable sessions.
   React.useEffect(() => {
@@ -228,7 +283,7 @@ function CreateTicket() {
 
         <div className="ct-row">
           <div className="ct-field">
-            <label className="ct-label">Kind</label>
+            <label className="ct-label">Type</label>
             <select className="ct-input" value={kind} onChange={(e) => setKind(e.target.value)} disabled={submitting}>
               {CT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
             </select>
@@ -248,8 +303,17 @@ function CreateTicket() {
         </div>
 
         <div className="ct-field">
-          <label className="ct-label">Body <span className="ct-label-hint">HTML · paste or drop images</span></label>
-          <textarea ref={bodyRef} className="orch-modal-textarea" rows={5} value={body} placeholder="Details, context, acceptance… (HTML is rendered; plain text auto-wraps into paragraphs)"
+          <label className="ct-label">Template</label>
+          <select className="ct-input" value={templateId} onChange={onTemplateChange}
+            disabled={submitting || !templates.length}>
+            <option value="">None</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+          </select>
+        </div>
+
+        <div className="ct-field">
+          <label className="ct-label">Body <span className="ct-label-hint">Markdown · paste or drop images</span></label>
+          <textarea ref={bodyRef} className="orch-modal-textarea" rows={5} value={body} placeholder="Details, context, acceptance… (Markdown is rendered; empty body fills with the selected template)"
             onChange={(e) => setBody(e.target.value)}
             onPaste={onPaste}
             onDrop={onDrop}

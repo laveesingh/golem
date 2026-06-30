@@ -408,7 +408,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
                     rows={8}
                     value={editBuf.body}
                     onChange={(e) => setEditBuf({ ...editBuf, body: e.target.value })}
-                    placeholder="Body (HTML) — plain text auto-wraps into paragraphs"
+                    placeholder="Body (Markdown) — plain text auto-wraps into paragraphs"
                   />
                   <div className="td-edit-actions">
                     <button className="orch-btn ghost" onClick={() => setEditBuf(null)} disabled={saving}>Cancel</button>
@@ -431,11 +431,11 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
                 </div>
               )}
 
-              {/* ── HTML body + inline annotations ── */}
+              {/* ── Markdown body + inline annotations ── */}
               <div className="td-body-area">
                 {ticket.body ? (
                   <TdAnnotate
-                    html={ticket.body}
+                    body={ticket.body}
                     comments={comments}
                     currentAuthor="you"
                     onCreate={onAddComment}

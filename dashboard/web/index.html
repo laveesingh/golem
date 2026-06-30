@@ -48,9 +48,47 @@
       "react-dom": "https://esm.sh/react-dom@18.3.1",
       "@dnd-kit/core": "https://esm.sh/@dnd-kit/core@6.3.1?external=react,react-dom",
       "@dnd-kit/sortable": "https://esm.sh/@dnd-kit/sortable@10.0.0?external=react,react-dom",
-      "@dnd-kit/utilities": "https://esm.sh/@dnd-kit/utilities@3.2.2?external=react,react-dom"
+      "@dnd-kit/utilities": "https://esm.sh/@dnd-kit/utilities@3.2.2?external=react,react-dom",
+      "marked": "https://esm.sh/marked@14",
+      "dompurify": "https://esm.sh/dompurify@3"
     }
   }
+  </script>
+
+  <!-- TKT-0171: load marked + DOMPurify as ESM from esm.sh and expose them as
+       window globals, mirroring the React-via-esm.sh pattern above. format.js
+       is a plain (non-module) script, so it reaches these via window.marked /
+       window.DOMPurify. marked is configured lazily on the first renderMarkdown
+       call (see format.js) with the mermaid + admonition renderer overrides. -->
+  <script type="module">
+    import { marked } from 'marked';
+    import DOMPurify from 'dompurify';
+    window.marked = marked;
+    window.DOMPurify = DOMPurify;
+    window.__markdownReady = true;
+    window.dispatchEvent(new CustomEvent('markdown-ready'));
+  </script>
+
+  <!-- TKT-0171: lazy-load mermaid only when a .mermaid block is rendered.
+       Exposed as window.runMermaid(nodes) because the babel-transformed
+       TdAnnotate component can't safely use a native dynamic import() —
+       babel-standalone rewrites it — so the dynamic import lives here in a
+       real module script. mermaid.run() renders the diagrams in place and
+       marks each node data-processed so re-runs skip already-rendered ones. -->
+  <script type="module">
+    let _mermaid = null;
+    window.runMermaid = async function (nodes) {
+      if (!nodes || !nodes.length) return;
+      try {
+        if (!_mermaid) {
+          _mermaid = (await import('https://esm.sh/mermaid@11')).default;
+          _mermaid.initialize({ startOnLoad: false });
+        }
+        await _mermaid.run({ nodes, suppressErrors: true });
+      } catch (err) {
+        console.error('mermaid lazy-load/render failed', err);
+      }
+    };
   </script>
 
   <!-- TKT-0103: load @dnd-kit/core as a real ES module and re-export onto

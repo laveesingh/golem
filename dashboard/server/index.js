@@ -18,6 +18,12 @@ import { readChannels } from './channels.js';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const WEB_ROOT = path.resolve(__dirname, '..', 'web');
+// The tracker genre templates live OUTSIDE dashboard/ (in the plugin source
+// tree at plugin/skills/tracker/templates/). Resolve the repo root two levels
+// up from this file (dashboard/server/index.js → dashboard/ → repo root) and
+// point at that dir. Used by GET /api/templates.
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const TEMPLATES_DIR = path.join(REPO_ROOT, 'plugin', 'skills', 'tracker', 'templates');
 
 // Legacy markdown tracker columns (kept in /api/meta for API stability; the UI
 // no longer renders the markdown board).
@@ -475,7 +481,7 @@ async function main() {
   // POST /api/tickets/:id/comments — add a comment. Broadcasts both the comment
   // delta AND a ticket-updated (addComment bumps the ticket's updated_at).
   // POST /api/tickets/:id/comments — add a comment (plain or inline anchored).
-  // Body: { author, body, quote?, prefix?, suffix?, section?, section_id?, tag?, status?, parent_id? }
+  // Body: { author, body, quote?, prefix?, suffix?, section?, section_id?, tag?, status?, parent_id?, block_id? }
   fastify.post('/api/tickets/:id/comments', async (req, reply) => {
     const id = req.params.id;
     const b = req.body ?? {};
@@ -491,6 +497,7 @@ async function main() {
         tag: b.tag,
         status: b.status,
         parent_id: b.parent_id,
+        block_id: b.block_id,
       });
       broadcastWS({ type: 'ticket-comment', ticket_id: id, comment });
       const ticket = tracker.getTicket(id);
@@ -512,6 +519,7 @@ async function main() {
         body: b.body,
         tag: b.tag,
         status: b.status,
+        block_id: b.block_id,
       });
       broadcastWS({ type: 'ticket-comment-updated', ticket_id: id, comment });
       const ticket = tracker.getTicket(id);
@@ -700,6 +708,43 @@ async function main() {
         started_at: s.started_at ?? null,
         updated_at: s.updated_at ?? null,
       });
+    }
+    return out;
+  });
+
+  // GET /api/templates — genre scaffolds (feature/bug/design-doc/prd/brainstorm/
+  // decision) shipped as Markdown bodies. Reads the templates dir at
+  // plugin/skills/tracker/templates/ (outside dashboard/), returns one entry per
+  // .md file: { id, title, body }. id = filename stem; title = first `# ` heading
+  // in the file, or the stem if none. body = the raw markdown, verbatim. Used by
+  // the create-ticket composer's template picker.
+  fastify.get('/api/templates', async () => {
+    let files = [];
+    try {
+      files = fs.readdirSync(TEMPLATES_DIR)
+        .filter((f) => f.endsWith('.md'))
+        .sort();
+    } catch (err) {
+      fastify.log.error({ err }, '[templates] could not read templates dir %s', TEMPLATES_DIR);
+      return [];
+    }
+    const out = [];
+    for (const file of files) {
+      const id = file.slice(0, -3); // strip .md
+      let body = '';
+      try {
+        body = fs.readFileSync(path.join(TEMPLATES_DIR, file), 'utf8');
+      } catch (err) {
+        fastify.log.warn({ err }, '[templates] could not read %s', file);
+        continue;
+      }
+      // First `# ` heading wins; fall back to the id.
+      let title = id;
+      for (const line of body.split('\n')) {
+        const m = /^#\s+(.+?)\s*$/.exec(line);
+        if (m) { title = m[1]; break; }
+      }
+      out.push({ id, title, body });
     }
     return out;
   });

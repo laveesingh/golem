@@ -29,7 +29,7 @@ log('drawer info:', JSON.stringify(drawerInfo, null, 2));
 
 // Check the body content - is it rendered as HTML or escaped text?
 const bodyInspect = await page.evaluate(() => {
-  const body = document.querySelector('.td-html-body');
+  const body = document.querySelector('.td-md');
   if (!body) return null;
   return {
     tagName: body.tagName,
@@ -45,8 +45,8 @@ log('body content:', JSON.stringify(bodyInspect, null, 2));
 
 // Test that a long body overflow doesn't break layout
 const longTest = await page.evaluate(() => {
-  const pre = document.querySelector('.td-html-body pre');
-  const table = document.querySelector('.td-html-body table');
+  const pre = document.querySelector('.td-md pre');
+  const table = document.querySelector('.td-md table');
   return {
     pre: pre ? { sw: pre.scrollWidth, cw: pre.clientWidth, hasScroll: pre.scrollWidth > pre.clientWidth } : null,
     table: table ? { sw: table.scrollWidth, cw: table.clientWidth, hasScroll: table.scrollWidth > table.clientWidth } : null,
@@ -58,7 +58,7 @@ log('long content overflow:', JSON.stringify(longTest, null, 2));
 await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
 await wait(300);
 const selDownTest = await page.evaluate(() => {
-  const root = document.querySelector('.td-html-body');
+  const root = document.querySelector('.td-md');
   const allText = Array.from(root.querySelectorAll('h2, h3, p, li')).filter((n) => n.textContent.length > 30);
   const target = allText[Math.floor(allText.length / 2)];
   if (!target) return 'no target';

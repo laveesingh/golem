@@ -427,7 +427,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'ticket_get',
       description:
-        'Golem tracker — fetch one ticket by id, including its HTML body, anchored comments, links, and event history. Read this before starting work on a dispatched/assigned ticket.',
+        'Golem tracker — fetch one ticket by id, including its Markdown body, anchored comments, links, and event history. Read this before starting work on a dispatched/assigned ticket.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -439,12 +439,12 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'ticket_create',
       description:
-        'Golem tracker — create a ticket (the unit of work; replaces a PLAN.md line item). The body should be HTML using the html-report house style (see the html-report skill for the full template). Plain text and markdown are also accepted and rendered — agents should default to HTML, humans can use markdown. Defaults to your current project and records you as created_by. Use parent_id to decompose larger work; stream_id to group. For a blocking human question, pass kind:"question" and assignee:"human", then pause.',
+        'Golem tracker — create a ticket (the unit of work; replaces a PLAN.md line item). The body is Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Pick the genre template matching the kind — work-item→feature, fix→bug, spec→design-doc, decision→decision (prd/brainstorm selectable) — from plugin/skills/tracker/templates/ or GET /api/templates, and fill it in. Defaults to your current project and records you as created_by. Use parent_id to decompose larger work; stream_id to group. For a blocking human question, pass kind:"question" and assignee:"human", then pause.',
       inputSchema: {
         type: 'object',
         properties: {
           title: { type: 'string', description: 'Short imperative title.' },
-          body: { type: 'string', description: 'Full description / acceptance criteria. Agents: send HTML using the html-report house style. Plain text and markdown are also accepted and rendered.' },
+          body: { type: 'string', description: 'Full description / acceptance criteria. Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Pick the template matching the kind: work-item→feature, fix→bug, spec→design-doc, decision→decision; prd/brainstorm selectable (plugin/skills/tracker/templates/ or GET /api/templates).' },
           kind: { type: 'string', description: 'work-item|decision|spec|question|fix (default work-item).' },
           priority: { type: 'string', description: 'Optional priority label.' },
           state: { type: 'string', description: 'todo|in_progress|blocked|review|done (default todo).' },
@@ -459,14 +459,14 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'ticket_update',
       description:
-        'Golem tracker — patch a ticket. The common case is a STATE transition (todo→in_progress→review→done, or →blocked). The body field is HTML. Records you as the actor. Verify work mechanically before moving to review/done (see golem:verify-done).',
+        'Golem tracker — patch a ticket. The common case is a STATE transition (todo→in_progress→review→done, or →blocked). The body field is Markdown (+ fenced ```mermaid). Records you as the actor. Verify work mechanically before moving to review/done (see golem:verify-done).',
       inputSchema: {
         type: 'object',
         properties: {
           id: { type: 'string', description: 'Ticket id.' },
           state: { type: 'string', description: 'todo|in_progress|blocked|review|done|archived' },
           title: { type: 'string' },
-          body: { type: 'string', description: 'HTML body replacement.' },
+          body: { type: 'string', description: 'Markdown body replacement (+ fenced ```mermaid; GitHub-style admonitions).' },
           kind: { type: 'string', description: 'work-item|decision|spec|question|fix' },
           priority: { type: 'string' },
           labels: { type: 'array', items: { type: 'string' }, description: 'Full replacement label set.' },
@@ -485,7 +485,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: 'object',
         properties: {
           id: { type: 'string', description: 'Ticket id.' },
-          body: { type: 'string', description: 'Comment text.' },
+          body: { type: 'string', description: 'Markdown comment text (fenced ```mermaid ok for diagrams).' },
           quote: { type: 'string', description: 'Optional: exact selected text being commented on.' },
           prefix: { type: 'string', description: 'Optional: text immediately before quote, for anchoring.' },
           suffix: { type: 'string', description: 'Optional: text immediately after quote, for anchoring.' },

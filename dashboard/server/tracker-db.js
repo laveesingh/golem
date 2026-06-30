@@ -16,8 +16,10 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import { marked } from 'marked';
+import TurndownService from 'turndown';
+import { gfm as turndownGfm } from 'turndown-plugin-gfm';
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const KINDS = new Set(['work-item', 'decision', 'spec', 'question', 'fix']);
 const STATES = new Set(['todo', 'in_progress', 'blocked', 'review', 'done', 'archived']);
@@ -98,6 +100,18 @@ function toHtmlBody(raw) {
     .split(/\n\n+/)
     .map((p) => `<p>${p.trim().replace(/\n/g, '<br/>')}</p>`)
     .join('');
+}
+
+/**
+ * Normalize a ticket/comment body for verbatim Markdown storage (TKT-0170, v5).
+ * Trim and collapse 3+ consecutive blank lines to 2. No HTML conversion and no
+ * markdown->html — the body is stored as Markdown and rendered client-side (see
+ * dashboard/web/src/format.js renderMarkdown). Legacy HTML-first bodies were
+ * converted to Markdown once by the v4->v5 backfill migration in migrate().
+ */
+function toMarkdownBody(raw) {
+  if (raw == null) return '';
+  return String(raw).trim().replace(/\n{3,}/g, '\n\n');
 }
 
 // Hydrate a raw ticket row into a plain object with labels parsed to an array.
@@ -274,12 +288,45 @@ WHERE state_changed_at IS NULL`).run();
     db.prepare(`UPDATE tickets SET archived_at = state_changed_at
       WHERE state = 'archived' AND archived_at IS NULL`).run();
 
+    // Schema migration v4 -> v5 (TKT-0170): Markdown-canonical bodies + a
+    // block_id column for block-anchored comments. Convert every HTML-first
+    // ticket/comment body (legacy "house-style" report) to Markdown via
+    // turndown, keeping svg/figure/figcaption as raw-HTML blocks the client
+    // renderer (format.js renderMarkdown) handles. <style>/<script> blocks are
+    // stripped first so their text doesn't leak as stray paragraphs. Gated on
+    // schema_version < 5 so it runs once and is idempotent across restarts.
+    if (schemaVersion && Number(schemaVersion) < 5) {
+      const commentCols = db.prepare("PRAGMA table_info(comments)").all().map((c) => c.name);
+      if (!commentCols.includes('block_id')) {
+        db.exec('ALTER TABLE comments ADD COLUMN block_id TEXT');
+      }
+      const td = new TurndownService();
+      td.use(turndownGfm);
+      td.keep(['svg', 'figure', 'figcaption']);
+      const toMd = (html) => {
+        const s = String(html ?? '').trim();
+        if (!s || !/^\s*<[a-zA-Z][^>]*>/.test(s)) return html; // not HTML-first; leave as-is
+        const stripped = s.replace(/<(style|script)[\s\S]*?<\/\1>/gi, '').trim();
+        return td.turndown(stripped).trim();
+      };
+      const updateTicketBody = db.prepare('UPDATE tickets SET body = ?, updated_at = ? WHERE id = ?');
+      for (const { id, body } of db.prepare('SELECT id, body FROM tickets').all()) {
+        const md = toMd(body);
+        if (md !== body) updateTicketBody.run(md, now(), id);
+      }
+      const updateCommentBody = db.prepare('UPDATE comments SET body = ?, updated_at = ? WHERE id = ?');
+      for (const { id, body } of db.prepare('SELECT id, body FROM comments').all()) {
+        const md = toMd(body);
+        if (md !== body) updateCommentBody.run(md, now(), id);
+      }
+    }
+
     // Indexes that depend on lifecycle columns. Idempotent: no-op on fresh
     // DBs (CREATE TABLE above already created them), first-time-create on
     // existing DBs (where the ALTER TABLE above just added the columns).
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tickets_state_rank ON tickets(state, rank)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tickets_done_at ON tickets(done_at) WHERE done_at IS NOT NULL`);
-    // Update schema_version to v4.
+    // Update schema_version to the current version (v5).
     db.prepare('UPDATE meta SET value = ? WHERE key = ?').run(String(SCHEMA_VERSION), 'schema_version');
 }
 
@@ -302,10 +349,10 @@ WHERE state_changed_at IS NULL`).run();
       insertComment: db.prepare(`
         INSERT INTO comments
           (id, ticket_id, author, body, quote, prefix, suffix, section, section_id,
-           tag, status, parent_id, created_at, updated_at)
+           tag, status, parent_id, block_id, created_at, updated_at)
         VALUES
           (@id, @ticket_id, @author, @body, @quote, @prefix, @suffix, @section, @section_id,
-           @tag, @status, @parent_id, @created_at, @updated_at)
+           @tag, @status, @parent_id, @block_id, @created_at, @updated_at)
       `),
       touchTicket: db.prepare('UPDATE tickets SET updated_at = ? WHERE id = ?'),
       insertStream: db.prepare(`
@@ -410,7 +457,7 @@ WHERE state_changed_at IS NULL`).run();
       if (!STATES.has(state)) throw new Error(`createTicket: invalid state '${state}'`);
 
       const ts = now();
-      const htmlBody = toHtmlBody(body);
+      const bodyMd = toMarkdownBody(body);
       const txn = db.transaction(() => {
         const { id, seq } = allocateTicketId();
         const row = {
@@ -419,7 +466,7 @@ WHERE state_changed_at IS NULL`).run();
           project_id,
           kind,
           title,
-          body: htmlBody,
+          body: bodyMd,
           state,
           priority,
           labels: serializeLabels(labels),
@@ -525,7 +572,7 @@ WHERE state_changed_at IS NULL`).run();
         updates.labels = serializeLabels(updates.labels);
       }
       if ('body' in updates) {
-        updates.body = toHtmlBody(updates.body);
+        updates.body = toMarkdownBody(updates.body);
       }
 
       const ts = now();
@@ -702,7 +749,7 @@ WHERE state_changed_at IS NULL`).run();
       if (!existing) throw new Error(`addComment: ticket '${ticket_id}' not found`);
       const {
         author, body, quote, prefix, suffix, section, section_id,
-        tag = 'note', status = 'open', parent_id,
+        tag = 'note', status = 'open', parent_id, block_id,
       } = input;
       if (!author) throw new Error('addComment: author is required');
       if (body == null) throw new Error('addComment: body is required');
@@ -710,7 +757,7 @@ WHERE state_changed_at IS NULL`).run();
       const ts = now();
       const row = {
         id: crypto.randomUUID(), ticket_id, author,
-        body: toHtmlBody(body),
+        body: toMarkdownBody(body),
         quote: quote ?? null,
         prefix: prefix ?? null,
         suffix: suffix ?? null,
@@ -719,6 +766,7 @@ WHERE state_changed_at IS NULL`).run();
         tag,
         status,
         parent_id: parent_id ?? null,
+        block_id: block_id ?? null,
         created_at: ts,
         updated_at: ts,
       };
@@ -742,12 +790,12 @@ WHERE state_changed_at IS NULL`).run();
       if (!existingTicket) throw new Error(`updateComment: ticket '${ticket_id}' not found`);
       const existing = db.prepare('SELECT * FROM comments WHERE id = ? AND ticket_id = ?').get(comment_id, ticket_id);
       if (!existing) throw new Error(`updateComment: comment '${comment_id}' not found`);
-      const ALLOWED = ['body', 'tag', 'status'];
+      const ALLOWED = ['body', 'tag', 'status', 'block_id'];
       const updates = {};
       for (const key of ALLOWED) {
         if (Object.prototype.hasOwnProperty.call(patch, key)) updates[key] = patch[key];
       }
-      if ('body' in updates) updates.body = toHtmlBody(updates.body);
+      if ('body' in updates) updates.body = toMarkdownBody(updates.body);
       if ('tag' in updates && updates.tag && !COMMENT_TAGS.has(updates.tag)) {
         throw new Error(`updateComment: invalid tag '${updates.tag}'`);
       }

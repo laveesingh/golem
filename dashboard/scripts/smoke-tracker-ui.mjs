@@ -18,6 +18,23 @@ async function main() {
   }
   await page.bringToFront();
   await page.setViewportSize({ width: 1440, height: 900 });
+
+  // TKT-0176: stale-cache trap. A long-running CDP Chrome can hold a
+  // babel-transformed .jsx from before a JSX change (the dispatcher hit this:
+  // a pre-TKT-0172 td-annotate.jsx made block-hover silently fail). Disable the
+  // browser cache over CDP so every subsequent navigation fetches fresh JS,
+  // then force a hard reload of the dashboard (ignoreCache).
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Network.enable');
+    await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await cdp.send('Page.enable');
+    await cdp.send('Page.reload', { ignoreCache: true });
+    log('cache disabled + hard reload via CDP');
+  } catch (e) {
+    log('CDP cache-disable failed (continuing):', e.message);
+  }
+
   await page.waitForSelector('#root', { timeout: 15000 });
   await wait(2500);
 
@@ -59,7 +76,12 @@ async function main() {
     title: document.title,
     hasStore: typeof window.Store,
     hasAPI: typeof window.SubstrateAPI,
-    hasMarked: !!window.marked,
+    // TKT-0171/0176: marked is now shipped to the browser (esm.sh import map)
+    // and used by window.SubstrateFmt.renderMarkdown. The smoke previously
+    // flagged window.marked as wrong/absent — that check flips to expect-present.
+    hasMarked: typeof window.marked === 'function',
+    hasDOMPurify: typeof window.DOMPurify?.sanitize === 'function',
+    hasRenderMarkdown: typeof window.SubstrateFmt?.renderMarkdown === 'function',
     drawer: !!document.querySelector('.drawer-ticket'),
     bodyScrollW: document.body.scrollWidth,
     bodyClientW: document.body.clientWidth,
@@ -68,6 +90,10 @@ async function main() {
   log('initial:', initial);
   issues.push(`title: ${initial.title}`);
   issues.push(`marked-loaded (UI): ${initial.hasMarked}`);
+  // TKT-0176: marked presence is now required (flipped from "wrong" to "expected").
+  if (!initial.hasMarked) issues.push('ERROR: window.marked missing (expected present — TKT-0171)');
+  if (!initial.hasDOMPurify) issues.push('ERROR: window.DOMPurify.sanitize missing (expected present — TKT-0171)');
+  if (!initial.hasRenderMarkdown) issues.push('ERROR: window.SubstrateFmt.renderMarkdown missing (expected present — TKT-0171)');
 
   // Click "Tracker" tab if present
   const trackerTab = await page.locator('text=Tracker').first();
@@ -94,9 +120,10 @@ async function main() {
     }
   }
 
-  // If still not open, dispatch the custom event directly (the drawer listens for open-ticket-drawer)
+  // If still not open, open a ticket via the Router (TKT-0146 made drawers URL
+  // overlays; the old `open-ticket-drawer` custom event is no longer listened to).
   if (!opened) {
-    log('dispatching open-ticket-drawer event');
+    log('opening ticket via window.Router.openTicket');
     const ticketId = await page.evaluate(async () => {
       try {
         const res = await fetch('/api/tickets?project=golem-1eba80&includeArchived=true');
@@ -106,7 +133,7 @@ async function main() {
     });
     log('first ticket id:', ticketId);
     if (ticketId) {
-      await page.evaluate((id) => window.dispatchEvent(new CustomEvent('open-ticket-drawer', { detail: { id } })), ticketId);
+      await page.evaluate((id) => window.Router?.openTicket(id), ticketId);
       opened = true;
     }
   }
@@ -131,7 +158,7 @@ async function main() {
   // Inspect body area
   const bodyArea = await page.evaluate(() => {
     const wrap = document.querySelector('.td-annotate-wrap');
-    const body = document.querySelector('.td-html-body');
+    const body = document.querySelector('.td-md');
     const rail = document.getElementById('anno-rail');
     const fab = document.getElementById('anno-fab');
     const pill = document.getElementById('anno-pill');
@@ -163,20 +190,27 @@ async function main() {
       railClass: document.getElementById('anno-rail')?.className,
       drawHScroll: (() => { const d = document.querySelector('.drawer-ticket'); return d ? d.scrollWidth > d.clientWidth : null; })(),
       drawW: (() => { const d = document.querySelector('.drawer-ticket'); return d ? d.getBoundingClientRect().width : null; })(),
-      bodyHScroll: (() => { const b = document.querySelector('.td-html-body'); return b ? b.scrollWidth > b.clientWidth : null; })(),
+      bodyHScroll: (() => { const b = document.querySelector('.td-md'); return b ? b.scrollWidth > b.clientWidth : null; })(),
     }));
     log('rail-toggled:', rail2);
     issues.push(`with-rail: drawer-h-scroll=${rail2.drawHScroll}, body-h-scroll=${rail2.bodyHScroll}`);
 
     // Try selecting text and triggering the pill
     await page.evaluate(() => {
-      const root = document.querySelector('.td-html-body');
+      const root = document.querySelector('.td-md');
       if (!root) return false;
       const target = root.querySelector('p, li, h2, h3');
-      if (!target || !target.firstChild) return false;
+      if (!target) return false;
+      // TKT-0176: firstChild may be an element (e.g. rendered heading), not a
+      // text node. Walk to the first real text node before building the range,
+      // otherwise setEnd throws IndexSizeError ("no child at offset N").
+      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null);
+      let tn = walker.nextNode();
+      if (!tn || !tn.textContent.trim()) return false;
+      const len = Math.min(25, tn.textContent.length);
       const range = document.createRange();
-      range.setStart(target.firstChild, 0);
-      range.setEnd(target.firstChild, Math.min(25, target.firstChild.textContent.length));
+      range.setStart(tn, 0);
+      range.setEnd(tn, len);
       const sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
@@ -212,7 +246,7 @@ async function main() {
       const afterComment = await page.evaluate(() => ({
         cardCount: document.querySelectorAll('.anno-card').length,
         pillStillThere: document.getElementById('anno-pill')?.style.display,
-        bodyHScroll: (() => { const b = document.querySelector('.td-html-body'); return b ? b.scrollWidth > b.clientWidth : null; })(),
+        bodyHScroll: (() => { const b = document.querySelector('.td-md'); return b ? b.scrollWidth > b.clientWidth : null; })(),
       }));
       log('after-comment:', afterComment);
       issues.push(`cards-after-comment: ${afterComment.cardCount}`);

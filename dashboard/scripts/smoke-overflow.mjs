@@ -31,9 +31,9 @@ const wide = await page.evaluate(() => {
 log('elements wider than wrap.clientWidth (1099):');
 for (const w of wide) log(' -', JSON.stringify(w));
 
-// Walk top-level direct children of .td-html-body
+// Walk top-level direct children of .td-md
 const topChildren = await page.evaluate(() => {
-  const body = document.querySelector('.td-html-body');
+  const body = document.querySelector('.td-md');
   if (!body) return [];
   return Array.from(body.children).map((c) => {
     const r = c.getBoundingClientRect();
@@ -46,7 +46,7 @@ const topChildren = await page.evaluate(() => {
 log('top-level body children:', JSON.stringify(topChildren, null, 2));
 
 // Check overall body structure
-const bodyHTML = await page.evaluate(() => document.querySelector('.td-html-body')?.outerHTML.substring(0, 2000));
+const bodyHTML = await page.evaluate(() => document.querySelector('.td-md')?.outerHTML.substring(0, 2000));
 log('body html snippet:', bodyHTML);
 
 await browser.close();
