@@ -2324,6 +2324,21 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 .td-md > *:first-child { margin-top: 0; }
 .td-md > *:last-child { margin-bottom: 0; }
 .td-md ::selection { background: var(--accent-soft); color: var(--text-0); }
+
+/* TKT-0192: block-hover decoration. TdAnnotate adds the .block-hover class
+   to the currently-hovered top-level block (with a 1s appear / 1s hide
+   delay shared with the "+" affordance). The decoration is outline-only
+   so the block's existing text + mark + highlight colors stay untouched.
+   The 3px offset is the visual padding — it pushes the ring outside the
+   content box without ever shifting the text. 2px ring at 50% accent for
+   a clean, light look. Works identically in drawer and page modes (the
+   class is applied to the block element directly, not portal'd). */
+.td-md [data-block-id].block-hover {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 3px;
+  border-radius: 3px;
+  transition: outline-color 100ms ease-out;
+}
 /* Headings — compact hierarchy, distinct sizes. */
 .td-md h1, .td-md h2, .td-md h3, .td-md h4, .td-md h5, .td-md h6 {
   color: var(--text-0); font-weight: 600; line-height: 1.3; letter-spacing: -0.01em;

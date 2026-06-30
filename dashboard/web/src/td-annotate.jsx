@@ -285,6 +285,13 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onUpdate,
   // Map<block_id, open-count> kept fresh via an effect so the hover effect
   // (which only re-binds on html change) always reads current counts.
   const hoverBlockRef = React.useRef(null);
+  // TKT-0192: the block element currently carrying the .block-hover highlight.
+  // Tracked separately from hoverBlockRef (which is the anchor metadata) so
+  // we can swap/clear the decoration as the cursor moves between blocks.
+  // The class is styled in extra.css (`.td-md [data-block-id].block-hover`)
+  // with an accent-color outline at 50% opacity and 3px offset — the same
+  // in both the drawer variant and the standalone /tickets/<id> page.
+  const hoverBlockElRef = React.useRef(null);
   const showPlusTimerRef = React.useRef(null);
   const hidePlusTimerRef = React.useRef(null);
   const blockCountsRef = React.useRef(new Map());
@@ -373,6 +380,41 @@ React.useEffect(() => {
     // fired the block's leave).
     function plusOn() { return !!document.getElementById('anno-block-plus')?.matches(':hover'); }
 
+    // TKT-0192: paint the block-hover decoration on `block`, clearing it
+    // from whichever block held it before. The class is removed by the
+    // leave timer (same 1s grace window as the "+" itself), so the
+    // highlight survives the cursor's trip from the block onto the "+".
+    function setHoverBlock(block) {
+      const prev = hoverBlockElRef.current;
+      if (prev && prev !== block) prev.classList.remove('block-hover');
+      if (block) block.classList.add('block-hover');
+      hoverBlockElRef.current = block || null;
+    }
+    function clearHoverBlock() {
+      const prev = hoverBlockElRef.current;
+      if (prev) prev.classList.remove('block-hover');
+      hoverBlockElRef.current = null;
+    }
+
+    // TKT-0192: position the "+" so its right edge sits BLOCK_PLUS_GAP px to
+    // the LEFT of the block, leaving a clear margin between the button and the
+    // block's left boundary. Width is read via offsetWidth — 0 while
+    // display:none, so we re-place inside the show timeout (after display:flex)
+    // where the real width is available. Left is clamped to ≥2px so the button
+    // never escapes the drawer's left edge.
+    const BLOCK_PLUS_GAP = 8;
+    function placePlus(block) {
+      const plus = document.getElementById('anno-block-plus');
+      if (!plus) return;
+      const rect = block.getBoundingClientRect();
+      const drawerEl = document.querySelector(containerSelector);
+      const drawerRect = drawerEl ? drawerEl.getBoundingClientRect() : { left: 0, top: 0 };
+      plus.style.top = `${rect.top - drawerRect.top + rect.height / 2}px`;
+      const w = plus.offsetWidth || 26;
+      plus.style.left = `${Math.max(2, rect.left - drawerRect.left - BLOCK_PLUS_GAP - w)}px`;
+      plus.style.right = 'auto';
+    }
+
     function enter(block) {
       const t = blockText(block);
       if (!t) return; // textless block (hr, empty) — not commentable
@@ -381,11 +423,6 @@ React.useEffect(() => {
       clearTimeout(showPlusTimerRef.current);
       const plus = document.getElementById('anno-block-plus');
       if (!plus) return;
-      const rect = block.getBoundingClientRect();
-      const drawerEl = document.querySelector(containerSelector);
-      const drawerRect = drawerEl ? drawerEl.getBoundingClientRect() : { left: 0, top: 0 };
-      const left = `${Math.max(2, rect.left - drawerRect.left - 26)}px`;
-      const top = `${rect.top - drawerRect.top + rect.height / 2}px`;
       const cnt = blockCountsRef.current.get(block.dataset.blockId) || 0;
       const h = nearestPrecedingHeading(block);
       const hb = {
@@ -395,10 +432,12 @@ React.useEffect(() => {
         sectionTitle: h ? h.textContent.trim().slice(0, 80) : '',
       };
       hoverBlockRef.current = hb;
+      setHoverBlock(block);
       // Position immediately so the "+" lands on the right block when it
-      // eventually appears; only the visibility is delayed.
-      plus.style.left = left;
-      plus.style.top = top;
+      // eventually appears; only the visibility is delayed. Width is an
+      // estimate here (display:none → offsetWidth 0); re-placed with the
+      // real width inside the show timeout below.
+      placePlus(block);
       showPlusTimerRef.current = setTimeout(() => {
         // Bail if the cursor moved off the block AND off the "+" within 1s.
         if (!onBlock && !plusOn()) {
@@ -408,6 +447,8 @@ React.useEffect(() => {
         const p = document.getElementById('anno-block-plus');
         if (!p) return;
         p.style.display = 'flex';
+        // Re-place now that offsetWidth is real, so the gap is exact.
+        placePlus(block);
         const badge = p.querySelector('.anno-block-count');
         if (badge) { badge.textContent = cnt ? String(cnt) : ''; badge.style.display = cnt ? 'inline-flex' : 'none'; }
       }, 1000);
@@ -424,6 +465,7 @@ React.useEffect(() => {
         if (onBlock || plusOn()) return;
         if (plus) plus.style.display = 'none';
         hoverBlockRef.current = null;
+        clearHoverBlock();
       }, 1000);
     }
     const ons = [];
@@ -435,8 +477,13 @@ React.useEffect(() => {
       ons.push({ b, e, l });
     });
     function onScroll() {
+      // Cancel a pending show so the "+" never appears at a stale position
+      // after the body scrolled under it; hide it and drop the highlight.
+      clearTimeout(showPlusTimerRef.current);
       const p = document.getElementById('anno-block-plus');
       if (p && p.style.display === 'flex') p.style.display = 'none';
+      clearHoverBlock();
+      hoverBlockRef.current = null;
     }
     document.addEventListener('scroll', onScroll, { passive: true });
     return () => {
@@ -444,6 +491,10 @@ React.useEffect(() => {
       document.removeEventListener('scroll', onScroll);
       clearTimeout(showPlusTimerRef.current);
       clearTimeout(hidePlusTimerRef.current);
+      // Detach the decoration from whatever block held it so a re-render
+      // (new block elements) never leaves a stale .block-hover on a node
+      // that's about to be replaced.
+      clearHoverBlock();
     };
   }, [html, containerSelector]);
 
