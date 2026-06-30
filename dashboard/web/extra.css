@@ -1771,6 +1771,29 @@
 .ct-row { display: flex; gap: 12px; }
 .ct-row .ct-field { flex: 1; min-width: 0; }
 .ct-field { display: flex; flex-direction: column; gap: 5px; }
+
+/* TKT-0189: the body field is a "flex-grow" item — it fills all the
+   remaining vertical space inside .ct-scroll so the fields below it
+   (Stream / Assignee / Dispatch) sit at the bottom of the drawer's
+   visible area instead of being pushed off by the body's small default
+   height. The textarea inside also grows to fill the field. min-height:0
+   is required so the textarea can shrink/scroll inside the field rather
+   than forcing the field to expand. */
+.ct-field--grow {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.ct-field--grow .orch-modal-textarea {
+  /* Fill the field's box. The `height: 100%` lets an inline style.height
+     from the user's resize-handle drag take effect — flex would override
+     the inline height, so we don't use flex on the textarea itself. */
+  height: 100%;
+  /* TKT-0189: the body now auto-fills the available space, so the user no
+     longer needs to drag the resize handle. Disable the handle to avoid
+     confusion (it would only shrink the textarea and leave an awkward
+     empty gap below it inside the still-grown field). */
+  resize: none;
+}
 .ct-label {
   font-size: 11px;
   color: var(--text-2);
