@@ -534,7 +534,7 @@ const discard = () => {
             </select>
           </div>
 
-          <div className="ct-field">
+          <div className="ct-field ct-field--grow">
             <label className="ct-label">Body <span className="ct-label-hint">Markdown · paste or drop images</span></label>
             <textarea ref={bodyRef} className="orch-modal-textarea" rows={5} value={body}
               placeholder="Details, context, acceptance… (Markdown is rendered; empty body fills with the selected template; manually edited bodies are preserved through template changes)"
