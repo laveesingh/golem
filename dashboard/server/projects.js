@@ -187,6 +187,69 @@ async function resolveGatesDir(projectPath, contractId) {
   };
 }
 
+// TKT-0194: parse a gate file's YAML frontmatter and body. Gates follow the
+// format described in plugin/skills/gates/SKILL.md: frontmatter with
+// gate_id, kind (approval|input), status (awaiting|approved|denied|cancelled),
+// created_at, phase_just_completed, next_phase, target_file, required_keys —
+// followed by a markdown body describing what was completed and what approval
+// unlocks. Returns null if the file is missing or unreadable; returns a partial
+// object on parse errors so a malformed gate still surfaces in the UI (better
+// to show it than to silently drop it).
+async function readGateFile(absPath) {
+  let raw;
+  try { raw = await fs.readFile(absPath, 'utf8'); } catch { return null; }
+  if (!raw.startsWith('---')) return { gateId: path.basename(absPath, '.md'), path: absPath, body: raw, frontmatter: {}, status: 'unknown' };
+  const end = raw.indexOf('\n---', 3);
+  if (end === -1) return { gateId: path.basename(absPath, '.md'), path: absPath, body: raw, frontmatter: {}, status: 'unknown' };
+  const yaml = raw.slice(3, end).trim();
+  const body = raw.slice(end + 4).trim();
+  const fm = {};
+  for (const line of yaml.split('\n')) {
+    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+    if (!m) continue;
+    const k = m[1];
+    let v = m[2].trim();
+    if (v === '') fm[k] = '';
+    else if (/^\d{4}-\d{2}-\d{2}T/.test(v)) fm[k] = v;
+    else if (v.startsWith('[') && v.endsWith(']')) fm[k] = v.slice(1, -1).split(',').map((s) => s.trim()).filter(Boolean);
+    else fm[k] = v;
+  }
+  return {
+    gateId: fm.gate_id || path.basename(absPath, '.md'),
+    path: absPath,
+    body,
+    frontmatter: fm,
+    kind: fm.kind || 'approval',
+    status: fm.status || 'awaiting',
+    createdAt: fm.created_at || null,
+    phaseJustCompleted: fm.phase_just_completed || null,
+    nextPhase: fm.next_phase || null,
+  };
+}
+
+// TKT-0194: read all gate files in a project's gatesDir. Returns a flat
+// list of gate objects (empty if the dir doesn't exist or has no gates).
+async function readGatesForProject(gatesDir) {
+  if (!gatesDir) return [];
+  let entries;
+  try { entries = await fs.readdir(gatesDir, { withFileTypes: true }); }
+  catch { return []; }
+  const out = [];
+  for (const e of entries) {
+    if (!e.isFile() || !e.name.endsWith('.md')) continue;
+    const abs = path.join(gatesDir, e.name);
+    const gate = await readGateFile(abs);
+    if (gate) out.push(gate);
+  }
+  // Awaiting gates first (the action surface), then by createdAt desc.
+  out.sort((a, b) => {
+    if (a.status === 'awaiting' && b.status !== 'awaiting') return -1;
+    if (b.status === 'awaiting' && a.status !== 'awaiting') return 1;
+    return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  });
+  return out;
+}
+
 async function readClaudeMdTitle(projectDir) {
   try {
     const md = await fs.readFile(path.join(projectDir, 'CLAUDE.md'), 'utf8');
@@ -281,6 +344,9 @@ async function discoverFromRoot(root, kind, { requireSubstrate, tracker = null, 
       trackerDir: path.join(workspaceDir, 'tracker'),
       gatesDir: gd.gatesDir,
       gatesCentral: gd.gatesCentral,
+      // TKT-0194: surface the actual gate files (frontmatter + body) so
+      // the project view can show awaiting gates and offer verdict actions.
+      gates: await readGatesForProject(gd.gatesDir),
       agentNotesDir: path.join(workspaceDir, 'docs', 'agent-notes'),
       hasJournal: hasJournal || jp.journalCentral,
     });
@@ -379,6 +445,8 @@ async function discoverFromRegistry({ alreadyDiscoveredPaths, tracker = null, na
       trackerDir: path.join(workspaceDir, 'tracker'),
       gatesDir: gd.gatesDir,
       gatesCentral: gd.gatesCentral,
+      // TKT-0194: see note in the auto-discover path above.
+      gates: await readGatesForProject(gd.gatesDir),
       agentNotesDir: path.join(workspaceDir, 'docs', 'agent-notes'),
       hasJournal: jp.journalCentral || (await dirExists(jp.journalDir)),
     });
@@ -389,6 +457,61 @@ async function discoverFromRegistry({ alreadyDiscoveredPaths, tracker = null, na
 // Returns projects (from auto-scan AND the v3 registry) and ideas with a
 // `kind` field on each entry. The synthetic kind='root' CEO workspace is no
 // longer surfaced in v4.
+// TKT-0194: apply a verdict to a gate file. Reads the file, updates the
+// `status:` line in the frontmatter, appends `acted_at: <ISO>` if not
+// present, and writes back. Atomic write (write to .tmp + rename) so a
+// concurrent read sees either the old or new content, never a torn
+// partial. The dashboard projects-list reads `gates` from the
+// discoverProjects output and would re-discover on the next request.
+async function applyGateVerdict(gatesDir, gateId, decision) {
+  if (!['approved', 'denied', 'cancelled'].includes(decision)) {
+    throw Object.assign(new Error(`invalid decision: ${decision}`), { status: 400 });
+  }
+  if (!gatesDir) throw Object.assign(new Error('gatesDir not set'), { status: 500 });
+  // Gate files are .md; gateId may or may not include .md. Try both.
+  const candidates = [
+    path.join(gatesDir, gateId),
+    path.join(gatesDir, `${gateId}.md`),
+  ];
+  let abs = null;
+  for (const c of candidates) {
+    try { const st = await fs.stat(c); if (st.isFile()) { abs = c; break; } } catch { /* keep looking */ }
+  }
+  if (!abs) throw Object.assign(new Error(`gate not found: ${gateId}`), { status: 404 });
+  const raw = await fs.readFile(abs, 'utf8');
+  if (!raw.startsWith('---')) {
+    // Best-effort: prepend a frontmatter with the verdict.
+    const newRaw = `---\nstatus: ${decision}\nacted_at: ${new Date().toISOString()}\n---\n\n${raw}`;
+    await atomicWrite(abs, newRaw);
+    return { gateId, path: abs, status: decision, frontmatter: { status: decision } };
+  }
+  const end = raw.indexOf('\n---', 3);
+  if (end === -1) throw Object.assign(new Error('gate frontmatter malformed'), { status: 500 });
+  const yaml = raw.slice(3, end);
+  const body = raw.slice(end + 4);
+  // Update or insert `status:` line; append `acted_at:` if not present.
+  const lines = yaml.split('\n');
+  let statusFound = false;
+  let actedFound = false;
+  const out = lines.map((l) => {
+    if (/^status:\s*/.test(l)) { statusFound = true; return `status: ${decision}`; }
+    if (/^acted_at:\s*/.test(l)) { actedFound = true; return l; }
+    return l;
+  });
+  if (!statusFound) out.push(`status: ${decision}`);
+  if (!actedFound) out.push(`acted_at: ${new Date().toISOString()}`);
+  const newYaml = out.join('\n');
+  const newRaw = `---\n${newYaml}\n---${body}`;
+  await atomicWrite(abs, newRaw);
+  return { gateId, path: abs, status: decision };
+}
+
+async function atomicWrite(absPath, content) {
+  const tmp = `${absPath}.tmp.${process.pid}.${Date.now()}`;
+  await fs.writeFile(tmp, content, 'utf8');
+  await fs.rename(tmp, absPath);
+}
+
 export async function discoverProjects({ tracker = null, nativeSessions = [] } = {}) {
   const [projects, ideas] = await Promise.all([
     discoverFromRoot(CONFIG.projectsRoot, 'project', { requireSubstrate: true, tracker, nativeSessions }),
@@ -425,3 +548,6 @@ export async function discoverProjects({ tracker = null, nativeSessions = [] } =
   }
   return all;
 }
+
+// TKT-0194: re-export gate helpers so index.js can mount the verdict endpoint.
+export { readGatesForProject, applyGateVerdict };

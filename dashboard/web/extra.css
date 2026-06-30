@@ -1549,6 +1549,138 @@
 .pv-gate-history-flow { color: var(--text-1); }
 .pv-gate-history-id { color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* ── TKT-0194: pending gates section (v4 human-gate surface) ── */
+.pv-section-title-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: color-mix(in oklab, var(--status-review) 18%, var(--bg-2));
+  color: var(--status-review);
+  border: 1px solid color-mix(in oklab, var(--status-review) 35%, transparent);
+}
+.pv-section-title-badge.pulse { animation: pv-badge-pulse 1.6s ease-in-out infinite; }
+@keyframes pv-badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--status-review) 40%, transparent); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in oklab, var(--status-review) 0%, transparent); }
+}
+.pv-section-error {
+  background: color-mix(in oklab, var(--status-blocked) 12%, var(--bg-2));
+  border: 1px solid color-mix(in oklab, var(--status-blocked) 30%, transparent);
+  color: var(--status-blocked);
+  border-radius: var(--radius-1);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  margin-bottom: 10px;
+}
+.pv-gates-awaiting { display: flex; flex-direction: column; gap: 12px; }
+.pv-gate {
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.pv-gate-awaiting { border-left: 3px solid var(--status-review); }
+.pv-gate-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.pv-gate-kind {
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--status-review) 16%, var(--bg-2));
+  color: var(--status-review);
+}
+.pv-gate-id { color: var(--text-1); font-weight: 600; }
+.pv-gate-phase { color: var(--text-2); }
+.pv-gate-phase .mono { color: var(--text-0); margin: 0 2px; }
+.pv-gate-ts { color: var(--text-3); margin-left: auto; }
+.pv-gate-body {
+  color: var(--text-1);
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-left: 2px solid var(--border-2);
+  padding: 4px 0 4px 12px;
+  margin: 2px 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.pv-gate-body-h1 { font-size: 14px; font-weight: 600; color: var(--text-0); margin: 4px 0 6px; }
+.pv-gate-body-h2 { font-size: 12.5px; font-weight: 600; color: var(--text-0); margin: 6px 0 4px; text-transform: none; letter-spacing: 0; font-family: var(--font-sans); }
+.pv-gate-body-ul { margin: 4px 0 4px 18px; padding: 0; }
+.pv-gate-body-p { margin: 0 0 6px; }
+.pv-gate-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pv-gate-actions button { font-size: 12px; }
+.pv-gate-path {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+.pv-gates-resolved { margin-top: 12px; }
+.pv-gates-resolved > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 0;
+  list-style: none;
+}
+.pv-gates-resolved > summary::-webkit-details-marker { display: none; }
+.pv-gates-resolved > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 8px;
+  transition: transform .15s;
+}
+.pv-gates-resolved[open] > summary::before { content: '▾'; }
+.pv-gates-resolved-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pv-gates-resolved-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  padding: 4px 8px;
+  background: var(--bg-1);
+  border-radius: 3px;
+}
+.pv-gates-resolved-list li .mono { color: var(--text-1); }
+
 /* ── Legacy (v3) container + collapsible sections ── */
 .pv-legacy {
   margin-top: 26px;
