@@ -2491,8 +2491,17 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
   color: var(--text-1);
   font-family: var(--font-sans);
   font-size: 13.5px;
-  line-height: 1.5;
-  padding: 18px 24px 60px;
+  line-height: 1.6;
+  /* TKT-0208: cap prose width for readable line-length (~70-80ch on a 13.5px
+     font is ~620-720px — pick the upper end so code blocks and tables still
+     fit; the drawer is wide so this is mostly a *floor* — narrower viewports
+     just use the full width). Centering on wider screens (drawer / page)
+     leaves visual breathing room on the sides instead of stretching prose
+     to 1300+ px (which is what the user reported). 760px ≈ 70ch @ 13.5px
+     sans, matching GitHub / Notion / Linear prose widths. */
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 22px 32px 64px;
   min-height: 100%;
   overflow-wrap: anywhere;
   box-sizing: border-box;
@@ -2515,17 +2524,21 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
   border-radius: 3px;
   transition: outline-color 100ms ease-out;
 }
-/* Headings — compact hierarchy, distinct sizes. */
+/* Headings — compact hierarchy, distinct sizes. TKT-0208: slightly more
+   breathing room above headings (20px) and below (8px) for cleaner cadence
+   now that the prose has 1.6 line-height and a 760px max-width. */
 .td-md h1, .td-md h2, .td-md h3, .td-md h4, .td-md h5, .td-md h6 {
   color: var(--text-0); font-weight: 600; line-height: 1.3; letter-spacing: -0.01em;
-  margin: 16px 0 6px;
+  margin: 20px 0 8px;
 }
 .td-md h1 { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; padding-bottom: 4px; border-bottom: 1px solid var(--border-1); }
 .td-md h2 { font-size: 16px; }
 .td-md h3 { font-size: 14.5px; }
 .td-md h4 { font-size: 13.5px; color: var(--text-0); }
 .td-md h5, .td-md h6 { font-size: 12px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
-.td-md p { margin: 6px 0; }
+/* TKT-0208: paragraph margin bumped to 8px to match the new 1.6 line-height
+   and 760px max-width — 6px was tight, 8px breathes without being puffy. */
+.td-md p { margin: 8px 0; }
 .td-md strong { color: var(--text-0); font-weight: 600; }
 .td-md em { font-style: italic; }
 .td-md a {
@@ -2534,9 +2547,10 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 }
 .td-md a:hover { text-decoration-color: var(--accent); }
 
-/* Lists — tight. */
-.td-md ul, .td-md ol { margin: 6px 0; padding-left: 22px; }
-.td-md li { margin: 2px 0; }
+/* Lists — TKT-0208: a bit more indent (24px from 22px) and breathing room
+   between list items (4px from 2px) for hierarchy on the wider body. */
+.td-md ul, .td-md ol { margin: 8px 0; padding-left: 24px; }
+.td-md li { margin: 4px 0; }
 .td-md li > p { margin: 2px 0; }
 .td-md ul { list-style: disc; }
 .td-md ol { list-style: decimal; }
@@ -2559,14 +2573,15 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
   font-size: 12px; color: var(--text-1); white-space: pre;
 }
 
-/* Tables — compact, bordered, tinted header row. */
+/* Tables — TKT-0208: a bit more cell padding (6/11 from 5/9) for breathability
+   on a 760px body, otherwise tables feel cramped next to the prose. */
 .td-md table {
   display: block; max-width: 100%; overflow-x: auto;
   width: 100%; border-collapse: collapse; margin: 10px 0;
   font-size: 12.5px; border: 1px solid var(--border-2); border-radius: var(--radius-2);
 }
 .td-md th, .td-md td {
-  text-align: left; padding: 5px 9px; vertical-align: top;
+  text-align: left; padding: 6px 11px; vertical-align: top;
   border-bottom: 1px solid var(--border-1);
 }
 .td-md th {
@@ -2578,9 +2593,10 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 .td-md tr:last-child td { border-bottom: none; }
 .td-md tbody tr:hover td { background: var(--bg-2); }
 
-/* Blockquote — left-border callout. */
+/* Blockquote — TKT-0208: a touch more padding (6/16 from 4/14) and slightly
+   looser left-border so callouts feel like distinct voices, not afterthoughts. */
 .td-md blockquote {
-  margin: 8px 0; padding: 4px 14px; border-left: 3px solid var(--border-3);
+  margin: 10px 0; padding: 6px 16px; border-left: 3px solid var(--border-3);
   color: var(--text-2); font-style: italic;
 }
 .td-md blockquote p { margin: 4px 0; }
@@ -2822,8 +2838,16 @@ mark.anno.anno-tail::after {
 .td-fields, .td-comments { padding: 14px 22px; }
 .td-composer { padding: 12px 22px; border-top: 1px solid var(--border-1); }
 
-/* When the rail is open, the body column needs right padding so prose isn't hidden. */
-.td-annotate-wrap.rail-open .td-md { padding-right: 390px; }
+/* When the rail is open, drop the centering + max-width: the rail lives on
+   the right with a 360px width, so the body has to give it room. Reserve
+   the rail footprint as right padding so the prose is never hidden behind
+   the rail. The 30px gap leaves a small visual gutter between the body's
+   right edge and the rail. */
+.td-annotate-wrap.rail-open .td-md {
+  max-width: none;
+  margin: 0;
+  padding-right: 390px;
+}
 
 /* ===== Drawer width presets + collapsible compact field controls ===== */
 /* Width button group sits left of the close button in the ticket header. */
