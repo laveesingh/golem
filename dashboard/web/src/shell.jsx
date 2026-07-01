@@ -139,6 +139,14 @@ function Sidebar({ route, setRoute }) {
         </nav>
       </div>
 
+      {/* TKT-0206: Ideas link in the menu bar (second-last fixed section,
+          before the HARNESS footer). Floating-anchor style was rejected
+          because the button covered the sidebar's footer. Now it lives
+          IN the sidebar flow — the user clicks the menu bar item, the
+          Ideas drawer slides in (same ?ideas=1 overlay as before). The
+          count badge mirrors the queue size and updates on ideas:changed. */}
+      <SidebarIdeasLink/>
+
       <div className="sidebar-footer">
         <div className="sidebar-footer-dot"/>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -205,3 +213,44 @@ function Topbar({ route, setRoute }) {
 
 window.Sidebar = Sidebar;
 window.Topbar = Topbar;
+
+// TKT-0206: Ideas link in the sidebar menu bar. Click → Router.openIdeas()
+// (opens the existing IdeasDrawer via the ?ideas=1 overlay). The count
+// badge mirrors the queue size and refreshes on the shared 'ideas:changed'
+// event so post/pop from anywhere in the app stay in sync.
+//
+// Lives in the sidebar's normal flow (no position:fixed, no z-index),
+// so it can't cover the sidebar footer (HARNESS · ONLINE, TweaksButton)
+// or any other sidebar content — which is the regression that killed
+// the floating-anchor version.
+function SidebarIdeasLink() {
+  const [count, setCount] = React.useState(0);
+  const refresh = React.useCallback(() => {
+    window.SubstrateAPI.listIdeas()
+      .then((rows) => setCount(Array.isArray(rows) ? rows.length : 0))
+      .catch(() => {});
+  }, []);
+  React.useEffect(() => {
+    refresh();
+    window.addEventListener('ideas:changed', refresh);
+    return () => window.removeEventListener('ideas:changed', refresh);
+  }, [refresh]);
+  return (
+    <div className="sidebar-section sidebar-section-ideas">
+      <nav className="sidebar-nav">
+        <a
+          href="#"
+          className="sidebar-link sidebar-link-ideas"
+          onClick={(e) => { e.preventDefault(); window.Router.openIdeas(); }}
+          title="Open the ideas stack"
+        >
+          <span className="sidebar-link-icon"><Icon.Lightbulb/></span>
+          <span>Ideas</span>
+          {count > 0 && <span className="sidebar-link-count">{count}</span>}
+        </a>
+      </nav>
+    </div>
+  );
+}
+
+window.SidebarIdeasLink = SidebarIdeasLink;

@@ -38,20 +38,35 @@ try {
     await page.evaluate((id) => fetch(`/api/ideas/${encodeURIComponent(id.id)}/pop`, { method: 'POST' }), idea.id);
   }
 
-  // ── 1. Anchor visible on dashboard ─────────────────────────────────
-  const anchor = await page.evaluate(() => {
-    const a = document.querySelector('.ideas-anchor');
+  // ── 1. Ideas link embedded in the sidebar (TKT-0206 revised) ──────
+  // Earlier the user complained that a floating bottom-left anchor covered
+  // the sidebar's footer (HARNESS · ONLINE, TweaksButton). Fix: the link
+  // now lives in the sidebar's normal flow (no position:fixed), pinned
+  // via position:sticky + bottom:0 so it's always visible at the bottom
+  // of the menu bar.
+  const sidebarLink = await page.evaluate(() => {
+    const a = document.querySelector('.sidebar-link-ideas');
     if (!a) return null;
     const r = a.getBoundingClientRect();
-    return { text: a.textContent.trim(), left: r.left, bottom: r.bottom, hasCount: !!a.querySelector('.ideas-anchor-count') };
+    const sidebar = document.querySelector('.sidebar');
+    const sr = sidebar?.getBoundingClientRect();
+    return {
+      text: a.textContent.trim(),
+      left: r.left,
+      right: r.right,
+      top: r.top,
+      bottom: r.bottom,
+      hasCount: !!a.querySelector('.sidebar-link-count'),
+      insideSidebar: sr ? (r.left >= sr.left && r.right <= sr.right) : null,
+      sidebarRect: sr ? { left: sr.left, right: sr.right, top: sr.top, bottom: sr.bottom } : null,
+    };
   });
-  assert.ok(anchor, 'bottom-left ideas anchor is present');
-  assert.ok(anchor.left < 50, 'anchor is at the left edge of the viewport');
-  assert.ok(anchor.bottom > 800, 'anchor is at the bottom of the viewport');
-  assert.equal(anchor.hasCount, false, 'no count badge when queue is empty');
+  assert.ok(sidebarLink, 'Ideas link is present');
+  assert.ok(sidebarLink.insideSidebar, 'Ideas link is INSIDE the sidebar (no floating cover)');
+  assert.ok(sidebarLink.hasCount === false, 'no count badge when queue is empty');
 
-  // ── 2. Click the anchor → drawer opens ────────────────────────────
-  await page.evaluate(() => document.querySelector('.ideas-anchor')?.click());
+  // ── 2. Click the link → drawer opens ────────────────────────────
+  await page.evaluate(() => document.querySelector('.sidebar-link-ideas')?.click());
   await wait(600);
   const opened = await page.evaluate(() => {
     return {
@@ -85,10 +100,10 @@ try {
 
   // ── 4. Anchor count badge updated ─────────────────────────────────
   const anchorWithCount = await page.evaluate(() => {
-    const c = document.querySelector('.ideas-anchor-count');
+    const c = document.querySelector('.sidebar-link-ideas .sidebar-link-count');
     return c ? c.textContent : null;
   });
-  assert.equal(anchorWithCount, '1', 'anchor count = 1');
+  assert.equal(anchorWithCount, '1', 'sidebar link count = 1');
 
   // ── 5. Pop the idea ─────────────────────────────────────────────
   await page.evaluate(() => {
@@ -98,10 +113,10 @@ try {
   await wait(800);
   const afterPop = await page.evaluate(() => ({
     cards: document.querySelectorAll('.idea-card').length,
-    anchorCount: document.querySelector('.ideas-anchor-count')?.textContent || null,
+    anchorCount: document.querySelector('.sidebar-link-ideas .sidebar-link-count')?.textContent || null,
   }));
   assert.equal(afterPop.cards, 0, 'no idea cards after pop');
-  assert.equal(afterPop.anchorCount, null, 'anchor count removed when queue empty');
+  assert.equal(afterPop.anchorCount, null, 'sidebar link count removed when queue empty');
 
   // ── 6. Press Esc → drawer closes ───────────────────────────────
   await page.keyboard.press('Escape');
