@@ -1900,9 +1900,9 @@
 }
 
 /* ===== WS5: Create-ticket modal ===== */
-.ct-row { display: flex; gap: 12px; }
+.ct-row { display: flex; gap: 10px; }
 .ct-row .ct-field { flex: 1; min-width: 0; }
-.ct-field { display: flex; flex-direction: column; gap: 5px; }
+.ct-field { display: flex; flex-direction: column; gap: 4px; }
 
 /* TKT-0189: the body field is a "flex-grow" item — it fills all the
    remaining vertical space inside .ct-scroll so the fields below it
@@ -1912,19 +1912,32 @@
    is required so the textarea can shrink/scroll inside the field rather
    than forcing the field to expand. */
 .ct-field--grow {
-  flex: 1 1 auto;
+  /* TKT-0198: the field is NOT flex-grown — instead it sizes to the
+     textarea inside. The textarea has a default min-height of 0 (so flex
+     doesn't constrain it) and a JS-driven default height that fills the
+     available space (set in TKT-0189's effect). When the user drags the
+     resize handle, the textarea's inline style.height takes over and the
+     field grows with it. This lets the body overflow the drawer container
+     (the .ct-scroll picks up the scroll) — which is what the user wants
+     for "I should be able to resize it even if it overflows the entire
+     ticket container into a scrollable". */
+  flex: 0 0 auto;
   min-height: 0;
 }
 .ct-field--grow .orch-modal-textarea {
-  /* Fill the field's box. The `height: 100%` lets an inline style.height
-     from the user's resize-handle drag take effect — flex would override
-     the inline height, so we don't use flex on the textarea itself. */
-  height: 100%;
-  /* TKT-0189: the body now auto-fills the available space, so the user no
-     longer needs to drag the resize handle. Disable the handle to avoid
-     confusion (it would only shrink the textarea and leave an awkward
-     empty gap below it inside the still-grown field). */
-  resize: none;
+  /* TKT-0198: no more height: 100% — the textarea's effective height is now
+     driven by either (a) the inline style.height set by TKT-0189's effect
+     (= computed available space, recomputed on drawer open), or (b) the
+     inline style.height the user sets by dragging the resize handle.
+     Both paths land on the textarea directly, so the field sizes to its
+     content. */
+  height: auto;
+  /* TKT-0198: bring back the bottom-right drag handle. The user can shrink
+     the body to make other fields matter more, or grow it past the
+     available space (the drawer body scrolls). */
+  resize: vertical;
+  min-height: 60px;
+  overflow: auto;
 }
 .ct-label {
   font-size: 11px;
@@ -2038,10 +2051,10 @@ select.ct-input { appearance: none; cursor: pointer; padding-right: 26px;
 .ct-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 16px 22px;
+  padding: 12px 22px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 9px;
 }
 
 /* Sticky action bar pinned to the drawer's bottom edge. */
