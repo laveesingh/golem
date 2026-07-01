@@ -3151,46 +3151,34 @@ mark.anno.anno-tail::after {
 
 /* ===== TKT-0206: IdeasStack (global ideas queue) ===== */
 
-/* Bottom-left anchor — always visible, opens the ideas drawer.
-   Sits on top of the main content but below the drawer z-index so it
-   doesn't overlap the right-side drawer when the drawer is open. */
-.ideas-anchor {
-  position: fixed;
-  left: 16px;
-  bottom: 16px;
-  z-index: 55;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: color-mix(in oklab, var(--accent) 12%, var(--bg-2));
-  color: var(--text-0);
-  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
-  border-radius: 22px;
-  padding: 9px 14px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+/* TKT-0206 (revised): the floating .ideas-anchor was rejected because
+   it covered the sidebar footer (HARNESS · ONLINE, TweaksButton) and
+   other sidebar content. The user asked to embed it in the menu bar
+   instead. The link now lives in the sidebar's normal flow — see
+   .sidebar-section-ideas + .sidebar-link-ideas below. The floating-
+   anchor styles are kept in extra.css (no .ideas-anchor class is
+   rendered anywhere) so a future regression that re-introduces the
+   anchor doesn't have to re-discover the right colors. */
+
+/* Sidebar section that hosts the Ideas link. The user asked for the
+   "second last fixed section at the bottom of the menu bar" — we use
+   position:sticky + bottom:0 so the link stays pinned to the bottom
+   of the visible sidebar area as the Projects list scrolls, with the
+   footer (HARNESS · ONLINE, TweaksButton) directly below it. */
+.sidebar-section-ideas {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-1) 60%, transparent), var(--bg-1) 30%);
+  border-top: 1px solid var(--border-2);
+  padding-top: 6px;
+  z-index: 1;
 }
-.ideas-anchor:hover {
-  background: color-mix(in oklab, var(--accent) 22%, var(--bg-2));
-  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
-  transform: translateY(-1px);
-}
-.ideas-anchor svg { width: 14px; height: 14px; }
-.ideas-anchor-count {
-  background: var(--accent);
-  color: var(--bg-0);
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 999px;
-  padding: 1px 6px;
-  min-width: 16px;
-  text-align: center;
-}
+/* Slight accent on the Ideas link so the user can spot the menu entry
+   quickly without it being loud. Matches the existing .sidebar-link
+   baseline (so the link sits flush in the menu list). */
+.sidebar-link-ideas { color: var(--text-0); }
+.sidebar-link-ideas .sidebar-link-icon { color: var(--accent); }
+.sidebar-link-ideas:hover .sidebar-link-icon { color: var(--accent); }
 
 /* Drawer tweaks for the ideas drawer (uses the shared .drawer base
    style but with a slightly different inner layout — no title row, no
