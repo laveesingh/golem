@@ -3148,3 +3148,155 @@ mark.anno.anno-tail::after {
 .sidebar-bucket.bucket-archived .sidebar-bucket-label { color: var(--text-3); opacity: 0.5; font-style: italic; }
 .sidebar-bucket.bucket-stale .sidebar-link { opacity: 0.7; }
 .sidebar-bucket.bucket-archived .sidebar-link { opacity: 0.5; filter: grayscale(0.4); }
+
+/* ===== TKT-0206: IdeasStack (global ideas queue) ===== */
+
+/* Bottom-left anchor — always visible, opens the ideas drawer.
+   Sits on top of the main content but below the drawer z-index so it
+   doesn't overlap the right-side drawer when the drawer is open. */
+.ideas-anchor {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg-2));
+  color: var(--text-0);
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  border-radius: 22px;
+  padding: 9px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+}
+.ideas-anchor:hover {
+  background: color-mix(in oklab, var(--accent) 22%, var(--bg-2));
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+  transform: translateY(-1px);
+}
+.ideas-anchor svg { width: 14px; height: 14px; }
+.ideas-anchor-count {
+  background: var(--accent);
+  color: var(--bg-0);
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* Drawer tweaks for the ideas drawer (uses the shared .drawer base
+   style but with a slightly different inner layout — no title row, no
+   field chrome, just header + composer + list). */
+.ideas-drawer { gap: 0; }
+.ideas-drawer-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 22px 12px;
+  border-bottom: 1px solid var(--border-2);
+}
+.ideas-help {
+  font-size: 11.5px;
+  color: var(--text-3);
+  line-height: 1.45;
+}
+.ideas-count {
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 6px;
+}
+.ideas-composer {
+  padding: 14px 22px 12px;
+  border-bottom: 1px solid var(--border-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ideas-input {
+  width: 100%;
+  background: var(--bg-0);
+  color: var(--text-0);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  padding: 9px 11px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 60px;
+}
+.ideas-input:focus { outline: none; border-color: var(--accent-border); }
+.ideas-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ideas-error {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--status-blocked);
+  font-family: var(--font-mono);
+}
+.ideas-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px 18px 18px;
+}
+.ideas-empty {
+  font-size: 12px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  text-align: center;
+  padding: 28px 16px;
+  background: var(--bg-1);
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius-1);
+  line-height: 1.5;
+}
+.ideas-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.idea-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border-2);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-1);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.idea-body {
+  font-size: 13px;
+  color: var(--text-0);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.idea-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.idea-ts { font-size: 10.5px; }

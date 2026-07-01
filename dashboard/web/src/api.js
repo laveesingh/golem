@@ -220,6 +220,12 @@
     // served as Markdown bodies from plugin/skills/tracker/templates/. Used by
     // the create-ticket composer's template picker to pre-fill an empty body.
     getTemplates: () => getJSON('/api/templates'),
+    // TKT-0206: global ideas stack — a FIFO queue of raw thoughts the
+    // user drops via the bottom-left anchor in the dashboard. Each idea
+    // is a .md file at ~/.config/golem/ideas/ with frontmatter + body.
+    listIdeas: () => getJSON('/api/ideas'),
+    createIdea: (body) => postJSON('/api/ideas', { body }),
+    popIdea: (id) => postJSON(`/api/ideas/${encodeURIComponent(id)}/pop`, {}),
     // Ticket links (WS5b). `from` is the ticket id the link hangs off of.
     addLink: (id, { to_ticket, type }) =>
       postJSON(`/api/tickets/${encodeURIComponent(id)}/links`, { to_ticket, type }),

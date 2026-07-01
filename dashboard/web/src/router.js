@@ -109,6 +109,7 @@
       composeProject: query.project || null,
       chat: query.chat || null,
       ns: query.ns || null,
+      ideas: !!query.ideas, // TKT-0206: global ideas stack overlay
     };
     return route;
   };
@@ -159,6 +160,9 @@
     openOverlay('compose', '1', projectId ? { project: projectId } : null);
   const openChat = (sessionId) => openOverlay('chat', sessionId);
   const openNativeSession = (sessionId) => openOverlay('ns', sessionId);
+  // TKT-0206: open / close the global ideas-stack drawer.
+  const openIdeas = () => openOverlay('ideas', '1');
+  const closeIdeas = () => closeOverlay('ideas');
 
   // True if navigating from `from` to `to` is a same-page overlay/filter change
   // (no page swap) — lets callers decide replace vs push. Not required for P1.
@@ -168,7 +172,7 @@
   window.Router = {
     parseQuery, stringifyQuery, parseRoute, parseLocation, buildHref,
     go, openOverlay, closeOverlay,
-    openTicket, openComposer, openChat, openNativeSession,
+    openTicket, openComposer, openChat, openNativeSession, openIdeas, closeIdeas,
     samePage, TOP_LEVEL,
   };
 })();

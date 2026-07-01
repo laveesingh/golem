@@ -16,6 +16,7 @@ import { readNativeSessionPeek } from './native-session-peek.js';
 import { openTrackerDb } from './tracker-db.js';
 import { readChannels } from './channels.js';
 import { applyGateVerdict } from './projects.js';
+import { listIdeas, createIdea, popIdea } from './ideas.js';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const WEB_ROOT = path.resolve(__dirname, '..', 'web');
@@ -764,6 +765,32 @@ async function main() {
       out.push({ id, title, body });
     }
     return out;
+  });
+
+  // TKT-0206: global ideas stack. A FIFO queue of raw thoughts the user
+  // drops via the bottom-left anchor in the dashboard. Each idea is a
+  // .md file at ~/.config/golem/ideas/ with frontmatter (id, created_at,
+  // status) + body. "Popping" deletes the file (the user is taking it
+  // forward — likely into a tracker ticket).
+  fastify.get('/api/ideas', async () => listIdeas());
+
+  fastify.post('/api/ideas', async (req, reply) => {
+    try {
+      const idea = await createIdea({ body: req.body?.body || '' });
+      return idea;
+    } catch (err) {
+      if (err && err.status) return reply.code(err.status).send({ error: err.message });
+      throw err;
+    }
+  });
+
+  fastify.post('/api/ideas/:id/pop', async (req, reply) => {
+    try {
+      return await popIdea(req.params.id);
+    } catch (err) {
+      if (err && err.status) return reply.code(err.status).send({ error: err.message });
+      throw err;
+    }
   });
 
   // ---- WebSocket ----
