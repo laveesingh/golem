@@ -2870,102 +2870,145 @@ mark.anno.anno-tail::after {
   text-transform: none; letter-spacing: 0; font-size: 11px;
 }
 
-/* ===== TKT-0101: Compact action tray + slim dispatch + collapsible links ===== */
-.td-action-tray {
-  border-top: 1px solid var(--border-1);
-  border-bottom: 1px solid var(--border-1);
-  padding: 6px 22px;
-  background: color-mix(in oklab, var(--bg-2) 60%, transparent);
-}
-.td-tray-row {
+/* ===== TKT-0205: Read-view field grid ===== */
+/* 2-col labeled grid that replaces the old compact chip-tray. Mirrors the
+   create-drawer's .ct-row / .ct-field style: label-above, full-width input
+   below, two fields per row, dispatch gets its own full-width row. The
+   .td-row-dispatch row contains a select + button group; the rest are
+   labeled fields. The .td-meta-strip below is a collapsible "More" toggle
+   revealing dispatched-to / created-by metadata. */
+.td-fields-v2 {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px 6px;
-  align-items: center;
-}
-.td-tray-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 22px 14px;
+  border-bottom: 1px solid var(--border-1);
   background: var(--bg-1);
-  border: 1px solid var(--border-2);
-  border-radius: 14px;
-  padding: 0 4px 0 8px;
-  height: 22px;
-  font-size: 10px;
-  color: var(--text-3);
-  white-space: nowrap;
 }
-.td-tray-chip:hover { border-color: var(--border-3); }
-.td-tray-chip:focus-within { border-color: var(--accent-border); }
-.td-tray-key {
-  font-size: 9px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  font-family: var(--font-mono);
+.td-fields-v2 .td-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
 }
-.td-tray-chip select.td-chip {
-  appearance: none;
-  background: transparent;
-  border: none;
-  color: var(--text-0);
-  padding: 0 14px 0 0;
-  height: 22px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  cursor: pointer;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 16 16' fill='none' stroke='%238a909c' stroke-width='1.5'><path d='M4 6l4 4 4-4'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 0 center;
+/* On narrow drawers, stack the rows to a single column instead of crowding. */
+@media (max-width: 720px) {
+  .td-fields-v2 .td-row { grid-template-columns: 1fr; }
 }
-.td-tray-chip select.td-chip:focus { outline: none; }
-.td-tray-chip select.td-chip option { background: var(--bg-0); color: var(--text-0); }
-
-.td-tray-more {
-  margin-left: auto;
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1px solid var(--border-2);
-  color: var(--text-3);
-  display: grid; place-items: center;
-  cursor: pointer;
-  transition: transform .15s;
-}
-.td-tray-more[aria-expanded="true"] { transform: rotate(90deg); border-color: var(--accent-border); color: var(--accent); }
-.td-tray-more:hover { border-color: var(--border-3); color: var(--text-1); }
-.td-tray-more svg { width: 11px; height: 11px; }
-
-.td-tray-extra {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--border-1);
+.td-fields-v2 .td-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 11px;
+  min-width: 0;
 }
-.td-tray-extra-row { display: flex; align-items: center; gap: 6px; color: var(--text-1); }
-.td-tray-extra-key { font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); font-family: var(--font-mono); min-width: 92px; }
-.td-tray-extra-meta { color: var(--text-3); }
+.td-fields-v2 .td-field-label {
+  font-size: 10.5px; color: var(--text-2);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  font-family: var(--font-sans);
+}
+/* Read-only display values (Project chip, Title text, Template name) inside
+   a labeled field. The Title display is rendered larger so the read view
+   keeps the title visually prominent now that the H2 is gone. */
+.td-fields-v2 .td-field-display {
+  background: var(--bg-0);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--text-0);
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.td-fields-v2 .td-field-display-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 6px 10px;
+  white-space: normal;
+  text-overflow: clip;
+}
+.td-fields-v2 .td-field-display-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-1);
+}
+.td-fields-v2 .td-field-empty {
+  color: var(--text-3);
+  font-style: italic;
+  font-size: 12px;
+}
 
-/* Dispatch group folded into the action-tray row (TKT-0146 follow-up): wraps
-   with the field chips, separated by a left rule so it stands out without its
-   own row. */
-.td-tray-dispatch {
+/* Dispatch row: full-width field with the select + button inline. */
+.td-fields-v2 .td-row-dispatch { grid-template-columns: 1fr; }
+.td-fields-v2 .td-dispatch-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.td-fields-v2 .td-dispatch-row .td-select { flex: 1; }
+.td-fields-v2 .td-dispatch-row .td-dispatch-go {
+  flex: 0 0 auto;
+  height: auto;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+/* Metadata strip ("More" toggle + collapsible rows). */
+.td-fields-v2 .td-meta-strip {
+  border-top: 1px dashed var(--border-1);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.td-fields-v2 .td-meta-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: 6px;
-  padding-left: 10px;
-  border-left: 1px solid var(--border-2);
+  background: transparent; border: none;
+  color: var(--text-3); font-size: 11px; cursor: pointer;
+  font-family: var(--font-sans);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 0; align-self: flex-start;
+  transition: color .15s;
 }
-.td-tray-dispatch .td-dispatch-go {
-  height: 22px;
-  padding: 0 10px;
-  font-size: 11px;
+.td-fields-v2 .td-meta-toggle:hover { color: var(--text-0); }
+.td-fields-v2 .td-meta-toggle svg {
+  width: 10px; height: 10px;
+  transition: transform .15s;
 }
+.td-fields-v2 .td-meta-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+
+.td-fields-v2 .td-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+}
+.td-fields-v2 .td-meta-row { display: flex; align-items: baseline; gap: 6px; color: var(--text-1); }
+.td-fields-v2 .td-meta-key {
+  font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-3); font-family: var(--font-mono);
+  min-width: 96px;
+}
+.td-fields-v2 .td-meta-value { color: var(--text-3); font-size: 11px; }
+
+/* Dispatch note (e.g. "no live channel" soft warning). */
+.td-fields-v2 .td-dispatch-note {
+  font-size: 11.5px; line-height: 1.5;
+  color: var(--status-review);
+  background: color-mix(in oklab, var(--status-review) 12%, var(--bg-2));
+  border: 1px solid color-mix(in oklab, var(--status-review) 32%, transparent);
+  border-radius: var(--radius-1);
+  padding: 8px 10px;
+}
+
+/* The Title row's spacer keeps the Edit button right-aligned now that the
+   H2 title is gone. */
+.td-title-spacer { flex: 1; }
 
 /* ===== TKT-0103: Board drag-and-drop ===== */
 .ticket.is-dragging {

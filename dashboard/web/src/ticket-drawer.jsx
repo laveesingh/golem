@@ -53,6 +53,11 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
   // Dispatchable sessions for the open ticket's project (for assignee + dispatch).
   const [dispatchable, setDispatchable] = React.useState([]);
   const [streams, setStreams] = React.useState([]);
+  // Genre templates — same /api/templates the create drawer hits. The read
+  // view uses it ONLY to label the (read-only) Template field; the body
+  // is never re-filled from a template pick in read mode (that would be
+  // destructive — see TKT-0181).
+  const [templates, setTemplates] = React.useState([]);
 
   // Edit buffer for title/body. null when not editing.
   const [editBuf, setEditBuf] = React.useState(null);
@@ -158,6 +163,25 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
       .catch(() => { if (!cancelled) setStreams([]); });
     return () => { cancelled = true; };
   }, [open, projectId]);
+
+  // Fetch genre templates once per open. Read view only USES them to label
+  // the (read-only) Template field — it never re-fills the body from a
+  // pick (that would be destructive; see TKT-0181).
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    window.SubstrateAPI.getTemplates()
+      .then((list) => { if (!cancelled) setTemplates(Array.isArray(list) ? list : []); })
+      .catch(() => { if (!cancelled) setTemplates([]); });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  const templateLabel = React.useMemo(() => {
+    const tid = ticket?.template_id;
+    if (!tid) return '—';
+    const t = templates.find((x) => x.id === tid);
+    return t ? t.title : tid;
+  }, [ticket?.template_id, templates]);
 
   const labelBySession = React.useMemo(() => {
     const m = new Map();
@@ -353,12 +377,6 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
                 )}
                 <span className="td-id mono">{ticket.id}</span>
                 <span className="pill td-kind-pill">{ticket.kind}</span>
-                {project && (
-                  <span className="cc-chip td-project-chip" title={project.name}>
-                    <span className="cc-chip-dot" style={{ background: project.color }}/>
-                    <span className="cc-chip-text">{project.glyph ? `${project.glyph} ` : ''}{project.name}</span>
-                  </span>
-                )}
                 <span className={`pill ${statePill}`}>{ticket.state}</span>
                 {isQuestion && (
                   <span
@@ -400,7 +418,161 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
             </div>
 
             <div className="td-scroll">
+              {/* ── Read-view field grid (TKT-0205) ── */}
+              {/* 2-col labeled grid mirroring the create-drawer's .ct-row / .ct-field
+                  style. Project + Title share a row; Kind + Template share a row;
+                  Priority + State share a row; Assignee + Stream share a row.
+                  Dispatch gets its own full-width row with the dropdown + a
+                  button so it doesn't compete with the field chips. Below that,
+                  a collapsible "more" strip shows metadata (dispatched-to,
+                  created-by) that the user usually doesn't need. The Template
+                  field is read-only — it's a label for the body's source scaffold
+                  and is not a destructive re-fill control. CSS in extra.css
+                  under .td-fields-v2. */}
+              <div className="td-fields-v2">
+                <div className="td-row">
+                  <div className="td-field">
+                    <span className="td-field-label">Project</span>
+                    <div className="td-field-display">
+                      {project ? (
+                        <span className="cc-chip" title={project.name}>
+                          <span className="cc-chip-dot" style={{ background: project.color }}/>
+                          <span className="cc-chip-text">{project.glyph ? `${project.glyph} ` : ''}{project.name}</span>
+                        </span>
+                      ) : <span className="td-field-empty">—</span>}
+                    </div>
+                  </div>
+                  <div className="td-field">
+                    <span className="td-field-label">Title</span>
+                    <div className="td-field-display td-field-display-title">{ticket.title || <span className="td-field-empty">—</span>}</div>
+                  </div>
+                </div>
+
+                <div className="td-row">
+                  <div className="td-field">
+                    <span className="td-field-label">Type</span>
+                    <select className="td-select" value={ticket.kind}
+                      onChange={(e) => commitField({ kind: e.target.value })}
+                      aria-label="Type">
+                      {TD_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  </div>
+                  <div className="td-field">
+                    <span className="td-field-label">Template</span>
+                    <div className="td-field-display td-field-display-mono" title="The body scaffold used at creation. Read-only — re-applying a template here would clobber the body.">
+                      {templateLabel}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="td-row">
+                  <div className="td-field">
+                    <span className="td-field-label">Priority</span>
+                    <select className="td-select" value={ticket.priority || ''}
+                      onChange={(e) => commitField({ priority: e.target.value || null })}
+                      aria-label="Priority">
+                      {TD_PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="td-field">
+                    <span className="td-field-label">State</span>
+                    <select className="td-select" value={ticket.state}
+                      onChange={(e) => commitField({ state: e.target.value })}
+                      aria-label="State">
+                      {TD_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="td-row">
+                  <div className="td-field">
+                    <span className="td-field-label">Assignee</span>
+                    <select className="td-select" value={ticket.assignee || ''}
+                      onChange={(e) => commitField({ assignee: e.target.value || null })}
+                      aria-label="Assignee">
+                      <option value="">Unassigned</option>
+                      <option value="human">Human (You)</option>
+                      {dispatchable.map((s) => (
+                        <option key={s.session_id} value={s.session_id}>{s.label}</option>
+                      ))}
+                      {/* Keep an offline assignee selectable if it isn't in the live list. */}
+                      {ticket.assignee && ticket.assignee !== 'human'
+                        && !labelBySession.has(ticket.assignee) && (
+                        <option value={ticket.assignee}>
+                          session {String(ticket.assignee).slice(0, 8)} (offline)
+                        </option>
+                      )}
+                    </select>
+                  </div>
+                  <div className="td-field">
+                    <span className="td-field-label">Stream</span>
+                    <select className="td-select" value={ticket.stream_id || ''}
+                      onChange={(e) => commitField({ stream_id: e.target.value || null })}
+                      aria-label="Stream">
+                      <option value="">None</option>
+                      {streams.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="td-row td-row-dispatch">
+                  <div className="td-field">
+                    <span className="td-field-label">Dispatch to</span>
+                    <div className="td-dispatch-row">
+                      <select className="td-select" value={dispatchSession}
+                        onChange={(e) => setDispatchSession(e.target.value)}
+                        disabled={dispatching || dispatchable.length === 0}
+                        aria-label="Dispatch to session">
+                        <option value="">
+                          {dispatchable.length === 0 ? 'No session' : 'Pick a session…'}
+                        </option>
+                        {dispatchable.map((s) => (
+                          <option key={s.session_id} value={s.session_id}>{s.label}</option>
+                        ))}
+                      </select>
+                      <button className="orch-btn small td-dispatch-go"
+                        onClick={onDispatch}
+                        disabled={dispatching || !dispatchSession || dispatchable.length === 0}
+                        title={dispatchable.length === 0 ? 'No live session in this project — start one with `cd <project> && claude`' : 'Dispatch to the selected session'}>
+                        {dispatching ? '…' : 'Dispatch'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="td-meta-strip">
+                  <button
+                    className="td-meta-toggle"
+                    onClick={() => setFieldsExpanded((e) => !e)}
+                    aria-expanded={fieldsExpanded}
+                    title={fieldsExpanded ? 'Hide metadata' : 'Show metadata'}
+                  >
+                    <Icon.ChevronRight/>
+                    <span>{fieldsExpanded ? 'Less' : 'More'}</span>
+                  </button>
+                  {fieldsExpanded && (
+                    <div className="td-meta-list">
+                      <div className="td-meta-row">
+                        <span className="td-meta-key">Dispatched to</span>
+                        <span className="mono">{resolveActor(ticket.dispatched_to) || '—'}</span>
+                        {ticket.dispatched_at && <span className="td-meta-value">· {tdAgo(ticket.dispatched_at)}</span>}
+                      </div>
+                      <div className="td-meta-row">
+                        <span className="td-meta-key">Created by</span>
+                        <span>{ticket.created_by && ticket.created_by !== 'human' ? ticket.created_by.slice(0, 8) : 'You'}</span>
+                        <span className="td-meta-value">· {tdAgo(ticket.created_at)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {dispatchNote && <div className="td-dispatch-note">{dispatchNote}</div>}
+              </div>
+
               {/* ── Title + body (with Edit toggle) ── */}
+              {/* TKT-0205: the title is now in the field grid above (Title
+                  field on Row 1, side by side with Project). The Edit
+                  button still toggles the inline title+body editor. */}
               {editBuf ? (
                 <div className="td-edit">
                   <input
@@ -427,7 +599,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
               ) : (
                 <div className="td-titlebody">
                   <div className="td-title-row">
-                    <h2 className="td-title">{ticket.title}</h2>
+                    <div className="td-title-spacer"/>
                     <button
                       className="orch-btn small ghost td-edit-btn"
                       onClick={() => setEditBuf({ title: ticket.title || '', body: ticket.body || '' })}
@@ -453,126 +625,6 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
                 ) : (
                   <div className="td-body-empty">No description.</div>
                 )}
-              </div>
-
-              {/* ── Compact action tray (TKT-0101) ── */}
-              {/* One row of pills + slim dispatch + collapsed links by default.
-                  Pills are styled selects (TD-CHIP), commit on change via
-                  commitField. Inline label prefixes use the actual field name
-                  ("State", "Assignee", …) so the row is readable at 30% width
-                  without tooltips; labels shrink to just the colored chip on
-                  wider drawers via a media query in extra.css. */}
-              <div className={`td-action-tray ${fieldsExpanded ? 'open' : ''}`}>
-                <div className="td-tray-row">
-                  <label className="td-tray-chip" data-key="state">
-                    <span className="td-tray-key">State</span>
-                    <select className="td-chip" value={ticket.state}
-                      onChange={(e) => commitField({ state: e.target.value })}
-                      aria-label="State">
-                      {TD_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </label>
-
-                  <label className="td-tray-chip" data-key="assignee">
-                    <span className="td-tray-key">Assignee</span>
-                    <select className="td-chip" value={ticket.assignee || ''}
-                      onChange={(e) => commitField({ assignee: e.target.value || null })}
-                      aria-label="Assignee">
-                      <option value="">Unassigned</option>
-                      <option value="human">Human (You)</option>
-                      {dispatchable.map((s) => (
-                        <option key={s.session_id} value={s.session_id}>{s.label}</option>
-                      ))}
-                      {/* Keep an offline assignee selectable if it isn't in the live list. */}
-                      {ticket.assignee && ticket.assignee !== 'human'
-                        && !labelBySession.has(ticket.assignee) && (
-                        <option value={ticket.assignee}>
-                          session {String(ticket.assignee).slice(0, 8)} (offline)
-                        </option>
-                      )}
-                    </select>
-                  </label>
-
-                  <label className="td-tray-chip" data-key="priority">
-                    <span className="td-tray-key">Priority</span>
-                    <select className="td-chip" value={ticket.priority || ''}
-                      onChange={(e) => commitField({ priority: e.target.value || null })}
-                      aria-label="Priority">
-                      {TD_PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                    </select>
-                  </label>
-
-                  <label className="td-tray-chip" data-key="kind">
-                    <span className="td-tray-key">Kind</span>
-                    <select className="td-chip" value={ticket.kind}
-                      onChange={(e) => commitField({ kind: e.target.value })}
-                      aria-label="Kind">
-                      {TD_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-                    </select>
-                  </label>
-
-                  <label className="td-tray-chip" data-key="stream">
-                    <span className="td-tray-key">Stream</span>
-                    <select className="td-chip" value={ticket.stream_id || ''}
-                      onChange={(e) => commitField({ stream_id: e.target.value || null })}
-                      aria-label="Stream">
-                      <option value="">None</option>
-                      {streams.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </label>
-
-                  {/* Dispatch — folded into the same row as the field chips
-                      (wraps to the next line on narrow widths), separated by a
-                      left rule so it stands out without claiming its own row. */}
-                  <div className="td-tray-dispatch">
-                    <label className="td-tray-chip">
-                      <span className="td-tray-key">Dispatch</span>
-                      <select className="td-chip" value={dispatchSession}
-                        onChange={(e) => setDispatchSession(e.target.value)}
-                        disabled={dispatching || dispatchable.length === 0}
-                        aria-label="Dispatch to session">
-                        <option value="">
-                          {dispatchable.length === 0 ? 'No session' : 'Session…'}
-                        </option>
-                        {dispatchable.map((s) => (
-                          <option key={s.session_id} value={s.session_id}>{s.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <button className="orch-btn small td-dispatch-go"
-                      onClick={onDispatch}
-                      disabled={dispatching || !dispatchSession || dispatchable.length === 0}
-                      title={dispatchable.length === 0 ? 'No live session in this project — start one with `cd <project> && claude`' : 'Dispatch to the selected session'}>
-                      {dispatching ? '…' : 'Dispatch'}
-                    </button>
-                  </div>
-
-                  <button
-                    className="td-tray-more"
-                    onClick={() => setFieldsExpanded((e) => !e)}
-                    aria-expanded={fieldsExpanded}
-                    title={fieldsExpanded ? 'Hide fields detail' : 'More field controls'}
-                  >
-                    <Icon.ChevronRight/>
-                  </button>
-                </div>
-
-                {fieldsExpanded && (
-                  <div className="td-tray-extra">
-                    <div className="td-tray-extra-row">
-                      <span className="td-tray-extra-key">Dispatched to</span>
-                      <span className="mono">{resolveActor(ticket.dispatched_to) || '—'}</span>
-                      {ticket.dispatched_at && <span className="td-tray-extra-meta">· {tdAgo(ticket.dispatched_at)}</span>}
-                    </div>
-                    <div className="td-tray-extra-row">
-                      <span className="td-tray-extra-key">Created by</span>
-                      <span>{ticket.created_by && ticket.created_by !== 'human' ? ticket.created_by.slice(0, 8) : 'You'}</span>
-                      <span className="td-tray-extra-meta">· {tdAgo(ticket.created_at)}</span>
-                    </div>
-                  </div>
-                )}
-
-                {dispatchNote && <div className="td-dispatch-note">{dispatchNote}</div>}
               </div>
             </div>
 
