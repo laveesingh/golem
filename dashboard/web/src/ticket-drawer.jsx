@@ -309,8 +309,8 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
     : null;
   const Shell = isPage ? 'div' : 'aside';
   const shellClass = isPage
-    ? 'ticket-page'
-    : `drawer ${open ? 'open' : ''} drawer-ticket`;
+    ? `ticket-page${isQuestion ? ' td-has-question-return' : ''}`
+    : `drawer ${open ? 'open' : ''} drawer-ticket${isQuestion ? ' td-has-question-return' : ''}`;
   const shellStyle = isPage ? undefined : { width: `${widthPct}vw` };
 
   return (
@@ -360,7 +360,14 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay' }) {
                   </span>
                 )}
                 <span className={`pill ${statePill}`}>{ticket.state}</span>
-                {isQuestion && <span className="pill td-answer-badge">❓ needs answer</span>}
+                {isQuestion && (
+                  <span
+                    className="pill td-answer-badge"
+                    title="This is a question-kind ticket assigned to you. The asker (usually a Claude session) is blocked until you post an answer in the composer below. You can post just the answer, or post + re-dispatch the question back to a live session."
+                  >
+                    ❓ needs answer
+                  </span>
+                )}
                 {isPage ? null : (
                   <div className="td-width-group" role="group" aria-label="Drawer width">
                     {TD_WIDTHS.map((w) => (
@@ -617,6 +624,12 @@ function QuestionReturn({
 }) {
   const [text, setText] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  // TKT-0204: brief "posted ✓" indicator so the user sees the result of
+  // their post. The user reported "I did write an answer and try to
+  // post the answer, nothing happened" — the action did work, but the
+  // textarea clearing + a new comment in the rail was easy to miss.
+  // This makes the success explicit.
+  const [postedFlash, setPostedFlash] = React.useState(false);
   const taRef = React.useRef(null);
 
   const hasSessions = dispatchable.length > 0;
@@ -634,6 +647,8 @@ function QuestionReturn({
       await onComment(trimmed);
       setText('');
       taRef.current?.focus();
+      setPostedFlash(true);
+      setTimeout(() => setPostedFlash(false), 2200);
     } catch (err) {
       console.error('answer comment failed', err);
     } finally {
@@ -663,16 +678,21 @@ function QuestionReturn({
   return (
     <div className="td-question-return">
       <div className="td-qr-title">❓ Answer &amp; return</div>
+      <div className="td-qr-help">
+        The asker is blocked on your answer. Post below, then optionally
+        re-dispatch the question back to a live session so they can resume.
+      </div>
       <textarea
         ref={taRef}
         className="ceo-composer-input td-qr-input"
         rows={2}
         placeholder="Write your answer…  (⌘/Ctrl + Enter posts the answer)"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => { setText(e.target.value); setPostedFlash(false); }}
         onKeyDown={onKey}
         disabled={disabled}
       />
+      {postedFlash && <div className="td-qr-posted">Answer posted ✓</div>}
       <div className="td-qr-return-row">
         <label className="td-qr-return-label">Return to</label>
         <select

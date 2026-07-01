@@ -2409,6 +2409,10 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
   display: flex;
   flex-direction: column;
   gap: 9px;
+  /* TKT-0204: leave room for the floating comment FAB (which sits
+     bottom-right at right:16, bottom:16 + ~38px tall). Without this
+     padding, the right-most "Answer & return" button gets covered. */
+  padding-bottom: 60px;
 }
 .td-qr-title {
   font-size: 11px;
@@ -2416,6 +2420,12 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--status-review);
+}
+/* TKT-0204: one-line explainer that the user said they were missing. */
+.td-qr-help {
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.45;
 }
 .td-qr-input { width: 100%; }
 .td-qr-return-row { display: flex; align-items: center; gap: 10px; }
@@ -2435,6 +2445,27 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
   line-height: 1.5;
 }
 .td-qr-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* TKT-0204: brief "Answer posted ✓" indicator right under the textarea.
+   Shows for ~2s after a successful post. Green-tinted to signal success. */
+.td-qr-posted {
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  color: var(--status-active);
+  background: color-mix(in oklab, var(--status-active) 10%, var(--bg-1));
+  border: 1px solid color-mix(in oklab, var(--status-active) 30%, transparent);
+  border-radius: var(--radius-1);
+  padding: 4px 9px;
+  align-self: flex-start;
+  animation: td-qr-posted-fade 2.2s ease-out forwards;
+}
+@keyframes td-qr-posted-fade {
+  0%, 80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+/* TKT-0204: the floating comment FAB is redundant when the user has a
+   dedicated answer composer right in front of them. Hide it on
+   question-for-human tickets in both drawer and page variants. */
+.td-has-question-return #anno-fab { display: none !important; }
 
 /* ===== TKT-0013 / TKT-0173: Markdown ticket bodies + annotations ===== */
 
