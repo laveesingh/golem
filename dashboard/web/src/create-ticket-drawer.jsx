@@ -145,6 +145,47 @@ function CreateTicketDrawer({ open, preselectProject, onClose }) {
   // through type-changes and template re-picks.
   const bodyTemplateIdRef = React.useRef(null);
   const bodyRef = React.useRef(null);
+  // TKT-0198: tracks whether the user has manually dragged the resize handle.
+  // While false, an effect recomputes the body's inline style.height to fill
+  // the available drawer space (adaptive default). Once the user drags, the
+  // effect stops writing and the inline style.height from the drag wins —
+  // and from then on the body can overflow the drawer container into the
+  // .ct-scroll. Refreshing the drawer (Esc + reopen) re-arms the adaptive.
+  const bodyUserSizedRef = React.useRef(false);
+
+  // TKT-0198: compute the adaptive body height on first render / on
+  // drawer-width change. Measures the available space (drawer scroll
+  // container minus the other fields' heights) and sets the textarea's
+  // inline style.height to that value. Skipped once the user has manually
+  // resized the body.
+  React.useEffect(() => {
+    if (!open) return;
+    if (bodyUserSizedRef.current) return;
+    const compute = () => {
+      const scroller = document.querySelector('.drawer-compose .ct-scroll');
+      const ta = bodyRef.current;
+      if (!scroller || !ta) return;
+      // Sum the heights of the body field's SIBLINGS (every other .ct-field
+      // and the action bar is below .ct-scroll, so the scroller's own
+      // clientHeight minus non-body children = available for the body).
+      const scrollRect = scroller.getBoundingClientRect();
+      const otherFields = Array.from(scroller.querySelectorAll('.ct-field'))
+        .filter((f) => !f.classList.contains('ct-field--grow'));
+      const usedByOthers = otherFields.reduce((s, f) => s + f.getBoundingClientRect().height, 0);
+      const gapCount = scroller.querySelectorAll('.ct-field').length - 1; // gap between fields
+      const totalGaps = gapCount * 9; // matches .ct-scroll { gap: 9px }
+      const available = scrollRect.height - usedByOthers - totalGaps - 24; // 12 top + 12 bottom padding
+      const minH = 120;
+      const finalH = Math.max(minH, Math.floor(available));
+      ta.style.height = `${finalH}px`;
+    };
+    compute();
+    // Recompute on resize (the user might have changed drawer width).
+    const ro = new ResizeObserver(compute);
+    const scroller = document.querySelector('.drawer-compose .ct-scroll');
+    if (scroller) ro.observe(scroller);
+    return () => ro.disconnect();
+  }, [open, widthPct]);
 
   // Drawer width preset (persisted).
   const [widthPct, setWidthPct] = React.useState(ctLoadWidth);
@@ -451,11 +492,17 @@ const discard = () => {
   };
 
   const onSaveAndDispatch = async () => {
-    if (!valid || submitting || !dispatchSession) return;
+    // TKT-0198: the Assignee dropdown now doubles as "who to dispatch to".
+    // If Assignee is a live session, dispatch to it. Otherwise fall back to
+    // the explicit Dispatch-to-session selection (kept for back-compat with
+    // any saved draft that still has dispatch_session set). One dropdown,
+    // one action — no more "which one does Save & Dispatch use" confusion.
+    const dispatchTarget = (assignee && sessions.some((s) => s.session_id === assignee)) ? assignee : dispatchSession;
+    if (!valid || submitting || !dispatchTarget) return;
     setSubmitting(true); setError(null);
     try {
       const ticket = await window.SubstrateAPI.createTicket(buildBody());
-      await window.SubstrateAPI.dispatchTicket(ticket.id, { session_id: dispatchSession });
+      await window.SubstrateAPI.dispatchTicket(ticket.id, { session_id: dispatchTarget });
       window.CtDraft.discard(projectId);
       onClose && onClose();
     } catch (err) {
@@ -517,21 +564,20 @@ const discard = () => {
                 {CT_PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
             </div>
+            <div className="ct-field">
+              <label className="ct-label">Template</label>
+              <select className="ct-input" value={templateId} onChange={onTemplateChange}
+                disabled={submitting || !templates.length}>
+                <option value="">None</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="ct-field">
             <label className="ct-label">Title</label>
             <input className="ct-input" type="text" value={title} placeholder="Short summary"
               onChange={(e) => setTitle(e.target.value)} disabled={submitting} autoFocus/>
-          </div>
-
-          <div className="ct-field">
-            <label className="ct-label">Template</label>
-            <select className="ct-input" value={templateId} onChange={onTemplateChange}
-              disabled={submitting || !templates.length}>
-              <option value="">None</option>
-              {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
-            </select>
           </div>
 
           <div className="ct-field ct-field--grow">
@@ -541,6 +587,7 @@ const discard = () => {
               onChange={(e) => { bodyTemplateIdRef.current = null; setBody(e.target.value); }}
               onPaste={onPaste}
               onDrop={onDrop}
+              onResize={() => { bodyUserSizedRef.current = true; }}
               onDragOver={(e) => { if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) e.preventDefault(); }}
               disabled={submitting}/>
             {uploads.length > 0 && (
@@ -576,19 +623,16 @@ const discard = () => {
             </div>
           </div>
 
-          <div className="ct-dispatch">
-            <label className="ct-label">Dispatch to session</label>
-            <select className="ct-input" value={dispatchSession} onChange={(e) => setDispatchSession(e.target.value)}
-              disabled={submitting || !canDispatch}>
-              <option value="">{canDispatch ? 'Select a live session…' : 'No live session in this project'}</option>
-              {sessions.map((s) => <option key={s.session_id} value={s.session_id}>{s.label}</option>)}
-            </select>
-            {!canDispatch && projectId && (
-              <div className="ct-dispatch-hint">
-                No live session in this project — start one with <span className="mono">cd &lt;project&gt; &amp;&amp; claude</span>.
-              </div>
-            )}
-          </div>
+          {/* TKT-0198: the standalone "Dispatch to session" field is gone.
+              Pick a live session in the Assignee dropdown above and click
+              Save & Dispatch — Assignee now doubles as the dispatch target.
+              If no live session exists in the project, Save & Dispatch is
+              disabled with a hint. */}
+          {!canDispatch && projectId && (
+            <div className="ct-dispatch-hint">
+              No live session in this project — start one with <span className="mono">cd &lt;project&gt; &amp;&amp; claude</span> to use Save &amp; Dispatch.
+            </div>
+          )}
 
           {error && <div className="ct-error">{error}</div>}
         </div>
@@ -597,7 +641,7 @@ const discard = () => {
         <div className="ct-actions">
           <button className="orch-btn ghost" onClick={close} disabled={submitting}>Cancel</button>
           <button className="orch-btn" onClick={onSaveAndDispatch}
-            disabled={submitting || !valid || !canDispatch || !dispatchSession}
+            disabled={submitting || !valid || !(assignee && sessions.some((s) => s.session_id === assignee))}
             title={!canDispatch ? 'No live session in this project to dispatch to' : 'Create then dispatch to the selected session'}>
             Save &amp; Dispatch
           </button>
