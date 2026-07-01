@@ -20,6 +20,22 @@ function App() {
     };
   }, []);
 
+  // TKT-0206: refresh the idea count on the bottom-left anchor whenever
+  // the ideas list changes (an idea is posted or popped, anywhere in the
+  // app). Cheap (just one GET); keeps the badge in sync without a global
+  // store or interval.
+  const [ideasCount, setIdeasCount] = React.useState(0);
+  const refreshIdeasCount = React.useCallback(() => {
+    window.SubstrateAPI.listIdeas()
+      .then((rows) => setIdeasCount(Array.isArray(rows) ? rows.length : 0))
+      .catch(() => {});
+  }, []);
+  React.useEffect(() => {
+    refreshIdeasCount();
+    window.addEventListener('ideas:changed', refreshIdeasCount);
+    return () => window.removeEventListener('ideas:changed', refreshIdeasCount);
+  }, [refreshIdeasCount]);
+
   // setRoute navigates (push) — real links + in-app nav both go through this.
   // Callers that want replace semantics (filter typing) call window.Router.go
   // directly with {replace:true}.
@@ -81,6 +97,25 @@ function App() {
         open={!!route.overlays.ticket}
         ticketId={route.overlays.ticket}
         onClose={() => window.Router.closeOverlay('ticket')}/>
+      {/* TKT-0206: global ideas stack — URL overlay (?ideas=1) with the
+          same shell pattern as the other drawers. */}
+      <IdeasDrawer
+        open={!!route.overlays.ideas}
+        onClose={() => window.Router.closeOverlay('ideas')}/>
+      {/* TKT-0206: bottom-left anchor that opens the ideas drawer. Always
+          visible (lives outside the route-overlays array) so the user can
+          drop a thought from any page, including while looking at a ticket
+          or a project. */}
+      <button
+        className="ideas-anchor"
+        onClick={() => window.Router.openIdeas()}
+        title="Open the ideas stack"
+        aria-label="Open the ideas stack"
+      >
+        <Icon.Lightbulb/>
+        <span>Ideas</span>
+        {ideasCount > 0 && <span className="ideas-anchor-count mono">{ideasCount}</span>}
+      </button>
     </div>
   );
 }
