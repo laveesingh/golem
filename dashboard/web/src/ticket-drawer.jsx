@@ -855,22 +855,20 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                 </div>
                 <div className="td-prop">
                   <span className="td-prop-label">Assignee</span>
+                  {/* GOL-287: assignee rows now carry the session's model mark,
+                      held role, and live status via the shared option builder. */}
                   <PopSelect
                     value={ticket.assignee || ''}
                     placeholder="Unassigned"
                     searchable
                     compact
-                    options={[
-                      { value: '', label: 'Unassigned' },
-                      { value: 'human', label: 'Lavee' },
-                      ...dispatchable.map((s) => ({ value: s.session_id, label: s.label })),
-                      ...(ticket.assignee && ticket.assignee !== 'human' && !labelBySession.has(ticket.assignee)
-                        // TKT-0266: prefer the persisted durable label so the
-                        // offline option shows the friendly name (e.g.
-                        // "golem:builder (offline)") instead of a uuid stub.
+                    options={window.AssigneeOptions.buildAssigneeOptions({
+                      sessions: dispatchable,
+                      liveStatus: new Map(nativeSessionsNow.filter((s) => s.session_id).map((s) => [s.session_id, s.status ?? null])),
+                      offline: (ticket.assignee && ticket.assignee !== 'human' && !labelBySession.has(ticket.assignee))
                         ? [{ value: ticket.assignee, label: ticket.assignee_label || `session ${String(ticket.assignee).slice(0, 8)}`, hint: 'offline' }]
-                        : []),
-                    ]}
+                        : [],
+                    })}
                     onChange={(v) => commitField({ assignee: v || null })}
                   />
                 </div>

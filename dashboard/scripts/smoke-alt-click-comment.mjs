@@ -38,11 +38,14 @@ await wait(500);
 const composer = await page.evaluate(() => {
   const ta = document.querySelector('#anno-rail .anno-composer textarea');
   const railOpen = document.querySelector('#anno-rail')?.classList.contains('open');
-  return { railOpen, hasComposer: !!ta, quote: document.querySelector('#anno-rail .anno-composer .quote')?.textContent?.trim() || null };
+  // GOL-277 replaced the quote preview with the attachment pill; GOL-287 made
+  // that pill name the attached BLOCK itself (block text, not section title).
+  const pill = document.querySelector('#anno-rail .anno-composer .anno-attachment-pill')?.textContent?.trim() || null;
+  return { railOpen, hasComposer: !!ta, pill };
 });
 assert.equal(composer.railOpen, true, 'rail opens on alt+click');
 assert.equal(composer.hasComposer, true, 'composer opens on alt+click');
-assert.ok(composer.quote && composer.quote.length > 0, 'composer is anchored to the block quote');
+assert.ok(composer.pill && /Block/.test(composer.pill), 'composer shows the block attachment pill');
 
 // 4. Release Alt → class clears.
 await page.keyboard.up('Alt');
@@ -50,7 +53,8 @@ await wait(150);
 const after = await page.evaluate(() => document.querySelector('.td-md')?.classList.contains('anno-alt-comment'));
 assert.equal(after, false, 'alt-comment class clears when the modifier is released');
 
-// 5. A normal click (no modifier) on the block does NOT open a composer.
+// 5. A normal click (no modifier) on the block does NOT anchor a composer.
+//    (The GOL-277 rail composer is permanent, so the observable is the pill.)
 await page.evaluate(() => {
   const b = document.querySelector('#anno-rail .anno-composer .cancel');
   b?.click();
@@ -58,8 +62,8 @@ await page.evaluate(() => {
 await wait(300);
 await page.mouse.click(blockPt.x, blockPt.y);
 await wait(400);
-const normalClick = await page.evaluate(() => !!document.querySelector('#anno-rail .anno-composer textarea'));
-assert.equal(normalClick, false, 'plain click does not open a composer');
+const normalClick = await page.evaluate(() => !!document.querySelector('#anno-rail .anno-composer .anno-attachment-pill'));
+assert.equal(normalClick, false, 'plain click does not anchor the composer');
 
 await cleanup();
 console.log('alt+click-to-comment: PASS');

@@ -128,9 +128,12 @@ try {
   const imgSrc = await page.locator('.anno-card .body img').getAttribute('src');
   assert.ok(imgSrc.startsWith('/api/ticket-assets/'), `rendered img src must point to /api/ticket-assets/, got ${imgSrc}`);
 
-  // Test reply composer with image paste
+  // Test reply-with-image paste. GOL-287: replies are written in the MAIN
+  // composer — Reply attaches the reference pill there; send mechanism unchanged.
   await page.locator('.anno-card .acts button:has-text("Reply")').click();
-  await page.waitForSelector('.anno-card .anno-composer textarea');
+  await page.waitForSelector('#anno-rail .anno-composer .anno-attachment-pill');
+  const replyPill = await page.locator('#anno-rail .anno-composer .anno-attachment-pill').textContent();
+  assert.ok(/Reply/.test(replyPill || ''), 'main composer carries the reply reference');
 
   await page.evaluate((b64) => {
     const byteCharacters = atob(b64);
@@ -144,7 +147,7 @@ try {
     const dt = new DataTransfer();
     dt.items.add(file);
 
-    const textarea = document.querySelector('.anno-card .anno-composer textarea');
+    const textarea = document.querySelector('#anno-rail .anno-composer textarea');
     const pasteEvent = new ClipboardEvent('paste', {
       bubbles: true,
       cancelable: true,
@@ -154,15 +157,16 @@ try {
   }, pngBase64);
 
   await page.waitForFunction(() => {
-    const ta = document.querySelector('.anno-card .anno-composer textarea');
+    const ta = document.querySelector('#anno-rail .anno-composer textarea');
     return ta && ta.value.includes('/api/ticket-assets/');
   });
 
-  await page.locator('.anno-card .anno-composer button.send:has-text("Comment")').click();
+  await page.locator('#anno-rail .anno-composer button.send:has-text("Comment")').click();
 
-  // Wait for reply to appear with rendered image
-  await page.waitForSelector('.anno-card .reply .body img');
-  const replyImgSrc = await page.locator('.anno-card .reply .body img').getAttribute('src');
+  // Wait for the nested reply to appear with rendered image (GOL-277 thread
+  // markup: .thread-replies > .anno-card).
+  await page.waitForSelector('.thread-replies .anno-card .body img');
+  const replyImgSrc = await page.locator('.thread-replies .anno-card .body img').getAttribute('src');
   assert.ok(replyImgSrc.startsWith('/api/ticket-assets/'), `reply img src must point to /api/ticket-assets/, got ${replyImgSrc}`);
 
   const tableTicket = await api('/tickets', {

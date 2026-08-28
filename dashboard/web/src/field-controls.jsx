@@ -134,6 +134,7 @@ const PopSelect = function PopSelect({ value, options, onChange, placeholder = '
       >
         {selected && selected.dot ? <span className="ps-dot" style={{ background: selected.dot }}/> : null}
         {selected && selected.badge ? <span className="ps-badge">{selected.badge}</span> : null}
+        {selected && selected.icon ? <img className="ps-option-icon" src={selected.icon} alt=""/> : null}
         <span className="ps-label">{selected ? psLabel(selected) : placeholder}</span>
         <Icon.ChevronRight className="ps-chev"/>
       </button>
@@ -161,6 +162,7 @@ const PopSelect = function PopSelect({ value, options, onChange, placeholder = '
                 <span className="ps-check">{String(o.value) === strValue ? PS_CHECK : null}</span>
                 {o.dot ? <span className="ps-dot" style={{ background: o.dot }}/> : null}
                 {o.badge ? <span className="ps-badge">{o.badge}</span> : null}
+                {o.icon ? <img className="ps-option-icon" src={o.icon} alt=""/> : null}
                 <span className="ps-option-label">{psLabel(o)}</span>
                 {o.hint ? <span className="ps-hint">{o.hint}</span> : null}
               </button>
@@ -173,3 +175,36 @@ const PopSelect = function PopSelect({ value, options, onChange, placeholder = '
   );
 };
 window.PopSelect = PopSelect;
+
+// GOL-287: shared assignee-option shaping for the create-ticket drawer and the
+// ticket drawer's read/edit properties. Each live session row carries its
+// model-provider mark (the same live registry the agent cards use), its held
+// role, and its live status; the human row keeps the identity dot.
+function assigneeProviderIcon(session) {
+  if (!session) return null;
+  const provider = window.ModelProviders?.resolveProvider?.(session.provider, session.model);
+  return provider?.iconIdleSrc || provider?.iconSrc || null;
+}
+
+function buildAssigneeOptions({ sessions = [], liveStatus = null, offline = [] } = {}) {
+  const options = [
+    { value: '', label: 'Unassigned' },
+    { value: 'human', label: 'Lavee', dot: '#f5a623' },
+  ];
+  for (const s of sessions) {
+    if (!s?.session_id) continue;
+    const status = (liveStatus instanceof Map ? liveStatus.get(s.session_id) : null) ?? s.status ?? null;
+    const hint = [s.role, status && status !== 'unknown' ? status : null].filter(Boolean).join(' · ');
+    options.push({
+      value: s.session_id,
+      label: s.label || s.name || `session ${String(s.session_id).slice(0, 8)}`,
+      icon: assigneeProviderIcon(s),
+      hint: hint || null,
+    });
+  }
+  for (const extra of offline) {
+    if (extra?.value != null) options.push(extra);
+  }
+  return options;
+}
+window.AssigneeOptions = { buildAssigneeOptions, assigneeProviderIcon };

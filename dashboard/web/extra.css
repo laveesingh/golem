@@ -3500,6 +3500,12 @@ mark.anno.anno-tail::after {
   border: none;
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
+/* GOL-287: agent avatars render the session's model-provider mark inside the
+   round badge instead of initials. */
+.anno-avatar img {
+  display: block; width: 15px; height: 15px; object-fit: contain;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.35));
+}
 .anno-author-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--text-1); font-size: 11.5px; font-weight: 600;
@@ -4135,6 +4141,11 @@ mark.anno.anno-tail::after {
   padding: 1px 5px; border-radius: 4px; flex: 0 0 auto;
   background: var(--bg-3); color: var(--text-1); border: 1px solid var(--border-2);
 }
+/* GOL-287: model-provider marks inside PopSelect rows (assignee pickers). */
+.ps-option-icon {
+  width: 14px; height: 14px; object-fit: contain; flex: 0 0 auto;
+}
+.ct-field .ps-trigger { width: 100%; }
 
 .ps-menu {
   background: var(--bg-1); border: 1px solid var(--border-2); border-radius: var(--radius-2);

@@ -878,7 +878,12 @@ function blockAtPoint(root, x, y) {
 // its previousElementSibling chain walks back through the section's earlier
 // blocks to the heading that opens it.
 function nearestPrecedingHeading(block, root = null) {
-  if (root) block = topLevelBlock(root, block);
+  if (root) block = topLevelBlock(root, block) || block;
+  // GOL-287: a heading block opens its own section. Commenting on the heading
+  // itself must anchor to THAT section — walking further back would attach the
+  // previous sibling section (top level) or the parent heading (nested), which
+  // is exactly the mis-attribution this function used to produce.
+  if (/^H[1-6]$/.test(block?.tagName || '')) return block;
   let el = block;
   while (el) {
     const sib = el.previousElementSibling;
@@ -988,6 +993,7 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
     e.stopPropagation();
     const h = nearestPrecedingHeading(block, rootRef.current);
     setRailOpen(true);
+    setPendingReply(null);
     setPendingComposer({
       quote: t,
       prefix: '',
@@ -1498,6 +1504,7 @@ React.useEffect(() => {
       btext = blockText(blockEl);
     }
     setRailOpen(true);
+    setPendingReply(null);
     setPendingComposer({ quote, prefix, suffix, section, blockId, blockText: btext, anchorKind: 'text' });
   }, []);
 
@@ -1620,18 +1627,44 @@ React.useEffect(() => {
     };
   }, [currentAuthor]);
 
+  // GOL-287 feedback: replies are written in the main composer, not inside the
+  // comment card. pendingReply carries only the reference — the send still goes
+  // through the unchanged addReply / addReplyAndDispatch mechanism.
+  const [pendingReply, setPendingReply] = React.useState(null);
+  const startReply = React.useCallback((annotation) => {
+    const meta = authorMeta(annotation.author, annotation.author_label);
+    setPendingComposer(null);
+    setRailOpen(true);
+    setPendingReply({
+      parentId: annotation.id,
+      label: meta.label,
+      excerpt: String(annotation.body ?? annotation.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 90),
+    });
+  }, []);
+  const cancelReply = React.useCallback(() => setPendingReply(null), []);
+
   const sendComposer = React.useCallback((text) => {
+    if (pendingReply) {
+      addReply(pendingReply.parentId, text, currentAuthor);
+      setPendingReply(null);
+      return;
+    }
     const anchor = pendingComposer;
     createComment(composerInput(text, anchor));
     setPendingComposer(null);
-  }, [composerInput, createComment, pendingComposer]);
+  }, [pendingReply, addReply, currentAuthor, composerInput, createComment, pendingComposer]);
 
   const sendComposerAndDispatch = React.useCallback((text) => {
+    if (pendingReply) {
+      const done = addReplyAndDispatch(pendingReply.parentId, text, currentAuthor);
+      setPendingReply(null);
+      return done;
+    }
     const anchor = pendingComposer;
     const done = createCommentAndDispatch(composerInput(text, anchor));
     setPendingComposer(null);
     return done;
-  }, [composerInput, createCommentAndDispatch, pendingComposer]);
+  }, [pendingReply, addReplyAndDispatch, currentAuthor, composerInput, createCommentAndDispatch, pendingComposer]);
 
   const renderComment = (annotation) => (
     <React.Fragment key={annotation.id}>
@@ -1642,8 +1675,7 @@ React.useEffect(() => {
         onJump={() => focusAnnotation(annotation.id, true)}
         onResolve={() => updateComment(annotation.id, { status: annotation.status === 'resolved' ? 'open' : 'resolved' })}
         onDelete={() => deleteComment(annotation.id)}
-        onReply={(text) => addReply(annotation.id, text, currentAuthor)}
-        onReplyAndDispatch={(text) => addReplyAndDispatch(annotation.id, text, currentAuthor)}
+        onStartReply={startReply}
         onEditBody={(text) => updateComment(annotation.id, { body: text })}
         onDispatch={onDispatchComment}
         canDispatch={canDispatchComments}
@@ -1657,8 +1689,7 @@ React.useEffect(() => {
           onFocus={focusAnnotation}
           onResolve={updateComment}
           onDelete={deleteComment}
-          onReply={(id, text) => addReply(id, text, currentAuthor)}
-          onReplyAndDispatch={(id, text) => addReplyAndDispatch(id, text, currentAuthor)}
+          onStartReply={startReply}
           onEditBody={updateComment}
           onDispatch={onDispatchComment}
           canDispatch={canDispatchComments}
@@ -1732,6 +1763,7 @@ React.useEffect(() => {
           if (plus) plus.style.display = 'none';
           if (!hb || !hb.blockId) return;
           setRailOpen(true);
+          setPendingReply(null);
           setPendingComposer({
             quote: hb.blockText,
             prefix: '',
@@ -1755,7 +1787,7 @@ React.useEffect(() => {
               <div className="meta">{openCount} open · {resolvedCount} resolved</div>
             </div>
             <div className="rail-tools">
-              <button className="rail-btn" onClick={() => { setPendingComposer(null); setRailOpen(true); }}>+ New</button>
+              <button className="rail-btn" onClick={() => { setPendingComposer(null); setPendingReply(null); setRailOpen(true); }}>+ New</button>
               <label className="rail-check">
                 <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
                 Show resolved
@@ -1804,16 +1836,34 @@ React.useEffect(() => {
           <AnnoComposer
             rail
             autoFocus={railOpen}
+            // null on the plain composer so mounting never steals focus (an
+            // Escape then reaches the drawer's close handler); a reply ref or
+            // block anchor token focuses deliberately.
+            focusToken={pendingReply ? `reply:${pendingReply.parentId}` : (pendingComposer ? 'anchor' : null)}
             quote={pendingComposer?.anchorKind === 'block' ? null : pendingComposer?.quote}
-            attachment={pendingComposer ? {
-              title: pendingComposer.section?.title || '',
-              id: pendingComposer.section?.id || pendingComposer.blockId || '',
-            } : null}
-            canDispatch={canDispatchComments && !!onCreateAndDispatch}
+            attachment={pendingReply ? {
+              kind: 'reply',
+              title: pendingReply.excerpt ? `${pendingReply.label} — ${pendingReply.excerpt}` : pendingReply.label,
+              id: pendingReply.parentId,
+            } : (pendingComposer ? {
+              // GOL-287: the pill must name what will actually be anchored.
+              // Block comments anchor the hovered block (block_id primary), so
+              // the pill shows that block's text; the section stays context.
+              // Text selections keep the section pill beside their quote.
+              kind: pendingComposer.anchorKind === 'block' ? 'block' : 'section',
+              title: pendingComposer.anchorKind === 'block'
+                ? (pendingComposer.blockText || pendingComposer.section?.title || '')
+                : (pendingComposer.section?.title || ''),
+              id: pendingComposer.anchorKind === 'block'
+                ? (pendingComposer.blockId || pendingComposer.section?.id || '')
+                : (pendingComposer.section?.id || pendingComposer.blockId || ''),
+            } : null)}
+            canDispatch={canDispatchComments && (pendingReply ? !!onReplyAndDispatch : !!onCreateAndDispatch)}
+            dispatchLabel={pendingReply ? 'Reply + Dispatch' : 'Dispatch'}
             onSend={sendComposer}
             onSendAndDispatch={sendComposerAndDispatch}
-            onCancel={() => setPendingComposer(null)}
-            onClearAttachment={() => setPendingComposer(null)}
+            onCancel={() => { setPendingComposer(null); setPendingReply(null); }}
+            onClearAttachment={() => { setPendingComposer(null); setPendingReply(null); }}
           />
         </div>
       </div>
@@ -1898,7 +1948,7 @@ function openImageLightbox(url, alt = 'Image preview') {
   });
 }
 
-function CommentThread({ parentId, replies = [], showResolved = false, activeId, onFocus, onResolve, onDelete, onReply, onReplyAndDispatch, onEditBody, onDispatch, canDispatch = false }) {
+function CommentThread({ parentId, replies = [], showResolved = false, activeId, onFocus, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const visibleReplies = replies.filter((reply) => (
     reply.status !== 'deleted' && (showResolved || reply.status !== 'resolved')
@@ -1933,8 +1983,7 @@ function CommentThread({ parentId, replies = [], showResolved = false, activeId,
                 onJump={() => onFocus(annotation.id, true)}
                 onResolve={() => onResolve(annotation.id, { status: annotation.status === 'resolved' ? 'open' : 'resolved' })}
                 onDelete={() => onDelete(annotation.id)}
-                onReply={(text) => onReply(annotation.id, text)}
-                onReplyAndDispatch={onReplyAndDispatch ? (text) => onReplyAndDispatch(annotation.id, text) : undefined}
+                onStartReply={onStartReply}
                 onEditBody={(text) => onEditBody(annotation.id, { body: text })}
                 onDispatch={onDispatch}
                 canDispatch={canDispatch}
@@ -1947,8 +1996,7 @@ function CommentThread({ parentId, replies = [], showResolved = false, activeId,
   );
 }
 
-function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onReply, onReplyAndDispatch, onEditBody, onDispatch, canDispatch = false }) {
-  const [replying, setReplying] = React.useState(false);
+function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false }) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   const [editUploads, setEditUploads] = React.useState([]);
@@ -2027,7 +2075,6 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onRepl
     setDraft(htmlToEditableText(commentBody));
     setEditUploads([]);
     setEditing(true);
-    setReplying(false);
     setExpanded(true); // TKT-0237: auto-expand on Edit (never collapse)
     setTimeout(() => editRef.current?.focus(), 0);
   };
@@ -2062,6 +2109,16 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onRepl
 
   const isHuman = ann.author === 'human' || ann.author === 'you' || ann.author === 'human:dashboard';
 
+  // GOL-287: agent comments wear the authoring session's model mark instead of
+  // an initialism badge. The author field carries the session id; the live
+  // session registry keeps offline sessions too, so history keeps its icons.
+  // Unknown session / unresolvable provider falls back to the initials badge.
+  const authorSession = !isHuman ? window.Store?.getNativeSessionById?.(ann.author) : null;
+  const authorProvider = authorSession
+    ? window.ModelProviders?.resolveProvider?.(authorSession.provider, authorSession.model)
+    : null;
+  const authorIconSrc = authorProvider?.iconIdleSrc || authorProvider?.iconSrc || null;
+
   const onBodyClick = (e) => {
     const target = e.target;
     if (target && target.tagName === 'IMG' && target.src) {
@@ -2082,7 +2139,7 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onRepl
     >
       <div className="ch">
         <span className="anno-author">
-          <span className={`anno-avatar ${isHuman ? 'anno-avatar-human' : 'anno-avatar-agent'}`} aria-label={`${c.label} avatar`}>{initials}</span>
+          <span className={`anno-avatar ${isHuman ? 'anno-avatar-human' : 'anno-avatar-agent'}`} aria-label={`${c.label} avatar`}>{!isHuman && authorIconSrc ? <img src={authorIconSrc} alt=""/> : initials}</span>
           <span className="anno-author-name">{c.label}</span>
         </span>
         <span className="when">{shortTime(ann.created_at || ann.ts)}</span>
@@ -2159,21 +2216,11 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onRepl
           </>
         )}
       </div>
-      {replying && (
-        <AnnoComposer
-          canDispatch={canDispatch && !!onReplyAndDispatch}
-          dispatchLabel="Comment + Dispatch"
-          onSend={(text) => { onReply(text); setReplying(false); }}
-          onSendAndDispatch={onReplyAndDispatch ? (text) => {
-            const done = onReplyAndDispatch(text);
-            setReplying(false);
-            return done;
-          } : undefined}
-          onCancel={() => setReplying(false)}
-        />
-      )}
+      {/* GOL-287 feedback: reply composition lives in the main composer. The
+          card's Reply button only sets the reply reference there; the send
+          still routes through the unchanged reply mechanism. */}
       <div className="acts">
-        <button type="button" className="act-reply" onClick={(e) => { e.stopPropagation(); setReplying(true); }}>
+        <button type="button" className="act-reply" onClick={(e) => { e.stopPropagation(); if (onStartReply) onStartReply(ann); }}>
           <span aria-hidden="true">💬</span> Reply
         </button>
         {ann.block_id && onJump && (
@@ -2200,7 +2247,7 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onRepl
   );
 }
 
-function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatch = false, dispatchLabel = 'Dispatch', onCancel, onClearAttachment, rail = false, autoFocus = true }) {
+function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatch = false, dispatchLabel = 'Dispatch', onCancel, onClearAttachment, rail = false, autoFocus = true, focusToken = null }) {
   const [text, setText] = React.useState('');
   const [uploads, setUploads] = React.useState([]);
   const taRef = React.useRef(null);
@@ -2209,6 +2256,12 @@ function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatc
   React.useEffect(() => {
     if (autoFocus) taRef.current?.focus();
   }, [autoFocus]);
+
+  // GOL-287: refocus when the composer's mode flips (e.g. Reply pressed on a
+  // card) so typing lands in the main box immediately.
+  React.useEffect(() => {
+    if (focusToken != null) taRef.current?.focus();
+  }, [focusToken]);
 
   React.useLayoutEffect(() => {
     const textarea = taRef.current;
@@ -2317,10 +2370,10 @@ function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatc
     <div className={`anno-composer${rail ? ' anno-rail-composer' : ''}`}>
       {attachment && (
         <div className="anno-attachment-pill" title={attachment.title || attachment.id || 'Attached section'}>
-          <span aria-hidden="true">⧉ Section</span>
+          <span aria-hidden="true">{attachment.kind === 'reply' ? '↩ Reply' : attachment.kind === 'block' ? '⧉ Block' : '⧉ Section'}</span>
           {attachment.title && <span className="anno-attachment-title">· {attachment.title}</span>}
           {onClearAttachment && (
-            <button type="button" aria-label="Remove section attachment" title="Remove section attachment" onClick={(e) => { e.stopPropagation(); onClearAttachment(); }}>×</button>
+            <button type="button" aria-label={attachment.kind === 'reply' ? 'Remove reply reference' : attachment.kind === 'block' ? 'Remove block attachment' : 'Remove section attachment'} title={attachment.kind === 'reply' ? 'Remove reply reference' : attachment.kind === 'block' ? 'Remove block attachment' : 'Remove section attachment'} onClick={(e) => { e.stopPropagation(); onClearAttachment(); }}>×</button>
           )}
         </div>
       )}

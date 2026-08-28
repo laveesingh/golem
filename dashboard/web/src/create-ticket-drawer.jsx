@@ -519,11 +519,17 @@ const discard = () => {
             </div>
             <div className="ct-field">
               <label className="ct-label">Assignee</label>
-              <select className="ct-input" value={assignee} onChange={(e) => setAssignee(e.target.value)} disabled={submitting || !projectId}>
-                <option value="">Unassigned</option>
-                <option value="human">Lavee</option>
-                {sessions.map((s) => <option key={s.session_id} value={s.session_id}>{s.label}</option>)}
-              </select>
+              {/* GOL-287: the create drawer now uses the same PopSelect assignee
+                  picker as the read/edit drawer — provider marks, role/status
+                  hints, searchable — instead of a bare native select. */}
+              <PopSelect
+                value={assignee}
+                placeholder="Unassigned"
+                searchable
+                disabled={submitting || !projectId}
+                options={window.AssigneeOptions.buildAssigneeOptions({ sessions })}
+                onChange={(v) => setAssignee(v || '')}
+              />
             </div>
           </div>
 
