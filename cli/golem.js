@@ -1213,23 +1213,25 @@ default > role exec).`);
 
 async function cmdListWorkers(args) {
   if (args.includes('-h') || args.includes('--help')) {
-    log(`Usage: golem list ${workerProjectHelp()} [--all] [--json]
+    log(`Usage: golem list ${workerProjectHelp()} [--all] [--all-projects] [--json]
 
 List live, spawning, and failed Golem workers as a table. Dead rows are
 hidden by default; --all includes retained dead rows. Use --json for the
 machine-readable worker-record shape.
 
-Without --project this lists workers from EVERY project, so pass
---project . (or a path / project id) whenever you mean the current one.
-The PROJECT column shows which project each worker belongs to.`);
+Without --project this lists workers for the CURRENT project — resolved
+from the working directory by walking up to the nearest .git or CLAUDE.md
+(the same rule as hook routing). Pass --all-projects to list every
+project's workers. The PROJECT column shows which project each belongs to.`);
     return;
   }
   const wantJson = args.includes('--json');
   const includeDead = args.includes('--all');
+  const allProjects = args.includes('--all-projects');
   let project = null;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--json' || arg === '--all') {
+    if (arg === '--json' || arg === '--all' || arg === '--all-projects') {
       continue;
     }
     if (arg === '--project') {
@@ -1242,7 +1244,7 @@ The PROJECT column shows which project each worker belongs to.`);
     }
   }
   try {
-    emitWorkerOutput(await listWorkerViews({ project, includeDead }), { json: wantJson });
+    emitWorkerOutput(await listWorkerViews({ project: allProjects ? null : (project ?? '.'), includeDead }), { json: wantJson });
   } catch (error) {
     fatal(1, `golem list: ${error.message}`);
   }
@@ -1279,7 +1281,7 @@ attach the project's whole swarm — its dedicated tmux server tree.`);
       if (status) process.exitCode = status;
       return;
     }
-    const { projectId } = project == null ? { projectId: null } : await resolveWorkerProject(project);
+    const { projectId } = await resolveWorkerProject(project);
     const status = attachWorker(name, { projectId });
     if (status) process.exitCode = status;
   } catch (error) {
@@ -1315,7 +1317,7 @@ Capture worker scrollback without attaching or sending input.`);
     }
   }
   try {
-    const { projectId } = project == null ? { projectId: null } : await resolveWorkerProject(project);
+    const { projectId } = await resolveWorkerProject(project);
     process.stdout.write(await peekWorker(name, { projectId, lines }));
   } catch (error) {
     fatal(1, `golem peek: ${error.message}`);
@@ -1348,7 +1350,7 @@ survivors, verify the group is empty, then mark the worker dead.`);
     }
   }
   try {
-    const { projectId } = project == null ? { projectId: null } : await resolveWorkerProject(project);
+    const { projectId } = await resolveWorkerProject(project);
     emitWorkerOutput(await killWorker(name, { projectId }), { json: wantJson });
   } catch (error) {
     const code = /refusing to kill|ambiguous|not found/i.test(error.message) ? 2 : 1;
