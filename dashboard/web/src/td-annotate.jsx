@@ -1114,21 +1114,6 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
     };
   }, [annotations, comments, showResolved]);
 
-  React.useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (!root) {
-      setTocHeadings((prev) => prev.length === 0 ? prev : []);
-      return;
-    }
-    const nextList = assignTocHeadingIds(root, documentTitle);
-    setTocHeadings((prev) => {
-      if (prev.length === nextList.length && prev.every((h, i) => h.id === nextList[i]?.id && h.text === nextList[i]?.text && h.level === nextList[i]?.level)) {
-        return prev;
-      }
-      return nextList;
-    });
-  }, [html, documentTitle]);
-
   const lastHtmlRef = React.useRef(null);
   React.useLayoutEffect(() => {
     const root = rootRef.current;
@@ -1147,6 +1132,21 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
       }
     }
   }, [html]);
+
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) {
+      setTocHeadings((prev) => prev.length === 0 ? prev : []);
+      return;
+    }
+    const nextList = assignTocHeadingIds(root, documentTitle);
+    setTocHeadings((prev) => {
+      if (prev.length === nextList.length && prev.every((h, i) => h.id === nextList[i]?.id && h.text === nextList[i]?.text && h.level === nextList[i]?.level)) {
+        return prev;
+      }
+      return nextList;
+    });
+  }, [html, documentTitle]);
 
   React.useEffect(() => {
     const root = rootRef.current;
