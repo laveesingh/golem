@@ -23,12 +23,15 @@ window.__markdownReady = true;
 let mermaid;
 window.runMermaid = async (nodes) => {
   if (!nodes?.length) return;
+  const unrendered = [...nodes].filter((n) => !n.querySelector('svg') && !n.dataset.mermaidProcessed);
+  if (!unrendered.length) return;
   try {
     if (!mermaid) {
       mermaid = (await import('mermaid')).default;
       mermaid.initialize({ startOnLoad: false });
     }
-    await mermaid.run({ nodes, suppressErrors: true });
+    await mermaid.run({ nodes: unrendered, suppressErrors: true });
+    unrendered.forEach((n) => { n.dataset.mermaidProcessed = '1'; });
   } catch (error) {
     console.error('mermaid lazy-load/render failed', error);
   }
@@ -56,6 +59,7 @@ await import('./ticket-drawer.jsx');
 await import('./other-pages.jsx');
 await import('./communication-drawer.jsx');
 await import('./settings-page.jsx');
+await import('./substrate-view.jsx');
 await import('./tweaks.jsx');
 await import('./drawer-ceo.jsx');
 await import('./native-session-drawer.jsx');

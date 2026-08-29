@@ -125,10 +125,38 @@
     return escapedTextBody(text);
   }
 
+  function renderAnsi(text) {
+    if (!text) return '';
+    let escaped = escMd(text);
+    escaped = escaped.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '');
+    escaped = escaped.replace(/\x1b\[\??[0-9;]*[a-zA-Z]/g, (match) => {
+      if (match.endsWith('m')) {
+        const nums = match.slice(2, -1).split(';').map(Number);
+        if (nums.includes(0) || nums.length === 0 || match === '\x1b[m') return '</span>';
+        const classes = [];
+        for (const n of nums) {
+          if (n === 1) classes.push('ansi-bold');
+          else if (n === 2) classes.push('ansi-dim');
+          else if (n === 3) classes.push('ansi-italic');
+          else if (n === 4) classes.push('ansi-underline');
+          else if (n >= 30 && n <= 37) classes.push(`ansi-fg-${n - 30}`);
+          else if (n === 39) classes.push('ansi-fg-default');
+          else if (n >= 40 && n <= 47) classes.push(`ansi-bg-${n - 40}`);
+          else if (n === 49) classes.push('ansi-bg-default');
+          else if (n === 90) classes.push('ansi-fg-bright-black');
+          else if (n >= 91 && n <= 97) classes.push(`ansi-fg-bright-${n - 90}`);
+        }
+        return classes.length ? `<span class="${classes.join(' ')}">` : '';
+      }
+      return '';
+    });
+    return escaped;
+  }
+
   // Backwards-compat alias: the local bodyHtml() in td-annotate.jsx routes
   // comment/reply bodies through SubstrateFmt.htmlBody, so keeping the old
   // name auto-covers those call sites.
   const htmlBody = renderMarkdown;
 
-  window.SubstrateFmt = { fmtRuntime, fmtTimeAgo, fmtClock, glyphFor, renderMarkdown, htmlBody };
+  window.SubstrateFmt = { fmtRuntime, fmtTimeAgo, fmtClock, glyphFor, renderMarkdown, htmlBody, renderAnsi };
 })();

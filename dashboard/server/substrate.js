@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as compiler from '../../lib/compiler/engine.js';
@@ -8,12 +9,285 @@ import * as ocAdapter from '../../lib/compiler/adapters/opencode.js';
 import { loadConfig, saveConfig } from '../../lib/golem-config.js';
 import { golemHome, projectsJsonPath, renderDirFor } from '../../lib/golem-home.js';
 import { projectIdFor } from '../../lib/project-id.js';
+import { listRoleCards, writeRoleCard } from '../../lib/session-role.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SUBSTRATE_ROOT = path.join(REPO_ROOT, 'substrate');
+const SKILLS_ROOT = path.join(SUBSTRATE_ROOT, 'skills');
+const INSTRUCTIONS_ROOT = path.join(SUBSTRATE_ROOT, 'instructions');
+const ROLES_ROOT = path.join(SUBSTRATE_ROOT, 'roles');
+const USER_SKILLS_ROOT = path.join(os.homedir(), '.agents', 'skills');
 const PACKAGE_JSON = path.join(REPO_ROOT, 'package.json');
 const SYNC_TIMEOUT_MS = 30_000;
+
+function getRegisteredProjects() {
+  try {
+    const raw = fs.readFileSync(projectsJsonPath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed.projects) ? parsed.projects : [];
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeSlug(slug) {
+  if (typeof slug !== 'string' || !slug.trim()) throw Object.assign(new Error('slug is required'), { statusCode: 400 });
+  const cleaned = slug.trim().toLowerCase();
+  if (!/^[a-z0-9_-]+$/.test(cleaned)) {
+    throw Object.assign(new Error('slug must only contain lowercase alphanumeric characters, dashes, or underscores'), { statusCode: 400 });
+  }
+  return cleaned;
+}
+
+function parseFrontmatter(rawContent) {
+  const match = String(rawContent || '').match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!match) return { frontmatter: {}, body: rawContent || '', raw: rawContent || '' };
+  const yamlBlock = match[1];
+  const body = match[2];
+  const frontmatter = {};
+  for (const line of yamlBlock.split(/\r?\n/)) {
+    const colon = line.indexOf(':');
+    if (colon > 0) {
+      const key = line.slice(0, colon).trim();
+      let val = line.slice(colon + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      frontmatter[key] = val;
+    }
+  }
+  return { frontmatter, body, raw: rawContent };
+}
+
+function serializeFrontmatter(frontmatter, body) {
+  const lines = ['---'];
+  for (const [k, v] of Object.entries(frontmatter || {})) {
+    if (v != null && v !== '') {
+      lines.push(`${k}: ${v}`);
+    }
+  }
+  lines.push('---', '', String(body || '').trimStart());
+  return lines.join('\n');
+}
+
+function scanSkillDir(dir, scope, projectMeta = null) {
+  if (!fs.existsSync(dir)) return [];
+  const list = [];
+  try {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!ent.isDirectory()) continue;
+      const slug = ent.name;
+      const skillMd = path.join(dir, slug, 'SKILL.md');
+      if (!fs.existsSync(skillMd)) continue;
+      try {
+        const stat = fs.statSync(skillMd);
+        const raw = fs.readFileSync(skillMd, 'utf8');
+        const { frontmatter, body } = parseFrontmatter(raw);
+        list.push({
+          slug,
+          name: frontmatter.name || slug,
+          description: frontmatter.description || '',
+          frontmatter,
+          scope, // 'builtin' | 'user' | 'project'
+          project_id: projectMeta?.id || null,
+          project_name: projectMeta?.name || null,
+          project_path: projectMeta?.path || null,
+          dir_path: path.join(dir, slug),
+          rel_path: path.relative(REPO_ROOT, skillMd),
+          size: stat.size,
+          word_count: body.trim().split(/\s+/).filter(Boolean).length,
+          updated_at: stat.mtime.toISOString(),
+          has_templates: fs.existsSync(path.join(dir, slug, 'templates')),
+        });
+      } catch {}
+    }
+  } catch {}
+  return list;
+}
+
+export function listSubstrateSkills({ pool = 'all', project = null } = {}) {
+  const projects = getRegisteredProjects();
+  const all = [
+    ...scanSkillDir(SKILLS_ROOT, 'builtin'),
+    ...scanSkillDir(USER_SKILLS_ROOT, 'user'),
+    ...projects.flatMap((p) => (p.path ? scanSkillDir(path.join(p.path, '.agents', 'skills'), 'project', p) : [])),
+  ];
+
+  let result = all;
+  if (pool === 'builtin') result = all.filter((s) => s.scope === 'builtin');
+  else if (pool === 'user') result = all.filter((s) => s.scope === 'user');
+  else if (pool === 'project') result = all.filter((s) => s.scope === 'project');
+
+  if (project) {
+    result = result.filter((s) => !s.project_id || s.project_id === project || s.project_name === project);
+  }
+
+  result.sort((a, b) => a.slug.localeCompare(b.slug));
+  return result;
+}
+
+function resolveSkillLocation(slug, scope = null, projectId = null) {
+  const cleaned = sanitizeSlug(slug);
+  if (scope === 'user') {
+    return { dir: path.join(USER_SKILLS_ROOT, cleaned), scope: 'user', project: null };
+  }
+  if (scope === 'project') {
+    const projects = getRegisteredProjects();
+    const p = projects.find((item) => item.id === projectId || item.name === projectId) || projects[0];
+    if (!p?.path) throw Object.assign(new Error(`Project "${projectId}" not found for project skill`), { statusCode: 404 });
+    return { dir: path.join(p.path, '.agents', 'skills', cleaned), scope: 'project', project: p };
+  }
+  if (scope === 'builtin') {
+    return { dir: path.join(SKILLS_ROOT, cleaned), scope: 'builtin', project: null };
+  }
+
+  // Automatic search across pools
+  const candidateBuiltin = path.join(SKILLS_ROOT, cleaned);
+  if (fs.existsSync(path.join(candidateBuiltin, 'SKILL.md'))) {
+    return { dir: candidateBuiltin, scope: 'builtin', project: null };
+  }
+  const candidateUser = path.join(USER_SKILLS_ROOT, cleaned);
+  if (fs.existsSync(path.join(candidateUser, 'SKILL.md'))) {
+    return { dir: candidateUser, scope: 'user', project: null };
+  }
+  for (const p of getRegisteredProjects()) {
+    if (p.path) {
+      const candidateProj = path.join(p.path, '.agents', 'skills', cleaned);
+      if (fs.existsSync(path.join(candidateProj, 'SKILL.md'))) {
+        return { dir: candidateProj, scope: 'project', project: p };
+      }
+    }
+  }
+
+  // Default to builtin if creating new without explicit scope
+  return { dir: candidateBuiltin, scope: 'builtin', project: null };
+}
+
+export function getSubstrateSkill(slug, { scope = null, project = null } = {}) {
+  const cleaned = sanitizeSlug(slug);
+  const location = resolveSkillLocation(cleaned, scope, project);
+  const skillMd = path.join(location.dir, 'SKILL.md');
+  if (!fs.existsSync(skillMd)) {
+    throw Object.assign(new Error(`Skill "${cleaned}" not found in scope "${location.scope}"`), { statusCode: 404 });
+  }
+  const stat = fs.statSync(skillMd);
+  const raw = fs.readFileSync(skillMd, 'utf8');
+  const { frontmatter, body } = parseFrontmatter(raw);
+
+  const files = [];
+  function collectFiles(dir, rel = '') {
+    for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+      const relPath = rel ? `${rel}/${f.name}` : f.name;
+      if (f.isDirectory()) {
+        collectFiles(path.join(dir, f.name), relPath);
+      } else {
+        files.push(relPath);
+      }
+    }
+  }
+  try { collectFiles(location.dir); } catch {}
+
+  return {
+    slug: cleaned,
+    name: frontmatter.name || cleaned,
+    description: frontmatter.description || '',
+    frontmatter,
+    body,
+    raw,
+    scope: location.scope,
+    project_id: location.project?.id || null,
+    project_name: location.project?.name || null,
+    dir_path: location.dir,
+    size: stat.size,
+    word_count: body.trim().split(/\s+/).filter(Boolean).length,
+    updated_at: stat.mtime.toISOString(),
+    files,
+  };
+}
+
+export function saveSubstrateSkill(slug, data = {}) {
+  const cleaned = sanitizeSlug(slug);
+  const location = resolveSkillLocation(cleaned, data.scope || null, data.project || data.project_id || null);
+  fs.mkdirSync(location.dir, { recursive: true });
+  const skillMd = path.join(location.dir, 'SKILL.md');
+
+  let rawContent = '';
+  if (typeof data.raw === 'string' && data.raw.trim()) {
+    rawContent = data.raw;
+  } else {
+    const frontmatter = data.frontmatter || {
+      name: data.name || cleaned,
+      description: data.description || '',
+    };
+    rawContent = serializeFrontmatter(frontmatter, data.body || '');
+  }
+
+  fs.writeFileSync(skillMd, rawContent, 'utf8');
+  return getSubstrateSkill(cleaned, { scope: location.scope, project: location.project?.id || null });
+}
+
+export function deleteSubstrateSkill(slug, { scope = null, project = null } = {}) {
+  const cleaned = sanitizeSlug(slug);
+  const location = resolveSkillLocation(cleaned, scope, project);
+  if (!fs.existsSync(location.dir)) {
+    throw Object.assign(new Error(`Skill "${cleaned}" not found in scope "${location.scope}"`), { statusCode: 404 });
+  }
+  fs.rmSync(location.dir, { recursive: true, force: true });
+  return { ok: true, deleted: cleaned, scope: location.scope };
+}
+
+export function getSubstrateInstructions() {
+  const filePath = path.join(INSTRUCTIONS_ROOT, 'AGENTS.md');
+  if (!fs.existsSync(filePath)) {
+    return { path: 'instructions/AGENTS.md', raw: '', size: 0, updated_at: null };
+  }
+  const stat = fs.statSync(filePath);
+  const raw = fs.readFileSync(filePath, 'utf8');
+  return {
+    path: 'instructions/AGENTS.md',
+    raw,
+    size: stat.size,
+    word_count: raw.trim().split(/\s+/).filter(Boolean).length,
+    updated_at: stat.mtime.toISOString(),
+  };
+}
+
+export function saveSubstrateInstructions(data) {
+  const filePath = path.join(INSTRUCTIONS_ROOT, 'AGENTS.md');
+  fs.mkdirSync(INSTRUCTIONS_ROOT, { recursive: true });
+  const content = typeof data === 'string' ? data : (data?.raw ?? data?.body ?? '');
+  fs.writeFileSync(filePath, content, 'utf8');
+  return getSubstrateInstructions();
+}
+
+export function listSubstrateRoles() {
+  return listRoleCards().map((r) => ({
+    role: r.name,
+    name: r.name,
+    color: r.color,
+    glyph: r.glyph,
+    builtin: !!r.builtin,
+    overridden: !!r.overridden,
+    body: r.body || '',
+    default_path: r.default_path,
+    overlay_path: r.overlay_path,
+    updated_at: r.updated_at || null,
+  }));
+}
+
+export function saveSubstrateRole(role, data) {
+  const cleaned = sanitizeSlug(role);
+  const content = typeof data === 'string' ? data : (data?.raw ?? data?.body ?? '');
+  const result = writeRoleCard(cleaned, content);
+  return {
+    role: cleaned,
+    name: cleaned,
+    body: result.body,
+    overridden: true,
+    updated_at: result.updated_at,
+  };
+}
 
 const TARGETS = [
   { id: 'claudecode', target: 'cc', label: 'Claude Code' },
@@ -412,6 +686,66 @@ export async function registerSubstrateRoutes(fastify) {
       out.status = 'error';
       out.error = String(err?.message ?? err);
       return reply.code(err.statusCode || 500).send(out);
+    }
+  });
+
+  // GOL-2: Substrate Skills CRUD
+  fastify.get('/api/substrate/skills', async () => listSubstrateSkills());
+
+  fastify.get('/api/substrate/skills/:slug', async (req, reply) => {
+    try {
+      return getSubstrateSkill(req.params.slug);
+    } catch (err) {
+      return reply.code(err.statusCode || 500).send({ error: String(err?.message ?? err) });
+    }
+  });
+
+  fastify.post('/api/substrate/skills', async (req, reply) => {
+    try {
+      const b = req.body ?? {};
+      const slug = b.slug || b.name;
+      const skill = saveSubstrateSkill(slug, b);
+      return reply.code(201).send(skill);
+    } catch (err) {
+      return reply.code(err.statusCode || 400).send({ error: String(err?.message ?? err) });
+    }
+  });
+
+  fastify.put('/api/substrate/skills/:slug', async (req, reply) => {
+    try {
+      return saveSubstrateSkill(req.params.slug, req.body ?? {});
+    } catch (err) {
+      return reply.code(err.statusCode || 400).send({ error: String(err?.message ?? err) });
+    }
+  });
+
+  fastify.delete('/api/substrate/skills/:slug', async (req, reply) => {
+    try {
+      return deleteSubstrateSkill(req.params.slug);
+    } catch (err) {
+      return reply.code(err.statusCode || 400).send({ error: String(err?.message ?? err) });
+    }
+  });
+
+  // GOL-2: Substrate Instructions
+  fastify.get('/api/substrate/instructions', async () => getSubstrateInstructions());
+
+  fastify.put('/api/substrate/instructions', async (req, reply) => {
+    try {
+      return saveSubstrateInstructions(req.body ?? {});
+    } catch (err) {
+      return reply.code(err.statusCode || 400).send({ error: String(err?.message ?? err) });
+    }
+  });
+
+  // GOL-2: Substrate Roles
+  fastify.get('/api/substrate/roles', async () => listSubstrateRoles());
+
+  fastify.put('/api/substrate/roles/:role', async (req, reply) => {
+    try {
+      return saveSubstrateRole(req.params.role, req.body ?? {});
+    } catch (err) {
+      return reply.code(err.statusCode || 400).send({ error: String(err?.message ?? err) });
     }
   });
 }

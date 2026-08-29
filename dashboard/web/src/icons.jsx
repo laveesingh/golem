@@ -39,6 +39,13 @@ const Icon = {
       <path d="M5 12h3"/>
     </svg>
   ),
+  Substrate: ({ size = 14 }) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="8 1.5 14 4.5 8 7.5 2 4.5 8 1.5"/>
+      <polyline points="2 8 8 11 14 8"/>
+      <polyline points="2 11.5 8 14.5 14 11.5"/>
+    </svg>
+  ),
   // GOL-273: kind icons for board cards — spec keeps the doc-with-lines
   // glyph; doc is an open book; task is a check-square. Rendered colored via
   // CSS ([data-kind]) instead of the old text pill.

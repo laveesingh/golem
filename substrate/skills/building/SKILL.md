@@ -30,8 +30,9 @@ Arrives as a `ticket_dispatch` — the task body carries the implementation plan
 1. Read the chain before building: the task, then its parent spec (`ticket_get`). The task
    carries the plan; the spec carries the intent and decisions. Never build from the task alone.
 2. Claim it: `ticket_update({state:'in_progress'})`.
-3. Build per the plan. Keep to the assigned scope — discovered work goes on the ticket as a
-   comment, not into the diff.
+3. Build per the plan on the spec branch, or on a task branch off the spec branch when stacked
+   PRs are used per `golem:git-conventions`. Keep to the assigned scope — discovered work goes
+   on the ticket as a comment, not into the diff.
 4. When the spec, the task, and the code disagree, report the conflict on the ticket instead of
    choosing silently — that call is the lead's.
 5. Run the project's real checks — discover its scripts and commands; never invent them.

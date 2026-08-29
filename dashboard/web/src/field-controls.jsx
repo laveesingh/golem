@@ -136,6 +136,7 @@ const PopSelect = function PopSelect({ value, options, onChange, placeholder = '
         {selected && selected.badge ? <span className="ps-badge">{selected.badge}</span> : null}
         {selected && selected.icon ? <img className="ps-option-icon" src={selected.icon} alt=""/> : null}
         <span className="ps-label">{selected ? psLabel(selected) : placeholder}</span>
+        {selected && selected.hint ? <span className="ps-hint-pill">{selected.hint}</span> : null}
         <Icon.ChevronRight className="ps-chev"/>
       </button>
       {open && rect && ReactDOM.createPortal(

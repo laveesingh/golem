@@ -433,6 +433,17 @@ function AgentCard({ session, name, queueCount = 0, setRoute, showControls = fal
               <span className="agent-card-field-label">Dispatches</span>
               <span className={`agent-card-field-value ${pendingCount ? '' : 'is-empty'}`} title={pendingCount ? `${pendingCount} queued dispatch${pendingCount === 1 ? '' : 'es'}` : undefined}>{pendingCount ? `${pendingCount} queued` : 'Queue clear'}</span>
             </div>
+            <div className="agent-card-field agent-card-peek-field">
+              <span className="agent-card-field-label">Console</span>
+              <button
+                type="button"
+                className="orch-btn small ghost agent-card-peek-btn"
+                onClick={(e) => { e.stopPropagation(); openPeek(); }}
+                title={`Open live terminal & steer console for ${title}`}
+              >
+                ›_ Peek
+              </button>
+            </div>
           </div>
         </div>
       </div>

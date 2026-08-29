@@ -36,7 +36,7 @@ const fakePi = path.join(bin, 'pi');
 fs.writeFileSync(fakePi, `#!${process.execPath}
 const fs = require('node:fs');
 if (process.argv.length === 3 && process.argv[2] === '--version') {
-  process.stdout.write((process.env.GOLEM_FAKE_PI_VERSION || '0.80.10') + '\\n');
+  process.stdout.write((process.env.GOLEM_FAKE_PI_VERSION || '0.84.3') + '\\n');
   process.exit(0);
 }
 fs.writeFileSync(process.env.GOLEM_PI_CAPTURE, JSON.stringify({
@@ -132,7 +132,7 @@ try {
   assert.equal(record.cwd, fs.realpathSync(project));
   assert.equal(record.profile, normalProfile, 'golem pi preserves Pi\'s profile selection');
   assert.equal(record.sessions, normalSessions, 'golem pi preserves Pi\'s session selection');
-  assert.equal(record.pi_version, '0.80.10');
+  assert.equal(record.pi_version, '0.84.3');
   assert.match(record.extension_version, /^5\./);
   assert.match(record.launch_nonce, /^[0-9a-f-]{36}$/);
   assert.equal(record.args.includes('--no-extensions'), false, 'native Pi extension discovery remains enabled');

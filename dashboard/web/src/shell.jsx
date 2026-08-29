@@ -49,6 +49,7 @@ function Sidebar({ route, setRoute }) {
     { id: 'specs', label: 'Specs', icon: Icon.Spec },
     { id: 'projects', label: 'Projects', icon: Icon.Projects, count: buckets.active.length },
     { id: 'agents', label: 'Agents', icon: Icon.Agents, count: activeCount },
+    { id: 'substrate', label: 'Substrate', icon: Icon.Substrate },
     { id: 'logs', label: 'Review Inbox', icon: Icon.Logs },
     { id: 'settings', label: 'Settings', icon: Icon.Gear },
   ];

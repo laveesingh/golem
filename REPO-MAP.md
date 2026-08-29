@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-08-26 @ 7ce621d — maintained via golem:docs-maintenance.
+> Last verified: 2026-08-27 @ a18bb6c — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -23,7 +23,7 @@
 - Retired names are migration input only; they are not current role choices.
 
 ### `dashboard/server/`
-- `index.js` exposes REST/WebSocket routes.
+- `index.js` exposes REST/WebSocket routes, including `/api/native-sessions/:sessionId/terminal` for live worker scrollback and `/api/native-sessions/:sessionId/message` for mid-turn steer/brief dispatch.
 - `tracker-db.js` owns persistence; `comment-dispatch.js` owns comment dispatch.
   Agents use API/MCP, never direct database writes.
 - Ticket lifecycle is the `state` field: `todo`, `in_progress`, `blocked`,

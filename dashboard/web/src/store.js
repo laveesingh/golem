@@ -234,8 +234,9 @@
     }
     return out;
   }
+  const EMPTY_COMMENTS = Object.freeze([]);
   function getTicketComments(id) {
-    return state.ticketComments.get(id) ?? [];
+    return state.ticketComments.get(id) ?? EMPTY_COMMENTS;
   }
   function getRole(role) {
     if (!role) return state.roles.UNK;

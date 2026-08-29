@@ -1,15 +1,309 @@
-// Native session drawer (v4) — slides in from the right when a native session
-// card is clicked. Body = metadata + recent central-journal activity +
-// milestones, fetched on open via Store.loadNativeSessionPeek().
+// Native session drawer (v4 & GOL-4) — slides in from the right when a native session
+// card is clicked. Body = live terminal peek & steer console + metadata & recent activity.
 
 // Thin wrapper kept for existing call sites (dashboard.jsx, other-pages.jsx).
 // Now routes through the URL overlay (?ns=<sid>) so Back closes the drawer.
-function openNativeSessionDrawer(sessionId) {
+function openNativeSessionDrawer(sessionId, tab = null) {
   window.Router.openNativeSession(sessionId ?? null);
+}
+
+function NsdTerminalView({ sessionId, session, alive, events = [], peek = null }) {
+  const [lines, setLines] = React.useState(100);
+  const [autoRefresh, setAutoRefresh] = React.useState(true);
+  const [terminal, setTerminal] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [copiedAttach, setCopiedAttach] = React.useState(false);
+  const [copiedOutput, setCopiedOutput] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const terminalBodyRef = React.useRef(null);
+  const userScrolledUp = React.useRef(false);
+
+  const fetchTerminal = React.useCallback(async (showLoading = false) => {
+    if (!sessionId) return;
+    if (showLoading) setLoading(true);
+    setError(null);
+    try {
+      const res = await window.SubstrateAPI.sessionTerminal(sessionId, lines);
+      setTerminal(res);
+    } catch (err) {
+      setError(String(err?.message || err));
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, [sessionId, lines]);
+
+  React.useEffect(() => {
+    fetchTerminal(true);
+  }, [fetchTerminal]);
+
+  React.useEffect(() => {
+    if (!autoRefresh || !alive) return undefined;
+    const interval = setInterval(() => {
+      fetchTerminal(false);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, alive, fetchTerminal]);
+
+  // Auto-scroll to bottom if user has not scrolled up
+  React.useEffect(() => {
+    const el = terminalBodyRef.current;
+    if (!el || userScrolledUp.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [terminal?.text]);
+
+  const handleScroll = (e) => {
+    const el = e.currentTarget;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    userScrolledUp.current = !isAtBottom;
+  };
+
+  const copyAttach = () => {
+    const hint = terminal?.attach_hint || `golem attach ${session?.name || sessionId}`;
+    navigator.clipboard?.writeText(hint).then(() => {
+      setCopiedAttach(true);
+      setTimeout(() => setCopiedAttach(false), 2000);
+    });
+  };
+
+  const copyOutput = () => {
+    if (!terminal?.text) return;
+    navigator.clipboard?.writeText(terminal.text).then(() => {
+      setCopiedOutput(true);
+      setTimeout(() => setCopiedOutput(false), 2000);
+    });
+  };
+
+  const lineOptions = [50, 100, 250, 500];
+  const renderedAnsi = React.useMemo(() => {
+    if (!terminal?.text) return '';
+    return window.SubstrateFmt?.renderAnsi
+      ? window.SubstrateFmt.renderAnsi(terminal.text)
+      : terminal.text;
+  }, [terminal?.text]);
+
+  return (
+    <div className="nsd-terminal-section">
+      <div className="nsd-terminal-toolbar">
+        <div className="nsd-terminal-tools-left">
+          <label className="nsd-auto-toggle" title="Poll terminal output every 2s while live">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+            />
+            <span className={`nsd-auto-dot ${autoRefresh && alive ? 'is-active' : ''}`}/>
+            <span>Live auto-refresh</span>
+          </label>
+          <button
+            type="button"
+            className="orch-btn small ghost"
+            onClick={() => fetchTerminal(true)}
+            disabled={loading}
+            title="Refresh terminal output now"
+          >
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+
+        <div className="nsd-terminal-tools-right">
+          <div className="nsd-line-pills" role="group" aria-label="Lines to display">
+            {lineOptions.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`nsd-line-pill ${lines === n ? 'active' : ''}`}
+                onClick={() => setLines(n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="orch-btn small ghost nsd-copy-btn"
+            onClick={copyAttach}
+            title={terminal?.attach_hint || 'Copy attach command'}
+          >
+            {copiedAttach ? 'Copied Cmd ✓' : 'Attach Cmd'}
+          </button>
+
+          <button
+            type="button"
+            className="orch-btn small ghost nsd-copy-btn"
+            onClick={copyOutput}
+            disabled={!terminal?.text}
+            title="Copy scrollback output to clipboard"
+          >
+            {copiedOutput ? 'Copied Log ✓' : 'Copy Log'}
+          </button>
+        </div>
+      </div>
+
+      <div className="nsd-terminal-viewport" ref={terminalBodyRef} onScroll={handleScroll}>
+        {loading && !terminal ? (
+          <div className="nsd-terminal-empty">Connecting to agent terminal…</div>
+        ) : error ? (
+          <div className="nsd-terminal-empty is-error">{error}</div>
+        ) : !terminal?.ok || !terminal?.text ? (
+          <div className="nsd-terminal-foreground-feed">
+            <div className="nsd-foreground-badge">
+              <span className="nsd-fg-icon">⚡</span>
+              <span>Foreground terminal session ({session?.harness || 'native'}) · Live activity stream</span>
+            </div>
+            {events.length === 0 ? (
+              <div className="nsd-terminal-empty">
+                {peek?.note || 'No recorded activity yet for this session.'}
+              </div>
+            ) : (
+              <div className="nsd-terminal-events">
+                {events.map((e, i) => (
+                  <div key={`${e.t}-${i}`} className="nsd-terminal-event-row mono">
+                    <span className="nsd-event-time">{window.SubstrateFmt?.fmtTimeAgo?.(e.t) || ''}</span>
+                    <span className={`nsd-event-type type-${e.event}`}>{e.event}</span>
+                    <span className="nsd-event-summary" title={e.summary}>{e.summary}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <pre
+            className="nsd-terminal-text mono"
+            dangerouslySetInnerHTML={{ __html: renderedAnsi }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NsdSteerComposer({ sessionId, session, alive, onSent }) {
+  const [text, setText] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [interrupting, setInterrupting] = React.useState(false);
+  const [feedback, setFeedback] = React.useState(null);
+
+  const isBusy = session?.status === 'busy' || session?.delivery_state === 'accepted';
+
+  const send = async (customText = null) => {
+    const payload = (customText != null ? customText : text).trim();
+    if (!payload || !sessionId || sending) return;
+    setSending(true);
+    setFeedback(null);
+    try {
+      const res = await window.SubstrateAPI.sendSessionMessage(sessionId, payload);
+      setText('');
+      const isSteer = res?.steered || isBusy;
+      setFeedback({
+        type: 'success',
+        msg: isSteer ? 'Steer guidance delivered to active turn ✓' : 'Message dispatched to session ✓',
+      });
+      onSent?.();
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        msg: String(err?.payload?.error || err?.message || err),
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleInterrupt = async () => {
+    if (!sessionId || interrupting) return;
+    setInterrupting(true);
+    setFeedback(null);
+    try {
+      await window.SubstrateAPI.interruptSession(sessionId);
+      setFeedback({
+        type: 'success',
+        msg: 'Interrupt signal sent to agent ✓',
+      });
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        msg: String(err?.payload?.error || err?.message || err),
+      });
+    } finally {
+      setInterrupting(false);
+    }
+  };
+
+  const chips = [
+    { label: '⚡ Status update', text: 'Please provide a concise status update on your current progress and next action.' },
+    { label: '📌 Wrap up task', text: 'Please wrap up the current task, run any necessary tests/checks, and report your findings.' },
+  ];
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  };
+
+  return (
+    <div className="nsd-steer-dock">
+      <div className="nsd-steer-chips">
+        <span className="nsd-steer-chips-label">Quick prompts:</span>
+        {chips.map((c) => (
+          <button
+            key={c.label}
+            type="button"
+            className="nsd-chip-btn"
+            onClick={() => setText(c.text)}
+            disabled={!alive || sending}
+          >
+            {c.label}
+          </button>
+        ))}
+        {isBusy && (
+          <button
+            type="button"
+            className="nsd-chip-btn is-interrupt"
+            onClick={handleInterrupt}
+            disabled={!alive || interrupting}
+            title="Send interrupt signal to current turn"
+          >
+            {interrupting ? 'Interrupting…' : '✋ Interrupt turn'}
+          </button>
+        )}
+      </div>
+
+      <div className="nsd-steer-input-row">
+        <textarea
+          className="nsd-steer-input mono"
+          placeholder={alive ? (isBusy ? 'Type mid-turn steer guidance… (Enter to send)' : 'Send message / brief to agent… (Enter to send)') : 'Session is offline'}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={!alive || sending}
+          rows={2}
+        />
+        <button
+          type="button"
+          className="orch-btn nsd-send-btn"
+          onClick={() => send()}
+          disabled={!alive || !text.trim() || sending}
+        >
+          {sending ? 'Sending…' : isBusy ? '↗ Steer' : '↗ Send'}
+        </button>
+      </div>
+
+      {feedback && (
+        <div className={`nsd-steer-feedback ${feedback.type}`}>
+          {feedback.msg}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function NativeSessionDrawer({ open, sessionId, onClose }) {
   useStore();
+  const [activeTab, setActiveTab] = React.useState('console');
 
   // open + sessionId are URL-driven (?ns=<sid>, owned by App). On open, fetch
   // the session's recent activity + milestones.
@@ -118,7 +412,7 @@ function NativeSessionDrawer({ open, sessionId, onClose }) {
     <>
       <DrawerBackdrop open={open} onClose={onClose}/>
       <DrawerPanel open={open} onClose={onClose} label={`Agent details: ${title}`}>
-        <div className="drawer-header">
+        <div className="drawer-header nsd-header">
           <div className="drawer-title-row">
             <span className={`orch-dot ${dotClass}`} style={{ flexShrink: 0 }}/>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -137,81 +431,127 @@ function NativeSessionDrawer({ open, sessionId, onClose }) {
             </div>
             <button className="drawer-close" onClick={onClose}><Icon.Close/></button>
           </div>
+
+          <div className="nsd-tab-bar">
+            <button
+              type="button"
+              className={`nsd-tab-btn ${activeTab === 'console' ? 'active' : ''}`}
+              onClick={() => setActiveTab('console')}
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 6 7 9 4 12"/>
+                <line x1="9" y1="12" x2="13" y2="12"/>
+              </svg>
+              <span>Live Console & Steer</span>
+            </button>
+            <button
+              type="button"
+              className={`nsd-tab-btn ${activeTab === 'activity' ? 'active' : ''}`}
+              onClick={() => setActiveTab('activity')}
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="4" x2="13" y2="4"/>
+                <line x1="3" y1="8" x2="13" y2="8"/>
+                <line x1="3" y1="12" x2="9" y2="12"/>
+              </svg>
+              <span>Activity & Events</span>
+            </button>
+          </div>
         </div>
 
-        <div className="drawer-body">
-          <div className="nsd-meta-grid">
-            {metaRows.map(([k, v, mono]) => (
-              <React.Fragment key={k}>
-                <div className="nsd-meta-key">{k}</div>
-                <div className={`nsd-meta-val ${mono ? 'mono' : ''}`} title={String(v)}>{v}</div>
-              </React.Fragment>
-            ))}
-          </div>
-
-          {currentTicket && (
-            <a
-              className="nsd-current-ticket mono"
-              href={window.Router.buildHref({ kind: 'ticket', id: currentTicket.id })}
-              onClick={(e) => { e.preventDefault(); window.Router.openTicket(currentTicket.id); }}
-              title={currentTicket.title}
-            >
-              current: {currentTicket.display_id || currentTicket.id} · {currentTicket.title}
-            </a>
-          )}
-
-          <div className="nsd-section-head">
-            Recent activity
-            <span className="nsd-section-count tnum">{events.length}</span>
-          </div>
-          {!loaded ? (
-            <div className="empty">loading…</div>
-          ) : events.length === 0 ? (
-            <div className="empty">
-              {peek?.note || 'no central-journal activity for this session'}
+        <div className={`drawer-body nsd-body ${activeTab === 'console' ? 'is-console-tab' : ''}`}>
+          {activeTab === 'console' ? (
+            <div className="nsd-console-wrap">
+              <NsdTerminalView
+                sessionId={sessionId}
+                session={s}
+                alive={alive}
+                events={events}
+                peek={peek}
+              />
+              <NsdSteerComposer
+                sessionId={sessionId}
+                session={s}
+                alive={alive}
+                onSent={() => window.Store.loadNativeSessionPeek(sessionId)}
+              />
             </div>
           ) : (
-            <div className="nsd-events">
-              {events.map((e, i) => (
-                <div key={`${e.t}-${i}`} className="nsd-event">
-                  <span className="nsd-event-time mono">{window.SubstrateFmt.fmtTimeAgo(e.t)}</span>
-                  <span className={`nsd-event-type type-${e.event}`}>{e.event}</span>
-                  <span className="nsd-event-summary" title={e.summary}>{e.summary}</span>
+            <div className="nsd-activity-wrap">
+              <div className="nsd-meta-grid">
+                {metaRows.map(([k, v, mono]) => (
+                  <React.Fragment key={k}>
+                    <div className="nsd-meta-key">{k}</div>
+                    <div className={`nsd-meta-val ${mono ? 'mono' : ''}`} title={String(v)}>{v}</div>
+                  </React.Fragment>
+                ))}
+              </div>
+
+              {currentTicket && (
+                <a
+                  className="nsd-current-ticket mono"
+                  href={window.Router.buildHref({ kind: 'ticket', id: currentTicket.id })}
+                  onClick={(e) => { e.preventDefault(); window.Router.openTicket(currentTicket.id); }}
+                  title={currentTicket.title}
+                >
+                  current: {currentTicket.display_id || currentTicket.id} · {currentTicket.title}
+                </a>
+              )}
+
+              <div className="nsd-section-head">
+                Recent activity
+                <span className="nsd-section-count tnum">{events.length}</span>
+              </div>
+              {!loaded ? (
+                <div className="empty">loading…</div>
+              ) : events.length === 0 ? (
+                <div className="empty">
+                  {peek?.note || 'no central-journal activity for this session'}
                 </div>
-              ))}
+              ) : (
+                <div className="nsd-events">
+                  {events.map((e, i) => (
+                    <div key={`${e.t}-${i}`} className="nsd-event">
+                      <span className="nsd-event-time mono">{window.SubstrateFmt.fmtTimeAgo(e.t)}</span>
+                      <span className={`nsd-event-type type-${e.event}`}>{e.event}</span>
+                      <span className="nsd-event-summary" title={e.summary}>{e.summary}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {milestones.length > 0 && (
+                <>
+                  <div className="nsd-section-head">
+                    Milestones
+                    <span className="nsd-section-count tnum">{milestones.length}</span>
+                  </div>
+                  <ul className="nsd-milestones">
+                    {milestones.map((m, i) => (
+                      <li key={`${m.t}-${i}`} className="nsd-milestone">
+                        <span className="nsd-milestone-dot"/>
+                        <span className="nsd-milestone-text">{m.text}</span>
+                        <span className="nsd-milestone-ts mono">{window.SubstrateFmt.fmtTimeAgo(m.t)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+              {queue.length > 0 && (
+                <>
+                  <div className="nsd-section-head">
+                    Dispatch queue
+                    <span className="nsd-section-count tnum">{queue.length}</span>
+                  </div>
+                  <div className="nsd-queue">
+                    {queue.map((r, i) => (
+                      <NsdQueueRow key={r.id} row={r} position={i + 1}/>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-          )}
-
-          {milestones.length > 0 && (
-            <>
-              <div className="nsd-section-head">
-                Milestones
-                <span className="nsd-section-count tnum">{milestones.length}</span>
-              </div>
-              <ul className="nsd-milestones">
-                {milestones.map((m, i) => (
-                  <li key={`${m.t}-${i}`} className="nsd-milestone">
-                    <span className="nsd-milestone-dot"/>
-                    <span className="nsd-milestone-text">{m.text}</span>
-                    <span className="nsd-milestone-ts mono">{window.SubstrateFmt.fmtTimeAgo(m.t)}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {queue.length > 0 && (
-            <>
-              <div className="nsd-section-head">
-                Dispatch queue
-                <span className="nsd-section-count tnum">{queue.length}</span>
-              </div>
-              <div className="nsd-queue">
-                {queue.map((r, i) => (
-                  <NsdQueueRow key={r.id} row={r} position={i + 1}/>
-                ))}
-              </div>
-            </>
           )}
         </div>
       </DrawerPanel>

@@ -1,14 +1,20 @@
 // Root App — routing + global shell.
 
 function App() {
-  useStore();
+  const [ready, setReady] = React.useState(() => window.Store.getState().ready);
   // Route state is driven by window.Router (path-based). The router pushes
   // history on navigation (so Back traverses pages) and dispatches `route-change`
   // on every change; popstate fires on Back/Forward. Both keep this state in
   // sync with the URL. Replaces the old hash+replaceState model that never
   // pushed, so Back used to exit the SPA.
   const [route, setRoute] = React.useState(() => window.Router.parseLocation());
-  const state = window.Store.getState();
+
+  React.useEffect(() => {
+    if (ready) return undefined;
+    return window.Store.subscribe((st) => {
+      if (st.ready) setReady(true);
+    });
+  }, [ready]);
 
   React.useEffect(() => {
     const sync = () => setRoute(window.Router.parseLocation());
@@ -33,31 +39,29 @@ function App() {
   // GOL-275: per-view browser tab titles. The ticket lookup matches both
   // keys: deep links carry the display id (GOL-275) while the store indexes
   // tickets by their internal id (TKT-0537).
-  let ticket = null;
-  if (route.kind === 'ticket') {
-    for (const t of state.trackerTickets.values()) {
-      if (t.id === route.id || t.display_id === route.id) { ticket = t; break; }
-    }
-  }
-  const project = route.kind === 'project'
-    ? window.Store.getProjects().find((p) => p.id === route.id || p.project_id === route.id)
-    : null;
   React.useEffect(() => {
     let title = 'Golem';
+    const state = window.Store.getState();
     if (route.kind === 'ticket') {
+      let ticket = null;
+      for (const t of state.trackerTickets.values()) {
+        if (t.id === route.id || t.display_id === route.id) { ticket = t; break; }
+      }
       title = ticket ? `${ticket.title} · Golem`
         : `Ticket ${route.id} · Golem`;
     } else if (route.kind === 'project') {
+      const project = window.Store.getProjects().find((p) => p.id === route.id || p.project_id === route.id);
       title = project ? `${project.name} · Golem` : 'Project · Golem';
     } else {
       const names = {
         dashboard: 'Dashboard', tracker: 'Tracker', specs: 'Specs',
         projects: 'Projects', agents: 'Agents', logs: 'Logs', settings: 'Settings',
+        substrate: 'Substrate',
       };
       title = `${names[route.kind] || 'Dashboard'} · Golem`;
     }
     document.title = title;
-  }, [route, ticket?.title, project?.name]);
+  }, [route]);
 
   // Reader view (/read/<id>): the ticket document alone — body + contents
   // rail, no sidebar/topbar/props chrome. The drawer handles its own loading;
@@ -72,7 +76,7 @@ function App() {
   }
 
   let page;
-  if (!state.ready) {
+  if (!ready) {
     page = (
       <div className="page">
         <div className="empty-card">
@@ -90,6 +94,7 @@ function App() {
   else if (route.kind === 'agents') page = <AgentsPage setRoute={navigate}/>;
   else if (route.kind === 'logs') page = <LogsPage/>;
   else if (route.kind === 'settings') page = <SettingsPage/>;
+  else if (route.kind === 'substrate') page = <SubstratePage route={route} setRoute={navigate}/>;
   else if (route.kind === 'project') page = (
     <ProjectView projectId={route.id} tab={route.tab} showArchived={route.showArchived} q={route.q} setRoute={navigate}/>
   );

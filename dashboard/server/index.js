@@ -21,7 +21,7 @@ import { registerSubstrateRoutes } from './substrate.js';
 import { teamAssists } from './team-assist.js';
 import { golemHome, dashboardJsonPath, journalDirFor, sessionsJsonPath } from '../../lib/golem-home.js';
 import { createRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.js';
-import { enrichDispatchableRows } from '../../lib/worker-manager.js';
+import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../../lib/worker-manager.js';
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
 import { recordTypedEnvelopeOutcome } from './typed-delivery.js';
 import { sameEndpointSecret } from '../../lib/typed-worker-endpoint.js';
@@ -1136,6 +1136,76 @@ async function main() {
     const sessionId = req.params.sessionId;
     const session = state.nativeSessions().find((s) => s.session_id === sessionId) ?? null;
     return readNativeSessionPeek(sessionId, session);
+  });
+
+  // GOL-4: live terminal output peek for background agents
+  fastify.get('/api/native-sessions/:sessionId/terminal', async (req) => {
+    const sessionId = req.params.sessionId;
+    const lines = req.query?.lines ? parseInt(req.query.lines, 10) : 100;
+    const session = state.nativeSessions().find((s) => s.session_id === sessionId) ?? null;
+    return peekSessionTerminal(sessionId, {
+      lines: Number.isInteger(lines) && lines > 0 ? lines : 100,
+      projectId: session?.project_id ?? null,
+    });
+  });
+
+  // GOL-4: live chat/steer message dispatch to background agent
+  fastify.post('/api/native-sessions/:sessionId/message', async (req, reply) => {
+    const sessionId = req.params.sessionId;
+    const b = req.body ?? {};
+    const text = typeof b.text === 'string' ? b.text.trim() : (typeof b.content === 'string' ? b.content.trim() : '');
+    if (!sessionId) return reply.code(400).send({ error: 'session_id is required' });
+    if (!text) return reply.code(400).send({ error: 'text is required' });
+    const session = state.nativeSessions().find((s) => s.session_id === sessionId) ?? null;
+    const isBusy = session?.status === 'busy' || session?.delivery_state === 'accepted';
+    try {
+      const result = await deliverControlEnvelope(tracker, {
+        project_id: session?.project_id ?? null,
+        sender_id: 'human:dashboard',
+        recipient_session_id: sessionId,
+        kind: 'brief',
+        content: text,
+        metadata: { text, steer: isBusy },
+        legacy: { path: '/brief', body: text },
+      });
+      chat.record('user', 'brief', text, { session_id: sessionId, steer: isBusy });
+      const ok = result.delivered || result.retry_queued;
+      return reply.code(ok ? 200 : (result.delivery?.status || 502)).send({
+        ok,
+        steered: isBusy && result.delivered,
+        queued: result.retry_queued,
+        envelope_id: result.envelope?.id,
+        delivery: result.delivery,
+      });
+    } catch (err) {
+      return reply.code(400).send({ error: String(err?.message ?? err) });
+    }
+  });
+
+  // GOL-4: interrupt active agent
+  fastify.post('/api/native-sessions/:sessionId/interrupt', async (req, reply) => {
+    const sessionId = req.params.sessionId;
+    const session = state.nativeSessions().find((s) => s.session_id === sessionId) ?? null;
+    try {
+      deliverControlEnvelope(tracker, {
+        project_id: session?.project_id ?? null,
+        sender_id: 'human:dashboard',
+        recipient_session_id: sessionId,
+        kind: 'interrupt',
+        content: 'Interrupt requested by human dashboard',
+        legacy: { path: '/interrupt', body: 'interrupt' },
+      }).catch(() => {});
+
+      try {
+        if (session?.name) {
+          sendWorkerKeys(session.name, ['C-c'], { projectId: session?.project_id ?? null });
+        }
+      } catch {}
+
+      return { ok: true, session_id: sessionId };
+    } catch (err) {
+      return reply.code(400).send({ error: String(err?.message ?? err) });
+    }
   });
 
   // ---- WS2: tracker REST (the dashboard is the SINGLE WRITER) ----

@@ -253,7 +253,9 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
     if (!dispatchableLoaded) return true;
     return dispatchable.some((s) => s.session_id === assignee);
   }, [ticket?.assignee, dispatchable, dispatchableLoaded]);
-  const defaultCommentDispatchSession = assigneeIsLive ? ticket.assignee : '';
+  const defaultCommentDispatchSession = assigneeIsLive
+    ? ticket.assignee
+    : (dispatchable.find((s) => s.session_id)?.session_id || '');
   const selectedCommentDispatchSession = commentDispatchSession || defaultCommentDispatchSession;
   const undispatchedComments = React.useMemo(
     // Only open comments are dispatchable — resolved conversations and
@@ -361,6 +363,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
     return persistedLabel || labelBySession.get(a) || window.Store?.getNativeSessionById?.(a)?.name || window.Store?.getNativeSessionById?.(a)?.label || `session ${String(a).slice(0, 8)}`;
   }, [labelBySession]);
 
+  const [fieldToast, setFieldToast] = React.useState(null);
   // Commit a single field immediately (actor: human).
   const commitField = React.useCallback((patch) => {
     if (!ticketId) return;
@@ -368,7 +371,11 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
       .then((updated) => {
         if (updated && updated.id) window.Store.upsertTrackerTicket(updated);
       })
-      .catch((err) => console.error('updateTicket failed', err));
+      .catch((err) => {
+        console.error('updateTicket failed', err);
+        setFieldToast({ msg: `Update failed: ${err?.payload?.error || err?.message || err}`, id: Math.random() });
+        setTimeout(() => setFieldToast(null), 4000);
+      });
   }, [ticketId]);
 
   // TKT-0233: body-only edit. editBuf is now { body } (title is edited inline).
@@ -826,6 +833,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
               {/* ── Properties panel (TKT-0233 → TKT-0285 moved into the sidebar) —
                    PopSelect controls; 0245's dispatch block + 0266's meta move with it. ── */}
               <div className="td-props">
+                {fieldToast && <div className="orch-toast err cc-toast" key={fieldToast.id} style={{ margin: '0 0 8px 0' }}>{fieldToast.msg}</div>}
                 {/* TKT-0339: Project — a read-only top-level field (color dot +
                     name, links to the project view). Set at creation; not PATCHable
                     (project_id isn't in updateTicket's whitelist + cross-project

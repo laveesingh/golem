@@ -41,7 +41,7 @@ fs.writeFileSync(fakePi, `#!${process.execPath}
 const fs = require('node:fs');
 const path = require('node:path');
 if (process.argv.length === 3 && process.argv[2] === '--version') {
-  process.stdout.write('0.80.10\\n');
+  process.stdout.write('0.84.3\\n');
   process.exit(0);
 }
 const args = process.argv.slice(2);
@@ -182,6 +182,8 @@ try {
     killWorker,
     listWorkerViews,
     peekWorker,
+    peekSessionTerminal,
+    sendWorkerKeys,
     spawnWorker,
   } = await import('../lib/worker-manager.js');
   const {
@@ -232,7 +234,7 @@ try {
   assert.equal(enriched[0].worker_tmux_session, spawned[0].tmux_session);
   assert.equal(enriched[0].worker_state, 'live');
   assert.equal(enriched[0].worker_attach_hint, `golem attach ${spawned[0].name}`);
-  console.log(JSON.stringify({ parallel_workers: names.sort(), tmux_sessions: tmuxNames.sort(), dispatchable_worker_fields: true }));
+  console.log(JSON.stringify({ parallel_workers: names.slice().sort(), tmux_sessions: tmuxNames.slice().sort(), dispatchable_worker_fields: true }));
 
   const directListed = await listWorkerViews({ project });
   assert.ok(directListed.every((worker) => worker.dispatchable));
@@ -254,6 +256,11 @@ try {
   assert.match(cliPeek.stdout, /golemtest-t2 worker/);
   assert.equal(hasSession(names[0]), true);
   console.log(JSON.stringify({ peek_name: names[0], peek_contains_ready: true }));
+
+  const terminalPeek = await peekSessionTerminal(spawned[0].session_id, { lines: 3, projectId });
+  assert.equal(terminalPeek.ok, true);
+  assert.match(terminalPeek.text, /golemtest-t2 worker/);
+  assert.equal(terminalPeek.name, spawned[0].name);
 
   const cliKillTable = await runCli(['kill', cliSpawnedTable.name, '--project', project]);
   assert.equal(cliKillTable.status, 0, cliKillTable.stderr);

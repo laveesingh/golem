@@ -9,6 +9,7 @@ const {
   readEndpointLeases, readSessionFacts, releaseEndpointLeases,
   renewEndpointLease, upsertSessionFact,
 } = await import('../lib/session-facts.js');
+const { SUPPORTED_PI_VERSION } = await import('../lib/pi-compatibility.js');
 
 const first = upsertSessionFact({ canonical_id: 'canonical-1', harness: 'claudecode', locator: { raw_session_id: 'run-1' }, continuation_key: 'resume-1', name: 'Original', status: 'idle', revision: 1 }, { now: 1000 });
 assert.equal(first.name, 'Original');
@@ -106,7 +107,7 @@ upsertSessionFact({
   provider: 'ollama', model: 'deepseek-v4-flash:0731-cloud',
   delivery: { mode: 'typed-worker', push: true, ready: true },
   capabilities: { typed_worker: true }, trust: 'host-full-trust',
-  observations: { adapter_state: 'active', delivery_state: 'accepted', pi_version: '0.80.10', extension_version: '5.6.14' },
+  observations: { adapter_state: 'active', delivery_state: 'accepted', pi_version: SUPPORTED_PI_VERSION, extension_version: '5.6.14' },
   observed_at: new Date(staleFactAt).toISOString(),
 });
 const piBusy = (await readNativeSessions(() => true, [{
@@ -122,7 +123,7 @@ assert.equal(piBusy?.continuation_key, 'pi-continuation');
 assert.equal(piBusy?.delivery_mode, 'typed-worker');
 assert.equal(piBusy?.delivery_state, 'accepted');
 assert.equal(piBusy?.trust, 'host-full-trust');
-assert.deepEqual(piBusy?.compatibility, { status: 'supported', pi_version: '0.80.10', node_requirement: '>=22.19' });
+assert.deepEqual(piBusy?.compatibility, { status: 'supported', pi_version: SUPPORTED_PI_VERSION, supported_pi_version: SUPPORTED_PI_VERSION, node_requirement: '>=22.19' });
 
 upsertSessionFact({
   canonical_id: 'pi-idle-live', continuation_key: 'pi-continuation-idle', harness: 'pi',
@@ -131,7 +132,7 @@ upsertSessionFact({
   provider: 'ollama', model: 'deepseek-v4-flash:0731-cloud',
   delivery: { mode: 'typed-worker', push: true, ready: true },
   capabilities: { typed_worker: true }, trust: 'host-full-trust',
-  observations: { adapter_state: 'idle', delivery_state: 'settled', pi_version: '0.80.10', extension_version: '5.6.14' },
+  observations: { adapter_state: 'idle', delivery_state: 'settled', pi_version: SUPPORTED_PI_VERSION, extension_version: '5.6.14' },
   observed_at: new Date(staleFactAt).toISOString(),
 });
 const piIdle = (await readNativeSessions(() => true, [{

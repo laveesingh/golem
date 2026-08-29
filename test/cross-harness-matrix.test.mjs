@@ -417,7 +417,7 @@ try {
 
   dashboard = await startDashboard();
   process.env.GOLEM_DASHBOARD_URL = dashboard.base;
-  process.env.GOLEM_PI_VERSION = '0.80.10';
+  process.env.GOLEM_PI_VERSION = '0.84.3';
   process.env.GOLEM_PI_EXTENSION_VERSION = '5.6.15';
   execFileSync(process.execPath, [path.join(repo, 'cli', 'golem.js'), 'sync', '--target', 'pi'], {
     cwd: repo, env: { ...process.env, GOLEM_HOME: home, XDG_CONFIG_HOME: xdg }, stdio: 'pipe',

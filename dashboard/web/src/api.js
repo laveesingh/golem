@@ -42,6 +42,22 @@
     return json;
   }
 
+  async function putJSON(path, body) {
+    const r = await fetch(base + path, {
+      method: 'PUT',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: body == null ? '{}' : JSON.stringify(body),
+    });
+    let json = null;
+    try { json = await r.json(); } catch { /* response may be plain text */ }
+    if (!r.ok) {
+      const err = new Error(`${r.status} ${r.statusText} ${path}`);
+      err.payload = json;
+      throw err;
+    }
+    return json;
+  }
+
   async function delJSON(path, body) {
     const r = await fetch(base + path, {
       method: 'DELETE',
@@ -233,6 +249,14 @@
       }),
     pushRole: (name) => postJSON(`/api/roles/${encodeURIComponent(name)}/push`, {}),
 
+    // GOL-4: background agent terminal peek & interaction
+    sessionTerminal: (sessionId, lines) =>
+      getJSON(`/api/native-sessions/${encodeURIComponent(sessionId)}/terminal${lines ? `?lines=${lines}` : ''}`),
+    sendSessionMessage: (sessionId, text) =>
+      postJSON(`/api/native-sessions/${encodeURIComponent(sessionId)}/message`, { text }),
+    interruptSession: (sessionId) =>
+      postJSON(`/api/native-sessions/${encodeURIComponent(sessionId)}/interrupt`, {}),
+
     // ---- Cross-project tracker (tracker.db) ----
     // These are SEPARATE from the legacy markdown `tickets(projectId)` above.
     // Tickets are filtered/posted by the CONTRACT `project_id` (`<slug>-<6hex>`).
@@ -293,6 +317,16 @@
       });
     },
     syncSubstrate: (body) => postJSON('/api/substrate/sync', body),
+    // GOL-2: Substrate Layer (Skills, Instructions, Roles)
+    listSubstrateSkills: () => getJSON('/api/substrate/skills'),
+    getSubstrateSkill: (slug) => getJSON(`/api/substrate/skills/${encodeURIComponent(slug)}`),
+    createSubstrateSkill: (body) => postJSON('/api/substrate/skills', body),
+    updateSubstrateSkill: (slug, body) => putJSON(`/api/substrate/skills/${encodeURIComponent(slug)}`, body),
+    deleteSubstrateSkill: (slug) => delJSON(`/api/substrate/skills/${encodeURIComponent(slug)}`),
+    getSubstrateInstructions: () => getJSON('/api/substrate/instructions'),
+    updateSubstrateInstructions: (body) => putJSON('/api/substrate/instructions', body),
+    listSubstrateRoles: () => getJSON('/api/substrate/roles'),
+    updateSubstrateRole: (role, body) => putJSON(`/api/substrate/roles/${encodeURIComponent(role)}`, body),
     // Ticket links (WS5b). `from` is the ticket id the link hangs off of.
     addLink: (id, { to_ticket, type }) =>
       postJSON(`/api/tickets/${encodeURIComponent(id)}/links`, { to_ticket, type }),

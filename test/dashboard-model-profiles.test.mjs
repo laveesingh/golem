@@ -33,7 +33,7 @@ if (process.argv[2] === '--list-models') {
   process.stdout.write('omlx          Qwen3.8-27B-4bit          131.1K   8.2K     yes       yes\\n');
   process.exit(0);
 }
-if (process.argv[2] === '--version') process.stdout.write('0.80.10\\n');
+if (process.argv[2] === '--version') process.stdout.write('0.84.3\\n');
 `, { mode: 0o700 });
 const modeFile = path.join(temp, 'pi-mode');
 

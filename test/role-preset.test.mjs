@@ -31,7 +31,7 @@ const fakePi = path.join(bin, 'pi');
 fs.writeFileSync(fakePi, `#!${process.execPath}
 const fs = require('node:fs');
 if (process.argv.length === 3 && process.argv[2] === '--version') {
-  process.stdout.write('0.80.10\\n');
+  process.stdout.write('0.84.3\\n');
   process.exit(0);
 }
 fs.writeFileSync(process.env.GOLEM_PI_CAPTURE, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() }, null, 2));

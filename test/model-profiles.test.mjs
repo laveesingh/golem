@@ -44,7 +44,7 @@ fs.writeFileSync(fakePi, `#!${process.execPath}
 const fs = require('node:fs');
 const path = require('node:path');
 if (process.argv.length === 3 && process.argv[2] === '--version') {
-  process.stdout.write('0.80.10\\n');
+  process.stdout.write('0.84.3\\n');
   process.exit(0);
 }
 const args = process.argv.slice(2);

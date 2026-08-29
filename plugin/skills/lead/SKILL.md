@@ -1,6 +1,6 @@
 ---
 name: lead
-description: Load upon `lead` role assignment, direct spec assignment in case of no prior role assigned or explicit human directive. Own one workstream from raw intent to closed result — brainstorm and lock the design, decompose into tasks, route the build, reconcile, and close.
+description: Use when assigned `lead` role, direct spec assignment in case of no prior role assigned or explicit human directive. Own one workstream from raw intent to closed result — brainstorm and lock the design, decompose into tasks, route the build, reconcile, and close.
 ---
 <!-- GENERATED: skills/lead/SKILL.md — rendered by `golem sync` from substrate/ — edit the source, not this file. -->
 
@@ -86,6 +86,9 @@ for a delegation: § Delegation protocol defines the fallback.
   what lets the human drop and dispatch comments to you from the dashboard: a comment dispatch
   has nowhere to go when nothing is assigned. The exception is delegated tasks and docs — those
   are assigned to the agent you dispatch them to, never to you.
+- Open a dedicated spec branch (`<type>/<kebab-slug>`) per `golem:git-conventions` by default upon
+  claiming or starting work on a spec. Tasks branch off this spec branch and can use stacked PRs
+  when staged reviews are helpful.
 - Team composition is a deliberate call — the count heuristics, reuse-first rule, and
   confirmation thresholds live in `golem:team-ops` § Spawning.
 - A locked spec gets a single thorough reviewer pass before decomposition; every built task gets

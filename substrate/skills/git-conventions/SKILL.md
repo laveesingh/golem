@@ -1,42 +1,43 @@
 ---
 name: git-conventions
-description: Load when opening a branch, writing a commit, opening a PR. Not needed for read-only git status, log, or diff.
+description: Use when opening a branch, writing a commit, or creating a PR. Not needed for read-only git status, log, or diff.
 ---
 
 # Git conventions
 
+## Branching strategy (Default: Per-Spec Branches)
+
+Always create a dedicated branch for each spec ticket by default — do not wait for explicit human instructions to branch out.
+
+- **Spec Branches (Default)**:
+  - When starting work on a spec ticket, create a fresh branch off `main` (or the project's base branch):
+    ```bash
+    git checkout -b <type>/<kebab-slug>
+    ```
+  - **Naming**: `<type>/<kebab-slug>`
+    - `type` ∈ `feat | fix | refactor | infra | docs`
+    - `kebab-slug` ≤ 3 words, concise and descriptive (e.g. `feat/substrate-ui`, `fix/dead-assignee`).
+- **Stacked Task Branches & PRs (When applicable)**:
+  - For complex or parallel tasks under a spec, builders branch off the spec branch (`<type>/<spec-slug>-<task-slug>`).
+  - Open stacked PRs targeting the parent spec branch when staged or incremental review is beneficial.
+  - When all task work is complete and verified, open the primary PR from the spec branch targeting `main`.
+
 ## Worktree guidance
 
-- Do not use git worktrees, unless explicitly asked by human, in which case follow human's directive.
-
-## Branch guidance
-
-Guidelines and instructions around this are usually explicitly provided by human. But regardless,
-here's a general idea:
-
-- Prefer to work on current branch, don't branch out implicitly. Unless explicitly asked by human.
-- Case 1 (default): I usually have one allocated development branch, where all commits go, and at
-  feature and spec boundaries, a PR is created to main (or staging) and upon merge dev branch is
-  resynced to continue clean for the next work.
-- Case 2 (per spec): This can happen when explicitly asked by the user or current branch is just
-  too messy to work with. Then we create a new branch per spec, and merge at spec boundaries.
-- Naming: When a branch out is allowed/requested, use `<type>/<kebab-slug>` - type ∈
-  `feat | fix | refactor | infra | docs`; kebab-slug should not exceed 3 words and be intuitively named
-
+- Do not use git worktrees unless the human or dispatch brief explicitly includes `workspace: worktree`.
 
 ## Commit guidance
 
-- Commit at coherent boundaries - a granular unit of work per commit.
-- Boundaries like fixes, features, tickets, subtasks etc are good candidate examples.
-- Message - `<type>(<scope>): <imperative subject>`. Subject ~100 chars, descriptive enough one-liner.
-  `scope` - optional (affected module).
-  `body` - full description of what changed and why.
-- Leave out and preserve unrelated changes made by human or other agents. In case of uncertainty or
-  confusion, ask human.
+- **Atomic Boundaries**: Commit at coherent units of work (fixes, subtasks, component additions).
+- **Message Format**: `<type>(<scope>): <imperative subject>`
+  - Subject line ≤ 100 chars in present imperative tense (e.g., `feat(dashboard): add live terminal peek`).
+  - `scope` is optional (affected module or component).
+  - Body provides clear technical details of what changed and why.
+- **Clean Staging**: Stage explicitly (`git add <files>`). Never use blind `git add -A` that could sweep untracked scratch files or teammate edits.
 
 ## PR Conventions
 
-Four sections in order:
+Every PR created must include these four sections in order:
 
 ```markdown
 ## Summary
