@@ -1051,6 +1051,21 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                       onBlur={commitTitle}
                       placeholder="Title"
                     />
+                  ) : reader ? (
+                    <h2 className="td-title" onClick={startTitleEdit} title="Click to edit title — click ID to copy">
+                      <span
+                        className="td-title-prefix"
+                        title={`Copy ${ticket.display_id || ticket.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const did = ticket.display_id || ticket.id;
+                          navigator.clipboard?.writeText(did).then(() => {
+                            setFieldToast({ msg: `Copied ${did}`, id: Math.random() });
+                            setTimeout(() => setFieldToast(null), 1500);
+                          }).catch(() => {});
+                        }}
+                      >{ticket.display_id || ticket.id} — </span>{ticket.title}
+                    </h2>
                   ) : (
                     <h2 className="td-title" onClick={startTitleEdit} title="Click to edit">{ticket.title}</h2>
                   )}
@@ -1062,6 +1077,23 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                     Edit
                   </button>
                 </div>
+                {reader && (() => {
+                  const assigneeId = ticket.assignee;
+                  const isUnassigned = !assigneeId;
+                  const isHuman = assigneeId === 'human' || assigneeId === 'you' || assigneeId === 'human:dashboard';
+                  const label = isUnassigned ? 'Unassigned' : resolveActor(assigneeId, ticket.assignee_label);
+                  const initials = isHuman ? 'L' : (label.split(/[\s:_-]+/).filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase() || 'A');
+                  return (
+                    <div className="td-reader-byline">
+                      <span className={`by-avatar ${isHuman ? 'human' : ''}`} aria-hidden="true">{initials}</span>
+                      <span>Assigned to <strong>{label}</strong></span>
+                      <span className="byline-dot" aria-hidden="true" />
+                      <span className={`pill ${statePill}`}>{ticket.state}</span>
+                      <span className="pill td-kind-pill" data-kind={ticket.kind}>{ticket.kind}</span>
+                      <span>· Updated {tdAgo(ticket.updated_at)}</span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* ── Body — read (TdAnnotate) or edit (TKT-0233: body-only) ── */}

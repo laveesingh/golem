@@ -3215,6 +3215,28 @@ select.ct-input { appearance: none; cursor: pointer; padding-right: 26px;
   margin: 0;
   color: var(--text-0);
 }
+/* GOL-287-B: project-scoped id prefix in reader title, where the eye lands */
+.td-title-prefix {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent);
+  cursor: copy;
+  border-radius: 4px;
+  padding: 0 2px;
+  margin-right: 6px;
+}
+.td-title-prefix:hover { background: var(--accent-soft); }
+.td-reader-byline {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 6px 0 0;
+  color: var(--text-3);
+  font: 500 11px/1 var(--font-mono);
+  letter-spacing: .02em;
+}
+.td-reader-byline strong { color: var(--text-1); font-weight: 700; }
+.td-reader-byline .byline-dot { width: 1px; height: 12px; background: var(--border-2); margin: 0 2px; }
+.td-reader-byline .by-avatar { width: 16px; height: 16px; border-radius: 50%; display:inline-grid; place-items:center; font:700 8px var(--font-mono); color:#fff; background:linear-gradient(135deg,#7e8bff,#2dd4a7); flex:0 0 auto; }
+.td-reader-byline .by-avatar.human { background:linear-gradient(135deg,#f59e0b,#ef4444); }
 .td-edit-btn { flex: 0 0 auto; margin-top: 2px; }
 .td-body { margin-top: 10px; font-size: 13px; line-height: 1.55; }
 .td-body-empty { margin-top: 8px; color: var(--text-3); font-size: 12.5px; font-style: italic; }
