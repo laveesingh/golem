@@ -94,6 +94,7 @@ function SettingsPage() {
       {error && <div className="settings-alert error">{error}</div>}
 
       <div className="settings-stack">
+        <DiagnosticCard />
         <section className="settings-section" data-testid="harnesses-section">
           <div className="settings-section-head">
             <div>

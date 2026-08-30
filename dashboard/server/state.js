@@ -165,35 +165,54 @@ export function createState() {
     ee.emit('event', { type: 'project-update', project: projectSummary(p) });
   }
 
+  // GOL-39: dedupe concurrent refreshes. Every /api/sessions/dispatchable call
+  // refreshes synchronously, and a spawn-wait polls that endpoint every second
+  // while the dashboard's own 3s tick refreshes too. Each refresh spawns the
+  // `claude agents --json` subprocess and probes every endpoint lease — the
+  // piled-up concurrent refreshes saturated the dashboard and starved worker
+  // registrations ("This operation was aborted"). Share one in-flight refresh
+  // and serve callers from a 1s-fresh result instead.
+  let nativeRefreshInFlight = null;
+  let nativeRefreshedAt = 0;
+  const NATIVE_REFRESH_MIN_INTERVAL_MS = 250;
+
   async function refreshNativeSessions() {
-    try {
-      const chans = await readChannels().catch(() => []);
-      const sessions = await readNativeSessions(registeredIdForPath, chans);
-      nativeSessions = sessions;
-      channels = Array.isArray(chans) ? chans : [];
-      // TKT-0266: persist durable session-name labels. Keyed off nativeSessions
-      // (NOT dispatchable) — a named session without a channel still deserves a
-      // persisted name. Only alive sessions with a name are upserted; the upsert
-      // is change-gated + 5-min staleness-gated internally so this 3s tick does
-      // NOT write a row every tick for every session.
-      if (trackerRef && typeof trackerRef.upsertSessionLabel === 'function') {
-        for (const s of nativeSessions) {
-          if (!s.alive || !s.name || !s.session_id) continue;
-          try {
-            trackerRef.upsertSessionLabel(s.session_id, s.name, s.project_id ?? null);
-          } catch (err) {
-            console.error('[native-sessions] upsertSessionLabel failed:', err);
+    if (nativeRefreshInFlight) return nativeRefreshInFlight;
+    if (Date.now() - nativeRefreshedAt < NATIVE_REFRESH_MIN_INTERVAL_MS) return;
+    nativeRefreshInFlight = (async () => {
+      try {
+        const chans = await readChannels().catch(() => []);
+        const sessions = await readNativeSessions(registeredIdForPath, chans);
+        nativeSessions = sessions;
+        channels = Array.isArray(chans) ? chans : [];
+        // TKT-0266: persist durable session-name labels. Keyed off nativeSessions
+        // (NOT dispatchable) — a named session without a channel still deserves a
+        // persisted name. Only alive sessions with a name are upserted; the upsert
+        // is change-gated + 5-min staleness-gated internally so this 3s tick does
+        // NOT write a row every tick for every session.
+        if (trackerRef && typeof trackerRef.upsertSessionLabel === 'function') {
+          for (const s of nativeSessions) {
+            if (!s.alive || !s.name || !s.session_id) continue;
+            try {
+              trackerRef.upsertSessionLabel(s.session_id, s.name, s.project_id ?? null);
+            } catch (err) {
+              console.error('[native-sessions] upsertSessionLabel failed:', err);
+            }
           }
         }
+        ee.emit('event', {
+          type: 'native-sessions-update',
+          native_sessions: nativeSessions,
+          channels,
+        });
+      } catch (err) {
+        console.error('[native-sessions]', err);
+      } finally {
+        nativeRefreshedAt = Date.now();
+        nativeRefreshInFlight = null;
       }
-      ee.emit('event', {
-        type: 'native-sessions-update',
-        native_sessions: nativeSessions,
-        channels,
-      });
-    } catch (err) {
-      console.error('[native-sessions]', err);
-    }
+    })();
+    return nativeRefreshInFlight;
   }
 
   function debouncedRefresh(key, fn, delay = 80) {

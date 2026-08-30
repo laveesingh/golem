@@ -90,6 +90,7 @@ import {
     opencode: { id: 'opencode', label: 'OpenCode', iconIdleSrc: openCodeIdle, iconActiveSrc: openCodeActive, iconSrc: openCodeIdle },
     codex: { id: 'codex', label: 'Codex', iconIdleSrc: codexIdle, iconActiveSrc: codexActive, iconSrc: codexIdle },
     pi: { id: 'pi', label: 'Pi', iconIdleSrc: piIdle, iconActiveSrc: piActive, iconSrc: piIdle },
+    hermes: { id: 'hermes', label: 'Hermes', iconIdleSrc: null, iconActiveSrc: null, iconSrc: null },
   };
 
   function withIcon(entry) {

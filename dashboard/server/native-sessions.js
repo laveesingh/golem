@@ -526,7 +526,20 @@ export async function readNativeSessions(registeredIdLookup, verifiedChannels = 
         ? null
         : Math.max(factObservedMs ?? 0, Number(previous.updated_at) || 0),
       // Prefer explicit fact retirement; keep prior registry ended_at if set.
-      ended_at: msFromIso(fact.ended_at) ?? previous.ended_at ?? null,
+      // BUT a re-asserted live fact (resumed session: the harness re-activated
+      // a session the registry still marks stopped) must CLEAR the stale
+      // registry ended_at — otherwise the merged row stays dead forever and a
+      // resumed worker can never re-enter the dispatchable roster (GOL-39).
+      ended_at: (() => {
+        const factEndedMs = msFromIso(fact.ended_at);
+        if (factEndedMs != null) return factEndedMs;
+        if (isSessionFactTerminal(fact)) return previous.ended_at ?? null;
+        const prevEndedMs = msFromIso(previous.ended_at);
+        if (prevEndedMs == null) return null;
+        // Fact is live and was observed at/after the registry retirement — the
+        // harness came back; treat the retirement as superseded.
+        return (factObservedMs != null && factObservedMs >= prevEndedMs) ? null : previous.ended_at;
+      })(),
       _fact: fact,
     });
   }

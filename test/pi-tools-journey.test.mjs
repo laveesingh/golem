@@ -135,7 +135,7 @@ try {
 
   const context = await worker.tools.get('project_context').execute('context-call', {}, undefined, undefined, worker.ctx);
   assert.equal(context.details.ok, true, context.content[0].text);
-  assert.match(context.content[0].text, /Recent commits:/, 'project context renders bounded repo context');
+  assert.match(context.content[0].text, /Recent commits/, 'project context renders bounded repo context');
 
   const roleChange = await fetch(`${baseUrl}/api/sessions/pi-tools-worker/role`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: 'reviewer' }),

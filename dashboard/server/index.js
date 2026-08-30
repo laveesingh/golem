@@ -21,7 +21,9 @@ import { registerSubstrateRoutes } from './substrate.js';
 import { teamAssists } from './team-assist.js';
 import { golemHome, dashboardJsonPath, journalDirFor, sessionsJsonPath } from '../../lib/golem-home.js';
 import { createRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.js';
-import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../../lib/worker-manager.js';
+import { enrichDispatchableRows, spawnWorker, switchWorkerModel, killWorker, peekWorker, peekSessionTerminal, sendWorkerKeys } from '../../lib/worker-manager.js';
+import { findWorker, listWorkers } from '../../lib/worker-registry.js';
+import { capturePane, hasSession } from '../../lib/tmux-driver.js';
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
 import { recordTypedEnvelopeOutcome } from './typed-delivery.js';
 import { sameEndpointSecret } from '../../lib/typed-worker-endpoint.js';
@@ -30,6 +32,7 @@ import {
   clearRoleDefault,
   createProfile,
   deleteProfile,
+  getProfile,
   loadProfilesStore,
   setRoleDefault,
   updateProfile,
@@ -1138,47 +1141,147 @@ async function main() {
     return readNativeSessionPeek(sessionId, session);
   });
 
-  // GOL-4: live terminal output peek for background agents
+  // GOL-4 / GOL-15: live ANSI terminal scrollback for Peek Modal and drawers.
+  // GET /api/native-sessions/:sessionId/terminal?lines=500
+  // Returns { sessionId, output, text, lines, truncated, ok } with raw ANSI sequences or activity feed fallback.
   fastify.get('/api/native-sessions/:sessionId/terminal', async (req) => {
     const sessionId = req.params.sessionId;
-    const lines = req.query?.lines ? parseInt(req.query.lines, 10) : 100;
+    const lines = Math.min(2000, Math.max(20, Number(req.query?.lines) || 100));
     const session = state.nativeSessions().find((s) => s.session_id === sessionId) ?? null;
-    return peekSessionTerminal(sessionId, {
-      lines: Number.isInteger(lines) && lines > 0 ? lines : 100,
-      projectId: session?.project_id ?? null,
-    });
+    try {
+      const peek = await peekSessionTerminal(sessionId, {
+        lines,
+        projectId: session?.project_id ?? null,
+        sessionName: session?.name || session?.label || null,
+      });
+      if (peek.ok && peek.text) {
+        return {
+          ...peek,
+          sessionId,
+          output: peek.text,
+          lines,
+          truncated: (peek.text.split('\n').length >= lines),
+        };
+      }
+    } catch {}
+
+    // Fallback for non-tmux sessions (e.g. direct Pi/Claude foreground sessions): hook journal lines
+    try {
+      const journalPeek = readNativeSessionPeek(sessionId, session);
+      if (journalPeek?.events?.length > 0) {
+        const text = journalPeek.events.map((e) => `[${e.tool || 'event'}] ${JSON.stringify(e.args || e.result || e)}`).join('\n');
+        return {
+          ok: true,
+          sessionId,
+          name: session?.name ?? sessionId,
+          output: text,
+          text,
+          lines,
+          source: 'journal',
+          truncated: false,
+        };
+      }
+    } catch {}
+
+    return {
+      ok: false,
+      sessionId,
+      output: '(no terminal session active)',
+      text: null,
+      lines,
+      truncated: false,
+    };
   });
 
-  // GOL-4: live chat/steer message dispatch to background agent
+  // GOL-4 / GOL-15: mid-turn steer / pause / halt / kill
+  // POST /api/native-sessions/:sessionId/message  { text, mode: 'steer'|'interrupt'|'halt'|'kill' }
   fastify.post('/api/native-sessions/:sessionId/message', async (req, reply) => {
     const sessionId = req.params.sessionId;
     const b = req.body ?? {};
-    const text = typeof b.text === 'string' ? b.text.trim() : (typeof b.content === 'string' ? b.content.trim() : '');
-    if (!sessionId) return reply.code(400).send({ error: 'session_id is required' });
-    if (!text) return reply.code(400).send({ error: 'text is required' });
+    const text = typeof b.text === 'string' ? b.text.trim() : (typeof b.content === 'string' ? b.content.trim() : typeof b.message === 'string' ? b.message.trim() : '');
+    const mode = String(b.mode || 'steer').toLowerCase();
+    if (!text && mode !== 'halt' && mode !== 'kill' && mode !== 'pause') return reply.code(400).send({ error: 'text is required for steer/interrupt' });
     const session = state.nativeSessions().find((s) => s.session_id === sessionId) ?? null;
+    if (!session && mode !== 'kill') return reply.code(404).send({ error: `session not found: ${sessionId}` });
     const isBusy = session?.status === 'busy' || session?.delivery_state === 'accepted';
+
     try {
-      const result = await deliverControlEnvelope(tracker, {
-        project_id: session?.project_id ?? null,
-        sender_id: 'human:dashboard',
-        recipient_session_id: sessionId,
-        kind: 'brief',
-        content: text,
-        metadata: { text, steer: isBusy },
-        legacy: { path: '/brief', body: text },
-      });
-      chat.record('user', 'brief', text, { session_id: sessionId, steer: isBusy });
-      const ok = result.delivered || result.retry_queued;
-      return reply.code(ok ? 200 : (result.delivery?.status || 502)).send({
-        ok,
-        steered: isBusy && result.delivered,
-        queued: result.retry_queued,
-        envelope_id: result.envelope?.id,
-        delivery: result.delivery,
-      });
+      if (mode === 'steer' || mode === 'brief') {
+        const result = await deliverControlEnvelope(tracker, {
+          project_id: session?.project_id ?? null,
+          sender_id: 'human:dashboard',
+          recipient_session_id: sessionId,
+          kind: 'brief',
+          content: text,
+          metadata: { text, steer: isBusy },
+          legacy: { path: '/brief', body: text },
+        });
+        chat.record('user', 'brief', text, { session_id: sessionId, steer: isBusy });
+        const ok = result.delivered || result.retry_queued;
+        return reply.code(ok ? 200 : (result.delivery?.status || 502)).send({
+          ok,
+          steered: isBusy && result.delivered,
+          queued: result.retry_queued,
+          envelope_id: result.envelope?.id,
+          delivery: result.delivery,
+        });
+      }
+      if (mode === 'interrupt') {
+        const result = await deliverControlEnvelope(tracker, {
+          project_id: session?.project_id ?? null,
+          sender_id: 'human:dashboard',
+          recipient_session_id: sessionId,
+          kind: 'interrupt',
+          content: text || 'Interrupt requested by human dashboard',
+          legacy: { path: '/interrupt', body: text || 'interrupt' },
+        });
+        try {
+          if (session?.name) {
+            sendWorkerKeys(session.name, ['C-c'], { projectId: session?.project_id ?? null });
+          }
+        } catch {}
+        const ok = result.delivered || result.retry_queued;
+        return reply.code(ok ? 200 : (result.delivery?.status || 502)).send({ ok, queued: result.retry_queued, envelope_id: result.envelope?.id, delivery: result.delivery });
+      }
+      if (mode === 'halt') {
+        const result = await deliverControlEnvelope(tracker, {
+          project_id: session?.project_id ?? null,
+          sender_id: 'human:dashboard',
+          recipient_session_id: sessionId,
+          kind: 'halt',
+          content: text || 'halt requested from dashboard',
+          legacy: { path: '/halt', body: text || 'halt' },
+        });
+        const ok = result.delivered || result.retry_queued;
+        return reply.code(ok ? 200 : (result.delivery?.status || 502)).send({ ok, queued: result.retry_queued, envelope_id: result.envelope?.id, delivery: result.delivery });
+      }
+      if (mode === 'kill') {
+        const workers = listWorkers({});
+        const worker = workers.find((w) => w.session_id === sessionId || w.name === sessionId || w.name === session?.name);
+        if (worker) {
+          const res = await killWorker(worker.name, worker.project_id ? { projectId: worker.project_id } : {});
+          await state.refreshNativeSessions().catch(() => {});
+          broadcastWS({ type: 'native-sessions-update', native_sessions: enrichSessionRows(state.nativeSessions(), state.channels()), channels: state.channels() });
+          return { ok: true, killed: worker.name, worker: res };
+        }
+        if (session) {
+          try {
+            const { markSessionFactsEnded, retireEndpointLeasesForCanonical } = await import('../../lib/session-facts.js');
+            const { markSessionsEnded } = await import('../../lib/session-registry.js');
+            markSessionFactsEnded([sessionId], { status: 'stopped' });
+            markSessionsEnded([sessionId], { status: 'stopped' });
+            retireEndpointLeasesForCanonical([sessionId]);
+            if (session.pid) process.kill(session.pid, 'SIGTERM');
+          } catch {}
+          await state.refreshNativeSessions().catch(() => {});
+          broadcastWS({ type: 'native-sessions-update', native_sessions: enrichSessionRows(state.nativeSessions(), state.channels()), channels: state.channels() });
+          return { ok: true, killed: sessionId };
+        }
+        return reply.code(404).send({ error: `no worker found for session ${sessionId} to kill` });
+      }
+      return reply.code(400).send({ error: `unknown mode: ${mode}` });
     } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
+      return reply.code(500).send({ error: String(err?.message || err) });
     }
   });
 
@@ -1204,7 +1307,207 @@ async function main() {
 
       return { ok: true, session_id: sessionId };
     } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
+      return reply.code(500).send({ error: String(err?.message ?? err) });
+    }
+  });
+
+  // GOL-15: 1-click worker spawn from UI — mirrors `golem spawn`
+  // POST /api/workers/spawn  { role, name?, project?, profile? }
+  fastify.post('/api/workers/spawn', async (req, reply) => {
+    const body = req.body ?? {};
+    const role = String(body.role || '').trim();
+    const name = body.name != null ? String(body.name).trim() || null : null;
+    const project = body.project != null ? String(body.project).trim() || null : null;
+    const profile = body.profile != null ? String(body.profile).trim() || null : null;
+    if (!role) return reply.code(400).send({ error: 'role is required' });
+    try {
+      const worker = await spawnWorker({ role, name, project, profile });
+      await state.refreshNativeSessions().catch(() => {});
+      broadcastWS({ type: 'native-sessions-update', native_sessions: enrichSessionRows(state.nativeSessions(), state.channels()), channels: state.channels() });
+      return reply.code(201).send(worker);
+    } catch (err) {
+      return reply.code(500).send({ error: String(err?.message || err) });
+    }
+  });
+
+  // GOL-15/39: switch an existing golem-managed worker onto a different model
+  // profile. Universal mechanism: controlled restart under the SAME role +
+  // name with `--profile` (resolved at launch). Pi workers resume their prior
+  // conversation; hermes workers restart fresh. Non-golem-managed sessions
+  // (user-launched claudecode/codex without a worker row) fall back to a
+  // terminate-and-relaunch using the native session's role when available.
+  fastify.post('/api/workers/:name/switch-model', async (req, reply) => {
+    const name = String(req.params.name || '').trim();
+    const body = req.body ?? {};
+    const profile = typeof body.profile === 'string' ? body.profile.trim() : '';
+    const resume = body.resume !== false;
+    const project = body.project != null ? String(body.project).trim() || null : null;
+    if (!name) return reply.code(400).send({ error: 'worker name is required' });
+    if (!profile) return reply.code(400).send({ error: 'profile is required' });
+    try {
+      const profileRecord = getProfile(profile);
+      if (!profileRecord) {
+        return reply.code(400).send({ error: `unknown model profile: ${profile}` });
+      }
+      const wantedProject = project ? resolveProjectId(project) : null;
+      let workerRow = null;
+      try { workerRow = findWorker(name, { projectId: wantedProject }); } catch { workerRow = null; }
+
+      let result;
+      if (workerRow) {
+        result = await switchWorkerModel(name, { projectId: workerRow.project_id, profile, resume });
+      } else {
+        // No worker registry row — the session was launched interactively
+        // (e.g. `golem pi` in a user terminal). Terminate the native session
+        // and relaunch it as a managed worker with the same role + name.
+        const session = state.nativeSessions().find((s) => s.name === name || s.session_id === name);
+        if (!session || !session.alive) {
+          return reply.code(404).send({ error: `no live worker or session found for ${name}` });
+        }
+        const harness = String(session.harness || 'pi').toLowerCase();
+        if (!['pi', 'hermes'].includes(harness)) {
+          return reply.code(400).send({ error: `model switching requires a golem-managed worker (pi or hermes); session ${name} runs ${harness}` });
+        }
+        if (!session.role) {
+          return reply.code(400).send({ error: `session ${name} has no role to relaunch with; assign a role first` });
+        }
+        // Terminate via the same path as the kill endpoint (no worker row).
+        try {
+          const { markSessionFactsEnded, retireEndpointLeasesForCanonical: retireLeases } = await import('../../lib/session-facts.js');
+          const { markSessionsEnded } = await import('../../lib/session-registry.js');
+          markSessionFactsEnded([session.session_id], { status: 'stopped' });
+          markSessionsEnded([session.session_id], { status: 'stopped' });
+          retireLeases([session.session_id]);
+          if (session.pid) {
+            try { process.kill(session.pid, 'SIGTERM'); } catch {}
+          }
+        } catch {}
+        result = await spawnWorker({
+          role: session.role,
+          name: session.name,
+          project: session.project_id ?? wantedProject,
+          profile,
+          resumeSessionId: harness === 'pi' && resume ? session.session_id : null,
+        });
+      }
+      await state.refreshNativeSessions().catch(() => {});
+      broadcastWS({ type: 'native-sessions-update', native_sessions: enrichSessionRows(state.nativeSessions(), state.channels()), channels: state.channels() });
+      return { ok: true, switched_to: profile, worker: result };
+    } catch (err) {
+      return reply.code(500).send({ error: String(err?.message || err) });
+    }
+  });
+
+  fastify.get('/api/workers', async (req) => {
+    const project = req.query?.project ? resolveProjectId(String(req.query.project)) : null;
+    const workers = listWorkers({ projectId: project });
+    return workers;
+  });
+
+  // GOL-16: environment diagnostics — Pi, Claude Code, Codex, model API keys
+  fastify.get('/api/diagnostics', async () => {
+    const checks = [];
+    const hasCommand = (cmd) => {
+      try { const r = spawnSync('sh', ['-c', `command -v ${cmd}`], { encoding: 'utf8' }); return r.status === 0 && String(r.stdout||'').trim().length > 0; } catch { return false; }
+    };
+    const versionOf = (cmd, args) => {
+      try { const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 3000 }); if (r.status === 0) return String(r.stdout||'').trim().split('\n')[0].trim().slice(0,120); } catch {}
+      return null;
+    };
+    // Pi
+    {
+      const v = versionOf('pi', ['--version']);
+      const pinned = (await import('../../lib/pi-compatibility.js')).SUPPORTED_PI_VERSION;
+      let status='red', detail=v || 'not found on PATH', hint='Install Pi and ensure `pi --version` matches pinned '+pinned+' — see README';
+      if (v) {
+        if (v.includes(pinned) || v.trim()===pinned) { status='green'; detail=`${v} (pinned ${pinned})`; hint=''; }
+        else { status='amber'; detail=`${v} (expected ${pinned})`; hint=`Run golem sync or update Pi to ${pinned}`; }
+      }
+      checks.push({ id:'pi', label:'Pi', status, detail, hint });
+    }
+    // Claude Code
+    {
+      const has = hasCommand('claude');
+      const v = has ? versionOf('claude', ['--version']) : null;
+      let status = has ? 'green' : 'amber', detail = v || (has ? 'found' : 'not found on PATH'), hint = has ? '' : 'Install Claude Code (https://docs.anthropic.com/claude-code) — optional if using Pi/Codex';
+      checks.push({ id:'claude', label:'Claude Code', status, detail, hint });
+    }
+    // Codex
+    {
+      const has = hasCommand('codex') || hasCommand('code');
+      const v = hasCommand('codex') ? versionOf('codex', ['--version']) : versionOf('code', ['--version']);
+      let status = has ? 'green' : 'amber', detail = v || (has ? 'found' : 'not found on PATH'), hint = has ? '' : 'Install Codex (openai) — optional if using Pi/Claude';
+      checks.push({ id:'codex', label:'Codex', status, detail, hint });
+    }
+    // Model API keys
+    {
+      const keys = [
+        ['ANTHROPIC_API_KEY', !!process.env.ANTHROPIC_API_KEY],
+        ['OPENAI_API_KEY', !!process.env.OPENAI_API_KEY],
+        ['GOOGLE_API_KEY', !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY],
+        ['XAI_API_KEY', !!process.env.XAI_API_KEY],
+      ];
+      const present = keys.filter(([,v])=>v).map(([k])=>k);
+      let status = present.length>0 ? 'green' : 'amber';
+      let detail = present.length>0 ? present.join(', ') + ' set' : 'no model API keys detected in env';
+      let hint = present.length>0 ? '' : 'Set at least one of ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY — see model profile';
+      checks.push({ id:'model-keys', label:'Model API keys', status, detail, hint });
+    }
+    // Substrate sync
+    {
+      let status='green', detail='substrate available', hint='';
+      try {
+        const hasConfig = !!CONFIG.golemRoot;
+        if (!hasConfig) { status='amber'; detail='golem root not configured'; hint='Check GOLEM_ROOT env'; }
+      } catch (e) { status='amber'; detail='substrate check failed'; hint=String(e.message||e); }
+      checks.push({ id:'substrate', label:'Substrate', status, detail, hint });
+    }
+    const red = checks.filter(c=>c.status==='red').length;
+    const amber = checks.filter(c=>c.status==='amber').length;
+    const overall = red>0 ? 'red' : amber>0 ? 'amber' : 'green';
+    return { checks, overall, generated_at: new Date().toISOString() };
+  });
+
+  // GOL-16: workspace setup — scaffold new project or import existing git repo
+  fastify.post('/api/projects/scaffold', async (req, reply) => {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return reply.code(400).send({ error: 'name is required' });
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48) || 'project';
+    const dir = path.join(CONFIG.projectsRoot, slug);
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+      const agentsPath = path.join(dir, 'AGENTS.md');
+      let exists = false;
+      try { await fs.promises.access(agentsPath); exists = true; } catch {}
+      if (!exists) {
+        const template = `# ${name}\n\nGolem project — ${slug}\n\n## Agent Instructions\n\nSee substrate/AGENTS.md for harness rules.\n`;
+        await fs.promises.writeFile(agentsPath, template, 'utf8');
+      }
+      const projectId = (await import('./project-id.js')).projectIdFor(dir);
+      return reply.code(201).send({ ok: true, name, slug, path: dir, project_id: projectId, agents: agentsPath });
+    } catch (e) {
+      return reply.code(500).send({ error: String(e.message||e) });
+    }
+  });
+
+  fastify.post('/api/projects/import', async (req, reply) => {
+    const p = String(req.body?.path || '').trim();
+    if (!p) return reply.code(400).send({ error: 'path is required' });
+    const resolved = path.isAbsolute(p) ? p : path.resolve(p);
+    try {
+      const stat = await fs.promises.stat(resolved);
+      if (!stat.isDirectory()) return reply.code(400).send({ error: 'path must be a directory' });
+      const insideRoot = resolved.startsWith(CONFIG.projectsRoot);
+      let linkPath = resolved;
+      if (!insideRoot) {
+        const slug = path.basename(resolved).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48) || 'imported';
+        linkPath = path.join(CONFIG.projectsRoot, slug);
+        try { await fs.promises.symlink(resolved, linkPath); } catch (e) { if (e.code!=='EEXIST') throw e; }
+      }
+      const projectId = (await import('./project-id.js')).projectIdFor(resolved);
+      return reply.code(201).send({ ok: true, path: resolved, link: linkPath, project_id: projectId });
+    } catch (e) {
+      return reply.code(500).send({ error: String(e.message||e) });
     }
   });
 
@@ -1301,6 +1604,22 @@ async function main() {
       return ticket;
     } catch (err) {
       return reply.code(400).send({ error: String(err?.message ?? err) });
+    }
+  });
+
+  // DELETE /api/tickets/:id — remove ticket, comments, and links cleanly from tracker
+  fastify.delete('/api/tickets/:id', async (req, reply) => {
+    const rawId = req.params.id;
+    const resolvedId = tracker.resolveId(rawId);
+    if (!resolvedId) return reply.code(404).send({ error: `ticket '${rawId}' not found` });
+    try {
+      const actor = req.body?.actor || 'human';
+      const deleted = tracker.deleteTicket(resolvedId, { actor });
+      if (!deleted) return reply.code(404).send({ error: `ticket '${rawId}' not found` });
+      broadcastWS({ type: 'ticket-deleted', id: resolvedId, display_id: deleted.display_id, project_id: deleted.project_id });
+      return { ok: true, deleted: resolvedId, display_id: deleted.display_id };
+    } catch (err) {
+      return reply.code(500).send({ error: String(err?.message || err) });
     }
   });
 
@@ -2159,7 +2478,15 @@ async function main() {
       // Once a harness has adopted canonical facts, an authenticated healthy
       // endpoint lease is part of dispatchability. Legacy rows retain the
       // queue-while-unreachable compatibility behavior during migration.
-      if (s.fact_observed_at && !hasAuthenticatedHealthyChannel(s)) continue;
+      // Hermes is the same story structurally: its channel MCP child is lazy —
+      // Hermes initializes stdio servers on first use, not at TUI startup — so
+      // a freshly spawned Hermes worker cannot present a healthy channel
+      // within the spawn-ready window. Its launcher-written typed-worker fact
+      // (push:true) is the readiness evidence; while the channel is absent the
+      // row stays listed with reachable:false and dispatch queues when-idle
+      // until the channel heartbeat registers (first turn / first tool call).
+      const hermesFactRow = s.harness === 'hermes' && !!s.fact_observed_at;
+      if (s.fact_observed_at && !hermesFactRow && !hasAuthenticatedHealthyChannel(s)) continue;
       const team = teamBySession.get(s.session_id);
       // TKT-0369: an alive session whose channel MCP died must NOT silently
       // vanish from the picker — it stays listed with reachable:false so the UI
@@ -2443,16 +2770,20 @@ async function main() {
     return out;
   });
 
-  // TKT-0206: global ideas stack. A FIFO queue of raw thoughts the user
-  // drops via the bottom-left anchor in the dashboard. Each idea is a
-  // .md file at ~/.golem/ideas/ with frontmatter (id, created_at,
-  // status) + body. "Popping" deletes the file (the user is taking it
-  // forward — likely into a tracker ticket).
-  fastify.get('/api/ideas', async () => listIdeas());
+  // TKT-0206 / GOL-13: ideas stack now project-scoped — ?project=<contract_id>
+  // filters the queue to that project's ideas. Without the param the legacy
+  // global view (all ideas) is returned for backward compat.
+  fastify.get('/api/ideas', async (req) => {
+    const project = req.query?.project ? resolveProjectId(String(req.query.project)) : null;
+    return listIdeas(project || null);
+  });
 
   fastify.post('/api/ideas', async (req, reply) => {
     try {
-      const idea = await createIdea({ body: req.body?.body || '' });
+      const b = req.body ?? {};
+      const project = b.project_id || b.project || b.projectId || null;
+      const resolved = project ? resolveProjectId(String(project)) : null;
+      const idea = await createIdea({ body: b.body || '', project_id: resolved || project || null });
       return idea;
     } catch (err) {
       if (err && err.status) return reply.code(err.status).send({ error: err.message });

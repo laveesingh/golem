@@ -108,9 +108,22 @@
     state.trackerTickets.set(ticket.id, ticket);
     notify();
   }
+  function applyTicketDeleted({ id, display_id }) {
+    if (!id) return;
+    state.trackerTickets.delete(id);
+    if (display_id) state.trackerTickets.delete(display_id);
+    state.ticketComments.delete(id);
+    notify();
+  }
   function upsertTrackerTicket(ticket) {
     if (!ticket || !ticket.id) return;
     state.trackerTickets.set(ticket.id, ticket);
+    notify();
+  }
+  function deleteTrackerTicket(id) {
+    if (!id) return;
+    state.trackerTickets.delete(id);
+    state.ticketComments.delete(id);
     notify();
   }
   function seedTicketComments(id, comments) {
@@ -336,6 +349,9 @@
             // signal as a health invalidation rather than adding a timer.
             state.communicationHealthRev = (state.communicationHealthRev || 0) + 1;
             break;
+          case 'ticket-deleted':
+            applyTicketDeleted(msg);
+            break;
           case 'ticket-comment':
             applyTicketComment(msg);
             break;
@@ -398,6 +414,7 @@
     getTrackerTickets,
     getTicketComments,
     seedTicketComments,
+    deleteTrackerTicket,
     upsertTrackerTicket,
     getRole,
     getRoles,
@@ -429,7 +446,13 @@
     getProjectAliveSessions: (project) => {
       if (!project) return [];
       const ids = new Set([project.project_id, project.id].filter(Boolean));
-      return sortSessionsByRecency(state.nativeSessions.filter((s) => s.alive && s.project_id && ids.has(s.project_id)));
+      const pathMatches = (cwd) => {
+        if (!cwd || !project.path) return false;
+        return cwd === project.path || cwd.startsWith(project.path + '/');
+      };
+      return sortSessionsByRecency(state.nativeSessions.filter((s) => (
+        s.alive === true && ((s.project_id && ids.has(s.project_id)) || (s.registered_project_id && ids.has(s.registered_project_id)) || pathMatches(s.cwd))
+      )));
     },
     // v4: count of all alive native Golem sessions on the machine.
     getAliveSessionCount: () => state.nativeSessions.filter((s) => s.alive).length,

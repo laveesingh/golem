@@ -1,22 +1,25 @@
-// router.js — tiny path-based client-side router for the dashboard (TKT-0146).
+// router.js — tiny path-based client-side router for the dashboard (TKT-0146, pruned GOL-13).
 //
-// Replaces the old hash+replaceState model (which never pushed history, so Back
-// exited the SPA). Plain JS (no JSX), loaded as a regular <script> before the
-// babel component scripts. Exposed as window.Router.
+// GOL-13 pruned obsolete top-level boards (/tracker, /specs, /logs) and the
+// floating CEO chat overlay (?chat=<sid>). Navigation is now 3 core views:
+//   Workspace / Projects → / (/dashboard alias), /projects, /project/<id>
+//   Swarm Ops           → /agents
+//   Settings            → /settings, /substrate (alias)
+// Legacy deep links to /tracker, /specs, /logs fall back to dashboard so
+// the SPA never white-screens and old bookmarks/link history stay valid.
 //
 // Routes (path-based):
 //   /                 → dashboard
 //   /dashboard        → dashboard (alias)
-//   /tracker          → tracker
-//   /specs            → specs (TKT-0284 — spec-kind tickets, separated by view)
 //   /projects         → projects
 //   /agents           → agents
-//   /logs             → logs
+//   /settings         → settings
+//   /substrate        → settings (alias, same view)
 //   /project/<id>     → { kind:'project', id, tab?, q?, showArchived? }
 //   /tickets/<id>     → { kind:'ticket', id }
 //
 // Drawers are URL overlays carried as query params on the current page's path:
-//   ?ticket=<id>  ?compose=1 (&project=<pid> &kind=<k> &parent=<id>)  ?chat=<sid>  ?ns=<sid>  ?communication=1
+//   ?ticket=<id>  ?compose=1 (&project=<pid> &kind=<k> &parent=<id>)  ?ns=<sid>  ?ideas=1  ?communication=1
 // Opening a drawer PUSHES a history entry (so Back closes it); closing either
 // pops that entry (history.back) or, for deep-linked overlays with nothing to
 // pop, replaceState-strips the param.
@@ -26,7 +29,7 @@
 // spammed — preserves the original "don't spam history" intent.
 
 (function () {
-  const TOP_LEVEL = ['dashboard', 'tracker', 'projects', 'agents', 'logs', 'settings', 'substrate'];
+  const TOP_LEVEL = ['dashboard', 'projects', 'agents', 'settings', 'substrate', 'onboarding'];
 
   const parseQuery = (search) => {
     const out = {};
@@ -55,19 +58,12 @@
 
   // Map a {path, query} to a route descriptor. Unknown paths fall back to
   // dashboard so the SPA never white-screens on a bad deep link.
+  // GOL-13: /tracker, /specs, /logs are obsolete — they land on dashboard.
   const parseRoute = (path, query) => {
     const p = normalizePath(path);
     if (p === '/' || p === '/dashboard') return { kind: 'dashboard' };
-    if (p === '/tracker') return {
-      kind: 'tracker', view: query.view || null,
-      project: query.project || '', kindFilter: query.kind || '',
-      assignee: query.assignee || '', q: query.q || '',
-      archived: query.archived === '1',
-    };
-    if (p === '/specs') return { kind: 'specs' };
     if (p === '/projects') return { kind: 'projects' };
     if (p === '/agents') return { kind: 'agents' };
-    if (p === '/logs') return { kind: 'logs' };
     if (p === '/settings') return { kind: 'settings' };
     if (p === '/substrate' || p.startsWith('/substrate/')) {
       const parts = p.split('/').filter(Boolean);
@@ -77,6 +73,7 @@
         slug: parts[2] || query.slug || null,
       };
     }
+    if (p === '/onboarding') return { kind: 'onboarding' };
     const pm = p.match(/^\/project\/(.+)$/);
     if (pm) {
       return {
@@ -100,20 +97,10 @@
     if (!route || !route.kind) return '/';
     switch (route.kind) {
       case 'dashboard': return '/';
-      case 'tracker': {
-        const q = {};
-        if (route.view) q.view = route.view;
-        if (route.project) q.project = route.project;
-        if (route.kindFilter) q.kind = route.kindFilter;
-        if (route.assignee) q.assignee = route.assignee;
-        if (route.q) q.q = route.q;
-        if (route.archived) q.archived = '1';
-        return `/tracker${stringifyQuery(q)}`;
-      }
       case 'projects': return '/projects';
       case 'agents': return '/agents';
-      case 'logs': return '/logs';
       case 'settings': return '/settings';
+      case 'onboarding': return '/onboarding';
       case 'substrate': {
         const q = {};
         if (route.tab && route.tab !== 'skills') q.tab = route.tab;
@@ -148,9 +135,8 @@
       // `?compose=1&kind=task&parent=TKT-0284` opens it with a parent.
       composeKind: query.kind || null,
       composeParent: query.parent || null,
-      chat: query.chat || null,
       ns: query.ns || null,
-      ideas: !!query.ideas, // TKT-0206: global ideas stack overlay
+      ideas: !!query.ideas, // GOL-13: project-scoped ideas stack overlay (per-project)
       communication: !!query.communication,
     };
     return route;
@@ -212,9 +198,10 @@
     if (presets.parent) extra.parent = presets.parent;
     return openOverlay('compose', '1', extra);
   };
-  const openChat = (sessionId) => openOverlay('chat', sessionId);
   const openNativeSession = (sessionId) => openOverlay('ns', sessionId);
-  // TKT-0206: open / close the global ideas-stack drawer.
+  // GOL-13: project-scoped ideas drawer — overlay stays ?ideas=1; the
+  // owning project is derived from the current route in App (passed as
+  // prop to IdeasDrawer) so no extra query param is needed.
   const openIdeas = () => openOverlay('ideas', '1');
   const closeIdeas = () => closeOverlay('ideas');
 
@@ -226,7 +213,7 @@
   window.Router = {
     parseQuery, stringifyQuery, parseRoute, parseLocation, buildHref,
     go, openOverlay, closeOverlay,
-    openTicket, openComposer, openChat, openNativeSession, openIdeas, closeIdeas,
+    openTicket, openComposer, openNativeSession, openIdeas, closeIdeas,
     samePage, TOP_LEVEL,
   };
 })();

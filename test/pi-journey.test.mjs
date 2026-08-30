@@ -260,7 +260,7 @@ async function main() {
   const instructionsTitle = renderedInstructions.split('\n').find((line) => line.trim().length > 0).trim();
   assert.ok(prompt.systemPrompt.includes(instructionsTitle), 'Golem instructions are injected without a Pi profile file');
   assert.match(prompt.systemPrompt, /Role: builder/, 'role truth is read at the safe turn boundary');
-  assert.match(prompt.systemPrompt, /Recent commits:/, 'bounded shipped L4 context is injected');
+  assert.match(prompt.systemPrompt, /Recent commits/, 'bounded shipped L4 context is injected');
   let lease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === sessionId);
   assert.equal(lease.kind, 'typed-worker');
   assert.equal(lease.delivery_ready, true);
