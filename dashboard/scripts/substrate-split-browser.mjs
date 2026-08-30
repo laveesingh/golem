@@ -95,6 +95,14 @@ try {
   await modal.waitFor();
   ok(await modal.locator('[data-testid="substrate-split-raw"]').count() === 1, 'skill Split opens full-screen raw pane');
   ok(await modal.locator('[data-testid="substrate-split-preview"]').count() === 1, 'skill Split opens live preview pane');
+  ok(await page.evaluate(() => document.querySelector('.substrate-page')?.inert === true), 'underlying substrate page is inert while Split is open');
+  const deleteFocusable = await page.evaluate(() => {
+    const button = document.querySelector('.substrate-skill-editor-card .orch-btn.danger');
+    if (!button) return false;
+    button.focus();
+    return document.activeElement === button;
+  });
+  ok(!deleteFocusable, 'underlying skill Delete action is unreachable while Split is open');
   ok((await modal.locator('.substrate-split-title').innerText()).trim().length > 0, 'skill Split header shows file name');
   ok((await modal.locator('.substrate-split-path').innerText()).includes('SKILL.md'), 'skill Split header shows canonical path');
 
@@ -136,11 +144,22 @@ try {
 
   await page.locator('.substrate-mode-btn', { hasText: 'Edit Markdown' }).click();
   const editTextarea = page.locator('.substrate-markdown-textarea');
-  await editTextarea.fill('mode switch draft');
+  await editTextarea.fill('edit to split draft');
+  const dialogsBeforeEditSplit = dialogs.length;
+  await page.locator('.substrate-mode-btn', { hasText: 'Split' }).click();
+  await modal.waitFor();
+  ok(dialogs.length === dialogsBeforeEditSplit, 'dirty Edit to Split keeps the draft without confirmation');
+  ok(await modal.locator('[data-testid="substrate-split-raw"]').inputValue() === 'edit to split draft', 'Edit to Split preserves the raw draft');
+  await modal.locator('[data-testid="substrate-split-preview"]').getByText('edit to split draft', { exact: false }).waitFor({ timeout: 10000 });
+  ok((await modal.locator('[data-testid="substrate-split-preview"]').innerText()).includes('edit to split draft'), 'Edit to Split preview reflects the preserved draft');
+  await modal.locator('[data-testid="substrate-split-edit-mode"]').click();
+  await page.locator('.substrate-markdown-textarea').waitFor();
+  ok(await page.locator('.substrate-markdown-textarea').inputValue() === 'edit to split draft', 'Split to Edit preserves the raw draft');
+
   const dialogsBeforeModeSwitch = dialogs.length;
   await page.locator('.substrate-mode-btn', { hasText: 'Preview' }).click();
   await page.locator('.substrate-preview-wrap').waitFor();
-  ok(dialogs.length === dialogsBeforeModeSwitch + 1 && dialogs.at(-1).type === 'confirm', 'mode switch on a dirty draft requests confirmation');
+  ok(dialogs.length === dialogsBeforeModeSwitch + 1 && dialogs.at(-1).type === 'confirm', 'dirty Edit to Preview requests confirmation');
 
   await page.locator('.substrate-mode-btn', { hasText: 'Split' }).click();
   await modal.waitFor();

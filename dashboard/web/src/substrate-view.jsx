@@ -387,6 +387,7 @@ function SplitEditorModal({
   onSaveAndSync,
   onDiscard,
   onClose,
+  onSwitchMode,
   canSaveAndSync = true,
 }) {
   const previewRef = React.useRef(null);
@@ -420,6 +421,9 @@ function SplitEditorModal({
 
   React.useEffect(() => {
     previousFocusedRef.current = document.activeElement;
+    const substratePage = document.querySelector('.substrate-page');
+    const wasInert = substratePage?.inert || false;
+    if (substratePage) substratePage.inert = true;
     document.body.classList.add('substrate-split-open');
     const frame = window.requestAnimationFrame(() => textareaRef.current?.focus());
     const onKey = (event) => {
@@ -433,6 +437,7 @@ function SplitEditorModal({
       window.cancelAnimationFrame(frame);
       document.removeEventListener('keydown', onKey, true);
       document.body.classList.remove('substrate-split-open');
+      if (substratePage) substratePage.inert = wasInert;
       previousFocusedRef.current?.focus?.();
     };
   }, []);
@@ -461,7 +466,7 @@ function SplitEditorModal({
   const metadata = parsed.frontmatter;
   const hasFrontmatter = Object.keys(metadata).length > 0;
 
-  return (
+  const modalContent = (
     <div className="substrate-split-overlay" data-testid="substrate-split-modal" role="dialog" aria-modal="true" aria-labelledby="substrate-split-title">
       <div className="substrate-split-modal">
         <header className="substrate-split-header">
@@ -471,6 +476,11 @@ function SplitEditorModal({
             <div className="substrate-split-path mono" title={canonicalPath}>{canonicalPath}</div>
           </div>
           <div className="substrate-split-actions">
+            <div className="substrate-view-toggles substrate-split-view-toggles" role="group" aria-label="Editor mode">
+              <button type="button" className="substrate-mode-btn" onClick={() => onSwitchMode('preview')}>Preview</button>
+              <button type="button" className="substrate-mode-btn" data-testid="substrate-split-edit-mode" onClick={() => onSwitchMode('edit')}>Edit Markdown</button>
+              <button type="button" className="substrate-mode-btn active" aria-current="page" disabled>Split</button>
+            </div>
             <span className="substrate-split-save-state mono" aria-live="polite" data-testid="substrate-split-save-state">
               {saving ? 'Saving…' : isDirty ? 'Unsaved changes' : (saveFeedback || 'Saved')}
             </span>
@@ -528,6 +538,10 @@ function SplitEditorModal({
       </div>
     </div>
   );
+
+  return window.ReactDOM?.createPortal && document.body
+    ? window.ReactDOM.createPortal(modalContent, document.body)
+    : modalContent;
 }
 
 function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast }) {
@@ -559,7 +573,7 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
   const discardChanges = () => setRawText(savedRaw);
   const switchViewMode = (nextMode) => {
     if (nextMode === viewMode) return;
-    if (rawText !== savedRaw) {
+    if (rawText !== savedRaw && nextMode === 'preview') {
       if (!window.confirm('Discard unsaved changes and switch view?')) return;
       setRawText(savedRaw);
     }
@@ -734,6 +748,7 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
           onSaveAndSync={() => handleSave(true)}
           onDiscard={discardChanges}
           onClose={closeSplit}
+          onSwitchMode={switchViewMode}
           canSaveAndSync={skill?.scope === 'builtin'}
         />
       )}
@@ -890,7 +905,7 @@ function SubstrateInstructionsView({ onSync, onToast }) {
   const discardChanges = () => setRawText(savedRaw);
   const switchViewMode = (nextMode) => {
     if (nextMode === viewMode) return;
-    if (rawText !== savedRaw) {
+    if (rawText !== savedRaw && nextMode === 'preview') {
       if (!window.confirm('Discard unsaved changes and switch view?')) return;
       setRawText(savedRaw);
     }
@@ -1025,6 +1040,7 @@ function SubstrateInstructionsView({ onSync, onToast }) {
           onSaveAndSync={() => handleSave(true)}
           onDiscard={discardChanges}
           onClose={closeSplit}
+          onSwitchMode={switchViewMode}
         />
       )}
     </>
