@@ -160,7 +160,7 @@ try {
   //    rotated out of the live registry fall back to initials. Deterministic:
   //    comment as the CURRENT live session (this smoke's driver session id is
   //    in the registry), so the img icon must render.
-  const liveSession = await request('/api/native-sessions').then(
+  const liveSession = await request('/native-sessions').then(
     (rows) => rows.find((s) => s.alive && s.session_id && s.model),
   );
   assert.ok(liveSession, 'a live session with model facts exists for the avatar check');
