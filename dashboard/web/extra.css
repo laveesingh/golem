@@ -3723,6 +3723,15 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 #anno-rail .rail-head .t { font-family: var(--font-display); font-weight: 600; font-size: 16px; color: var(--text-0); }
 #anno-rail .rail-head .meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); letter-spacing: .5px; margin-top: 2px; }
 #anno-rail .rail-tools { display: flex; gap: 5px; align-items: center; }
+/* GOL-287: in-drawer close (sits after the Show-resolved checkbox). */
+#anno-rail .rail-close {
+  display: inline-grid; place-items: center; flex: 0 0 auto;
+  width: 22px; height: 22px; padding: 0;
+  color: var(--text-3); background: transparent; border: 1px solid transparent; border-radius: 5px;
+  cursor: pointer;
+}
+#anno-rail .rail-close svg { width: 13px; height: 13px; }
+#anno-rail .rail-close:hover { color: var(--text-0); background: var(--bg-3); border-color: var(--border-2); }
 #anno-rail .rail-head-dispatch {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding-top: 8px; border-top: 1px solid var(--border-1);
@@ -4206,6 +4215,19 @@ mark.anno.anno-tail::after {
   box-sizing: border-box;
   padding: 16px 40px 8px;
   flex: 0 0 auto;
+}
+/* Reader: pin the identity header (id-prefixed title + byline + Edit) at the
+   top of the scroll container so the facts survive scrolling; the body slides
+   under it. The scroller's own padding-top would leave a strip where scrolled
+   content peeks above the bar, so the reader moves that spacing into the bar. */
+.td-reader .td-scroll { padding-top: 0; }
+.td-reader .td-titlebody {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border-1);
+  padding-top: 20px;
 }
 .td-body-area {
   flex: 1 1 auto;
