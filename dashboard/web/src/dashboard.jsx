@@ -67,10 +67,7 @@ function Dashboard({ setRoute }) {
             <span className="cc-zone-count">{projects.length}</span>
           </div>
           {projects.length === 0 ? (
-            <EmptyCard
-              label="no projects discovered"
-              hint={<>Projects appear as sessions register them, or bootstrap one under <span className="mono">golem-projects/</span>.</>}
-            />
+            window.EmptyStateOnboardingCTA ? React.createElement(window.EmptyStateOnboardingCTA, { kind: 'projects', setRoute }) : <EmptyCard label="no projects discovered" hint={<>Projects appear as sessions register them, or bootstrap one under <span className="mono">golem-projects/</span>.</>} />
           ) : (
             <div className="cc-project-list">
               {projects.map((p) => (

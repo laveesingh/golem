@@ -49,8 +49,9 @@ await import('./atoms.jsx');
 await import('./shell.jsx');
 await import('./dashboard.jsx');
 await import('./project-view.jsx');
-await import('./tracker-board.jsx');
-await import('./specs-board.jsx');
+// GOL-13: tracker-board.jsx, specs-board.jsx, drawer-ceo.jsx pruned —
+// standalone boards and floating CEO chat removed, ideas drawer now
+// project-scoped.
 await import('./ct-draft.js');
 await import('./field-controls.jsx');
 await import('./create-ticket-drawer.jsx');
@@ -61,7 +62,11 @@ await import('./communication-drawer.jsx');
 await import('./settings-page.jsx');
 await import('./substrate-view.jsx');
 await import('./tweaks.jsx');
-await import('./drawer-ceo.jsx');
 await import('./native-session-drawer.jsx');
 await import('./ideas-drawer.jsx');
+await import('./directive-modal.jsx');
+await import('./peek-modal.jsx');
+await import('./worker-spawn-modal.jsx');
+await import('./diagnostic-card.jsx');
+await import('./onboarding.jsx');
 await import('./app.jsx');

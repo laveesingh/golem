@@ -270,6 +270,7 @@
     createTicket: (body) => postJSON('/api/tickets', body),
     getTicket: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}`),
     updateTicket: (id, patch) => patchJSON(`/api/tickets/${encodeURIComponent(id)}`, patch),
+    deleteTicket: (id, actor = 'human') => delJSON(`/api/tickets/${encodeURIComponent(id)}`, { actor }),
     addComment: (id, body) => postJSON(`/api/tickets/${encodeURIComponent(id)}/comments`, body),
     dispatchComment: (commentId, body) => postJSON(`/api/comments/${encodeURIComponent(commentId)}/dispatch`, body),
     batchDispatchComments: (id, body) => postJSON(`/api/tickets/${encodeURIComponent(id)}/comments/batch-dispatch`, body),
@@ -292,11 +293,11 @@
     // served as Markdown bodies from plugin/skills/tracker/templates/. Used by
     // the create-ticket composer's template picker to pre-fill an empty body.
     getTemplates: () => getJSON('/api/templates'),
-    // TKT-0206: global ideas stack — a FIFO queue of raw thoughts the
-    // user drops via the bottom-left anchor in the dashboard. Each idea
-    // is a .md file at ~/.config/golem/ideas/ with frontmatter + body.
-    listIdeas: () => getJSON('/api/ideas'),
-    createIdea: (body) => postJSON('/api/ideas', { body }),
+    // TKT-0206 / GOL-13: project-scoped ideas stack. When projectId is
+    // supplied the queue is filtered to that project's ideas; without it
+    // the legacy global view (all ideas) is returned.
+    listIdeas: (projectId) => getJSON(`/api/ideas${qs(projectId ? { project: projectId } : {})}`),
+    createIdea: (body, projectId) => postJSON('/api/ideas', projectId ? { body, project_id: projectId } : { body }),
     promoteIdea: (id, body) => postJSON(`/api/ideas/${encodeURIComponent(id)}/promote`, body || {}),
     popIdea: (id) => postJSON(`/api/ideas/${encodeURIComponent(id)}/pop`, {}),
     substrateStatus: (project) => getJSON(`/api/substrate/status${qs({ project })}`),
@@ -332,6 +333,18 @@
       postJSON(`/api/tickets/${encodeURIComponent(id)}/links`, { to_ticket, type }),
     removeLink: (id, { to_ticket, type }) =>
       delJSON(`/api/tickets/${encodeURIComponent(id)}/links`, { to_ticket, type }),
+    // GOL-15: zero-terminal swarm controls — terminal ANSI, steer, spawn
+    getTerminal: (sessionId, lines) => getJSON(`/api/native-sessions/${encodeURIComponent(sessionId)}/terminal${qs(lines ? { lines } : {})}`),
+    sendSteer: (sessionId, text) => postJSON(`/api/native-sessions/${encodeURIComponent(sessionId)}/message`, { text, mode: 'steer' }),
+    sendInterrupt: (sessionId, text) => postJSON(`/api/native-sessions/${encodeURIComponent(sessionId)}/message`, { text, mode: 'interrupt' }),
+    sendHalt: (sessionId, text) => postJSON(`/api/native-sessions/${encodeURIComponent(sessionId)}/message`, { text, mode: 'halt' }),
+    killSession: (sessionId) => postJSON(`/api/native-sessions/${encodeURIComponent(sessionId)}/message`, { mode: 'kill' }),
+    listWorkers: (projectId) => getJSON(`/api/workers${qs(projectId ? { project: projectId } : {})}`),
+    spawnWorker: (body) => postJSON('/api/workers/spawn', body),
+    diagnostics: () => getJSON('/api/diagnostics'),
+    scaffoldProject: (name) => postJSON('/api/projects/scaffold', { name }),
+    importProject: (path) => postJSON('/api/projects/import', { path }),
+
     // TKT-0106: image asset upload. Posts the file as base64 alongside
     // filename + mime. Server validates, stores content-addressed under
     // ~/.config/golem/ticket-assets/<hash>.<ext>, returns {url, ...}.

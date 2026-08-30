@@ -43,20 +43,21 @@ function Sidebar({ route, setRoute }) {
     localStorage.setItem('golem.sidebar.pinnedProjects', JSON.stringify(next));
   };
 
+  // GOL-13: 3 core views — Workspace (/ + /projects + /project/:id),
+  // Swarm Ops (/agents), Settings (/settings + /substrate). Tracker / Specs /
+  // Logs boards and CEO chat were pruned.
   const items = [
-    { id: 'dashboard', label: 'Dashboard', icon: Icon.Dashboard },
-    { id: 'tracker', label: 'Tracker', icon: Icon.Tracker },
-    { id: 'specs', label: 'Specs', icon: Icon.Spec },
-    { id: 'projects', label: 'Projects', icon: Icon.Projects, count: buckets.active.length },
-    { id: 'agents', label: 'Agents', icon: Icon.Agents, count: activeCount },
-    { id: 'substrate', label: 'Substrate', icon: Icon.Substrate },
-    { id: 'logs', label: 'Review Inbox', icon: Icon.Logs },
-    { id: 'settings', label: 'Settings', icon: Icon.Gear },
+    { id: 'dashboard', label: 'Workspace', icon: Icon.Projects, count: buckets.active.length, kinds: ['dashboard', 'projects', 'project'] },
+    { id: 'agents', label: 'Swarm', icon: Icon.Agents, count: activeCount, kinds: ['agents'] },
+    { id: 'substrate', label: 'Substrate', icon: Icon.Substrate || Icon.Projects, kinds: ['substrate'] },
+    { id: 'settings', label: 'Settings', icon: Icon.Gear, kinds: ['settings'] },
   ];
 
   const isActive = (id) => {
-    if (route.kind === 'project') return id === 'projects';
-    return route.kind === id;
+    const entry = items.find((x) => x.id === id);
+    if (!entry) return false;
+    const kinds = entry.kinds || [entry.id];
+    return kinds.includes(route.kind);
   };
 
   // Render one bucket as a labeled section.
@@ -175,10 +176,8 @@ function Topbar({ route, setRoute }) {
   const crumbs = [];
   crumbs.push({ label: 'Workspace', href: window.Router.buildHref({ kind: 'dashboard' }), onClick: () => setRoute({ kind: 'dashboard' }) });
   if (route.kind === 'dashboard') crumbs.push({ label: 'Dashboard', current: true });
-  if (route.kind === 'tracker') crumbs.push({ label: 'Tracker', current: true });
   if (route.kind === 'projects') crumbs.push({ label: 'Projects', current: true });
-  if (route.kind === 'agents') crumbs.push({ label: 'Agents', current: true });
-  if (route.kind === 'logs') crumbs.push({ label: 'Review Inbox', current: true });
+  if (route.kind === 'agents') crumbs.push({ label: 'Swarm', current: true });
   if (route.kind === 'settings') crumbs.push({ label: 'Settings', current: true });
   if (route.kind === 'project') {
     crumbs.push({ label: 'Projects', href: window.Router.buildHref({ kind: 'projects' }), onClick: () => setRoute({ kind: 'projects' }) });
@@ -218,22 +217,20 @@ function Topbar({ route, setRoute }) {
 window.Sidebar = Sidebar;
 window.Topbar = Topbar;
 
-// TKT-0206: Ideas link in the sidebar menu bar. Click → Router.openIdeas()
-// (opens the existing IdeasDrawer via the ?ideas=1 overlay). The count
-// badge mirrors the queue size and refreshes on the shared 'ideas:changed'
-// event so post/pop from anywhere in the app stay in sync.
-//
-// Lives in the sidebar's normal flow (no position:fixed, no z-index),
-// so it can't cover the sidebar footer (HARNESS · ONLINE)
-// or any other sidebar content — which is the regression that killed
-// the floating-anchor version.
+// GOL-13: Project-scoped Ideas link. The count reflects the ideas for
+// the current project when on a project page, otherwise the global queue
+// (legacy). Lives in the sidebar's normal flow (no position:fixed) so it
+// can't cover the footer.
 function SidebarIdeasLink() {
+  useStore();
+  const route = window.Router ? window.Router.parseLocation() : { kind: 'dashboard' };
+  const projectId = route.kind === 'project' ? route.id : null;
   const [count, setCount] = React.useState(0);
   const refresh = React.useCallback(() => {
-    window.SubstrateAPI.listIdeas()
+    window.SubstrateAPI.listIdeas(projectId)
       .then((rows) => setCount(Array.isArray(rows) ? rows.length : 0))
       .catch(() => {});
-  }, []);
+  }, [projectId]);
   React.useEffect(() => {
     refresh();
     window.addEventListener('ideas:changed', refresh);

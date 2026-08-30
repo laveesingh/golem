@@ -1,8 +1,9 @@
-// TKT-0206: IdeasStack — a global parking lot of raw thoughts the user
-// drops via a bottom-left anchor button. The drawer mirrors the
-// existing drawer pattern (URL overlay ?ideas=1, backdrop + slide-in
-// aside, Esc to close, Back button to close) so it works on every
-// dashboard page including the standalone /tickets/<id> view.
+// TKT-0206 / GOL-13: IdeasStack — now PROJECT-SCOPED. When a projectId
+// is supplied the drawer shows and creates ideas only for that project;
+// without it the drawer falls back to the legacy global queue. Mirrors
+// the existing drawer pattern (URL overlay ?ideas=1, backdrop + slide-in
+// aside, Esc to close, Back to close) so it works on every dashboard page
+// including the standalone /tickets/<id> view.
 //
 // "Pop" semantics: clicking an idea removes it from the queue — the
 // user is taking the idea forward (typically into a tracker ticket).
@@ -14,7 +15,7 @@
 // can paste a bunch of ideas quickly — Enter posts, Shift+Enter
 // newline (standard textarea behavior).
 
-function IdeasDrawer({ open, onClose }) {
+function IdeasDrawer({ open, onClose, projectId = null }) {
   const [ideas, setIdeas] = React.useState([]);
   const [text, setText] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -25,13 +26,14 @@ function IdeasDrawer({ open, onClose }) {
   const listRef = React.useRef(null);
 
   // Load on open + when other components tell us the list changed
-  // (the Store fires 'ideas:changed' after create/pop).
+  // (the Store fires 'ideas:changed' after create/pop). Project-scoped
+  // when projectId is present.
   React.useEffect(() => {
     if (!open) return;
-    window.SubstrateAPI.listIdeas()
+    window.SubstrateAPI.listIdeas(projectId)
       .then((rows) => setIdeas(Array.isArray(rows) ? rows : []))
       .catch((err) => setError(err?.message || 'Failed to load ideas'));
-  }, [open]);
+  }, [open, projectId]);
 
   // Re-fetch on 'ideas:changed' events (fired by the Store after our
   // own create / pop). Cheap (just a directory read) and keeps the list
@@ -39,13 +41,13 @@ function IdeasDrawer({ open, onClose }) {
   React.useEffect(() => {
     if (!open) return;
     const onChange = () => {
-      window.SubstrateAPI.listIdeas()
+      window.SubstrateAPI.listIdeas(projectId)
         .then((rows) => setIdeas(Array.isArray(rows) ? rows : []))
         .catch(() => {});
     };
     window.addEventListener('ideas:changed', onChange);
     return () => window.removeEventListener('ideas:changed', onChange);
-  }, [open]);
+  }, [open, projectId]);
 
   // Esc to close.
   React.useEffect(() => {
@@ -66,7 +68,7 @@ function IdeasDrawer({ open, onClose }) {
     setBusy(true);
     setError(null);
     try {
-      await window.SubstrateAPI.createIdea(trimmed);
+      await window.SubstrateAPI.createIdea(trimmed, projectId);
       setText('');
       taRef.current?.focus();
       window.dispatchEvent(new CustomEvent('ideas:changed'));
@@ -95,7 +97,8 @@ function IdeasDrawer({ open, onClose }) {
     setPromoting(id);
     setError(null);
     try {
-      const result = await window.SubstrateAPI.promoteIdea(id);
+      const payload = projectId ? { project_id: projectId } : {};
+      const result = await window.SubstrateAPI.promoteIdea(id, payload);
       window.dispatchEvent(new CustomEvent('ideas:changed'));
       const ticketId = result?.ticket?.display_id || result?.ticket?.id;
       if (ticketId) window.Router.openTicket(ticketId);
@@ -123,7 +126,7 @@ function IdeasDrawer({ open, onClose }) {
             <button className="drawer-close" onClick={onClose} title="Close (Esc)"><Icon.Close/></button>
           </div>
           <div className="ideas-help">
-            Drop a thought, promote one to a spec, or discard it. Oldest first.
+            {projectId ? `Project ideas — scoped to this workspace. Oldest first.` : `Drop a thought, promote one to a spec, or discard it. Oldest first.`}
           </div>
         </div>
         <div className="ideas-composer">

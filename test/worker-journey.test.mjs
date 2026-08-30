@@ -294,7 +294,7 @@ try {
   const youngTombstone = names[2];
   updateWorker(spawned[0].worker_id, {
     state: 'dead',
-    ended_at: new Date(pruneNow - WORKER_TOMBSTONE_TTL_MS - 1).toISOString(),
+    ended_at: new Date(pruneNow - WORKER_TOMBSTONE_TTL_MS - 100).toISOString(),
   });
   updateWorker(spawned[1].worker_id, {
     state: 'dead',

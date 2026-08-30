@@ -108,9 +108,22 @@
     state.trackerTickets.set(ticket.id, ticket);
     notify();
   }
+  function applyTicketDeleted({ id, display_id }) {
+    if (!id) return;
+    state.trackerTickets.delete(id);
+    if (display_id) state.trackerTickets.delete(display_id);
+    state.ticketComments.delete(id);
+    notify();
+  }
   function upsertTrackerTicket(ticket) {
     if (!ticket || !ticket.id) return;
     state.trackerTickets.set(ticket.id, ticket);
+    notify();
+  }
+  function deleteTrackerTicket(id) {
+    if (!id) return;
+    state.trackerTickets.delete(id);
+    state.ticketComments.delete(id);
     notify();
   }
   function seedTicketComments(id, comments) {
@@ -336,6 +349,9 @@
             // signal as a health invalidation rather than adding a timer.
             state.communicationHealthRev = (state.communicationHealthRev || 0) + 1;
             break;
+          case 'ticket-deleted':
+            applyTicketDeleted(msg);
+            break;
           case 'ticket-comment':
             applyTicketComment(msg);
             break;
@@ -398,6 +414,7 @@
     getTrackerTickets,
     getTicketComments,
     seedTicketComments,
+    deleteTrackerTicket,
     upsertTrackerTicket,
     getRole,
     getRoles,

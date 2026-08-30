@@ -1982,6 +1982,25 @@ WHERE state_changed_at IS NULL`).run();
       return hydrateTicket(txn());
     },
 
+    deleteTicket(id, { actor = 'human' } = {}) {
+      const existing = stmts.getTicket.get(id);
+      if (!existing) return null;
+      const txn = db.transaction(() => {
+        db.prepare('DELETE FROM comments WHERE ticket_id = ?').run(id);
+        db.prepare('DELETE FROM links WHERE from_ticket = ? OR to_ticket = ?').run(id, id);
+        recordEvent({
+          ticket_id: id,
+          project_id: existing.project_id,
+          type: 'deleted',
+          actor,
+          data: { title: existing.title, kind: existing.kind },
+        });
+        db.prepare('DELETE FROM tickets WHERE id = ?').run(id);
+        return existing;
+      });
+      return txn();
+    },
+
     // TKT-0105: 14-day done → archived sweep. Returns the list of ids
     // that were auto-archived so the caller can broadcast a single
     // batch-updated WS delta instead of one per ticket.

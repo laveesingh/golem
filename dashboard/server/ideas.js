@@ -49,13 +49,17 @@ export async function readIdeaFile(absPath) {
     frontmatter: fm,
     status: fm.status || 'pending',
     createdAt: fm.created_at || null,
+    projectId: fm.project_id || fm.project || null,
+    project_id: fm.project_id || fm.project || null,
   };
 }
 
 // Read all ideas in the central dir. Sort oldest-first (FIFO queue — the
 // user wants the oldest idea to be at the top of the list, so they see
 // what they've been sitting on longest).
-export async function listIdeas() {
+// When projectId is supplied, only ideas for that project are returned.
+// A null/undefined projectId returns all ideas (backward-compatible global view).
+export async function listIdeas(projectId = null) {
   await ensureDir();
   let entries;
   try { entries = await fs.readdir(IDEAS_DIR, { withFileTypes: true }); }
@@ -65,7 +69,9 @@ export async function listIdeas() {
     if (!e.isFile() || !e.name.endsWith('.md')) continue;
     const abs = path.join(IDEAS_DIR, e.name);
     const idea = await readIdeaFile(abs);
-    if (idea) out.push(idea);
+    if (!idea) continue;
+    if (projectId && idea.projectId !== projectId && idea.project_id !== projectId) continue;
+    out.push(idea);
   }
   out.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   return out;
@@ -81,7 +87,7 @@ function ideaIdSlug(text) {
     .slice(0, 32) || 'idea';
 }
 
-export async function createIdea({ body }) {
+export async function createIdea({ body, project_id, projectId }) {
   if (!body || !body.trim()) throw Object.assign(new Error('body is required'), { status: 400 });
   await ensureDir();
   const now = new Date().toISOString();
@@ -93,11 +99,13 @@ export async function createIdea({ body }) {
   const id = `idea-${ts}-${suf}`;
   const filename = `${id}.md`;
   const abs = path.join(IDEAS_DIR, filename);
+  const effectiveProject = project_id || projectId || null;
   const frontmatter = [
     '---',
     `id: ${id}`,
     `created_at: ${now}`,
     'status: pending',
+    ...(effectiveProject ? [`project_id: ${effectiveProject}`] : []),
     '---',
     '',
   ].join('\n');

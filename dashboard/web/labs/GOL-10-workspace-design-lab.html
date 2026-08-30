@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>GOL-10 Decision Lab: Unified Project Workspace & Zero-Terminal Onboarding</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Geist:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg-0: #0a0b0d;
+    --bg-1: #101216;
+    --bg-2: #15181d;
+    --bg-3: #1c2027;
+    --bg-4: #242932;
+    --border-1: #1e222a;
+    --border-2: #2a2f3a;
+    --border-3: #363c4a;
+    --text-0: #f3f5f8;
+    --text-1: #c8ccd4;
+    --text-2: #8a909c;
+    --text-3: #5a606b;
+    --text-4: #3f444d;
+    --accent: #4ade80;
+    --accent-soft: rgba(74, 222, 128, 0.12);
+    --accent-border: rgba(74, 222, 128, 0.32);
+    --status-active: #4ade80;
+    --status-running: #60a5fa;
+    --status-review: #fbbf24;
+    --status-blocked: #f87171;
+    --status-done: #8a909c;
+    --status-triage: #c084fc;
+    --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --radius-1: 4px;
+    --radius-2: 6px;
+    --radius-3: 10px;
+    --radius-4: 16px;
+    --shadow-1: 0 1px 3px rgba(0,0,0,0.5);
+    --shadow-2: 0 8px 24px rgba(0,0,0,0.6);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-0);
+    color: var(--text-1);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    padding: 24px 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 1440px; margin: 0 auto; }
+
+  /* Header banner */
+  .lab-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-1);
+    margin-bottom: 24px;
+  }
+  .lab-title-wrap h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-0);
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .lab-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--accent-border);
+    padding: 3px 8px;
+    border-radius: 999px;
+    text-transform: uppercase;
+  }
+  .lab-subtitle {
+    font-size: 13px;
+    color: var(--text-2);
+    margin-top: 4px;
+  }
+
+  /* Evaluation Matrix */
+  .eval-matrix {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .eval-card {
+    background: var(--bg-1);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-3);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .eval-card.highlight {
+    border-color: var(--accent-border);
+    background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
+  }
+  .eval-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-2);
+    display: flex;
+    justify-content: space-between;
+  }
+  .eval-score {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .eval-desc { font-size: 13px; color: var(--text-1); }
+  .eval-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .eval-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: var(--radius-1);
+    background: var(--bg-3);
+    color: var(--text-2);
+    border: 1px solid var(--border-2);
+  }
+
+  /* Switcher Controls */
+  .nav-tabs {
+    display: flex;
+    gap: 8px;
+    background: var(--bg-1);
+    padding: 6px;
+    border-radius: var(--radius-3);
+    border: 1px solid var(--border-1);
+    margin-bottom: 20px;
+    overflow-x: auto;
+  }
+  .tab-btn {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+    color: var(--text-2);
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--radius-2);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text-0); background: var(--bg-2); }
+  .tab-btn.active {
+    background: var(--bg-3);
+    color: var(--text-0);
+    font-weight: 600;
+    box-shadow: var(--shadow-1);
+    border: 1px solid var(--border-2);
+  }
+  .tab-btn .badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--bg-4);
+    color: var(--text-2);
+  }
+  .tab-btn.active .badge { background: var(--accent-soft); color: var(--accent); }
+
+  /* Stage View Container */
+  .stage-viewport {
+    background: var(--bg-1);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-4);
+    overflow: hidden;
+    box-shadow: var(--shadow-2);
+    min-height: 720px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stage-topbar {
+    height: 48px;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border-1);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    gap: 16px;
+  }
+  .stage-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .stage-crumbs .sep { color: var(--text-3); }
+  .stage-crumbs .active-crumb { color: var(--text-0); font-weight: 600; }
+  .stage-controls { display: flex; align-items: center; gap: 10px; }
+
+  /* 3-PANE COCKPIT (OPTION A) */
+  .cockpit-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr 340px;
+    flex: 1;
+    min-height: 672px;
+  }
+
+  /* Left Pane: Spec Tree & Navigator */
+  .pane-nav {
+    background: var(--bg-1);
+    border-right: 1px solid var(--border-1);
+    display: flex;
+    flex-direction: column;
+  }
+  .pane-head {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-1);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pane-head-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-2);
+    letter-spacing: 0.05em;
+  }
+  .btn-icon-xs {
+    background: var(--bg-2);
+    border: 1px solid var(--border-2);
+    color: var(--text-1);
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-1);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+  }
+  .btn-icon-xs:hover { background: var(--bg-3); color: var(--text-0); }
+
+  .spec-tree-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  .spec-stage-group { margin-bottom: 12px; }
+  .spec-stage-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase;
+    padding: 4px 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .spec-nav-item {
+    padding: 8px 10px;
+    border-radius: var(--radius-2);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.1s ease;
+  }
+  .spec-nav-item:hover { background: var(--bg-2); }
+  .spec-nav-item.active {
+    background: var(--bg-2);
+    border-color: var(--border-2);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+  .spec-nav-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-0);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .spec-nav-meta {
+    display: flex;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+  }
+
+  /* Center Pane: Spec Reader & Actions */
+  .pane-doc {
+    background: var(--bg-0);
+    padding: 24px 32px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .doc-header {
+    border-bottom: 1px solid var(--border-1);
+    padding-bottom: 16px;
+  }
+  .doc-lifecycle-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .step-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--bg-2);
+    color: var(--text-3);
+    border: 1px solid var(--border-1);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .step-pill.done { color: var(--accent); border-color: var(--accent-border); background: var(--accent-soft); }
+  .step-pill.active { color: var(--text-0); font-weight: 600; border-color: var(--text-3); background: var(--bg-3); }
+  .step-arrow { color: var(--text-4); font-size: 10px; }
+
+  .doc-title { font-size: 22px; font-weight: 700; color: var(--text-0); margin-bottom: 6px; }
+  .doc-subtitle { font-size: 13px; color: var(--text-2); }
+
+  /* Spec Body Markdown Styles */
+  .doc-body { font-size: 14px; line-height: 1.6; color: var(--text-1); display: flex; flex-direction: column; gap: 14px; }
+  .doc-body h2 { font-size: 16px; font-weight: 600; color: var(--text-0); margin-top: 8px; }
+  .doc-body p { margin-bottom: 4px; }
+  .doc-quote {
+    border-left: 3px solid var(--accent);
+    background: var(--bg-1);
+    padding: 10px 14px;
+    border-radius: 0 var(--radius-2) var(--radius-2) 0;
+    font-size: 13px;
+    color: var(--text-1);
+  }
+  .highlight-annotated {
+    background: rgba(251, 191, 36, 0.15);
+    border-bottom: 2px solid var(--status-review);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 2px;
+  }
+
+  /* Subtasks within Spec */
+  .task-subtable {
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .task-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-1);
+    border-bottom: 1px solid var(--border-1);
+    font-size: 13px;
+  }
+  .task-row:last-child { border-bottom: none; }
+  .task-row-left { display: flex; align-items: center; gap: 10px; }
+  .task-status-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: var(--radius-1);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .status-done { background: rgba(138, 144, 156, 0.2); color: var(--text-2); }
+  .status-inprogress { background: rgba(96, 165, 250, 0.2); color: var(--status-running); }
+  .status-todo { background: var(--bg-3); color: var(--text-3); }
+
+  /* Action Bar */
+  .doc-action-bar {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .action-group { display: flex; gap: 8px; align-items: center; }
+
+  /* Right Pane: Live Agent Fleet & Review Stream */
+  .pane-ops {
+    background: var(--bg-1);
+    border-left: 1px solid var(--border-1);
+    display: flex;
+    flex-direction: column;
+  }
+  .fleet-cards { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .worker-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-3);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.15s ease;
+  }
+  .worker-card:hover { border-color: var(--border-2); }
+  .worker-top { display: flex; align-items: center; justify-content: space-between; }
+  .worker-identity { display: flex; align-items: center; gap: 8px; }
+  .worker-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    border: 1px solid var(--border-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .worker-name { font-size: 13px; font-weight: 600; color: var(--text-0); }
+  .worker-role {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-3);
+    text-transform: uppercase;
+  }
+  .worker-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .pulse-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--status-active);
+    box-shadow: 0 0 8px var(--status-active);
+  }
+  .pulse-dot.running { background: var(--status-running); box-shadow: 0 0 8px var(--status-running); animation: blink 1.5s infinite; }
+  .pulse-dot.idle { background: var(--text-3); box-shadow: none; }
+
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .worker-task-info {
+    font-size: 12px;
+    color: var(--text-1);
+    background: var(--bg-1);
+    padding: 6px 8px;
+    border-radius: var(--radius-1);
+    border: 1px solid var(--border-1);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .worker-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .btn-xs {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: var(--radius-1);
+    background: var(--bg-3);
+    color: var(--text-1);
+    border: 1px solid var(--border-2);
+    cursor: pointer;
+  }
+  .btn-xs:hover { background: var(--bg-4); color: var(--text-0); }
+  .btn-xs.primary { background: var(--text-0); color: var(--bg-0); font-weight: 600; border-color: var(--text-0); }
+
+  /* In-Stream Comment Review Rail */
+  .review-stream {
+    flex: 1;
+    border-top: 1px solid var(--border-1);
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 8px;
+    overflow-y: auto;
+  }
+  .comment-bubble {
+    background: var(--bg-2);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-2);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .comment-bubble.unaddressed { border-left: 3px solid var(--status-review); }
+  .comment-head { display: flex; justify-content: space-between; color: var(--text-3); font-family: var(--font-mono); font-size: 10px; }
+  .comment-author { color: var(--text-0); font-weight: 600; }
+
+  /* ONBOARDING FLOW MODAL & STEPPER (OPTION B / TAB 2) */
+  .onboarding-stage {
+    padding: 40px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 600px;
+  }
+  .onboarding-card {
+    max-width: 680px;
+    width: 100%;
+    background: var(--bg-2);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-4);
+    padding: 32px;
+    box-shadow: var(--shadow-2);
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .onboard-step-head { text-align: center; }
+  .onboard-step-head h2 { font-size: 20px; font-weight: 700; color: var(--text-0); margin-bottom: 6px; }
+  .onboard-step-head p { font-size: 13px; color: var(--text-2); }
+
+  .checklist-grid { display: flex; flex-direction: column; gap: 10px; }
+  .check-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--bg-1);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-2);
+  }
+  .check-item.ready { border-color: var(--accent-border); }
+  .check-label-wrap { display: flex; align-items: center; gap: 12px; }
+  .check-icon { font-size: 14px; }
+  .check-name { font-size: 13px; font-weight: 600; color: var(--text-0); }
+  .check-sub { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); }
+
+  /* Interactive Peek Modal */
+  .peek-overlay {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 480px;
+    height: 320px;
+    background: #090a0d;
+    border: 1px solid var(--border-3);
+    border-radius: var(--radius-3);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.8);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 100;
+  }
+  .peek-head {
+    background: var(--bg-2);
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-1);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .peek-term {
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #4ade80;
+    line-height: 1.4;
+    overflow-y: auto;
+    flex: 1;
+    background: #060709;
+  }
+
+  /* General Utility Buttons */
+  .btn {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: var(--radius-2);
+    border: 1px solid var(--border-2);
+    background: var(--bg-2);
+    color: var(--text-1);
+    cursor: pointer;
+    transition: all 0.1s ease;
+  }
+  .btn:hover { background: var(--bg-3); color: var(--text-0); }
+  .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+  .btn.primary:hover { background: #3ec974; }
+
+  /* Comparison Notes Footer */
+  .notes-section {
+    margin-top: 32px;
+    background: var(--bg-1);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-3);
+    padding: 20px 24px;
+  }
+  .notes-section h3 {
+    font-size: 14px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    color: var(--text-0);
+    margin-bottom: 12px;
+  }
+  .notes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .note-block h4 { font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+  .note-block p { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <header class="lab-header">
+    <div class="lab-title-wrap">
+      <h1>GOL-10 Design Decision Lab <span class="lab-badge">Interactive Prototype</span></h1>
+      <div class="lab-subtitle">Comparing Unified Project Workspace, Zero-Terminal Lead Execution Models, and Crystal-Clear Onboarding UX</div>
+    </div>
+    <div class="header-actions">
+      <span class="lab-badge" style="background:var(--bg-2); color:var(--text-1); border-color:var(--border-2);">Golem v5.12 · Project Cockpit</span>
+    </div>
+  </header>
+
+  <!-- Evaluation Matrix -->
+  <div class="eval-matrix">
+    <div class="eval-card highlight" id="card-opt1">
+      <div class="eval-title"><span>Direction 1: The Spec Cockpit (3-Pane IDE)</span> <span class="eval-score">Recommended ★</span></div>
+      <div class="eval-desc">Integrated 3-pane layout consolidating Spec Tree, Document Reader, and Live Agent Fleet with in-place terminal peeks and zero context switching.</div>
+      <div class="eval-tags">
+        <span class="eval-tag">Glance Efficiency: 10/10</span>
+        <span class="eval-tag">Terminal-Free: 100%</span>
+        <span class="eval-tag">Density: High</span>
+      </div>
+    </div>
+    <div class="eval-card" id="card-opt2">
+      <div class="eval-title"><span>Direction 2: Focus-First Reader + Fleet Drawer</span> <span class="eval-score">Alternative</span></div>
+      <div class="eval-desc">Clean single-column reader with slide-out operations drawer. Maximizes document focus; requires extra click for worker monitoring.</div>
+      <div class="eval-tags">
+        <span class="eval-tag">Glance Efficiency: 7/10</span>
+        <span class="eval-tag">Document Focus: 10/10</span>
+        <span class="eval-tag">Density: Minimal</span>
+      </div>
+    </div>
+    <div class="eval-card" id="card-opt3">
+      <div class="eval-title"><span>Direction 3: Dual-Mode Toggle (Doc ⇄ Ops)</span> <span class="eval-score">Alternative</span></div>
+      <div class="eval-desc">Explicit top-level mode toggle separating "Specification Mode" from "Swarm Management Mode". Distinct mental models but disjointed.</div>
+      <div class="eval-tags">
+        <span class="eval-tag">Glance Efficiency: 5/10</span>
+        <span class="eval-tag">Separation: Strict</span>
+        <span class="eval-tag">Context Split: High</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Switcher Navigation Tabs -->
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchView('cockpit')">
+      <span>1. The Spec Cockpit (3-Pane)</span>
+      <span class="badge">Primary Workspace</span>
+    </button>
+    <button class="tab-btn" onclick="switchView('onboarding')">
+      <span>2. Zero-Terminal Onboarding Flow</span>
+      <span class="badge">First Flight</span>
+    </button>
+    <button class="tab-btn" onclick="switchView('lead-model')">
+      <span>3. Turn-Based Lead Execution Model</span>
+      <span class="badge">Lead Architecture</span>
+    </button>
+  </div>
+
+  <!-- Main Stage Viewport -->
+  <div class="stage-viewport" id="stage-viewport">
+    
+    <!-- TOPBAR -->
+    <div class="stage-topbar">
+      <div class="stage-crumbs">
+        <span style="color:var(--text-3);">Projects</span>
+        <span class="sep">/</span>
+        <span class="active-crumb" style="display:flex; align-items:center; gap:6px;">
+          <span style="width:8px; height:8px; border-radius:2px; background:#4ade80;"></span>
+          golem-core
+        </span>
+        <span class="sep">/</span>
+        <span style="color:var(--text-2); font-family:var(--font-mono); font-size:12px;">GOL-8 UX Rehaul</span>
+      </div>
+
+      <div class="stage-controls">
+        <span class="step-pill done">
+          <span class="pulse-dot"></span> 3 Live Workers
+        </span>
+        <button class="btn primary" style="padding:4px 10px; font-size:11px;" onclick="triggerLeadAction()">+ New Spec</button>
+      </div>
+    </div>
+
+    <!-- VIEW 1: THE SPEC COCKPIT (OPTION A) -->
+    <div class="cockpit-layout" id="view-cockpit">
+      
+      <!-- LEFT PANE: SPEC TREE -->
+      <div class="pane-nav">
+        <div class="pane-head">
+          <span class="pane-head-title">Spec Tree (4)</span>
+          <button class="btn-icon-xs" title="Filter specs">🔍</button>
+        </div>
+        
+        <div class="spec-tree-list">
+          <!-- Building Stage -->
+          <div class="spec-stage-group">
+            <div class="spec-stage-label">⚡ Building & Verifying <span class="badge">2</span></div>
+            <div class="spec-nav-item active">
+              <div class="spec-nav-title">
+                <span>GOL-8 UX Rehaul</span>
+                <span class="step-pill done" style="font-size:9px; padding:1px 5px;">Locked</span>
+              </div>
+              <div class="spec-nav-meta">
+                <span>2/3 tasks done</span>
+                <span>·</span>
+                <span style="color:var(--accent);">2 workers active</span>
+              </div>
+            </div>
+
+            <div class="spec-nav-item">
+              <div class="spec-nav-title">
+                <span>GOL-5 Reassign Dead Agent</span>
+                <span class="step-pill" style="font-size:9px; padding:1px 5px;">Review</span>
+              </div>
+              <div class="spec-nav-meta">
+                <span>1 task in review</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Drafting Stage -->
+          <div class="spec-stage-group">
+            <div class="spec-stage-label">📝 Drafting & Brainstorm <span class="badge">1</span></div>
+            <div class="spec-nav-item">
+              <div class="spec-nav-title">
+                <span>GOL-12 Auto-Compaction</span>
+                <span class="step-pill active" style="font-size:9px; padding:1px 5px;">Draft</span>
+              </div>
+              <div class="spec-nav-meta">
+                <span>3 open comments</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Closed Stage -->
+          <div class="spec-stage-group">
+            <div class="spec-stage-label">✅ Closed <span class="badge">1</span></div>
+            <div class="spec-nav-item" style="opacity:0.6;">
+              <div class="spec-nav-title">
+                <span>GOL-2 Substrate to UI</span>
+              </div>
+              <div class="spec-nav-meta">
+                <span>Closed 2d ago</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER PANE: SPEC READER & ACTIONS -->
+      <div class="pane-doc">
+        <div class="doc-header">
+          <!-- Stepper progress bar -->
+          <div class="doc-lifecycle-bar">
+            <span class="step-pill done">1. Intent Draft ✓</span>
+            <span class="step-arrow">➔</span>
+            <span class="step-pill done">2. Brainstorm & Lock ✓</span>
+            <span class="step-arrow">➔</span>
+            <span class="step-pill active">3. Building (2/3)</span>
+            <span class="step-arrow">➔</span>
+            <span class="step-pill">4. Verify & Land</span>
+          </div>
+
+          <h1 class="doc-title">GOL-8: Dashboard UX Rehaul & Zero-Terminal Architecture</h1>
+          <div class="doc-subtitle">Owner: <span class="mono" style="color:var(--text-0);">Lavee (Lead)</span> · Created by human · Updated 12m ago</div>
+        </div>
+
+        <div class="doc-body">
+          <div class="doc-quote">
+            <strong>Goal:</strong> Eliminate terminal dependencies completely. The dashboard must become the single pane of glass to launch projects, initiate specs, review progress, inspect live background workers, and steer agents.
+          </div>
+
+          <h2>1. Current Problem & Inefficiencies</h2>
+          <p>
+            Currently, lead agents for each project are essentially run manually in a terminal (<span class="highlight-annotated" onclick="highlightComment('c1')">golem pi / golem attach</span>). This causes over-use of the lead agent, uncontrollable context window growth, and fragile coordination.
+          </p>
+
+          <h2>2. Subtask Breakdown & Live Execution</h2>
+          <div class="task-subtable">
+            <div class="task-row">
+              <div class="task-row-left">
+                <span class="task-status-pill status-done">Done</span>
+                <span style="font-weight:500;">GOL-9: Audit current dashboard pages & pruning candidates</span>
+              </div>
+              <span class="mono" style="font-size:11px; color:var(--text-3);">explorer1 · 18s ago</span>
+            </div>
+            <div class="task-row" style="background:var(--bg-2);">
+              <div class="task-row-left">
+                <span class="task-status-pill status-inprogress">In Progress</span>
+                <span style="font-weight:500; color:var(--text-0);">GOL-10: Design unified project-centric workspace & onboarding UX</span>
+              </div>
+              <span class="mono" style="font-size:11px; color:var(--status-running);">designer1 (Active)</span>
+            </div>
+            <div class="task-row">
+              <div class="task-row-left">
+                <span class="task-status-pill status-todo">Todo</span>
+                <span style="font-weight:500;">GOL-11: Implement pruned 3-pane router and workspace cockpit</span>
+              </div>
+              <span class="mono" style="font-size:11px; color:var(--text-3);">Unassigned</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div class="doc-action-bar">
+          <div class="action-group">
+            <button class="btn" onclick="triggerLeadTurn('decompose')">🪄 Lead: Decompose Tasks</button>
+            <button class="btn" onclick="triggerLeadTurn('dispatch-comments')">💬 Dispatch Comments (1)</button>
+          </div>
+          <div class="action-group">
+            <button class="btn primary" onclick="triggerLeadTurn('verify')">✓ Verify & Land Spec</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT PANE: LIVE FLEET MONITOR & COMMENTS -->
+      <div class="pane-ops">
+        <div class="pane-head">
+          <span class="pane-head-title">Live Swarm Workers (2)</span>
+          <button class="btn-xs primary" onclick="openSpawnDialog()">+ Spawn Worker</button>
+        </div>
+
+        <!-- Worker cards -->
+        <div class="fleet-cards">
+          <!-- Worker 1: Lead / Designer -->
+          <div class="worker-card">
+            <div class="worker-top">
+              <div class="worker-identity">
+                <div class="worker-avatar">D</div>
+                <div>
+                  <div class="worker-name">designer1</div>
+                  <div class="worker-role">Role: Designer · Pi / GPT-5.6</div>
+                </div>
+              </div>
+              <div class="worker-status">
+                <span class="pulse-dot running"></span>
+                <span style="color:var(--status-running);">Busy (12s)</span>
+              </div>
+            </div>
+            <div class="worker-task-info">
+              <span style="color:var(--text-3); font-size:10px; font-family:var(--font-mono);">TASK ASSIGNMENT</span>
+              <span>GOL-10 Design unified workspace</span>
+            </div>
+            <div class="worker-actions">
+              <button class="btn-xs" onclick="openPeek('designer1')">👁️ Peek Console</button>
+              <button class="btn-xs" onclick="steerWorker('designer1')">💬 Steer</button>
+              <button class="btn-xs" style="color:var(--status-blocked);" onclick="killWorker('designer1')">Stop</button>
+            </div>
+          </div>
+
+          <!-- Worker 2: Explorer -->
+          <div class="worker-card">
+            <div class="worker-top">
+              <div class="worker-identity">
+                <div class="worker-avatar" style="color:#60a5fa;">E</div>
+                <div>
+                  <div class="worker-name">explorer1</div>
+                  <div class="worker-role">Role: Explorer · Claude 3.7</div>
+                </div>
+              </div>
+              <div class="worker-status">
+                <span class="pulse-dot idle"></span>
+                <span style="color:var(--text-3);">Idle</span>
+              </div>
+            </div>
+            <div class="worker-task-info">
+              <span style="color:var(--text-3); font-size:10px; font-family:var(--font-mono);">LAST ACTIVITY</span>
+              <span>GOL-9 completed & audit report attached</span>
+            </div>
+            <div class="worker-actions">
+              <button class="btn-xs" onclick="openPeek('explorer1')">👁️ Peek Console</button>
+              <button class="btn-xs" onclick="dispatchWorker('explorer1')">Dispatch</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- In-Stream Review / Comments -->
+        <div class="pane-head" style="border-top:1px solid var(--border-1);">
+          <span class="pane-head-title">Spec Comments & Returns (1 Open)</span>
+        </div>
+        <div class="review-stream">
+          <div class="comment-bubble unaddressed" id="comment-c1">
+            <div class="comment-head">
+              <span class="comment-author">Lavee (Human)</span>
+              <span>4m ago · On "golem pi / golem attach"</span>
+            </div>
+            <div>Make sure the UI allows spawning and peeking background workers with 1 click so I never need to open tmux.</div>
+            <div style="display:flex; justify-content:flex-end; gap:6px; margin-top:4px;">
+              <button class="btn-xs primary" onclick="dispatchSingleComment()">Dispatch to Designer</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- VIEW 2: ONBOARDING STAGE (TAB 2) -->
+    <div class="onboarding-stage" id="view-onboarding" style="display:none;">
+      <div class="onboarding-card">
+        <div class="onboard-step-head">
+          <span class="lab-badge" style="margin-bottom:8px;">Zero-Terminal Setup</span>
+          <h2>Welcome to Golem · Environment & Project Setup</h2>
+          <p>Get ready in 60 seconds without running manual terminal scripts or daemon configs.</p>
+        </div>
+
+        <div class="checklist-grid">
+          <div class="check-item ready">
+            <div class="check-label-wrap">
+              <span class="check-icon">✅</span>
+              <div>
+                <div class="check-name">Harness Runtimes Detected</div>
+                <div class="check-sub">Pi (v0.84.3) · Claude Code CLI (v0.2.29) · Substrate Hooks Active</div>
+              </div>
+            </div>
+            <span class="step-pill done">Ready</span>
+          </div>
+
+          <div class="check-item ready">
+            <div class="check-label-wrap">
+              <span class="check-icon">🔑</span>
+              <div>
+                <div class="check-name">Model Providers Configured</div>
+                <div class="check-sub">OpenAI (GPT-5.6-Sol) · Anthropic (Claude 3.7) · Local Ollama</div>
+              </div>
+            </div>
+            <button class="btn-xs">Manage Profiles</button>
+          </div>
+
+          <div class="check-item">
+            <div class="check-label-wrap">
+              <span class="check-icon">📁</span>
+              <div>
+                <div class="check-name">Select / Register Workspace Directory</div>
+                <div class="check-sub">Select an existing codebase or scaffold a new agent-ready project</div>
+              </div>
+            </div>
+            <button class="btn-xs primary">Browse Folder…</button>
+          </div>
+
+          <div class="check-item">
+            <div class="check-label-wrap">
+              <span class="check-icon">🪄</span>
+              <div>
+                <div class="check-name">Launch First Spec ("First Flight")</div>
+                <div class="check-sub">Describe what you want to build and let Golem orchestrate the swarm</div>
+              </div>
+            </div>
+            <button class="btn-xs" disabled>Start Drafting</button>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-1); padding-top:16px;">
+          <span style="font-size:12px; color:var(--text-3); font-family:var(--font-mono);">Health: 100% OK (All systems ready)</span>
+          <button class="btn primary" onclick="switchView('cockpit')">Enter Project Workspace ➔</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 3: TURN-BASED LEAD MODEL (TAB 3) -->
+    <div class="onboarding-stage" id="view-lead-model" style="display:none;">
+      <div class="onboarding-card" style="max-width:840px;">
+        <div class="onboard-step-head">
+          <span class="lab-badge">Architectural Blueprint</span>
+          <h2>Zero-Terminal Lead Agent Interaction Model</h2>
+          <p>Solving the persistent manual lead dilemma with On-Demand Turn Execution & Checkpointing.</p>
+        </div>
+
+        <div class="checklist-grid">
+          <div class="check-item ready" style="align-items:flex-start;">
+            <div class="check-label-wrap">
+              <span class="check-icon">⚡</span>
+              <div>
+                <div class="check-name">1. On-Demand Turn Execution (Ephemeral Slices)</div>
+                <div class="check-sub" style="margin-top:4px; line-height:1.5;">
+                  Instead of running a forever-open terminal process, the dashboard spins up a focused Lead turn on-demand when the user requests actions (e.g. "Brainstorm Spec", "Decompose Tasks", "Verify Spec"). Context is bounded to the exact spec, recent tracker comments, and repository map.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="check-item ready" style="align-items:flex-start;">
+            <div class="check-label-wrap">
+              <span class="check-icon">🔄</span>
+              <div>
+                <div class="check-name">2. Dashboard-Managed Background Daemon</div>
+                <div class="check-sub" style="margin-top:4px; line-height:1.5;">
+                  The dashboard server (`worker-manager.js`) handles worker spawning, status polling, and health monitoring in detached tmux/process groups. Users can peek console scrollback, steer mid-turn, or stop workers with 1 click without ever running `tmux attach`.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="check-item ready" style="align-items:flex-start;">
+            <div class="check-label-wrap">
+              <span class="check-icon">🧹</span>
+              <div>
+                <div class="check-name">3. Automatic Compaction & Checkpoint Restarts</div>
+                <div class="check-sub" style="margin-top:4px; line-height:1.5;">
+                  When a spec closes or milestones are hit, the session state is compacted into durable memory (`memory_add`). Future turns start from a fresh slate, preventing context window fatigue, hallucination, and exorbitant API costs.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end;">
+          <button class="btn primary" onclick="switchView('cockpit')">Back to Live Cockpit ➔</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Interactive Terminal Peek Overlay (Simulated) -->
+  <div class="peek-overlay" id="peek-modal" style="display:none;">
+    <div class="peek-head">
+      <span style="display:flex; align-items:center; gap:6px; color:var(--text-0);">
+        <span class="pulse-dot running"></span> designer1 · Console Peek
+      </span>
+      <button class="btn-icon-xs" style="width:20px; height:20px;" onclick="closePeek()">✕</button>
+    </div>
+    <div class="peek-term" id="peek-term-content">
+      [golem-tmux] Attaching virtual stream for worker: designer1<br/>
+      [turn 4] Reading GOL-10 acceptance criteria & GOL-9 audit findings...<br/>
+      [turn 4] Generating 3-pane responsive cockpit layout...<br/>
+      [turn 4] Creating interactive decision lab in dashboard/web/labs/...<br/>
+      [turn 4] Verifying HTML render and viewport ergonomics...<br/>
+      <span style="color:#fbbf24;">[status] Live turn in progress (14s elapsed)</span>
+    </div>
+  </div>
+
+  <!-- Explanatory Notes Section -->
+  <section class="notes-section">
+    <h3>Architectural Analysis & Recommendation</h3>
+    <div class="notes-grid">
+      <div class="note-block">
+        <h4>1. Why The Spec Cockpit (Direction 1) Wins</h4>
+        <p>Real agentic work is 95% spec drafting, comment refinement, and worker dispatching. Consolidating the Spec Tree, Document Reader, and Live Worker Operations into a single 3-pane screen eliminates 100% of the manual page navigation between Tracker, Specs, Logs, and Terminal.</p>
+      </div>
+      <div class="note-block">
+        <h4>2. Elimination of Dead Top-Level Pages</h4>
+        <p>Prunes `/tracker`, `/specs`, `/logs`, `ideas-drawer.jsx`, and `drawer-ceo.jsx`. Retains `/project/:id` as the primary cockpit, `/agents` as system diagnostics, and `/settings` for harnesses & model profiles.</p>
+      </div>
+      <div class="note-block">
+        <h4>3. Zero-Terminal First Flight</h4>
+        <p>New users are greeted with automated environment readiness checks, 1-click project onboarding, guided spec drafting with AI templates, and automated background worker dispatch without ever typing in a bash shell.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  function switchView(viewName) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.eval-card').forEach(card => card.classList.remove('highlight'));
+    
+    document.getElementById('view-cockpit').style.display = 'none';
+    document.getElementById('view-onboarding').style.display = 'none';
+    document.getElementById('view-lead-model').style.display = 'none';
+
+    if (viewName === 'cockpit') {
+      document.getElementById('view-cockpit').style.display = 'grid';
+      document.querySelectorAll('.tab-btn')[0].classList.add('active');
+      document.getElementById('card-opt1').classList.add('highlight');
+    } else if (viewName === 'onboarding') {
+      document.getElementById('view-onboarding').style.display = 'flex';
+      document.querySelectorAll('.tab-btn')[1].classList.add('active');
+      document.getElementById('card-opt2').classList.add('highlight');
+    } else if (viewName === 'lead-model') {
+      document.getElementById('view-lead-model').style.display = 'flex';
+      document.querySelectorAll('.tab-btn')[2].classList.add('active');
+      document.getElementById('card-opt3').classList.add('highlight');
+    }
+  }
+
+  function openPeek(workerName) {
+    const modal = document.getElementById('peek-modal');
+    modal.style.display = 'flex';
+  }
+
+  function closePeek() {
+    document.getElementById('peek-modal').style.display = 'none';
+  }
+
+  function highlightComment(cid) {
+    const el = document.getElementById('comment-' + cid);
+    if (el) {
+      el.style.boxShadow = '0 0 0 2px var(--status-review)';
+      setTimeout(() => el.style.boxShadow = 'none', 1500);
+    }
+  }
+
+  function steerWorker(name) {
+    const note = prompt(`Enter mid-turn steer message for ${name}:`);
+    if (note) {
+      alert(`Steer message sent to ${name} via dashboard channel!`);
+    }
+  }
+
+  function triggerLeadTurn(action) {
+    alert(`Triggered Lead turn: [${action}] with bounded spec context. Lead will execute and update the tracker.`);
+  }
+
+  function dispatchSingleComment() {
+    alert('Dispatched comment to designer1 via background channel!');
+  }
+</script>
+
+</body>
+</html>
