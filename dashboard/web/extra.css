@@ -3235,8 +3235,15 @@ select.ct-input { appearance: none; cursor: pointer; padding-right: 26px;
 }
 .td-reader-byline strong { color: var(--text-1); font-weight: 700; }
 .td-reader-byline .byline-dot { width: 1px; height: 12px; background: var(--border-2); margin: 0 2px; }
-.td-reader-byline .by-avatar { width: 16px; height: 16px; border-radius: 50%; display:inline-grid; place-items:center; font:700 8px var(--font-mono); color:#fff; background:linear-gradient(135deg,#7e8bff,#2dd4a7); flex:0 0 auto; }
-.td-reader-byline .by-avatar.human { background:linear-gradient(135deg,#f59e0b,#ef4444); }
+/* Neutral per-theme disc — a colored gradient drowned the model mark. */
+.td-reader-byline .by-avatar {
+  width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center;
+  font: 700 8px var(--font-mono);
+  background: var(--bg-2); border: 1px solid var(--border-2); color: var(--text-2);
+  flex: 0 0 auto;
+}
+.td-reader-byline .by-avatar.human { background: linear-gradient(135deg, #f59e0b, #ef4444); color: #fff; border: none; }
+.td-reader-byline .by-avatar img { display: block; width: 12px; height: 12px; object-fit: contain; }
 .td-edit-btn { flex: 0 0 auto; margin-top: 2px; }
 .td-body { margin-top: 10px; font-size: 13px; line-height: 1.55; }
 .td-body-empty { margin-top: 8px; color: var(--text-3); font-size: 12.5px; font-style: italic; }
@@ -3859,10 +3866,11 @@ mark.anno.anno-tail::after {
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 .anno-avatar.anno-avatar-agent {
-  background: linear-gradient(135deg, #7e8bff, #2dd4a7);
-  color: #ffffff;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  /* GOL-287 feedback: neutral disc — the gradient drowned the model mark. */
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  box-shadow: none;
 }
 /* GOL-287: agent avatars render the session's model-provider mark inside the
    round badge instead of initials. */

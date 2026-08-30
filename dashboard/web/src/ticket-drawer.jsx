@@ -721,6 +721,11 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
   const close = () => onClose && onClose();
 
   const statePill = ticket ? (TD_STATE_PILL[ticket.state] || 'idle') : 'idle';
+  // Snapshot rows are body-less (server slims /api/snapshot); keep the loading
+  // shell until getTicket hydrates the open ticket so the reader never flashes
+  // "No description." between route open and fetch. A failed fetch releases
+  // the guard so the error state stays reachable.
+  const needsDetail = !!ticket && ticket.body === undefined && !loadError;
   // TKT-0266: rotating gear next to the state pill when the ticket is being
   // actively worked (in_progress + busy live assignee). Same rule as the board
   // card; re-renders on store updates so it tracks the 3s session refresh.
@@ -746,7 +751,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
         <DrawerBackdrop open={open} onClose={close}/>
       )}
       <Shell className={shellClass} style={shellStyle} {...(isPage ? {} : { open, onClose: close, label: ticket ? `Ticket ${ticket.display_id || ticket.id}` : 'Ticket details' })}>
-        {!open && !isPage ? null : loading && !ticket ? (
+        {!open && !isPage ? null : (loading && !ticket) || needsDetail ? (
           <div className="td-loading">
             <div className="drawer-header">
               <div className="drawer-title-row">
@@ -1083,9 +1088,16 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                   const isHuman = assigneeId === 'human' || assigneeId === 'you' || assigneeId === 'human:dashboard';
                   const label = isUnassigned ? 'Unassigned' : resolveActor(assigneeId, ticket.assignee_label);
                   const initials = isHuman ? 'L' : (label.split(/[\s:_-]+/).filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase() || 'A');
+                  // GOL-287 feedback: the byline wears the assignee's
+                  // model-provider mark (same resolution as the comment
+                  // avatars); initials only when no session/icon resolves.
+                  const assigneeSession = !isHuman && !isUnassigned ? window.Store?.getNativeSessionById?.(assigneeId) : null;
+                  const assigneeIcon = assigneeSession ? window.AssigneeOptions?.assigneeProviderIcon?.(assigneeSession) : null;
                   return (
                     <div className="td-reader-byline">
-                      <span className={`by-avatar ${isHuman ? 'human' : ''}`} aria-hidden="true">{initials}</span>
+                      {assigneeIcon
+                        ? <span className="by-avatar by-avatar-icon"><img src={assigneeIcon} alt=""/></span>
+                        : <span className={`by-avatar ${isHuman ? 'human' : ''}`} aria-hidden="true">{initials}</span>}
                       <span>Assigned to <strong>{label}</strong></span>
                       <span className="byline-dot" aria-hidden="true" />
                       <span className={`pill ${statePill}`}>{ticket.state}</span>

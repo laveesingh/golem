@@ -820,7 +820,11 @@ async function main() {
     return {
       // The client owns the archived visibility toggle/search. Include those
       // rows in the canonical snapshot so toggling never depends on a refetch.
-      tickets: tracker.listTickets({ includeArchived: true }),
+      // Bodies are excluded: 650 rows × full spec bodies made the snapshot
+      // ~5.2MB and dominated every page load (parse + transfer), while no
+      // list surface renders bodies from the snapshot — the open ticket is
+      // hydrated by GET /api/tickets/:id (drawer + reader both fetch it).
+      tickets: tracker.listTickets({ includeArchived: true }).map(({ body, ...slim }) => slim),
     };
   }
 
