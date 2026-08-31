@@ -16,7 +16,12 @@ import { CONFIG } from './config.js';
 import { channelDeliveryError, isChannelDeliveryReady, isTypedWorkerChannel, readChannels } from './channels.js';
 import { TYPED_WORKER_PROTOCOL_VERSION, typedEnvelopeMetadata } from '../../lib/typed-worker-endpoint.js';
 
-const DEFAULT_TIMEOUT_MS = 5000;
+// Issue #34 (GOL-296): the typed channel endpoint now accepts instantly in
+// every session state (the adapter queues natively and injects at the next
+// loop boundary), so a healthy push returns in milliseconds. 30s is a safety
+// net for exceptional cases (channel wedged / endpoint wedged) — never a
+// delivery-latency budget. Must stay above the adapter ACCEPT_TIMEOUT_MS.
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 async function resolveBaseUrl(sessionId) {
   const channels = await readChannels();

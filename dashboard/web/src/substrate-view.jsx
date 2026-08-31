@@ -357,6 +357,193 @@ function SubstrateSkillsView({ initialSlug, onSync, onToast }) {
   );
 }
 
+function parseSplitFrontmatter(rawContent) {
+  const raw = String(rawContent || '');
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!match) return { frontmatter: {}, body: raw };
+
+  const frontmatter = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const colon = line.indexOf(':');
+    if (colon <= 0) continue;
+    const key = line.slice(0, colon).trim();
+    let value = line.slice(colon + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    frontmatter[key] = value;
+  }
+  return { frontmatter, body: match[2] };
+}
+
+function SplitEditorModal({
+  title,
+  canonicalPath,
+  rawText,
+  originalText,
+  onChange,
+  saving,
+  onSave,
+  onSaveAndSync,
+  onDiscard,
+  onClose,
+  onSwitchMode,
+  canSaveAndSync = true,
+}) {
+  const previewRef = React.useRef(null);
+  const textareaRef = React.useRef(null);
+  const closeRef = React.useRef(null);
+  const previousFocusedRef = React.useRef(null);
+  const [previewSource, setPreviewSource] = React.useState(rawText);
+  const [saveFeedback, setSaveFeedback] = React.useState('');
+  const parsed = React.useMemo(() => parseSplitFrontmatter(previewSource), [previewSource]);
+  const previewHtml = React.useMemo(() => {
+    if (window.SubstrateFmt?.renderMarkdown) {
+      return window.SubstrateFmt.renderMarkdown(parsed.body);
+    }
+    return String(parsed.body || '').replace(/[&<>]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char]));
+  }, [parsed.body]);
+  const isDirty = rawText !== originalText;
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setPreviewSource(rawText), 250);
+    return () => window.clearTimeout(timer);
+  }, [rawText]);
+
+  React.useEffect(() => {
+    const root = previewRef.current;
+    if (!root || typeof window.runMermaid !== 'function') return;
+    const nodes = root.querySelectorAll('.mermaid');
+    if (nodes.length) {
+      Promise.resolve(window.runMermaid(nodes)).catch(() => {});
+    }
+  }, [previewHtml]);
+
+  React.useEffect(() => {
+    previousFocusedRef.current = document.activeElement;
+    const substratePage = document.querySelector('.substrate-page');
+    const wasInert = substratePage?.inert || false;
+    if (substratePage) substratePage.inert = true;
+    document.body.classList.add('substrate-split-open');
+    const frame = window.requestAnimationFrame(() => textareaRef.current?.focus());
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeRef.current?.();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', onKey, true);
+      document.body.classList.remove('substrate-split-open');
+      if (substratePage) substratePage.inert = wasInert;
+      previousFocusedRef.current?.focus?.();
+    };
+  }, []);
+
+  const requestClose = () => {
+    if (isDirty && !window.confirm('Discard unsaved changes and close the split editor?')) return;
+    onClose({ discard: isDirty });
+  };
+  closeRef.current = requestClose;
+
+  const runSave = async (andSync = false) => {
+    setSaveFeedback('');
+    try {
+      const result = await (andSync ? onSaveAndSync() : onSave());
+      setSaveFeedback(result === false ? 'Save failed' : 'Saved');
+    } catch {
+      setSaveFeedback('Save failed');
+    }
+  };
+
+  const discard = () => {
+    onDiscard();
+    setSaveFeedback('Draft discarded');
+  };
+
+  const metadata = parsed.frontmatter;
+  const hasFrontmatter = Object.keys(metadata).length > 0;
+
+  const modalContent = (
+    <div className="substrate-split-overlay" data-testid="substrate-split-modal" role="dialog" aria-modal="true" aria-labelledby="substrate-split-title">
+      <div className="substrate-split-modal">
+        <header className="substrate-split-header">
+          <div className="substrate-split-heading">
+            <div className="substrate-split-kicker mono">Split editor</div>
+            <h2 id="substrate-split-title" className="substrate-split-title mono">{title}</h2>
+            <div className="substrate-split-path mono" title={canonicalPath}>{canonicalPath}</div>
+          </div>
+          <div className="substrate-split-actions">
+            <div className="substrate-view-toggles substrate-split-view-toggles" role="group" aria-label="Editor mode">
+              <button type="button" className="substrate-mode-btn" onClick={() => onSwitchMode('preview')}>Preview</button>
+              <button type="button" className="substrate-mode-btn" data-testid="substrate-split-edit-mode" onClick={() => onSwitchMode('edit')}>Edit Markdown</button>
+              <button type="button" className="substrate-mode-btn active" aria-current="page" disabled>Split</button>
+            </div>
+            <span className="substrate-split-save-state mono" aria-live="polite" data-testid="substrate-split-save-state">
+              {saving ? 'Saving…' : isDirty ? 'Unsaved changes' : (saveFeedback || 'Saved')}
+            </span>
+            <button type="button" className="orch-btn" onClick={() => runSave(false)} disabled={saving}>Save</button>
+            {canSaveAndSync && (
+              <button type="button" className="orch-btn primary" onClick={() => runSave(true)} disabled={saving}>Save &amp; Sync</button>
+            )}
+            <button type="button" className="orch-btn ghost" onClick={discard} disabled={saving || !isDirty}>Discard</button>
+            <button type="button" className="orch-btn danger ghost substrate-split-close" onClick={requestClose} aria-label="Close split editor">✕</button>
+          </div>
+        </header>
+
+        <div className="substrate-split-panes">
+          <section className="substrate-split-pane substrate-split-raw-pane" aria-label="Raw Markdown source">
+            <div className="substrate-split-pane-head">
+              <span>Raw Markdown</span>
+              <span className="mono">source</span>
+            </div>
+            <textarea
+              ref={textareaRef}
+              className="substrate-split-raw mono"
+              data-testid="substrate-split-raw"
+              value={rawText}
+              onChange={(event) => { setSaveFeedback(''); onChange(event.target.value); }}
+              spellCheck="false"
+              aria-label={`Raw Markdown for ${title}`}
+            />
+          </section>
+
+          <section className="substrate-split-pane substrate-split-preview-pane" aria-label="Live rendered Markdown preview">
+            <div className="substrate-split-pane-head">
+              <span>Live Preview</span>
+              <span className="mono">sanitized render</span>
+            </div>
+            {hasFrontmatter ? (
+              <div className="substrate-split-metadata" data-testid="substrate-split-frontmatter" aria-label="Frontmatter metadata">
+                <span className="substrate-split-metadata-label mono">Frontmatter</span>
+                <span><strong>name</strong> · {metadata.name || '—'}</span>
+                <span className="substrate-split-metadata-separator">·</span>
+                <span className="substrate-split-metadata-description"><strong>description</strong> · {metadata.description || '—'}</span>
+              </div>
+            ) : (
+              <div className="substrate-split-metadata substrate-split-metadata-empty" data-testid="substrate-split-frontmatter">
+                No frontmatter detected · rendering complete source
+              </div>
+            )}
+            <div
+              ref={previewRef}
+              className="td-md substrate-split-preview"
+              data-testid="substrate-split-preview"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+
+  return window.ReactDOM?.createPortal && document.body
+    ? window.ReactDOM.createPortal(modalContent, document.body)
+    : modalContent;
+}
+
 function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast }) {
   const [skill, setSkill] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
@@ -382,6 +569,21 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
     loadSkill();
   }, [loadSkill]);
 
+  const savedRaw = skill?.raw || '';
+  const discardChanges = () => setRawText(savedRaw);
+  const switchViewMode = (nextMode) => {
+    if (nextMode === viewMode) return;
+    if (rawText !== savedRaw && nextMode === 'preview') {
+      if (!window.confirm('Discard unsaved changes and switch view?')) return;
+      setRawText(savedRaw);
+    }
+    setViewMode(nextMode);
+  };
+  const closeSplit = ({ discard = false } = {}) => {
+    if (discard || rawText !== savedRaw) setRawText(savedRaw);
+    setViewMode('preview');
+  };
+
   const handleSave = async (andSync = false) => {
     setSaving(true);
     try {
@@ -395,8 +597,10 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
       if (andSync) {
         await onSync();
       }
+      return true;
     } catch (err) {
       onToast(`Failed to save: ${err.message}`, 'error');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -424,7 +628,8 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
     : (skill?.body || skill?.raw || '');
 
   return (
-    <div className="substrate-skill-editor-card">
+    <>
+      <div className="substrate-skill-editor-card">
       <div className="substrate-editor-head">
         <div className="substrate-editor-identity">
           <div className="substrate-editor-title-row">
@@ -441,16 +646,23 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
             <button
               type="button"
               className={`substrate-mode-btn ${viewMode === 'preview' ? 'active' : ''}`}
-              onClick={() => setViewMode('preview')}
+              onClick={() => switchViewMode('preview')}
             >
               Preview
             </button>
             <button
               type="button"
               className={`substrate-mode-btn ${viewMode === 'edit' ? 'active' : ''}`}
-              onClick={() => setViewMode('edit')}
+              onClick={() => switchViewMode('edit')}
             >
               Edit Markdown
+            </button>
+            <button
+              type="button"
+              className={`substrate-mode-btn ${viewMode === 'split' ? 'active' : ''}`}
+              onClick={() => switchViewMode('split')}
+            >
+              Split
             </button>
           </div>
 
@@ -459,8 +671,8 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
               <button
                 type="button"
                 className="orch-btn ghost"
-                onClick={() => setRawText(skill?.raw || '')}
-                disabled={saving || rawText === skill?.raw}
+                onClick={discardChanges}
+                disabled={saving || rawText === savedRaw}
               >
                 Discard
               </button>
@@ -509,7 +721,7 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
           />
         </div>
-      ) : (
+      ) : viewMode === 'edit' ? (
         <div className="substrate-raw-edit-wrap">
           <textarea
             className="substrate-markdown-textarea mono"
@@ -519,8 +731,28 @@ function SkillDetailEditor({ slug, scope, onSaved, onDeleted, onSync, onToast })
             spellCheck="false"
           />
         </div>
+      ) : (
+        <div className="substrate-split-underlay" aria-hidden="true" />
       )}
     </div>
+
+      {viewMode === 'split' && (
+        <SplitEditorModal
+          title={skill?.slug || 'Skill'}
+          canonicalPath={`${skill?.dir_path}/SKILL.md`}
+          rawText={rawText}
+          originalText={savedRaw}
+          onChange={setRawText}
+          saving={saving}
+          onSave={() => handleSave(false)}
+          onSaveAndSync={() => handleSave(true)}
+          onDiscard={discardChanges}
+          onClose={closeSplit}
+          onSwitchMode={switchViewMode}
+          canSaveAndSync={skill?.scope === 'builtin'}
+        />
+      )}
+    </>
   );
 }
 
@@ -669,6 +901,21 @@ function SubstrateInstructionsView({ onSync, onToast }) {
     loadInstructions();
   }, [loadInstructions]);
 
+  const savedRaw = data?.raw || '';
+  const discardChanges = () => setRawText(savedRaw);
+  const switchViewMode = (nextMode) => {
+    if (nextMode === viewMode) return;
+    if (rawText !== savedRaw && nextMode === 'preview') {
+      if (!window.confirm('Discard unsaved changes and switch view?')) return;
+      setRawText(savedRaw);
+    }
+    setViewMode(nextMode);
+  };
+  const closeSplit = ({ discard = false } = {}) => {
+    if (discard || rawText !== savedRaw) setRawText(savedRaw);
+    setViewMode('preview');
+  };
+
   const handleSave = async (andSync = false) => {
     setSaving(true);
     try {
@@ -678,8 +925,10 @@ function SubstrateInstructionsView({ onSync, onToast }) {
       if (andSync) {
         await onSync();
       }
+      return true;
     } catch (err) {
       onToast(`Failed to save instructions: ${err.message}`, 'error');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -694,7 +943,8 @@ function SubstrateInstructionsView({ onSync, onToast }) {
     : rawText;
 
   return (
-    <div className="substrate-skill-editor-card">
+    <>
+      <div className="substrate-skill-editor-card">
       <div className="substrate-editor-head">
         <div className="substrate-editor-identity">
           <h2 className="substrate-editor-title mono">AGENTS.md</h2>
@@ -706,16 +956,23 @@ function SubstrateInstructionsView({ onSync, onToast }) {
             <button
               type="button"
               className={`substrate-mode-btn ${viewMode === 'preview' ? 'active' : ''}`}
-              onClick={() => setViewMode('preview')}
+              onClick={() => switchViewMode('preview')}
             >
               Preview
             </button>
             <button
               type="button"
               className={`substrate-mode-btn ${viewMode === 'edit' ? 'active' : ''}`}
-              onClick={() => setViewMode('edit')}
+              onClick={() => switchViewMode('edit')}
             >
               Edit Markdown
+            </button>
+            <button
+              type="button"
+              className={`substrate-mode-btn ${viewMode === 'split' ? 'active' : ''}`}
+              onClick={() => switchViewMode('split')}
+            >
+              Split
             </button>
           </div>
 
@@ -724,8 +981,8 @@ function SubstrateInstructionsView({ onSync, onToast }) {
               <button
                 type="button"
                 className="orch-btn ghost"
-                onClick={() => setRawText(data?.raw || '')}
-                disabled={saving || rawText === data?.raw}
+                onClick={discardChanges}
+                disabled={saving || rawText === savedRaw}
               >
                 Discard
               </button>
@@ -757,7 +1014,7 @@ function SubstrateInstructionsView({ onSync, onToast }) {
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
           />
         </div>
-      ) : (
+      ) : viewMode === 'edit' ? (
         <div className="substrate-raw-edit-wrap">
           <textarea
             className="substrate-markdown-textarea mono"
@@ -766,8 +1023,27 @@ function SubstrateInstructionsView({ onSync, onToast }) {
             spellCheck="false"
           />
         </div>
+      ) : (
+        <div className="substrate-split-underlay" aria-hidden="true" />
       )}
     </div>
+
+      {viewMode === 'split' && (
+        <SplitEditorModal
+          title="AGENTS.md"
+          canonicalPath="substrate/instructions/AGENTS.md"
+          rawText={rawText}
+          originalText={savedRaw}
+          onChange={setRawText}
+          saving={saving}
+          onSave={() => handleSave(false)}
+          onSaveAndSync={() => handleSave(true)}
+          onDiscard={discardChanges}
+          onClose={closeSplit}
+          onSwitchMode={switchViewMode}
+        />
+      )}
+    </>
   );
 }
 

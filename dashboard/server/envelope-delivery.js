@@ -144,7 +144,16 @@ export async function publishDurableEnvelope({
   let settled = !usesRetry;
   if (usesRetry && retryOwned) {
     const typedTerminal = typedTarget && TERMINAL_TYPED_DELIVERY_STATES.has(typedOutcome?.delivery_state);
-    if (delivered && (!typedTarget || typedTerminal)) {
+    // Issue #34 (GOL-297): a duplicate of a delivery the session already
+    // ACCEPTED carries no new turn — it proves the session holds the message
+    // (sendUserMessage fired on the earlier attempt). Settle durable
+    // ownership like a terminal replay; the adapter owns pickup from here
+    // (10s recovery guard), so the delivery must not loop unreconciled.
+    const duplicateAccepted = typedTarget
+      && typedOutcome?.duplicate === true
+      && typedOutcome?.accepted === true
+      && typedOutcome?.delivery_state === 'accepted';
+    if (delivered && (!typedTarget || typedTerminal || duplicateAccepted)) {
       settled = settleDurableEnvelope({ tracker, envelope, retry, retryOwnerToken });
     } else if (delivered && typedTarget) {
       settled = false;

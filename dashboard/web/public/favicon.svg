@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Golem dashboard favicon — "Swarm Orbit" mark, Deep Sea palette.
+       Six workers on an r=9.6 orbit around a haloed lead: the team-ops model. -->
+  <rect x="1" y="1" width="30" height="30" rx="7" fill="#0b1e2d" stroke="rgba(255,255,255,.10)"/>
+  <circle cx="16" cy="6.4" r="2.15" fill="#38bdf8"/>
+  <circle cx="24.31" cy="11.2" r="2.15" fill="#2dd4bf"/>
+  <circle cx="24.31" cy="20.8" r="2.15" fill="#38bdf8"/>
+  <circle cx="16" cy="25.6" r="2.15" fill="#2dd4bf"/>
+  <circle cx="7.69" cy="20.8" r="2.15" fill="#38bdf8"/>
+  <circle cx="7.69" cy="11.2" r="2.15" fill="#2dd4bf"/>
+  <circle cx="16" cy="16" r="6" fill="#38bdf8" opacity="0.22"/>
+  <circle cx="16" cy="16" r="3.4" fill="#e0f2fe"/>
+</svg>

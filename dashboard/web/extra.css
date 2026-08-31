@@ -3215,6 +3215,35 @@ select.ct-input { appearance: none; cursor: pointer; padding-right: 26px;
   margin: 0;
   color: var(--text-0);
 }
+/* GOL-287-B: project-scoped id prefix in reader title, where the eye lands */
+.td-title-prefix {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent);
+  cursor: copy;
+  border-radius: 4px;
+  padding: 0 2px;
+  margin-right: 6px;
+}
+.td-title-prefix:hover { background: var(--accent-soft); }
+.td-reader-byline {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 6px 0 0;
+  color: var(--text-3);
+  font: 500 11px/1 var(--font-mono);
+  letter-spacing: .02em;
+}
+.td-reader-byline strong { color: var(--text-1); font-weight: 700; }
+.td-reader-byline .byline-dot { width: 1px; height: 12px; background: var(--border-2); margin: 0 2px; }
+/* Neutral per-theme disc — a colored gradient drowned the model mark. */
+.td-reader-byline .by-avatar {
+  width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center;
+  font: 700 8px var(--font-mono);
+  background: var(--bg-2); border: 1px solid var(--border-2); color: var(--text-2);
+  flex: 0 0 auto;
+}
+.td-reader-byline .by-avatar.human { background: linear-gradient(135deg, #f59e0b, #ef4444); color: #fff; border: none; }
+.td-reader-byline .by-avatar img { display: block; width: 12px; height: 12px; object-fit: contain; }
 .td-edit-btn { flex: 0 0 auto; margin-top: 2px; }
 .td-body { margin-top: 10px; font-size: 13px; line-height: 1.55; }
 .td-body-empty { margin-top: 8px; color: var(--text-3); font-size: 12.5px; font-style: italic; }
@@ -3694,6 +3723,15 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 #anno-rail .rail-head .t { font-family: var(--font-display); font-weight: 600; font-size: 16px; color: var(--text-0); }
 #anno-rail .rail-head .meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); letter-spacing: .5px; margin-top: 2px; }
 #anno-rail .rail-tools { display: flex; gap: 5px; align-items: center; }
+/* GOL-287: in-drawer close (sits after the Show-resolved checkbox). */
+#anno-rail .rail-close {
+  display: inline-grid; place-items: center; flex: 0 0 auto;
+  width: 22px; height: 22px; padding: 0;
+  color: var(--text-3); background: transparent; border: 1px solid transparent; border-radius: 5px;
+  cursor: pointer;
+}
+#anno-rail .rail-close svg { width: 13px; height: 13px; }
+#anno-rail .rail-close:hover { color: var(--text-0); background: var(--bg-3); border-color: var(--border-2); }
 #anno-rail .rail-head-dispatch {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding-top: 8px; border-top: 1px solid var(--border-1);
@@ -3837,10 +3875,11 @@ mark.anno.anno-tail::after {
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 .anno-avatar.anno-avatar-agent {
-  background: linear-gradient(135deg, #7e8bff, #2dd4a7);
-  color: #ffffff;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  /* GOL-287 feedback: neutral disc — the gradient drowned the model mark. */
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  box-shadow: none;
 }
 /* GOL-287: agent avatars render the session's model-provider mark inside the
    round badge instead of initials. */
@@ -4176,6 +4215,19 @@ mark.anno.anno-tail::after {
   box-sizing: border-box;
   padding: 16px 40px 8px;
   flex: 0 0 auto;
+}
+/* Reader: pin the identity header (id-prefixed title + byline + Edit) at the
+   top of the scroll container so the facts survive scrolling; the body slides
+   under it. The scroller's own padding-top would leave a strip where scrolled
+   content peeks above the bar, so the reader moves that spacing into the bar. */
+.td-reader .td-scroll { padding-top: 0; }
+.td-reader .td-titlebody {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border-1);
+  padding-top: 20px;
 }
 .td-body-area {
   flex: 1 1 auto;
@@ -6443,4 +6495,294 @@ mark.anno.anno-tail::after {
   color: var(--text-1);
   max-height: 240px;
   overflow-y: auto;
+}
+
+/* GOL-291: full-screen raw Markdown + live preview editor. The overlay owns
+   its scroll regions so long source and rendered documents never widen the
+   dashboard or move the page behind it. */
+body.substrate-split-open { overflow: hidden; }
+.substrate-split-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-0);
+  color: var(--text-1);
+}
+.substrate-split-modal {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+.substrate-split-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border-1);
+  background: var(--bg-2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .16);
+}
+.substrate-split-heading {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.substrate-split-kicker {
+  margin-bottom: 2px;
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.substrate-split-title {
+  margin: 0;
+  color: var(--text-0);
+  font-size: 17px;
+  line-height: 1.25;
+}
+.substrate-split-path {
+  max-width: 100%;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.substrate-split-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.substrate-split-view-toggles {
+  margin-right: 2px;
+}
+.substrate-split-view-toggles .substrate-mode-btn:disabled {
+  cursor: default;
+}
+.substrate-split-save-state {
+  flex: 0 1 auto;
+  margin-right: 2px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.substrate-split-close {
+  min-width: 32px;
+  padding-right: 8px;
+  padding-left: 8px;
+  font-size: 15px;
+  line-height: 1;
+}
+.substrate-split-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.substrate-split-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-1);
+}
+.substrate-split-pane + .substrate-split-pane {
+  border-left: 1px solid var(--border-1);
+}
+.substrate-split-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-1);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.substrate-split-pane-head .mono:last-child {
+  color: var(--text-3);
+  font-size: 9px;
+  font-weight: 500;
+}
+.substrate-split-raw {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 18px;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+}
+.substrate-split-raw:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-border);
+}
+.substrate-split-preview-pane {
+  background: var(--bg-0);
+}
+.substrate-split-metadata {
+  display: flex;
+  align-items: baseline;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-1);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-1));
+  color: var(--text-1);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.substrate-split-metadata-label {
+  margin-right: 3px;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.substrate-split-metadata strong {
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.substrate-split-metadata-description {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.substrate-split-metadata-separator {
+  color: var(--text-3);
+}
+.substrate-split-metadata-empty {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.substrate-split-preview {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 20px 24px 48px;
+  overflow: auto;
+  box-sizing: border-box;
+}
+.substrate-split-preview .mermaid,
+.substrate-split-preview table,
+.substrate-split-preview pre {
+  max-width: 100%;
+}
+.substrate-split-preview img,
+.substrate-split-preview svg {
+  max-width: 100%;
+}
+.substrate-split-underlay {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg-0);
+}
+.substrate-split-overlay button:focus-visible,
+.substrate-split-overlay textarea:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .substrate-split-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .substrate-split-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+  .substrate-split-panes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(240px, 1fr) minmax(240px, 1fr);
+    overflow-y: auto;
+  }
+  .substrate-split-pane {
+    min-height: 0;
+  }
+  .substrate-split-pane + .substrate-split-pane {
+    border-top: 1px solid var(--border-1);
+    border-left: 0;
+  }
+  .substrate-split-raw-pane,
+  .substrate-split-preview-pane {
+    min-height: 45vh;
+  }
+}
+@media (max-width: 480px) {
+  .substrate-split-title {
+    font-size: 15px;
+  }
+  .substrate-split-actions {
+    gap: 4px;
+  }
+  .substrate-split-save-state {
+    flex: 1 0 100%;
+    margin-bottom: 2px;
+  }
+  .substrate-split-actions .orch-btn {
+    flex: 1 1 auto;
+  }
+  .substrate-split-actions .substrate-split-close {
+    flex: 0 0 32px;
+  }
+  .substrate-split-pane-head {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  .substrate-split-raw {
+    padding: 12px;
+  }
+  .substrate-split-preview {
+    padding: 14px 12px 36px;
+  }
 }

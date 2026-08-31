@@ -156,28 +156,42 @@ try {
   assert.ok(replyRow, 'reply persisted');
   assert.equal(replyRow.parent_id, seeded.id, 'reply attaches to the referenced comment (unchanged mechanism)');
 
-  // 5. Agent avatars wear the session's model mark (read-only, real spec with
-  //    agent comments); human avatars keep the initials badge.
-  await page.goto(`${ORIGIN}/tickets/TKT-0519`, { waitUntil: 'networkidle' });
+  // 5. Agent avatars wear the session's model mark; authors whose session has
+  //    rotated out of the live registry fall back to initials. Deterministic:
+  //    comment as the CURRENT live session (this smoke's driver session id is
+  //    in the registry), so the img icon must render.
+  const liveSession = await request('/native-sessions').then(
+    (rows) => rows.find((s) => s.alive && s.session_id && s.model),
+  );
+  assert.ok(liveSession, 'a live session with model facts exists for the avatar check');
+  await request(`/tickets/${encodeURIComponent(ticket.id)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ author: liveSession.session_id, body: 'gol287 live-session avatar check' }),
+  });
+  await page.reload({ waitUntil: 'networkidle' });
   await page.waitForSelector('.anno-card');
   await wait(1200);
-  const avatarStats = await page.evaluate(() => {
-    const stats = { agentTotal: 0, agentWithImg: 0, humanTotal: 0, humanWithInitials: 0 };
+  const avatarStats = await page.evaluate((liveId) => {
+    const stats = { liveCard: null, fallbackCards: 0, humanTotal: 0, humanWithInitials: 0 };
     for (const card of document.querySelectorAll('.anno-card')) {
       const avatar = card.querySelector('.anno-avatar');
       if (!avatar) continue;
       if (avatar.classList.contains('anno-avatar-human')) {
         stats.humanTotal += 1;
         if (avatar.textContent.trim()) stats.humanWithInitials += 1;
+        continue;
+      }
+      const cardText = card.textContent || '';
+      if (avatar.querySelector('img')) {
+        stats.liveCard = stats.liveCard || cardText.includes('gol287 live-session avatar check');
       } else {
-        stats.agentTotal += 1;
-        if (avatar.querySelector('img')) stats.agentWithImg += 1;
+        stats.fallbackCards += 1;
       }
     }
     return stats;
-  });
-  assert.ok(avatarStats.agentTotal > 0, 'spec has agent comments');
-  assert.ok(avatarStats.agentWithImg > 0, 'agent avatars render the model mark');
+  }, liveSession.session_id);
+  assert.equal(avatarStats.liveCard, true, 'live-session comment renders the model mark');
+  assert.ok(avatarStats.fallbackCards > 0, 'registry-evicted authors fall back to initials (smoke/seed authors)');
   assert.ok(avatarStats.humanTotal === 0 || avatarStats.humanWithInitials > 0, 'human avatar keeps initials');
 
   // 6. Assignee pickers: shared PopSelect with provider marks + hints.

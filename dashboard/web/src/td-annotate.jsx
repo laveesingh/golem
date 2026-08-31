@@ -1114,21 +1114,6 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
     };
   }, [annotations, comments, showResolved]);
 
-  React.useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (!root) {
-      setTocHeadings((prev) => prev.length === 0 ? prev : []);
-      return;
-    }
-    const nextList = assignTocHeadingIds(root, documentTitle);
-    setTocHeadings((prev) => {
-      if (prev.length === nextList.length && prev.every((h, i) => h.id === nextList[i]?.id && h.text === nextList[i]?.text && h.level === nextList[i]?.level)) {
-        return prev;
-      }
-      return nextList;
-    });
-  }, [html, documentTitle]);
-
   const lastHtmlRef = React.useRef(null);
   React.useLayoutEffect(() => {
     const root = rootRef.current;
@@ -1147,6 +1132,21 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
       }
     }
   }, [html]);
+
+  React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) {
+      setTocHeadings((prev) => prev.length === 0 ? prev : []);
+      return;
+    }
+    const nextList = assignTocHeadingIds(root, documentTitle);
+    setTocHeadings((prev) => {
+      if (prev.length === nextList.length && prev.every((h, i) => h.id === nextList[i]?.id && h.text === nextList[i]?.text && h.level === nextList[i]?.level)) {
+        return prev;
+      }
+      return nextList;
+    });
+  }, [html, documentTitle]);
 
   React.useEffect(() => {
     const root = rootRef.current;
@@ -1625,6 +1625,42 @@ React.useEffect(() => {
     };
   }, [startNewComment]);
 
+  // GOL-287: Esc closes the comments drawer, absorbing the event so an open
+  // ticket drawer underneath does not close with it. Capture phase fires
+  // before the drawer's window-bubble Esc handler. Fullscreen mermaid and the
+  // image lightbox register their own later capture handlers for Esc — let
+  // them win when present. Fields that own Esc (edit composer, filter inputs,
+  // open PopSelect menus) are skipped; the composer textarea closes the drawer
+  // via its own handler (draft preserved) so it is intentionally not skipped.
+  // closeRail also releases focus if it is stranded inside the rail (the rail
+  // stays mounted when hidden, and a focused textarea there would keep
+  // absorbing Esc and shadow the ticket drawer's own Esc handler).
+  const closeRail = React.useCallback(() => {
+    setRailOpen(false);
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active && typeof active.closest === 'function' && active.closest('#anno-rail')) {
+        const host = rootRef.current?.closest('.drawer-ticket, .ticket-page');
+        try { host?.focus({ preventScroll: true }); } catch {}
+        if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#anno-rail')) active.blur();
+      }
+    });
+  }, [rootRef]);
+  React.useEffect(() => {
+    if (!railOpen) return undefined;
+    const onEsc = (e) => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('.mermaid-fs-overlay, .anno-image-lightbox')) return;
+      const t = e.target;
+      if (t && t.closest && t.closest('.anno-edit textarea, .ps-menu, input, select')) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeRail();
+    };
+    document.addEventListener('keydown', onEsc, true);
+    return () => document.removeEventListener('keydown', onEsc, true);
+  }, [railOpen, closeRail]);
+
   const openCount = annotations.filter((a) => a.status === 'open').length;
   const resolvedCount = annotations.filter((a) => a.status === 'resolved').length;
   const isDraftAnnotation = (annotation) => {
@@ -1824,6 +1860,10 @@ React.useEffect(() => {
                 <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
                 Show resolved
               </label>
+              {/* GOL-287: close the drawer from within — Esc does the same. */}
+              <button type="button" className="rail-close" aria-label="Close comments drawer" title="Close (Esc)" onClick={closeRail}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -1896,6 +1936,7 @@ React.useEffect(() => {
             onSendAndDispatch={sendComposerAndDispatch}
             onCancel={() => { setPendingComposer(null); setPendingReply(null); }}
             onClearAttachment={() => { setPendingComposer(null); setPendingReply(null); }}
+            onEscape={closeRail}
           />
         </div>
       </div>
@@ -2279,7 +2320,7 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
   );
 }
 
-function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatch = false, dispatchLabel = 'Dispatch', onCancel, onClearAttachment, rail = false, autoFocus = true, focusToken = null }) {
+function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatch = false, dispatchLabel = 'Dispatch', onCancel, onClearAttachment, rail = false, autoFocus = true, focusToken = null, onEscape = null }) {
   const [text, setText] = React.useState('');
   const [uploads, setUploads] = React.useState([]);
   const taRef = React.useRef(null);
@@ -2441,10 +2482,16 @@ function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatc
         placeholder="Comment — Markdown (+ ```mermaid; > [!NOTE]/[!WARNING]/[!IMPORTANT]; paste/drop images)"
         aria-describedby={rail ? 'anno-composer-word-count' : undefined}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            // GOL-287: Cmd/Ctrl+Enter dispatches straight to the assignee.
+            e.preventDefault(); e.stopPropagation(); fireDispatch();
+          } else if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault(); e.stopPropagation(); fire();
           } else if (e.key === 'Escape') {
-            e.preventDefault(); e.stopPropagation(); cancel();
+            // Esc closes the comments drawer (without wiping the draft) when
+            // the host provides a close; legacy default cancels the draft.
+            e.preventDefault(); e.stopPropagation();
+            if (onEscape) onEscape(); else cancel();
           }
         }}
       />
@@ -2455,12 +2502,11 @@ function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatc
           </span>
         )}
         <div className="anno-composer-actions">
-          <button className="cancel" onClick={cancel}>esc</button>
-          {canDispatch && <button className="send secondary" onClick={fireDispatch} disabled={!text.trim() || isUploading}>{dispatchLabel}</button>}
-          <button className="send" onClick={fire} disabled={!text.trim() || isUploading}>Comment</button>
+          {canDispatch && <button className="send secondary" onClick={fireDispatch} disabled={!text.trim() || isUploading} title="Dispatch immediately (Cmd/Ctrl+Enter)">{dispatchLabel} (cmd+enter)</button>}
+          <button className="send" onClick={fire} disabled={!text.trim() || isUploading} title="Save as a draft comment (Enter)">Comment (enter)</button>
         </div>
       </div>
-      <div className="hint">Enter to send · Shift+Enter newline · Esc cancel</div>
+      <div className="hint">Enter to comment · Shift+Enter newline · Cmd/Ctrl+Enter dispatch · Esc closes the drawer</div>
     </div>
   );
 }

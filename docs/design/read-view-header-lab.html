@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Read view header lab — YIT-109 identity + assignee</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0a0f14; --bg2:#10161d; --bg3:#18202b; --line:#233041; --line2:#1a2533;
+    --t:#e6edf5; --t2:#a6b3c3; --t3:#76879a; --t4:#4e5e73;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+    --accent:#65b8ff; --ok:#4ade80; --warn:#f59e0b; --muted:#2d3a4b;
+  }
+  *{box-sizing:border-box} body{margin:0; background:var(--bg); color:var(--t); font:13px/1.5 var(--sans); -webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .wrap{max-width:1280px; margin:0 auto; padding:28px 20px 40px}
+  h1{margin:0 0 6px; font:700 30px/1.1 var(--sans); letter-spacing:-.02em}
+  .sub{color:var(--t2); max-width:900px; line-height:1.6}
+  .pill{display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border:1px solid var(--line); border-radius:999px; background:var(--bg2); font:600 10px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase}
+  .pill.accent{border-color:rgba(101,184,255,.3); color:var(--accent)}
+  .mono{font-family:var(--mono)}
+  /* controls */
+  .toolbar{position:sticky; top:0; z-index:10; margin:18px -20px 0; padding:14px 20px; background:rgba(10,15,20,.92); backdrop-filter:blur(8px); border-top:1px solid var(--line2); border-bottom:1px solid var(--line)}
+  .seg{display:flex; gap:6px; flex-wrap:wrap}
+  .seg button{appearance:none; border:1px solid var(--line); background:var(--bg2); color:var(--t2); padding:7px 10px; border-radius:8px; font:600 12px/1 var(--sans); cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--t); color:#071018; border-color:var(--t)}
+  .seg button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  /* stage */
+  .stage{margin-top:18px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--bg2)}
+  .stage-head{display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--line2); background:var(--bg3)}
+  .stage-head strong{font:700 11px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--t3)}
+  .specimen{padding:0; background:#0d131a}
+  /* specimen inner — mimic dashboard read view */
+  .dash{padding:14px 18px 0; background:linear-gradient(180deg, #0d131a, #0d131a)}
+  .hdr{display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:12px 16px; background:var(--bg3); border:1px solid var(--line); border-radius:10px; margin:0 0 12px}
+  .hdr .crumb{color:var(--t3); font:600 11px var(--mono)}
+  .chip{display:inline-flex; align-items:center; gap:6px; padding:3px 7px; border-radius:999px; border:1px solid var(--line); background:var(--bg2); font:500 11px var(--mono)}
+  .dot{width:7px; height:7px; border-radius:50%; background:var(--ok)}
+  .title{margin:0 16px; font:700 22px/1.25 var(--sans); letter-spacing:-.02em}
+  .byline{margin:4px 16px 12px; color:var(--t3); font:400 12px var(--sans)}
+  .meta-strip{display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:8px 16px; border-top:1px solid var(--line2); border-bottom:1px solid var(--line2); background:rgba(16,22,29,.6); font:500 11px var(--mono); color:var(--t2)}
+  .meta-strip strong{color:var(--t); font-weight:700}
+  .avatar{width:18px; height:18px; border-radius:999px; display:inline-grid; place-items:center; background:linear-gradient(135deg,#4ade80,#65b8ff); color:#041018; font:700 9px var(--mono)}
+  .copy{border:1px solid var(--line); background:transparent; color:var(--t3); padding:2px 6px; border-radius:6px; font:600 10px var(--mono); cursor:pointer}
+  .hidden{display:none}
+  /* tradeoff table */
+  .grid{display:grid; grid-template-columns:320px 1fr; gap:14px; margin-top:14px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{border:1px solid var(--line); border-radius:10px; background:var(--bg2); padding:14px}
+  .card h3{margin:0 0 6px; font:700 13px var(--sans)}
+  .kv{display:flex; gap:8px; margin:6px 0}
+  .k{min-width:58px; color:var(--t3); font:600 11px var(--mono); text-transform:uppercase}
+  .v{color:var(--t2); font:400 12px/1.5 var(--sans)}
+  table{width:100%; border-collapse:collapse; font:12px/1.5 var(--sans)}
+  th,td{padding:8px 8px; border-bottom:1px solid var(--line2); text-align:left; vertical-align:top}
+  th{color:var(--t3); font:600 10px var(--mono); text-transform:uppercase; letter-spacing:.06em}
+  td{color:var(--t2)}
+  .badge{font:600 10px var(--mono); padding:2px 6px; border-radius:999px; border:1px solid var(--line); background:var(--bg3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px">
+    <span class="pill accent">Decision lab</span>
+    <span class="pill">read view · YIT-109</span>
+  </div>
+  <h1>Where do YIT-109 + assignee live in <em style="color:var(--accent); font-style:normal">/read</em>?</h1>
+  <p class="sub"><strong>Decision:</strong> In the document-only reader (<code class="mono">/read/:id</code>) make the <em>project-scoped id</em> and the <em>current assignee</em> obviously scannable without adding a heavy settings/fields UI. <strong>Invariant:</strong> Same ticket (YIT-109 · <code class="mono">TKT-0644</code> · spec · archived · lead:adr · yitfit), same actions (Edit, open as drawer). <strong>Varies:</strong> where the two facts sit, their prominence, and whether they survive scroll.</p>
+
+  <div class="toolbar" role="toolbar" aria-label="Option switcher">
+    <div class="seg" id="seg" role="group" aria-label="Options">
+      <button data-opt="A" aria-pressed="true">A · Baseline (now)</button>
+      <button data-opt="B" aria-pressed="false">B · Title prefix</button>
+      <button data-opt="C" aria-pressed="false">C · Header pills</button>
+      <button data-opt="D" aria-pressed="false">D · Sticky meta strip</button>
+      <button data-opt="E" aria-pressed="false">E · Compact prop row</button>
+    </div>
+    <span style="margin-left:auto; color:var(--t3); font:500 11px var(--mono)">↑↓ or click · same content, same viewport</span>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="stage-head"><strong id="stageTitle">A · Baseline — small mono in header, assignee hidden</strong><span class="pill" id="stageMeta">archived · lead:adr (hidden)</span></div>
+    <div class="specimen" id="specimen" aria-live="polite"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card" id="detail"></div>
+    <div class="card">
+      <h3>Side-by-side at a glance</h3>
+      <div style="overflow:auto">
+      <table>
+        <thead><tr><th>Option</th><th>Thesis</th><th>+ Benefit</th><th>− Cost</th><th>⚠ Risk</th><th>Effort</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge">A</span> Baseline</td><td>Do nothing — header pill + hidden sidebar</td><td>Zero code</td><td>Identity invisible on scroll; assignee unreachable</td><td>User stays confused</td><td>—</td></tr>
+          <tr><td><span class="badge">B</span> Title prefix</td><td>Document title <em>is</em> the identity</td><td>Most scannable where eyes already land</td><td>Title line gets long; copy still needs affordance</td><td>Clutters long titles</td><td>~1h</td></tr>
+          <tr><td><span class="badge">C</span> Header pills</td><td>Surface what exists, but make it legible</td><td>Tiny diff, reuses pills; fixes without new regions</td><td>Still scrolls away</td><td>Header can wrap on narrow</td><td>~1h</td></tr>
+          <tr><td><span class="badge">D</span> Sticky meta strip</td><td>Identity persists</td><td>Survives scroll; single scan target</td><td>New sticky element, offsets TOC calc</td><td>Extra vertical chrome</td><td>~2–3h</td></tr>
+          <tr><td><span class="badge">E</span> Compact prop row</td><td>Reader keeps a read-only shadow of the drawer</td><td>Familiar mental model; zero new component</td><td>Feels heavier than a doc page</td><td>Temptation to add more fields later</td><td>~1.5h</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p style="color:var(--t3); font:400 11px/1.6 var(--sans); margin:8px 0 0">All options keep the same body, TOC state, and Edit affordance. Pick one winner or a hybrid — e.g. “C + B-title trick” — and I’ll ship only that.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3>How to decide</h3>
+    <p class="sub" style="margin:6px 0 0">Try each option at 1400px + 420px widths (use device toolbar) and check: can you copy YIT-109 in &lt;2 s? Can you tell in one glance who owns it? Does anything flicker or double-render on scroll?</p>
+  </div>
+</div>
+
+<script>
+const specimenEl = document.getElementById('specimen');
+const titleEl = document.getElementById('stageTitle');
+const metaEl = document.getElementById('stageMeta');
+const seg = document.getElementById('seg');
+const detailEl = document.getElementById('detail');
+
+const data = {
+  id: 'YIT-109', globalId: 'TKT-0644',
+  title: 'ADR cards, plainly — replace the stale specs folder with at most 25 tiny decision records',
+  kind: 'spec', state: 'archived', stateLabel: 'archived',
+  project: { name: 'yitfit', glyph: 'YI', color: '#4ade80' },
+  assignee: { label: 'lead:adr', avatar: 'LA', status: 'idle', provider: 'zai' },
+  updated: '50m ago'
+};
+
+const details = {
+  A: { title: 'A · Baseline — small mono in header, assignee hidden', meta: 'archived · assignee hidden in collapsed sidebar', benefit: 'Zero change; truth already in DOM for screen readers.', cost: 'YIT-109 is 11px mono among 3 pills — easily missed; header scrolls away, so after the first paragraph identity is gone; assignee lives in <code>.td-side {display:none}</code> in reader, so “Assigned?” has no answer without opening the drawer.', risk: 'Users keep asking “which ticket is this?” — the exact report.' },
+  B: { title: 'B · Title prefix — identity where the eye lands', meta: 'YIT-109 in title · byline shows owner', benefit: 'Scan path is natural: large H1 is the first thing read. “YIT-109 — ADR cards…” reads like a GitHub issue title. Assignee as byline (“Assigned to lead:adr · idle · archived”) mirrors doc authorship.', cost: 'Title line gets ~8 extra chars; on narrow screens H1 wraps. Need a subtle copy button or title attribute for the raw id.', risk: 'If we ever render the spec title elsewhere (e.g., TOC), must not duplicate the prefix there.' },
+  C: { title: 'C · Header pills — make what exists legible', meta: 'YIT-109 pill enlarged · assignee pill surfaced', benefit: 'Smallest diff: keep the existing header, but un-hide the assignee pill and promote YIT-109 from 11px muted mono to a bordered, copyable pill with the model/provider dot. No new regions, no TOC math change.', cost: 'Still scrolls away with the header — identity disappears after scrolling past the H1.', risk: 'Header row can wrap on <480px: 4 pills (YIT-109, spec, yitfit, archived, lead:adr) → two lines. Acceptable, but must test.' },
+  D: { title: 'D · Sticky meta strip — identity persists on scroll', meta: 'Sticky: YIT-109 · lead:adr · archived', benefit: 'One sticky strip under the header stays pinned while the doc scrolls — identity + owner are always answerable without scrolling back. Copy button is obvious there.', cost: 'Introduces a sticky element that steals 32px of vertical space; TOC left-rail top/maxHeight must account for it (one line of JS).', risk: 'If we add more sticky chrome later (connection banner, TOC), stacking context grows.' },
+  E: { title: 'E · Compact prop row — reader keeps a read-only shadow', meta: 'Single read-only row above body', benefit: 'Reuses the drawer’s known pattern, just read-only and collapsed: “YIT-109  · State archived  · Assignee lead:adr  · Project yitfit”. No new visual language to learn.', cost: 'Feels slightly heavier than a pure doc; adds ~44px above the H1.', risk: 'Once the row exists, pressure to add Priority/Type/links grows — scope creep.' },
+};
+
+function headerBase({showAssigneePill=false, showLargeId=false, showCopy=false}={}){
+  const idPill = `<span class="chip" title="Project-scoped id (copy)"><span class="mono" style="font-weight:700">${showLargeId? `<span style=&quot;color:var(--t); font-size:13px&quot;>${data.id}</span> <span style=&quot;color:var(--t3)&quot;>`+data.globalId+`</span>` : data.id}</span>${showCopy? `<button class="copy" onclick="navigator.clipboard.writeText('${data.id}')">copy</button>`:''}</span>`;
+  const assigneePill = showAssigneePill ? `<span class="chip"><span class="avatar">${data.assignee.avatar}</span> ${data.assignee.label} <span style="color:var(--t3)">· ${data.assignee.status}</span></span>` : ``;
+  return `<div class="hdr">
+    <span class="crumb">← ${data.project.name}</span>
+    ${idPill}
+    <span class="chip">${data.kind}</span>
+    <span class="chip"><span class="dot"></span> ${data.project.glyph} ${data.project.name}</span>
+    <span class="chip" style="border-color:rgba(245,158,11,.3)">${data.state}</span>
+    ${assigneePill}
+    <span style="margin-left:auto"></span>
+  </div>
+  <div style="display:flex; gap:8px; padding:0 16px 10px; color:var(--t3); font:400 11px var(--mono)">created 1h ago · updated ${data.updated}</div>`;
+}
+function byline(){
+  return `<div class="byline"><span class="avatar" style="width:14px;height:14px;font-size:7px">${data.assignee.avatar}</span> Assigned to <strong style="color:var(--t)">${data.assignee.label}</strong> · ${data.state} · ${data.kind} <span style="color:var(--t4)">· Updated ${data.updated}</span></div>`;
+}
+
+function render(opt){
+  let html='';
+  if(opt==='A'){
+    html = headerBase({}) + `<h2 class="title">${data.title}</h2><div style="height:10px"></div>
+      <div style="margin:0 16px 14px; padding:12px; background:#0f1419; border:1px dashed var(--line); border-radius:8px; color:var(--t3); font:11px var(--mono)">Reader sidebar (.td-side) is display:none → Assignee “lead:adr” exists in DOM but hidden. Header scrolls away.</div>`;
+  } else if(opt==='B'){
+    html = headerBase({showLargeId:false}) + `<h2 class="title"><span class="mono" style="color:var(--accent); font-weight:700">${data.id} — </span>${data.title}</h2>${byline()}`;
+  } else if(opt==='C'){
+    html = headerBase({showAssigneePill:true, showCopy:true, showLargeId:true}) + `<h2 class="title">${data.title}</h2>`;
+  } else if(opt==='D'){
+    html = headerBase({showAssigneePill:true, showCopy:true}) + `<div class="meta-strip"><strong>${data.id}</strong> <span style="color:var(--t4)">·</span> <span class="mono">${data.globalId}</span> <span style="width:1px; height:14px; background:var(--line); margin:0 2px"></span> <span class="avatar" style="width:14px;height:14px;font-size:7px">${data.assignee.avatar}</span> ${data.assignee.label} <span class="dot" style="width:6px;height:6px"></span> ${data.assignee.status} <span style="margin-left:auto" class="pill">${data.state}</span> <button class="copy">copy id</button></div><h2 class="title">${data.title}</h2>`;
+  } else if(opt==='E'){
+    html = headerBase({}) + `<div style="margin:0 16px 12px; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px; background:var(--bg2); border:1px solid var(--line); border-radius:10px; font:11px var(--mono)">
+      <div><span style="color:var(--t3)">ID</span> <strong style="color:var(--t); margin-left:6px">${data.id}</strong> <span style="color:var(--t4)">${data.globalId}</span></div>
+      <div><span style="color:var(--t3)">Assignee</span> <strong style="margin-left:6px"><span class="avatar" style="width:14px;height:14px;font-size:7px">${data.assignee.avatar}</span> ${data.assignee.label}</strong></div>
+      <div><span style="color:var(--t3)">State</span> <strong style="margin-left:6px">${data.state}</strong></div>
+      <div><span style="color:var(--t3)">Project</span> <strong style="margin-left:6px">${data.project.glyph} ${data.project.name}</strong></div>
+    </div><h2 class="title">${data.title}</h2>`;
+  }
+  html += `<div style="margin:14px 16px 0; display:flex; gap:8px"><span class="pill">TOC still shows 1. TLDR → 8. After you answer</span><span class="pill">Edit</span></div>
+           <div style="margin:12px 16px 16px; padding:14px; background:var(--bg); border:1px solid var(--line2); border-radius:8px; color:var(--t2); font:13px/1.6 var(--sans)">Spec body excerpt… The actual body is unchanged across options — only the two facts’ placement changes.</div>`;
+  return html;
+}
+
+let current='A';
+function setOpt(opt){
+  current=opt;
+  titleEl.textContent = details[opt].title;
+  metaEl.textContent = details[opt].meta;
+  specimenEl.innerHTML = render(opt);
+  detailEl.innerHTML = `<h3>${details[opt].title}</h3>
+    <div class="kv"><div class="k">Benefit</div><div class="v">${details[opt].benefit}</div></div>
+    <div class="kv"><div class="k">Cost</div><div class="v">${details[opt].cost}</div></div>
+    <div class="kv"><div class="k">Risk</div><div class="v" style="color:#f2b84b">${details[opt].risk}</div></div>
+    <div style="margin-top:10px; display:flex; gap:6px"><span class="badge">Effort noted in table →</span><span style="color:var(--t3); font:11px var(--mono)">No prod code changed; lab is isolated.</span></div>`;
+  for(const b of seg.querySelectorAll('button')) b.setAttribute('aria-pressed', b.dataset.opt===opt ? 'true':'false');
+}
+seg.addEventListener('click', e=>{
+  const b = e.target.closest('button[data-opt]');
+  if(!b) return; setOpt(b.dataset.opt);
+});
+seg.addEventListener('keydown', e=>{
+  const opts=['A','B','C','D','E']; let i=opts.indexOf(current);
+  if(e.key==='ArrowRight') setOpt(opts[(i+1)%5]);
+  if(e.key==='ArrowLeft') setOpt(opts[(i+4)%5]);
+});
+setOpt('A');
+</script>
+</body>
+</html>

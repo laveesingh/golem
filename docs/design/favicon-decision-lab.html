@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Golem favicon — decision lab (not production)</title>
+<script>
+  // Console-error proxy: any runtime error surfaces in the page title so a
+  // headless screenshot catches it without a CDP console.
+  window.onerror = function (msg) { document.title = 'JS ERROR: ' + msg; };
+</script>
+<style>
+  :root {
+    --page-bg: #0d0f12; --surface: #161a1f; --surface-2: #1d232a;
+    --border: #2b333c; --text-0: #f2f3ef; --text-2: #b2bbb7; --text-3: #8d9794;
+    --accent: #4ade80; --clay: #d9c9a8; --clay-2: #b3a07e; --olive: #596b3b;
+    --strip-dark: #202124; --strip-tab: #35363a; --strip-light: #dee1e6; --strip-light-tab: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--page-bg); color: var(--text-0);
+         font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  .lab-banner { border: 1px dashed var(--border); border-radius: 8px; padding: 8px 12px;
+                color: var(--text-3); font-size: 12px; margin-bottom: 18px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--text-2); margin: 0 0 18px; max-width: 860px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .card-head .idx { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .card-head h2 { font-size: 14px; margin: 0; }
+  .thesis { color: var(--text-2); margin: 0 0 12px; font-size: 12.5px; }
+  .sizerow { display: flex; align-items: flex-end; gap: 18px; padding: 10px 12px; background: var(--surface-2);
+             border-radius: 8px; margin-bottom: 10px; }
+  .sizerow .sz { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-3); font-size: 10px; }
+  .strip { display: flex; align-items: stretch; height: 34px; border-radius: 8px 8px 0 0; overflow: hidden;
+           padding: 4px 6px 0; gap: 2px; margin-bottom: 4px; }
+  .strip.light { border-radius: 8px; padding-bottom: 2px; }
+  .strip.dark { background: var(--strip-dark); }
+  .strip.light { background: var(--strip-light); }
+  .tab { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 0 10px; border-radius: 8px 8px 0 0;
+         min-width: 0; white-space: nowrap; overflow: hidden; }
+  .strip.dark .tab { color: #c7cacd; }
+  .strip.light .tab { color: #3c4043; }
+  .strip.dark .tab.active { background: var(--strip-tab); }
+  .strip.light .tab.active { background: var(--strip-light-tab); box-shadow: 0 -1px 2px rgba(0,0,0,.15); }
+  .tab .t { overflow: hidden; text-overflow: ellipsis; }
+  .globe { flex: none; opacity: .75; }
+  .traits { margin: 8px 0 0; padding: 0; list-style: none; font-size: 11.5px; color: var(--text-3); }
+  .traits b { color: var(--text-2); font-weight: 600; }
+  .pickbar { position: sticky; bottom: 0; margin-top: 18px; background: var(--surface); border: 1px solid var(--border);
+             border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+  .pickbar .none { color: var(--text-3); }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<p class="lab-banner">Decision lab — not production. Compares favicon marks for the Golem dashboard
+at real tab scale. Container tile is held constant; only the mark varies. Click or arrow-key between
+cards, press Enter/space to mark your pick.</p>
+<h1>Golem dashboard favicon — 12 marks</h1>
+<p class="sub">Brand anchors taken from the repo: clay/loam surface tones (<code>#d9c9a8</code>, loam theme),
+animating green (<code>#4ade80</code> root accent / sage <code>#9baa91</code> nocturne accent), dark nocturne
+surfaces. Each strip places the mark between favicon-less globe tabs — the exact problem being solved.</p>
+<div class="grid" id="grid"></div>
+<div class="pickbar" aria-live="polite"><span id="pick-label" class="none">No pick yet — click a card or focus it and press Enter.</span><span id="pick-preview"></span></div>
+
+<script>
+const GLOBE = '<svg class="globe" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="#9aa0a6" stroke-width="1.3"/><ellipse cx="8" cy="8" rx="2.6" ry="5.6" fill="none" stroke="#9aa0a6" stroke-width="1.1"/><path d="M2.8 8h10.4" stroke="#9aa0a6" stroke-width="1.1"/></svg>';
+
+// Every mark lives on the same 32×32 rounded tile so only the mark varies.
+const T = 'rect x="1" y="1" width="30" height="30" rx="7" fill="#101216" stroke="#2b333c"';
+const CLAY = '#d9c9a8', CLAY2 = '#b3a07e', GRN = '#4ade80', OLIVE = '#596b3b';
+
+const OPTIONS = [
+  { id: 'emet-glint', name: 'Emet Glint',
+    thesis: 'Clay slab with the green seam of life cracking through it — the moment the golem animates.',
+    benefit: 'Most ownable image; reads as "animated clay" at 16px with one green zigzag on a tan block.',
+    cost: 'Crack direction/shape needs one agreed drawing; variants multiply easily.',
+    risk: 'Zigzag alone can read as "broken" if drawn thin.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><rect x="8.5" y="7.5" width="15" height="19" rx="2" fill="${CLAY}"/><rect x="8.5" y="7.5" width="15" height="19" rx="2" fill="none" stroke="${CLAY2}" stroke-width="1"/><path d="M16 9.5 L14.2 13 L17 16.5 L14.6 20 L16.4 23" fill="none" stroke="${GRN}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>` },
+
+  { id: 'golem-mask', name: 'Golem Mask',
+    thesis: 'The face itself — slab brow, two lit eyes, carved mouth. Character-forward.',
+    benefit: 'Instantly a "creature", not an abstraction; eyes give the tab a face that stands out.',
+    cost: 'Most elements of the set; needs bigger silent space to stay clean at 16px.',
+    risk: 'At 16px the mouth may muddy — drop it in the production draw if so.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><path d="M8 27 L8 12 Q8 7.5 16 7.5 Q24 7.5 24 12 L24 27 Q20 28.5 16 28.5 Q12 28.5 8 27 Z" fill="${CLAY}"/><rect x="10.5" y="13" width="4.5" height="3.4" rx="0.8" fill="${GRN}"/><rect x="17" y="13" width="4.5" height="3.4" rx="0.8" fill="${GRN}"/><rect x="13" y="21.5" width="6" height="1.8" rx="0.9" fill="${OLIVE}"/></svg>` },
+
+  { id: 'aleph-shem', name: 'Aleph (Shem)',
+    thesis: 'The animating letter — א carved in clay. The word that wakes the golem.',
+    benefit: 'Deep lore fit in one glyph; quiet and distinctive among dev-tool favicons.',
+    cost: 'Production SVG needs the glyph as a path, not font text, to render identically everywhere.',
+    risk: 'Opaque to anyone who does not know the golem story; single thin glyph is the least 16px-safe shape here.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><rect x="6.5" y="6.5" width="19" height="19" rx="2.5" fill="${CLAY}"/><text x="16" y="21.5" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="15" fill="${OLIVE}">א</text></svg>` },
+
+  { id: 'clay-stack', name: 'Clay Stack',
+    thesis: 'The golem mid-assembly — slabs being laid on slabs. Agents assembled into a worker.',
+    benefit: 'Reads as "build/stack" instantly; closest to an infra-tool signal; very 16px-safe geometry.',
+    cost: 'Least literal golem; story lives only in the name.',
+    risk: 'Generic "layers" icon collision with ordinary cloud/stack marks.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><rect x="7" y="20" width="18" height="6" rx="1.5" fill="${CLAY}"/><rect x="9" y="13.5" width="14" height="5" rx="1.5" fill="${CLAY2}"/><rect x="11" y="7.5" width="10" height="4.5" rx="1.5" fill="${CLAY}"/><rect x="12.5" y="11.75" width="7" height="1.5" rx="0.75" fill="${GRN}"/></svg>` },
+
+  { id: 'swarm-orbit', name: 'Swarm Orbit',
+    thesis: 'Lead with workers in orbit — the team-ops surface of the product.',
+    benefit: 'Says "orchestration" with no letters; maps to the dashboard\'s actual mental model.',
+    cost: 'Dot ring is the most common mark in agent-tooling branding.',
+    risk: 'Outer dots are ~1px at 16px — the weakest small-size legibility of the set.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><circle cx="16" cy="16" r="3.6" fill="${GRN}"/><circle cx="16" cy="6.8" r="2.1" fill="${CLAY}"/><circle cx="23.7" cy="11.4" r="2.1" fill="${CLAY}"/><circle cx="23.7" cy="20.6" r="2.1" fill="${CLAY}"/><circle cx="16" cy="25.2" r="2.1" fill="${CLAY}"/><circle cx="8.3" cy="20.6" r="2.1" fill="${CLAY}"/><circle cx="8.3" cy="11.4" r="2.1" fill="${CLAY}"/></svg>` },
+
+  { id: 'terminal-golem', name: 'Terminal Golem',
+    thesis: 'A golem face whose mouth is a `>_` prompt — the creature is also a dev surface.',
+    benefit: 'Anchors identity in "agent harness" without cliché robot iconography.',
+    cost: 'Two ideas (face + prompt) in 16px; the prompt glyphs must stay chunky.',
+    risk: 'Reads as "terminal app" first, golem second.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><path d="M8 27 L8 12 Q8 7.5 16 7.5 Q24 7.5 24 12 L24 27 Q20 28.5 16 28.5 Q12 28.5 8 27 Z" fill="${CLAY}"/><path d="M10.5 13 L13.5 15.5 L10.5 18" fill="none" stroke="${GRN}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="15.5" y="17" width="6" height="2.2" rx="1.1" fill="${GRN}"/></svg>` },
+
+  { id: 'makers-hand', name: "Maker's Hand",
+    thesis: 'The hand of the animatoR over the resting slab — orchestration as touch, not metaphor.',
+    benefit: 'The only option about the maker, not the made — fits "you steer, agents work".',
+    cost: 'Hand silhouettes are the hardest shape to keep honest at 16px.',
+    risk: 'Can read as "hand = support/helpdesk" out of context.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><rect x="7" y="19.5" width="18" height="6.5" rx="1.8" fill="${CLAY}"/><path d="M9.5 15.5 Q9.5 8.5 16 8.5 Q22.5 8.5 22.5 15.5 L22.5 16.5 Q16 14.8 9.5 16.5 Z" fill="${CLAY2}"/><path d="M16 16.5 L16 19.5" stroke="${GRN}" stroke-width="2" stroke-linecap="round"/></svg>` },
+
+  { id: 'carved-g', name: 'Carved G',
+    thesis: 'A chiseled letter G — the plain wordmark play, carved into clay with a lit cut.',
+    benefit: 'Strongest single-glyph recognition; zero ambiguity at 16px; cheapest to keep consistent.',
+    cost: 'Says nothing about agents, swarms, or animation.',
+    risk: 'Letter-G favicons are common; relies on color pairing to be ownable.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><path d="M22.5 10.5 Q19 7.5 15.5 7.5 Q9 7.5 9 16 Q9 24.5 15.5 24.5 Q22 24.5 22.5 17.5 L16.5 17.5" fill="none" stroke="${CLAY}" stroke-width="3.4" stroke-linecap="round"/><rect x="20" y="15.6" width="3" height="3" rx="0.6" fill="${GRN}"/></svg>` },
+
+  { id: 'emet-plaque', name: 'Emet Plaque',
+    thesis: 'The forehead plaque itself — the seal that carries truth (אמת), glowing as it animates.',
+    benefit: 'A focused, ownable crop of the lore; plaque stays legible even when the glyphs blur.',
+    cost: 'Glyphs inside are decorative at 16px — accepted, not resolved.',
+    risk: 'Out of context it may read as a cookie or a badge.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><rect x="6.5" y="10" width="19" height="12" rx="3" fill="${CLAY}"/><text x="16" y="19.6" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="8.5" fill="${OLIVE}">אמת</text><path d="M10 24.5 L22 24.5" stroke="${GRN}" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/></svg>` },
+
+  { id: 'golem-pair', name: 'Golem Pair',
+    thesis: 'One big golem block, one small awakened one — lead and worker in two shapes.',
+    benefit: 'Encodes the spawn/worker relationship; the green spark marks which one is alive.',
+    cost: 'Two-subject composition spends its 16px budget on relationship, not identity.',
+    risk: 'Reads as "copy/duplicate" icon at a glance.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><rect x="6.5" y="8.5" width="12" height="17" rx="2" fill="${CLAY}"/><rect x="6.5" y="8.5" width="12" height="17" rx="2" fill="none" stroke="${CLAY2}"/><rect x="19.5" y="14.5" width="8.5" height="11" rx="2" fill="${CLAY2}"/><rect x="21.6" y="17" width="4.3" height="2.4" rx="0.7" fill="${GRN}"/></svg>` },
+
+  { id: 'life-spark', name: 'Life Spark',
+    thesis: 'A bolt of animation sealed inside a stone ring — energy contained in the vessel.',
+    benefit: 'High contrast in one glance; bolt-in-ring survives 16px best of the story marks.',
+    cost: 'Bolt = electricity/energy clichés; the clay ring must stay visibly stone (warm tone).',
+    risk: 'Coin-like; can read as a "power/battery" mark.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><circle cx="16" cy="16" r="9.5" fill="none" stroke="${CLAY}" stroke-width="3.2"/><path d="M17.4 9.5 L12.5 17.2 L15.6 17.2 L14.2 22.8 L19.6 14.9 L16.3 14.9 Z" fill="${GRN}"/></svg>` },
+
+  { id: 'monolith', name: 'Monolith',
+    thesis: 'One standing slab, one lit eye. Reduction to the minimum that is still a golem.',
+    benefit: 'The safest 16px mark in the set; calm, singular, ages well at any size.',
+    cost: 'So reduced it borders on abstract; eye slit is doing all the work.',
+    risk: 'Reads as "server/chassis" before it reads as golem.',
+    svg: `<svg width="32" height="32" viewBox="0 0 32 32"><${T}/><rect x="10" y="6" width="12" height="22" rx="2.5" fill="${CLAY}"/><rect x="10" y="6" width="12" height="22" rx="2.5" fill="none" stroke="${CLAY2}"/><rect x="13.2" y="10.5" width="5.6" height="2.6" rx="1.1" fill="${GRN}"/></svg>` },
+];
+
+function stripFor(opt, theme) {
+  const dark = theme === 'dark';
+  const g = GLOBE;
+  return `<div class="strip ${theme}" aria-hidden="true">
+    <div class="tab">${g}<span class="t">Docs</span></div>
+    <div class="tab">${g}<span class="t">Figma</span></div>
+    <div class="tab active">${opt.svg.replace('width="32" height="32"', 'width="16" height="16"')}<span class="t">Golem · Dashboard</span><span style="opacity:.6">✕</span></div>
+    <div class="tab">${g}<span class="t">GitHub</span></div>
+    <div class="tab">${g}<span class="t">Usage</span></div>
+  </div>`;
+}
+
+function card(opt, i) {
+  const sizes = [16, 32, 48].map(s =>
+    `<span class="sz">${opt.svg.replace('width="32" height="32"', `width="${s}" height="${s}"`)}${s}px</span>`).join('');
+  return `<button class="card" id="opt-${opt.id}" aria-pressed="false" data-idx="${i}">
+    <div class="card-head"><span class="idx">${String(i + 1).padStart(2, '0')}</span><h2>${opt.name}</h2></div>
+    <p class="thesis">${opt.thesis}</p>
+    <div class="sizerow">${sizes}</div>
+    ${stripFor(opt, 'dark')}
+    ${stripFor(opt, 'light')}
+    <ul class="traits">
+      <li><b>+</b> ${opt.benefit}</li>
+      <li><b>−</b> ${opt.cost}</li>
+      <li><b>⚠</b> ${opt.risk}</li>
+    </ul>
+  </button>`;
+}
+
+const grid = document.getElementById('grid');
+grid.innerHTML = OPTIONS.map(card).join('');
+
+let focusIdx = -1, picked = -1;
+const cards = [...grid.querySelectorAll('.card')];
+
+function renderPick() {
+  cards.forEach((c, i) => {
+    c.setAttribute('aria-pressed', String(i === picked));
+    c.style.borderColor = i === picked ? 'var(--accent)' : '';
+  });
+  const label = document.getElementById('pick-label');
+  const prev = document.getElementById('pick-preview');
+  if (picked < 0) { label.textContent = 'No pick yet — click a card or focus it and press Enter.'; prev.innerHTML = ''; }
+  else {
+    label.textContent = `Picked: ${OPTIONS[picked].name} — say the word and we implement it as the dashboard favicon.`;
+    prev.innerHTML = OPTIONS[picked].svg;
+  }
+}
+
+grid.addEventListener('click', (e) => {
+  const cardEl = e.target.closest('.card');
+  if (!cardEl) return;
+  picked = Number(cardEl.dataset.idx);
+  renderPick();
+});
+
+grid.addEventListener('keydown', (e) => {
+  if (!['ArrowRight', 'ArrowLeft', 'Enter', ' '].includes(e.key)) return;
+  e.preventDefault();
+  if (e.key === 'ArrowRight') focusIdx = Math.min(OPTIONS.length - 1, focusIdx + 1);
+  else if (e.key === 'ArrowLeft') focusIdx = Math.max(0, focusIdx - 1);
+  else if (focusIdx >= 0) { picked = focusIdx; renderPick(); return; }
+  if (focusIdx >= 0) cards[focusIdx].focus();
+});
+
+renderPick();
+</script>
+</body>
+</html>
