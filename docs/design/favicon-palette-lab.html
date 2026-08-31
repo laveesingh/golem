@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Golem favicon palette — decision lab (not production)</title>
+<script>
+  window.onerror = function (msg, src, line, col) { document.title = 'JS ERROR: ' + msg + ' @' + line + ':' + col; };
+</script>
+<style>
+  :root {
+    --page-bg: #0d0f12; --surface: #161a1f; --surface-2: #1d232a;
+    --border: #2b333c; --text-0: #f2f3ef; --text-2: #b2bbb7; --text-3: #8d9794;
+    --accent: #4ade80;
+    --strip-dark: #202124; --strip-tab: #35363a; --strip-light: #dee1e6; --strip-light-tab: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--page-bg); color: var(--text-0);
+         font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  .lab-banner { border: 1px dashed var(--border); border-radius: 8px; padding: 8px 12px;
+                color: var(--text-3); font-size: 12px; margin-bottom: 18px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--text-2); margin: 0 0 18px; max-width: 880px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: left; }
+  .card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .card-head .idx { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .card-head h2 { font-size: 14px; margin: 0; }
+  .thesis { color: var(--text-2); margin: 0 0 12px; font-size: 12.5px; }
+  .sizerow { display: flex; align-items: flex-end; gap: 18px; padding: 10px 12px; background: var(--surface-2);
+             border-radius: 8px; margin-bottom: 10px; }
+  .sizerow .sz { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-3); font-size: 10px; }
+  .swatches { display: flex; gap: 5px; margin: 0 0 10px; }
+  .swatches span { width: 26px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,.12); }
+  .strip { display: flex; align-items: stretch; height: 34px; border-radius: 8px 8px 0 0; overflow: hidden;
+           padding: 4px 6px 0; gap: 2px; margin-bottom: 4px; }
+  .strip.light { border-radius: 8px; padding-bottom: 2px; }
+  .strip.dark { background: var(--strip-dark); }
+  .strip.light { background: var(--strip-light); }
+  .tab { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 0 10px; border-radius: 8px 8px 0 0;
+         min-width: 0; white-space: nowrap; overflow: hidden; }
+  .strip.dark .tab { color: #c7cacd; }
+  .strip.light .tab { color: #3c4043; }
+  .strip.dark .tab.active { background: var(--strip-tab); }
+  .strip.light .tab.active { background: var(--strip-light-tab); box-shadow: 0 -1px 2px rgba(0,0,0,.15); }
+  .tab .t { overflow: hidden; text-overflow: ellipsis; }
+  .globe { flex: none; opacity: .75; }
+  .traits { margin: 8px 0 0; padding: 0; list-style: none; font-size: 11.5px; color: var(--text-3); }
+  .traits b { color: var(--text-2); font-weight: 600; }
+  .pickbar { position: sticky; bottom: 0; margin-top: 18px; background: var(--surface); border: 1px solid var(--border);
+             border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+  .pickbar .none { color: var(--text-3); }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<p class="lab-banner">Decision lab — not production. Mark is locked (Swarm Orbit, option 5): geometry,
+dot sizes and layout are identical in every card; only the palette varies.</p>
+<h1>Swarm Orbit — palette directions</h1>
+<p class="sub">Same 6-worker + haloed-lead mark in every variant. Judge on the real decision axes:
+pop against a dark tab bar, distinctness from globe-only tabs, mood fit for an agent-orchestration dashboard.
+Click or arrow-key between cards, Enter/space to mark your pick.</p>
+<div class="grid" id="grid"></div>
+<div class="pickbar" aria-live="polite"><span id="pick-label" class="none">No pick yet — click a card or focus it and press Enter.</span><span id="pick-preview"></span></div>
+
+<script>
+const GLOBE = '<svg class="globe" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="#9aa0a6" stroke-width="1.3"/><ellipse cx="8" cy="8" rx="2.6" ry="5.6" fill="none" stroke="#9aa0a6" stroke-width="1.1"/><path d="M2.8 8h10.4" stroke="#9aa0a6" stroke-width="1.1"/></svg>';
+
+// Fixed geometry: workers on an r=9.6 orbit, halo r=6 @ .22, lead core r=3.4.
+const W = [[16,6.4],[24.31,11.2],[24.31,20.8],[16,25.6],[7.69,20.8],[7.69,11.2]];
+
+function swarmSVG({ tile, workers, lead, halo }) {
+  const dots = W.map(([x, y], i) =>
+    `<circle cx="${x}" cy="${y}" r="2.15" fill="${workers[i % workers.length]}"/>`).join('');
+  return `<svg width="32" height="32" viewBox="0 0 32 32">` +
+    `<rect x="1" y="1" width="30" height="30" rx="7" fill="${tile}" stroke="rgba(255,255,255,.10)"/>` +
+    dots +
+    `<circle cx="16" cy="16" r="6" fill="${halo}" opacity="0.22"/>` +
+    `<circle cx="16" cy="16" r="3.4" fill="${lead}"/>` +
+    `</svg>`;
+}
+
+const PALETTES = [
+  { id: 'ember-forge', name: 'Ember Forge',
+    thesis: 'The golem forged in fire — amber ramp on near-black, white-hot lead.',
+    colors: ['#141210', '#f59e0b', '#d97706', '#fbbf24', '#fef3c7'],
+    benefit: 'Warm, premium, high-contrast; the white-hot center reads as "alive" at any size.',
+    cost: 'Leaves the repo\'s green accent behind.',
+    risk: 'Amber reads "warning/status" to dashboard eyes.' },
+  { id: 'aurora-indigo', name: 'Aurora Indigo',
+    thesis: 'Deep indigo night, cyan/violet workers, bright lead — the modern AI-tool look.',
+    colors: ['#1e1b3a', '#22d3ee', '#a78bfa', '#f5f3ff', '#a78bfa'],
+    benefit: 'Most contemporary palette; unmistakable against earth-toned tabs.',
+    cost: 'Indigo/violet is the most crowded corner of AI branding.',
+    risk: 'May read as "another AI wrapper".' },
+  { id: 'mint-signal', name: 'Mint Signal',
+    thesis: 'Monochrome mint on charcoal — one hue, three luminances, zero noise.',
+    colors: ['#0c1210', '#34d399', '#6ee7b7', '#ecfdf5', '#34d399'],
+    benefit: 'Extremely clean and modern; strongest "calm tool" signal at 16px.',
+    cost: 'Less story than two-tone marks.',
+    risk: 'Monochrome can underwhelm next to colorful neighbors.' },
+  { id: 'sunset-orbit', name: 'Sunset Orbit',
+    thesis: 'Deep plum sky, orange and pink workers, a golden lead — dusk over Prague.',
+    colors: ['#2a1530', '#fb923c', '#f472b6', '#fde047', '#fb923c'],
+    benefit: 'Warm-cool contrast makes every dot visible; distinctive mood.',
+    cost: 'Playful rather than infra-serious.',
+    risk: 'Pink/orange may clash with dashboard accent colors on hover states.' },
+  { id: 'deep-sea', name: 'Deep Sea',
+    thesis: 'Abyssal teal tile, aqua workers, pale lead — bioluminescence at depth.',
+    colors: ['#0b1e2d', '#38bdf8', '#2dd4bf', '#e0f2fe', '#38bdf8'],
+    benefit: 'Cool, focused, great dark-tab-bar pop without AI-cliché violet.',
+    cost: 'Bluish family blends with many dev-tool tabs.',
+    risk: 'Neighboring blue tabs (Cloudflare, Grok) reduce distinctness.' },
+  { id: 'neo-clay', name: 'Neo Clay',
+    thesis: 'The brand story, heated up — real clays and an ember lead instead of pale beige.',
+    colors: ['#17130f', '#e8b98a', '#c98d5f', '#ffb454', '#ffb454'],
+    benefit: 'Keeps the loam/clay identity; fixes the blandness with saturation and a hot center.',
+    cost: 'Still an earth palette — modest pop next to neon neighbors.',
+    risk: 'Closest to the palette you just rejected; must be different enough.' },
+  { id: 'nebula', name: 'Nebula',
+    thesis: 'Violet dust cloud — lavender and periwinkle workers around a magenta lead.',
+    colors: ['#17111f', '#c084fc', '#818cf8', '#f472b6', '#c084fc'],
+    benefit: 'Rich and distinctive; magenta lead is rare among dev tabs.',
+    cost: 'Purple family is heavily used by AI products.',
+    risk: 'Same "AI wrapper" signal as Aurora, with less contrast.' },
+  { id: 'gilded', name: 'Gilded',
+    thesis: 'Black tile, brass and gold workers, warm white lead — a seal, not an app icon.',
+    colors: ['#0d0d0d', '#d4af37', '#8c6d1f', '#ffe9a3', '#d4af37'],
+    benefit: 'Premium and ownable; gold-on-black is rare in tab bars and reads "crafted".',
+    cost: 'Understated; the golem story is invisible without the name.',
+    risk: 'Gold-on-black may feel "luxury crypto" to some eyes.' },
+  { id: 'prism', name: 'Prism',
+    thesis: 'Every worker its own hue around a white lead — the swarm is many-colored by nature.',
+    colors: ['#17111f', '#c084fc', '#818cf8', '#ffffff', '#a78bfa'],
+    benefit: 'Maximum tab distinctness; literally represents six different agents.',
+    cost: 'Busiest option; hardest to keep tidy at 16px.',
+    risk: 'Rainbow favicons read as playful/consumer, not infra.' },
+  { id: 'ivory-spark', name: 'Ivory + Spark',
+    thesis: 'Quiet ice-gray swarm with exactly one green spark — the repo accent kept as the only color.',
+    colors: ['#101418', '#cbd5e1', '#9aa7b3', '#4ade80', '#4ade80'],
+    benefit: 'Calmest possible base with a built-in brand hook; the green dot is instantly findable.',
+    cost: 'Two-color restraint again — the thing you found bland, executed hotter.',
+    risk: 'If the spark is the only color, blandness risk returns if green is muted.' },
+];
+
+function swarmOpts(p) {
+  const [tile, a, b, lead, halo] = p.colors;
+  return swarmSVG({ tile, workers: p.id === 'prism'
+    ? ['#f87171', '#fbbf24', '#4ade80', '#22d3ee', '#818cf8', '#e879f9']
+    : [a, b], lead, halo });
+}
+
+function stripFor(svg, theme) {
+  return `<div class="strip ${theme}" aria-hidden="true">
+    <div class="tab">${GLOBE}<span class="t">Docs</span></div>
+    <div class="tab">${GLOBE}<span class="t">Figma</span></div>
+    <div class="tab active">${svg.replace('width="32" height="32"', 'width="16" height="16"')}<span class="t">Golem · Dashboard</span><span style="opacity:.6">✕</span></div>
+    <div class="tab">${GLOBE}<span class="t">GitHub</span></div>
+    <div class="tab">${GLOBE}<span class="t">Usage</span></div>
+  </div>`;
+}
+
+function card(p, i) {
+  const svg = swarmOpts(p);
+  const sizes = [16, 32, 48].map(s =>
+    `<span class="sz">${svg.replace('width="32" height="32"', `width="${s}" height="${s}"`)}${s}px</span>`).join('');
+  return `<button class="card" id="opt-${p.id}" aria-pressed="false" data-idx="${i}">
+    <div class="card-head"><span class="idx">${String(i + 1).padStart(2, '0')}</span><h2>${p.name}</h2></div>
+    <p class="thesis">${p.thesis}</p>
+    <div class="sizerow">${sizes}</div>
+    <div class="swatches">${p.colors.map(c => `<span style="background:${c}" title="${c}"></span>`).join('')}</div>
+    ${stripFor(svg, 'dark')}
+    ${stripFor(svg, 'light')}
+    <ul class="traits">
+      <li><b>+</b> ${p.benefit}</li>
+      <li><b>−</b> ${p.cost}</li>
+      <li><b>⚠</b> ${p.risk}</li>
+    </ul>
+  </button>`;
+}
+
+const grid = document.getElementById('grid');
+grid.innerHTML = PALETTES.map(card).join('');
+
+let focusIdx = -1, picked = -1;
+const cards = [...grid.querySelectorAll('.card')];
+
+function renderPick() {
+  cards.forEach((c, i) => {
+    c.setAttribute('aria-pressed', String(i === picked));
+    c.style.borderColor = i === picked ? 'var(--accent)' : '';
+  });
+  const label = document.getElementById('pick-label');
+  const prev = document.getElementById('pick-preview');
+  if (picked < 0) { label.textContent = 'No pick yet — click a card or focus it and press Enter.'; prev.innerHTML = ''; }
+  else {
+    label.textContent = `Picked: ${PALETTES[picked].name} — we cut the production favicon in this palette next.`;
+    prev.innerHTML = swarmOpts(PALETTES[picked]);
+  }
+}
+
+grid.addEventListener('click', (e) => {
+  const cardEl = e.target.closest('.card');
+  if (!cardEl) return;
+  picked = Number(cardEl.dataset.idx);
+  renderPick();
+});
+
+grid.addEventListener('keydown', (e) => {
+  if (!['ArrowRight', 'ArrowLeft', 'Enter', ' '].includes(e.key)) return;
+  e.preventDefault();
+  if (e.key === 'ArrowRight') focusIdx = Math.min(PALETTES.length - 1, focusIdx + 1);
+  else if (e.key === 'ArrowLeft') focusIdx = Math.max(0, focusIdx - 1);
+  else if (focusIdx >= 0) { picked = focusIdx; renderPick(); return; }
+  if (focusIdx >= 0) cards[focusIdx].focus();
+});
+
+renderPick();
+document.title = 'LAB OK — cards=' + cards.length;
+</script>
+</body>
+</html>
