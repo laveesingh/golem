@@ -27,6 +27,10 @@ import { readChannels } from './channels.js';
 import { readProjectMilestones } from './milestones.js';
 import { updateProjectLsp } from '../../lib/lsp.js';
 
+export function stableWatchedPaths(paths) {
+  return [...new Set(paths)].sort();
+}
+
 export function createState() {
   const ee = new EventEmitter();
   ee.setMaxListeners(64);
@@ -46,6 +50,7 @@ export function createState() {
   let channels = [];
 
   let watcher = null;
+  let lastWatchedPathsFingerprint = null;
   let rediscoverTimer = null;
   let nativeSessionsTimer = null;
   const refreshTimers = new Map();
@@ -219,7 +224,9 @@ export function createState() {
         if (p.summaryFile) paths.push(p.summaryFile);
       }
     }
-    return paths;
+    // Discovery order changes with project activity. Treat this as a set so a
+    // recency-only reorder cannot trigger an FSEvents teardown and rebuild.
+    return stableWatchedPaths(paths);
   }
 
   async function rediscover() {
@@ -251,23 +258,33 @@ export function createState() {
     }
     projects = next;
 
-    // Re-attach the watcher so newly-added/removed files are observed.
-    if (watcher) {
-      await watcher.close();
-      watcher = null;
-    }
-    watcher = chokidar.watch(watchedPaths(), {
-      persistent: true,
-      ignoreInitial: true,
-      // Journal files see lots of appends; smooth them out.
-      awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 40 },
-    });
+    // Re-attach the watcher only when the watched-path set actually changed.
+    // Issue #34 family (dashboard stability): rebuilding the FSEvents watcher
+    // on every 30s rediscover costs a large fs-scan + fsevents teardown burst
+    // on macOS 26 and intermittently blocks the event loop for 7–42s. The
+    // watch set is stable in practice, so compare fingerprints and rebuild
+    // only on real change; per-file churn is still handled by change events.
+    const nextPaths = watchedPaths();
+    const nextPathsFingerprint = JSON.stringify(nextPaths);
+    if (!watcher || nextPathsFingerprint !== lastWatchedPathsFingerprint) {
+      if (watcher) {
+        await watcher.close();
+        watcher = null;
+      }
+      watcher = chokidar.watch(nextPaths, {
+        persistent: true,
+        ignoreInitial: true,
+        // Journal files see lots of appends; smooth them out.
+        awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 40 },
+      });
+      lastWatchedPathsFingerprint = nextPathsFingerprint;
 
-    watcher
-      .on('add', onProjectFileChange)
-      .on('change', onProjectFileChange)
-      .on('unlink', onProjectFileChange)
-      .on('error', (err) => console.error('[watcher]', err));
+      watcher
+        .on('add', onProjectFileChange)
+        .on('change', onProjectFileChange)
+        .on('unlink', onProjectFileChange)
+        .on('error', (err) => console.error('[watcher]', err));
+    }
 
     ee.emit('event', { type: 'projects-list', projects: projects.map(projectSummary) });
   }
