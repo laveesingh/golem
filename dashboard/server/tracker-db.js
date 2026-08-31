@@ -893,9 +893,9 @@ WHERE state_changed_at IS NULL`).run();
             last_error = @delivery_error,
             delivered_at = CASE WHEN @delivery_state IN ('accepted', 'settled', 'interrupted', 'recovery_required')
               THEN COALESCE(delivered_at, @delivery_attempted_at) ELSE delivered_at END,
-            delivery_opportunity_at = CASE WHEN @delivery_state = 'accepted'
+            delivery_opportunity_at = CASE WHEN @delivery_state IN ('accepted', 'claimed')
               THEN COALESCE(delivery_opportunity_at, @delivery_attempted_at) ELSE delivery_opportunity_at END,
-            ack_deadline_at = CASE WHEN @delivery_state = 'accepted' AND kind = 'ticket_dispatch'
+            ack_deadline_at = CASE WHEN @delivery_state IN ('accepted', 'claimed') AND kind = 'ticket_dispatch'
               THEN COALESCE(ack_deadline_at, @ack_deadline_at) ELSE ack_deadline_at END,
             claimed_at = CASE WHEN @delivery_state = 'claimed' THEN COALESCE(claimed_at, @delivery_attempted_at) ELSE claimed_at END,
             accepted_at = CASE WHEN @delivery_state = 'accepted' THEN COALESCE(accepted_at, @delivery_attempted_at) ELSE accepted_at END,

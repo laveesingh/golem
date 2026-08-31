@@ -333,10 +333,13 @@ async function main() {
   await harness.emit('input', { source: 'extension', text: 'first native turn' });
   harness.setIdle(false);
   await harness.emit('agent_start', {});
+  // Issue #34: the idle branch responds instantly with a queued-accept
+  // (`accepted: true`, lifecycle 'claimed') — turn start settles async via
+  // the pendingAcceptance lifecycle and pickup, not on the HTTP response.
   const firstResponse = await firstPromise;
   const firstBody = await firstResponse.json();
   assert.equal(firstBody.accepted, true);
-  assert.equal(firstBody.delivery_state, 'accepted');
+  assert.equal(firstBody.delivery_state, 'claimed');
   assert.equal(firstBody.accepted_attempt_id, 'attempt-first');
 
   // While Pi is active mid-turn, a subsequent brief is accepted and delivered
@@ -410,8 +413,10 @@ async function main() {
   let preCrashLease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === preCrashId);
   const preCrashResponse = postLease(preCrashLease, typedEnvelope(preCrashId, 'precrash', 'retry after preaccept crash', 'brief', 'pre-attempt-a'));
   await waitFor(() => preCrash.sent.length === 1, 'pre-crash injection did not start');
+  // Issue #34: queued-accept answers immediately with lifecycle 'claimed';
+  // a shutdown before pickup still releases the exact claim for replay below.
+  assert.equal((await preCrashResponse).status, 200);
   await preCrash.emit('session_shutdown', { reason: 'quit' });
-  assert.equal((await preCrashResponse).status, 503);
   const preCrashRestart = createHarness(extension, preCrashId, { reason: 'resume' });
   await preCrashRestart.start();
   preCrashLease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === preCrashId);
@@ -465,7 +470,9 @@ async function main() {
   displaced.setIdle(false);
   await displaced.emit('agent_start', {});
   const displacedResponse = await displacedStart;
-  assert.equal((await displacedResponse.json()).delivery_state, 'accepted');
+  // Issue #34: queued-accept contract — response reflects the queued lifecycle;
+  // the claim advances to accepted/turn-correlated internally via agent_start.
+  assert.equal((await displacedResponse.json()).delivery_state, 'claimed');
   displaced.setIdle(true);
   await displaced.emit('agent_settled', {});
   await waitFor(() => displaced.sent.length === 2, 'deferred unrelated input was not replayed after typed settlement');
@@ -500,7 +507,8 @@ async function main() {
   await preInput.emit('input', { source: 'extension', text: 'delayed by earlier input extension' });
   preInput.setIdle(false);
   await preInput.emit('agent_start', {});
-  assert.equal((await (await preInputStart).json()).delivery_state, 'accepted');
+  // Issue #34: queued-accept contract — response reflects the queued lifecycle.
+  assert.equal((await (await preInputStart).json()).delivery_state, 'claimed');
   preInput.setIdle(true);
   await preInput.emit('agent_settled', {});
   assert.equal((await (await preInputInterrupt).json()).accepted, true);
@@ -542,8 +550,10 @@ async function main() {
   const durableTyped = postLease(durableInputLease, typedEnvelope(durableInputId, 'durable-owner', 'typed owner before crash'));
   await waitFor(() => durableInput.sent.length === 1, 'durable typed injection did not begin');
   assert.equal((await durableInput.emit('input', { source: 'rpc', text: 'survive worker restart' })).action, 'handled');
+  // Issue #34: queued-accept — the push answers immediately (200, 'claimed');
+  // the crash below still releases the unaccepted typed claim on restart.
+  assert.equal((await durableTyped).status, 200);
   await durableInput.emit('session_shutdown', { reason: 'crash' });
-  assert.equal((await durableTyped).status, 503);
   const durableRestart = createHarness(extension, durableInputId, { reason: 'resume' });
   await durableRestart.start();
   await waitFor(() => durableRestart.sent.length === 1, 'restart did not replay durable deferred input');
@@ -616,7 +626,12 @@ async function main() {
   await waitFor(() => timeoutHarness.sent.length === 1, 'late-start typed injection did not begin');
   const timeoutControl = await postLease(timeoutLease, typedEnvelope(timeoutId, 'late-interrupt', 'interrupt before late start', 'interrupt'));
   assert.equal(timeoutControl.status, 503);
-  assert.equal((await (await timeoutTyped).json()).delivery_state, 'recovery_required');
+  // Issue #34: queued-accept contract — the response returns at once with the
+  // queued lifecycle, and the 250ms recovery window becomes the pickup guard.
+  assert.equal((await (await timeoutTyped).json()).delivery_state, 'claimed');
+  await sleep(300);
+  assert.equal(readJson(path.join(env.GOLEM_HOME, 'pi-workers', timeoutId, 'delivery.json'))
+    .inbox.deliveries.find((row) => row.envelope_id === 'late-start').lifecycle_state, 'recovery_required');
   await timeoutHarness.emit('input', { source: 'extension', text: 'late native prompt' });
   timeoutHarness.setIdle(false);
   await timeoutHarness.emit('agent_start', {});
@@ -719,7 +734,9 @@ async function main() {
     const nativeStart = await postLease(nativeLease, typedEnvelope(nativeId, 'native-first', 'hold this real Pi turn open', 'brief', 'native-attempt-a'));
     const nativeStartBody = await nativeStart.json();
     assert.equal(nativeStartBody.accepted, true, `native Pi rejected typed delivery: ${JSON.stringify(nativeStartBody)} ${nativeErr}`);
-    assert.equal(nativeStartBody.delivery_state, 'accepted');
+    // Issue #34: queued-accept — a fresh real Pi answers with the queued
+    // lifecycle and starts the turn natively in the background.
+    assert.equal(nativeStartBody.delivery_state, 'claimed');
     await waitFor(() => providerRequests === 1, `native Pi did not call the isolated provider: ${nativeErr}`);
 
     const nativeSteer = await postLease(nativeLease, typedEnvelope(nativeId, 'native-second', 'steer real Pi turn'));
