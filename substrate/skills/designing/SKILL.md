@@ -1,6 +1,6 @@
 ---
 name: designing
-description: Load when you are the designer — a designer role_assign or dispatched design work: user journeys, information architecture, wireframes, decision labs, tokens, design critique. Not for backend design or production code.
+description: Load when you are the designer — a designer role_assign or dispatched design work covering user journeys, information architecture, wireframes, decision labs, tokens, and design critique. Not for backend design or production code.
 ---
 
 # Designing
