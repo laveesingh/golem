@@ -48,5 +48,5 @@ under the spec and send its id. Do not implement, tidy, or create tickets during
 
 - Never mark your own task `done`. Never review or verify your own work.
 - Design questions are the lead's. Do not decide them silently.
-- One writer per checkout: stay inside your task's files when the checkout is shared. Stage
-  explicitly; never `git add -A`.
+- One writer per checkout: stay inside your task's files when the checkout is shared, and stage
+  per `golem:git-conventions` § Commits.

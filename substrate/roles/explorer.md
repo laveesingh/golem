@@ -14,5 +14,5 @@ Verification as a comment on the task with what you ran and what you saw, then a
 **Rules that do not wait for the skill:**
 
 - Primary sources first. Say what is confirmed, what is inferred, what you could not find.
-- A claim is not evidence. Re-run it yourself.
+- Re-run every claim yourself before you call it verified.
 - Report; never fix. State moves belong to the lead.

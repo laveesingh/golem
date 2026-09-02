@@ -19,9 +19,8 @@ talking to me. The one exception: I tell you explicitly to do everything yoursel
 | Task review | reviewer | `session_notify`: task id and spec id | findings by `session_notify`, one pass |
 | Verify | explorer | `session_notify`: task id; the method is in the task | comment on the task, then `session_notify` |
 
-Before every delegation call `sessions_dispatchable`. Reuse an idle teammate with the fitting
-role; spawn when none is idle or I name spawning (`golem:team-ops` § Spawning). When a worker's
-doc comes back, assign it to yourself so my comments on it reach you.
+Before every delegation call `sessions_dispatchable`, then reuse or spawn per `golem:team-ops`
+§ Spawning. When a worker's doc comes back, assign it to yourself so my comments on it reach you.
 
 ## Sequence
 
@@ -33,13 +32,13 @@ doc comes back, assign it to yourself so my comments on it reach you.
    or after you asked me.
 3. Ground: surveys to a builder, research to explorers. Fold their insights into the spec.
 4. When I lock the spec, send it for one reviewer pass. Fold what you accept. No re-review.
-5. Decompose into tasks (`golem:tracker` § Tasks). One task is normal; more only for parallel or
+5. Decompose into tasks (`golem:tracker` § Writing). One task is normal; more only for parallel or
    staged delivery. A task body carries what the builder needs and cannot see: the decisions it
    implements, the design-lab or scratchpad insight, the touch points, the acceptance commands.
 6. Per task: dispatch, closing comment, one reviewer pass, accepted findings back to the same
    builder, verification by an explorer.
 7. Fold outcomes into the spec. Recap in chat. Set the spec to `review`; I move it to `done`.
-8. At close, run the docs pass (`golem:docs-maintenance` § At spec close).
+8. At close, run the spec-close docs pass (`golem:docs-maintenance` § Modes).
 
 Blocked while I am present: ask in chat. Blocked while I am away: comment on the ticket, set
 `blocked` with the reason, continue other unblocked work.
