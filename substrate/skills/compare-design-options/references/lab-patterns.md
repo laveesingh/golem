@@ -1,61 +1,50 @@
 # Decision-lab patterns and comparison axes
 
-Use this reference to select a lab structure and prevent cosmetic-only variation.
+Pick the lab structure by the decision, and keep variation meaningful.
 
 ## Format map
 
-| Decision | Preferred format | Hold constant | Vary meaningfully |
+| Decision | Format | Hold constant | Vary |
 |---|---|---|---|
-| Whole theme or visual system | Shared-stage switcher | Content, layout, status meaning, viewport | Palette, typography, hierarchy, surfaces, elevation, borders, material signature, data colors |
-| Page layout | Shared-stage switcher | Data, actions, priority, states | Region order, scan path, grouping, responsive collapse, action placement |
-| Component UX | Side-by-side specimens | Size, content, state, surrounding context | Control model, affordance, disclosure, density, feedback |
-| Navigation or information architecture | Shared shell plus task checks | Destinations, permissions, content inventory | Grouping, labels, depth, orientation, mobile behavior |
-| Interaction workflow | Interactive flow | Goal, starting data, success criteria, failures | Step count, sequencing, progressive disclosure, confirmation, undo and recovery |
-| Density | Side-by-side specimens at fixed width | Record count and information | Compression, hierarchy, wrapping, secondary-detail access |
-| Edge states | State matrix or switchable stage | Component geometry and recovery goal | Empty guidance, loading stability, error detail, permissions, offline behavior |
+| Whole theme or visual system | shared-stage switcher | content, layout, status meaning, viewport | palette, typography, hierarchy, surfaces, elevation, borders, data colors |
+| Page layout | shared-stage switcher | data, actions, priority, states | region order, scan path, grouping, responsive collapse, action placement |
+| Component UX | side-by-side specimens | size, content, state, surrounding context | control model, affordance, disclosure, density, feedback |
+| Navigation or IA | shared shell plus task checks | destinations, permissions, content inventory | grouping, labels, depth, orientation, mobile behavior |
+| Interaction workflow | interactive flow | goal, starting data, success criteria, failures | step count, sequencing, disclosure, confirmation, undo and recovery |
+| Density | side-by-side at fixed width | record count and information | compression, hierarchy, wrapping, secondary-detail access |
+| Edge states | state matrix or switchable stage | component geometry and recovery goal | empty guidance, loading stability, error detail, permissions, offline |
 
-Use a hybrid only when a broad direction also contains a local decision that cannot be judged in context. For example, use a shared theme stage with one fixed component specimen row, not eight separately authored dashboards.
+A hybrid only when a broad direction also contains a local decision that cannot be judged in
+context: a shared theme stage with one fixed component row, not eight separate dashboards.
 
-## Fairness rules
+## Fairness
 
-- Keep names, values, timestamps, statuses, and data volume identical across options.
-- Keep every required action reachable in every option.
-- Show options at equal scale and in the same viewport.
-- Preserve semantic status meaning; do not make one option look healthier by changing the scenario.
-- Give all options equivalent polish. Do not use a deliberately weak straw option.
-- Describe trade-offs with the same rubric and level of detail.
+- Identical names, values, timestamps, statuses, and data volume across options.
+- Every required action reachable in every option; equal scale and viewport.
+- Same semantic status meaning; one option must not look healthier by changing the scenario.
+- Equal polish. No deliberately weak straw option.
+- The same rubric and depth for every option's trade-offs.
 
-## Distinctness test
+## Distinctness
 
-Write one pairwise sentence explaining why each neighboring option changes the experience. Rework an option when the sentence reduces to a single cosmetic substitution unrelated to the decision.
-
-Seek coherent theses, not a bag of effects. Useful theses include compact command surface, calm guided workspace, scan-first ledger, progressive-focus flow, spatial navigation, or recovery-first form. Each thesis should affect at least two relevant axes.
+For each pair of neighboring options, write one sentence on how the experience changes. If it
+reduces to a cosmetic substitution unrelated to the decision, rework the option. Aim for a
+coherent thesis per option (compact command surface, calm guided workspace, scan-first ledger,
+progressive-focus flow, recovery-first form) that touches at least two relevant axes.
 
 ## Evaluation axes
 
-Select only axes that influence the decision:
+Only the axes that influence the decision: scanability and hierarchy · task speed and action
+reach · learnability and navigation depth · density and long-session readability · feedback
+and status confidence · error prevention, recovery, undo · keyboard and screen-reader
+operability · mobile reflow and touch targets · brand or material fit · implementation
+complexity and migration risk. For every option, one benefit, one cost, one risk on the chosen
+axes. Advisory; I own the decision.
 
-- Scanability and information hierarchy
-- Task completion speed and action reachability
-- Learnability, orientation, and navigation depth
-- Density, wrapping, and long-session readability
-- Feedback, system status, and confidence
-- Error prevention, recovery, undo, and interruption handling
-- Keyboard and screen-reader operability
-- Mobile reflow and touch target quality
-- Brand or material fit
-- Implementation complexity, migration risk, and maintainability
+## Representative states
 
-For every option, state one benefit, one cost, and one risk using the selected axes. Keep the comparison advisory; the human owns the decision.
-
-## Representative state sets
-
-Choose the smallest set that exposes the design decision:
-
-- **Data surfaces:** normal, empty, loading, error, long text, large count.
-- **Controls:** default, hover, focus, disabled, selected, validation error.
-- **Navigation:** current location, deep destination, overflow, mobile collapse.
-- **Flows:** entry, decision point, progress, recoverable failure, success, cancel or undo.
-- **Operational dashboards:** healthy, working, waiting, offline, queued, attention required.
-
-Do not add every state by habit. Include a state when it can change which option the human chooses.
+Only states that can change which option I choose. Data surfaces: normal, empty, loading,
+error, long text, large count. Controls: default, hover, focus, disabled, selected, invalid.
+Navigation: current, deep, overflow, mobile collapse. Flows: entry, decision point, progress,
+recoverable failure, success, cancel. Dashboards: healthy, working, waiting, offline, queued,
+attention required.
