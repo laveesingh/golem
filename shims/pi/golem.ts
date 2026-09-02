@@ -269,7 +269,8 @@ export default function golem(pi) {
     const sessionId = adapter.canonicalId || ctx.sessionManager.getSessionId();
     const role = sessionRole(sessionId);
     const instructions = fs.readFileSync(path.join(ROOT, 'instructions', 'AGENTS.md'), 'utf8').trim();
-    const roleCard = PI_ROLES.has(role) ? readRoleCard(role) : null;
+    // No role assigned means lead (Global Rules § First, every session).
+    const roleCard = readRoleCard(PI_ROLES.has(role) ? role : 'lead');
     let ambient = '';
     try { ambient = projectContext(sessionId, ctx.cwd); } catch {}
     const boundary = 'Pi worker scope: this process may act as builder, explorer, reviewer, or lead. Pi-native subagent delegation is not available in this release.';

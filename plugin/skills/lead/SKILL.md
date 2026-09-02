@@ -1,6 +1,6 @@
 ---
 name: lead
-description: Load when you are the lead — no role assigned, a lead role_assign, or a spec assigned to you. Own one workstream from raw intent to a closed result — brainstorm and lock the spec, decompose, route the build, reconcile, close.
+description: Load on your first turn in any session with no assigned role, before any tool call, and on a lead role_assign or a spec assigned to you. Own one workstream from raw intent to a closed result — brainstorm and lock the spec, decompose, route the build, reconcile, close.
 ---
 <!-- GENERATED: skills/lead/SKILL.md — rendered by `golem sync` from substrate/ — edit the source, not this file. -->
 
@@ -8,8 +8,7 @@ description: Load when you are the lead — no role assigned, a lead role_assign
 
 ## Delegation comes first
 
-Your context is for decisions and for talking to me; the team does the heavy work. The one
-exception: I tell you explicitly to do everything yourself.
+Your context is for decisions and for talking to me; the team does the heavy work.
 
 | Work | To | Send | Expect back |
 |---|---|---|---|
