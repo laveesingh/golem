@@ -9,13 +9,12 @@ Implements <GOL-XXX>: D<n>, D<n>.
 
 ## Context
 
-The two or three facts a builder needs that the diff will not show: touch points, files, gotchas
-discovered during design. Notes here are accelerators, not boundaries — verify from source and
-comment when a note is stale.
+What the builder needs and cannot see: the decisions this implements, design-lab or scratchpad
+insight, touch points, gotchas. Verify from source; comment when a note is stale.
 
 ## Plan
 
-Ordered, concrete steps — enough to start without re-deriving the design.
+Ordered, concrete steps, enough to start without re-deriving the design.
 
 1. <step>
 2. <step>

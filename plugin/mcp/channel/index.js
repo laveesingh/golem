@@ -424,7 +424,7 @@ const mcp = new Server(
     instructions: [
       'Events from this channel arrive as <channel source="golem" kind="..."> tags.',
       'Recognised kinds:',
-      '  - brief: a new request from the human. Route it per Global Rules § Route incoming work (answer a question, build directly, or run the spec pipeline).',
+      '  - brief: a new request from the human. Route it per Global Rules § How work arrives (answer a question, build directly, or run the lead sequence).',
       '  - role_assign: session role identity only (dashboard/CLI role picker). NOT a task. ack once, then STOP and wait. Do not ticket_list, explore, plan, build, or invent work. Work starts only on an explicit brief or ticket_dispatch.',
       '  - interrupt: a course-correction to fold into in-flight work without restarting. Read, integrate, continue.',
       '  - halt: a request to gracefully halt the current work, write a closing memo, and yield. Do not start new work.',
