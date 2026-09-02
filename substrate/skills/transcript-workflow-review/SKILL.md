@@ -13,7 +13,7 @@ what stays uncertain, and which changes need my approval. Read-only.
 - Use only the transcripts and locations I supplied or approved. A store below is a candidate
   until I approve it.
 - Fix the review question, source roots, window (default: last three days), exclusions, and
-  the output shape. Ask only for what materially changes the review.
+  the output shape.
 - Keep it about workflows, instructions, tools, and constraints. Never assess personality,
   motives, health, intelligence, or general performance.
 

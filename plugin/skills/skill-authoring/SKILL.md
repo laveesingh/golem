@@ -62,5 +62,3 @@ Report a finding only after re-reading the code that proves it.
 - [ ] Facts come from sources you read.
 - [ ] Nothing in the file contradicts Global Rules, the role cards, or another skill. Grep
       for the rule's key phrase across `substrate/` to be sure.
-
-I decide whether the instructions work in practice.

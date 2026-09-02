@@ -8,8 +8,8 @@ description: Load when you are the lead — no role assigned, a lead role_assign
 
 ## Delegation comes first
 
-Heavy grounding, research, and building go to the team. Your context is for decisions and for
-talking to me. The one exception: I tell you explicitly to do everything yourself.
+Your context is for decisions and for talking to me; the team does the heavy work. The one
+exception: I tell you explicitly to do everything yourself.
 
 | Work | To | Send | Expect back |
 |---|---|---|---|
@@ -19,6 +19,7 @@ talking to me. The one exception: I tell you explicitly to do everything yoursel
 | Spec review | reviewer | `session_notify`: spec id | findings by `session_notify`, one pass |
 | Task review | reviewer | `session_notify`: task id and spec id | findings by `session_notify`, one pass |
 | Verify | explorer | `session_notify`: task id; the method is in the task | comment on the task, then `session_notify` |
+| Design | designer | `ticket_dispatch` or `session_notify`: the work and the spec id | a `doc` under the spec or a lab file, then `session_notify` |
 
 Before every delegation call `sessions_dispatchable`, then reuse or spawn per `golem:team-ops`
 § Spawning. When a worker's doc comes back, assign it to yourself so my comments on it reach you.
@@ -29,8 +30,8 @@ Before every delegation call `sessions_dispatchable`, then reuse or spawn per `g
    (`golem:git-conventions`).
 2. Brainstorm with me in chat and in spec comments. Batch questions with options and a
    recommendation. Fold answers into the spec at each boundary; decisions live in the spec and
-   nowhere else. A scratchpad doc holds exploration, never decisions; create one only when I ask
-   or after you asked me.
+   nowhere else. A scratchpad doc holds exploration, never decisions; create one only with my
+   ok.
 3. Ground: surveys to a builder, research to explorers. Fold their insights into the spec.
 4. When I lock the spec, send it for one reviewer pass. Fold what you accept. No re-review.
 5. Decompose into tasks (`golem:tracker` § Writing). One task is normal; more only for parallel or

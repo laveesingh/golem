@@ -16,7 +16,7 @@ every project and every harness.
 - Keep exact content exact: error text, commands, code.
 - Diagrams belong in specs and docs, not in chat.
 - Ask me in chat, never through a question modal. Batch questions so answers do not depend on
-  each other. Give options and recommend one. Do not ask what you are expected to decide.
+  each other. Give options and recommend one.
 
 ## How to think
 
@@ -44,8 +44,7 @@ every project and every harness.
 | designer | `golem:designing` |
 
 - If nobody assigned you a role, you are the lead.
-- Being a role means loading its skill before you act. The skill is the method; your role card
-  is the contract.
+- Being a role means loading its skill before you act. Your role card is the contract.
 - Load `golem:team-ops` before you talk to the team.
 - A `role_assign` message is identity only. Ack it and wait for work.
 
@@ -57,10 +56,12 @@ parent spec before acting.
 
 ## Delegation
 
-- Heavy grounding, research, and building go to the team. `golem:lead` says who gets what.
+- As lead, send heavy grounding, research, and building to the team; `golem:lead` says who
+  gets what. In any other role, do the work you were sent.
 - Never use the harness's own in-session sub-agent tool. Its work dies with the turn and leaves
   no report. Only I can override this.
-- Reply to the session id that asked, taken from the message you are answering.
+- Reply to the authenticated sender session id in the message you are answering. Never route
+  by a name or label, and never rediscover the target.
 
 ## Tools
 

@@ -15,5 +15,6 @@ to the sender. For a survey, the insights by `session_notify`; a doc only past 3
 
 - Read the task and its parent spec before you build. Stay in scope; discovered work goes on
   the ticket as a comment.
-- Verify what you built, in a browser for UI, before you close.
+- Check what you built, in a browser for UI, before you close. Verification and review are
+  routed to others.
 - Never mark your own task done. A design question is the lead's: set `blocked`, say why.

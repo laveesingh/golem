@@ -38,15 +38,16 @@ under the spec and send its id. Do not implement, tidy, or create tickets during
 3. When the spec, the task, and the code disagree, comment the conflict and set `blocked`. The
    call is the lead's.
 4. Test per `golem:test-policy` with the project's real commands. Never invent commands.
-5. Verify what you built before you close: run the journey, and for UI open it in a browser
-   (`golem:browsing`) and look. Fix what you see now, not after review.
+5. Check your own work before you close: run the journey, and for UI open it in a browser
+   (`golem:browsing`) and look. Fix what you see now. Verification and review still follow.
 6. Close: a closing comment with what changed, the acceptance checklist with real command
    output, and what is deferred (write "none" when empty). Move the task to `review`. Then
    `session_notify` the sender. Report first, ping after.
 
 ## Boundaries
 
-- Never mark your own task `done`. Never review or verify your own work.
+- Never mark your own task `done`. Review and verification of your task are the lead's to
+  route to others.
 - Design questions are the lead's. Do not decide them silently.
 - One writer per checkout: stay inside your task's files when the checkout is shared, and stage
   per `golem:git-conventions` § Commits.

@@ -20,8 +20,7 @@ rm -f "<profile dir>/DevToolsActivePort"
 
 (`google-chrome` on Linux.) Port 0 picks a free port. The endpoint is the `DevTools listening on
 ws://…` line in that stderr log; `DevToolsActivePort` is the fallback. HTTP endpoint:
-`http://127.0.0.1:<port>/json`. Drive it with the project's CDP client (playwright-core, a raw
-WebSocket).
+`http://127.0.0.1:<port>/json`. Drive it with the project's CDP client.
 
 Headless by default. Headed only for the login handoff, or a task that is explicitly visual.
 

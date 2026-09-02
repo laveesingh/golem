@@ -9,8 +9,8 @@ description: The team surface for every role — see teammates, message them, di
 ## Common protocol
 
 - Ack every inbound channel event at once with one sentence. Then work. Then reply.
-- Reply to the authenticated sender session id in the envelope you are answering. Never route
-  by name or label; never rediscover the target.
+- Returns bind to the envelope's sender id (Global Rules § Delegation). A reused teammate
+  serves several leads; only the envelope says which one asked.
 - Durable report first, ping after: the comment or doc goes into the tracker, then
   `session_notify` with the id and three lines.
 - A report over 30 lines goes into a child `doc`; the comment or message carries a three-line
@@ -35,7 +35,6 @@ Worker names repeat across projects (every project has a `builder1`). That is wh
   spawning.
 - Counts: 1 builder per connected workstream, 2 for independent ones. Explorers parallelise
   well. More than 1 builder or more than 3 explorers: tell me why and wait for my yes.
-- Spawns run one at a time; there is no batch.
 - Each role has a default model profile; `--profile <name>` overrides one spawn. `golem list
   --project .` shows what each worker resolved to. Profiles are managed in the dashboard.
 - Tell me the worker's name when you spawn one, so I can `golem attach <name> --project .`.
