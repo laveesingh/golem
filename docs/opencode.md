@@ -81,7 +81,7 @@ Agent and skill **bodies** are copied but run through the compiler's
 `{{#if opencode}}` / `{{#if claudecode}}` templating, so the two CC-specific
 bits render their opencode variant:
 
-- `skills/journaling` uses the same journal scripts under opencode. The shim
+- The hook journal (`golem:docs-maintenance`) uses the same scripts under opencode. The shim
   maps lifecycle, chat, and tool events into those scripts, so
   `~/.golem/journals/<project_id>/hook.jsonl` is written without Claude Code's
   native hook manifest.
