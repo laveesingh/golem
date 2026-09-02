@@ -1,109 +1,69 @@
 ---
 name: browsing
-description: Read before ANY browser work — browsing, scraping, UI smoke tests, headless CDP/devtools automation, screenshots, or anything behind a login. Covers one Chrome launch for every harness, the shared logged-in profile, the headed login handoff, and authenticated-site authority. Not for non-browser tests, use golem:test-policy.
+description: Load before any browser work — browsing, scraping, UI checks, screenshots, devtools automation, anything behind a login. One Chrome launch for every harness, the shared logged-in profile, the login handoff, and what you may do on authenticated sites.
 ---
 
-# browsing
+# Browsing
 
-How any golem agent — in any project, any harness — uses Chrome: browsing and research on
-live sites, authenticated dashboards, scraping, UI checks, smoke tests, screenshots,
-devtools automation.
+## Launch your own Chrome
 
-## One method, every harness
-
-Drive Chrome over DevTools/CDP against an instance **you spawn**. Do not reach for a
-harness's built-in browser integration (Claude Code's claude-in-chrome extension, Codex's
-bundled `chrome@openai-bundled` integration — even where the harness suggests it) — they
-differ per harness and fail unevenly; this path behaves identically everywhere.
+Drive Chrome over CDP against an instance you spawn. Do not use a harness's built-in browser
+integration; they differ per harness and fail unevenly.
 
 ```bash
-rm -f "<profile dir>/DevToolsActivePort"   # stale from prior runs — see Gotchas
+rm -f "<profile dir>/DevToolsActivePort"
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --headless=new \
-  --user-data-dir=<profile dir> \
-  --remote-debugging-port=0 2> <scratch>/chrome-stderr.log &
+  --headless=new --user-data-dir=<profile dir> --remote-debugging-port=0 \
+  2> <scratch>/chrome-stderr.log &
 ```
 
-(`google-chrome` on Linux.) Port `0` makes Chrome pick a free port — no collisions between
-concurrent agents. The source of truth for the endpoint is the `DevTools listening on
-ws://…` line in that stderr log; `<profile dir>/DevToolsActivePort` (line 1 = port, line 2
-= browser WebSocket path) is the fallback. The HTTP endpoint is
-`http://127.0.0.1:<port>/json`. Drive it with whatever CDP client the project has
-(playwright-core, a raw WebSocket).
+(`google-chrome` on Linux.) Port 0 picks a free port. The endpoint is the `DevTools listening on
+ws://…` line in that stderr log; `DevToolsActivePort` is the fallback. HTTP endpoint:
+`http://127.0.0.1:<port>/json`. Drive it with the project's CDP client (playwright-core, a raw
+WebSocket).
 
-Headed is the same command minus `--headless=new`. Default to headless — a visible window
-grabs the human's attention; open one deliberately (login handoff below, or a task that is
-explicitly visual/interactive), not by habit.
+Headless by default. Headed only for the login handoff, or a task that is explicitly visual.
 
-## The two profiles
+## Profiles
 
 | Profile | When | How |
 |---|---|---|
-| **Ephemeral** (default) | Anything that does NOT need the human's logins | Fresh temp `--user-data-dir`, killed on exit |
-| **Shared persistent** | The task needs the human's sessions: authenticated sites, logged-in dashboards | `~/.golem/chrome-profile/` — golem-wide, carries real logins/cookies |
+| Ephemeral (default) | no login needed | fresh temp `--user-data-dir`, deleted on exit |
+| Shared | the task needs my logins | `~/.golem/chrome-profile/`, one instance at a time (Chrome locks it) |
 
-Shared-profile rules:
+Never delete, reset, or log out of the shared profile.
 
-- **One instance at a time** — Chrome locks the profile (`SingletonLock`). Busy → wait, or
-  use an ephemeral profile if the task doesn't actually need logins.
-- **Never delete, reset, or "clean up" the profile directory. Never log out of sites in it.**
+## Login handoff
 
-## Login handoff — when you hit an auth wall
+When you hit a login wall on the shared profile:
 
-A login page or expired session on the shared profile is not a dead end. Bring the human in:
+1. Close your instance; the lock must be free.
+2. Relaunch plain Chrome, headed, without `--remote-debugging-port`:
+   `open -na "Google Chrome" --args --user-data-dir="$HOME/.golem/chrome-profile"`. Identity
+   providers refuse sign-in when a debug port is open.
+3. One line in chat: which site, and what you continue with after.
+4. Hands off until I say "done" in chat.
+5. Close that window (`pkill -f -- "--user-data-dir=$HOME/.golem/chrome-profile"`; it holds the
+   lock) and relaunch with the debug port.
 
-1. Close your instance on the shared profile (one instance — the lock must be free).
-2. Relaunch **headed and WITHOUT `--remote-debugging-port`** — plain Chrome on the shared
-   profile (`open -na "Google Chrome" --args --user-data-dir="$HOME/.golem/chrome-profile"`
-   on macOS). Google and other identity providers refuse sign-in when a DevTools
-   remote-debugging endpoint is active ("This browser or app may not be secure"), and the
-   login window needs no CDP — you are hands-off during login anyway.
-3. One-line chat ping: which site needs login, and what you'll continue with after. When
-   the human is present, chat only — no ticket ceremony for a routine login.
-4. **Hands off while they log in.** The window is theirs and credentials are being typed
-   into it — and with no debug port it has no endpoint you could drive or observe anyway.
-   The human's "done" in chat is the only completion signal; wait for it.
-5. On "done": close the login window — `open -na` hands back no pid, so
-   `pkill -f -- "--user-data-dir=$HOME/.golem/chrome-profile"`. It holds the profile lock;
-   left open, your relaunch aborts as "launch failed (locked profile)" with your own
-   window as the invisible cause. Then relaunch with `--remote-debugging-port` — headless
-   by default, headed only if the task itself is visual/interactive.
+When I am away, a missing login is a missing credential: comment the blocker on the ticket, set
+`blocked`, close the window, move on.
 
-Running autonomously (night-shift, human away): a missing login is a missing credential —
-comment the blocker on the affected ticket, set its state to `blocked` with the reason,
-close the headed window, and work on something else. Chat has no reader at 3am; don't poll
-a login page for hours.
+## Authority on authenticated sites
 
-## What you may do on authenticated sites
-
-Authority comes from **the task, not this skill**. Read-only browsing is always in scope.
-Mutations are in scope exactly as far as the task names them — "file the issue upstream"
-includes submitting that form; a research task includes no writes at all. Beyond-mandate
-actions, anything involving payment, and irreversible account operations go to the human
-first (ask in chat, or comment the ask on the ticket and set it `blocked` when the human
-is away). When unsure whether the mandate covers a write, it doesn't.
+Read-only is always in scope. Writes are in scope exactly as far as the task names them.
+Payment, irreversible account actions, and anything beyond the mandate go to me first. When
+unsure whether the mandate covers a write, it does not.
 
 ## Hard rules
 
-- **Never attach CDP to the human's own desktop Chrome** (port 9222 or any other). CDP
-  actions activate its windows and fight the human's typing. The only window an agent may
-  drive is one it spawned — headed handoff windows included, *after* the human is done.
-- One Chrome per process; kill what you spawn. Ephemeral profiles die with the run.
-- Screenshots and scratch scripts go to your scratchpad, not the repo.
+- Never attach to my desktop Chrome (port 9222 or any other). Drive only what you spawned.
+- Kill what you spawn. Screenshots and scratch scripts go to your scratchpad, not the repo.
 
 ## Gotchas
 
-- Identity providers (Google especially) refuse sign-in from a browser with an active
-  remote-debugging endpoint or automation flags — the login handoff window must be plain
-  Chrome, never launched with `--remote-debugging-port` or through playwright/puppeteer.
-- Headless traffic can trip bot detection despite valid cookies. If a site blocks you,
-  report it rather than retrying variations — and don't assume headed will fix it.
-- `DevToolsActivePort` survives clean exits **stale**, and a launch that aborts on the
-  profile lock leaves the file holding some *other* instance's live port — reading it
-  without the `rm -f` first attaches you to a Chrome you don't own. Even after the `rm`,
-  two agents racing onto the same profile can leave the loser looking at the winner's
-  file — which is why your own stderr `DevTools listening` line is the source of truth.
-  No line and no file within a few seconds = the launch failed (bad flag, locked
-  profile); read the stderr log, don't guess ports.
-- A headed window on the shared profile left open blocks every other agent's shared-profile
-  work (the lock). Close it when the handoff is over.
+- `DevToolsActivePort` survives clean exits stale and can point at someone else's Chrome after
+  a lock abort. Hence the `rm -f` first, and your own stderr line as the source of truth. No line
+  within a few seconds: the launch failed; read the log.
+- Headless traffic can trip bot detection despite valid cookies. Report it; do not retry.
+- A headed window left open on the shared profile blocks every other agent. Close it.
