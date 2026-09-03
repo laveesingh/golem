@@ -4194,18 +4194,6 @@ mark.anno.anno-tail::after {
 #anno-save.saved { color: var(--status-active); }
 #anno-save.err { color: var(--status-blocked); }
 
-/* Block-hover comment affordance. Position and visibility are set by the
-   annotation layer; the surface follows the active dashboard theme. */
-#anno-block-plus {
-  background: var(--bg-2);
-  border: 1px solid var(--border-2);
-  border-radius: var(--radius-1);
-  color: var(--text-0);
-  box-shadow: var(--shadow-1);
-}
-#anno-block-plus:hover { border-color: var(--accent-border); }
-#anno-block-plus .anno-block-count { color: var(--accent) !important; }
-
 /* Adjust drawer layout: body area hosts the annotation wrap. */
 .td-scroll { padding: 0; gap: 0; }
 .td-titlebody {
@@ -5394,7 +5382,6 @@ mark.anno.anno-tail::after {
   #anno-rail,
   #anno-pill,
   #anno-fab,
-  #anno-block-plus,
   .td-toc-panel,
   .anno-card
 ) {

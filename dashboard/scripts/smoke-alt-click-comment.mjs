@@ -53,8 +53,9 @@ await wait(150);
 const after = await page.evaluate(() => document.querySelector('.td-md')?.classList.contains('anno-alt-comment'));
 assert.equal(after, false, 'alt-comment class clears when the modifier is released');
 
-// 5. A normal click (no modifier) on the block does NOT anchor a composer.
-//    (The GOL-277 rail composer is permanent, so the observable is the pill.)
+// 5. A normal click (no modifier) on the block anchors the composer too —
+//    GOL-313 made click single-step: plain and alt click share one path and
+//    one suppress set, so the observable is the same pill.
 await page.evaluate(() => {
   const b = document.querySelector('#anno-rail .anno-composer .cancel');
   b?.click();
@@ -63,7 +64,7 @@ await wait(300);
 await page.mouse.click(blockPt.x, blockPt.y);
 await wait(400);
 const normalClick = await page.evaluate(() => !!document.querySelector('#anno-rail .anno-composer .anno-attachment-pill'));
-assert.equal(normalClick, false, 'plain click does not anchor the composer');
+assert.equal(normalClick, true, 'plain click anchors the composer (single-step)');
 
 await cleanup();
 console.log('alt+click-to-comment: PASS');
