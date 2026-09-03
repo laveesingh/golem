@@ -3693,17 +3693,6 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
   --anno-rail-gutter: 30px;
   --anno-fab-w: 52px;
 }
-#anno-pill {
-  position: absolute; z-index: 70; transform: translate(-50%, -100%);
-  display: none; align-items: center; gap: 6px;
-  background: var(--bg-2); border: 1px solid var(--border-2); border-radius: var(--radius-2);
-  padding: 6px 10px; box-shadow: var(--shadow-2);
-  font-family: var(--font-mono); font-size: 12px; color: var(--text-0);
-  cursor: pointer; user-select: none; white-space: nowrap;
-}
-#anno-pill:hover { border-color: var(--accent-border); }
-#anno-pill svg { width: 13px; height: 13px; }
-
 #anno-rail {
   position: absolute; top: 0; right: 0; height: 100%; width: var(--anno-rail-w); z-index: 65;
   min-height: 0; overflow: hidden;
@@ -5380,7 +5369,6 @@ mark.anno.anno-tail::after {
   .spec-result-row,
   .drawer,
   #anno-rail,
-  #anno-pill,
   #anno-fab,
   .td-toc-panel,
   .anno-card
