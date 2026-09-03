@@ -1098,7 +1098,26 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                       {assigneeIcon
                         ? <span className="by-avatar by-avatar-icon"><img src={assigneeIcon} alt=""/></span>
                         : <span className={`by-avatar ${isHuman ? 'human' : ''}`} aria-hidden="true">{initials}</span>}
-                      <span>Assigned to <strong>{label}</strong></span>
+                      {/* GOL-316 D1: the byline assignee is a working PopSelect
+                          reusing the drawer's options builder + commitField —
+                          edit where you read. Same component and commit path
+                          as the drawer, no second options fetch (options load
+                          in the reader too, app.jsx open={true}). */}
+                      <span>Assigned to</span>
+                      <PopSelect
+                        value={ticket.assignee || ''}
+                        placeholder="Unassigned"
+                        searchable
+                        compact
+                        options={window.AssigneeOptions.buildAssigneeOptions({
+                          sessions: dispatchable,
+                          liveStatus: new Map(nativeSessionsNow.filter((s) => s.session_id).map((s) => [s.session_id, s.status ?? null])),
+                          offline: (ticket.assignee && ticket.assignee !== 'human' && !labelBySession.has(ticket.assignee))
+                            ? [{ value: ticket.assignee, label: ticket.assignee_label || `session ${String(ticket.assignee).slice(0, 8)}`, hint: 'offline' }]
+                            : [],
+                        })}
+                        onChange={(v) => commitField({ assignee: v || null })}
+                      />
                       <span className="byline-dot" aria-hidden="true" />
                       <span className={`pill ${statePill}`}>{ticket.state}</span>
                       <span className="pill td-kind-pill" data-kind={ticket.kind}>{ticket.kind}</span>

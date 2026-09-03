@@ -3510,11 +3510,14 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 }
 
 /* Tables — TKT-0208: 13.5px body + 8/12 cell padding breathe with the prose;
-   wide tables still scroll inside the column (display: block; overflow-x: auto). */
+   wide tables still scroll inside the column (display: block; overflow-x: auto).
+   GOL-316 D3: the 8px table padding makes the whole-table anchor holdable —
+   the ring (border + padding) is TABLE-owned space, rows stay row targets. */
 .td-md table {
   display: block; max-width: 100%; overflow-x: auto;
   width: 100%; border-collapse: collapse; margin: 14px 0;
   font-size: 13.5px; border: 1px solid var(--border-2); border-radius: var(--radius-2);
+  padding: 8px;
   overflow-wrap: break-word;
   word-break: normal;
 }
