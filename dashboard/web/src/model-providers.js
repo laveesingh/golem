@@ -17,6 +17,8 @@ import ollamaIdle from './assets/agent-icons/providers/ollama-idle.svg?url';
 import ollamaActive from './assets/agent-icons/providers/ollama-active.svg?url';
 import openAiIdle from './assets/agent-icons/providers/openai-idle.svg?url';
 import openAiActive from './assets/agent-icons/providers/openai-active.svg?url';
+import astraIdle from './assets/agent-icons/models/gpt-6-astra-idle.svg?url';
+import astraActive from './assets/agent-icons/models/gpt-6-astra-active.svg?url';
 import qwenIdle from './assets/agent-icons/providers/qwen-idle.svg?url';
 import qwenActive from './assets/agent-icons/providers/qwen-active.svg?url';
 import zaiIdle from './assets/agent-icons/providers/zai-idle.svg?url';
@@ -73,11 +75,18 @@ import {
     meta: metaActive,
   };
 
-  function iconsFor(id) {
-    const idleSrc = idleIcons[id] || null;
-    const activeSrc = activeIcons[id] || null;
+  function iconsFor(id, model) {
+    // This identity belongs to the exact model, not the GPT family or provider.
+    // Keep the provider metadata (OpenAI) and every other model's icons intact.
+    const isAstra = model === 'gpt-6-astra';
+    const idleSrc = isAstra ? astraIdle : (idleIcons[id] || null);
+    const activeSrc = isAstra ? astraActive : (activeIcons[id] || null);
     // iconSrc stays as the idle URL for back-compat with any older consumer.
-    return { iconSrc: idleSrc, iconIdleSrc: idleSrc, iconActiveSrc: activeSrc };
+    return {
+      iconSrc: idleSrc, iconIdleSrc: idleSrc, iconActiveSrc: activeSrc,
+      // Embedded SVG media queries are not honored consistently by browsers.
+      ...(isAstra ? { iconReducedMotionSrc: idleSrc } : {}),
+    };
   }
 
   const providers = PROVIDER_MATCHERS.map((entry) => ({
@@ -92,10 +101,10 @@ import {
     pi: { id: 'pi', label: 'Pi', iconIdleSrc: piIdle, iconActiveSrc: piActive, iconSrc: piIdle },
   };
 
-  function withIcon(entry) {
+  function withIcon(entry, model) {
     if (!entry) return entry;
     if (entry.id === 'fallback') return fallback;
-    return { ...entry, ...iconsFor(entry.id) };
+    return { ...entry, ...iconsFor(entry.id, model) };
   }
 
   function providerForId(provider) {
@@ -103,11 +112,11 @@ import {
   }
 
   function providerForModel(model) {
-    return withIcon(matchProviderForModel(model));
+    return withIcon(matchProviderForModel(model), model);
   }
 
   function resolveProvider(provider, model) {
-    return withIcon(matchResolveProvider(provider, model));
+    return withIcon(matchResolveProvider(provider, model), model);
   }
 
   function harnessForId(harness) {
