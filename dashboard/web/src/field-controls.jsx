@@ -78,7 +78,13 @@ const PopSelect = function PopSelect({ value, options, onChange, placeholder = '
       if (menuRef.current && !menuRef.current.contains(e.target) &&
           triggerRef.current && !triggerRef.current.contains(e.target)) close();
     };
-    const onScroll = () => close();
+    const onScroll = (e) => {
+      // GOL-316 D2: the menu is its own scroller — in-menu scrolling must not
+      // close it (the self-close race on long assignee lists). Page scroll
+      // (any other scroll target) still closes, so the listener stays.
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      close();
+    };
     const onKey = (e) => {
       if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); requestAnimationFrame(() => triggerRef.current?.focus()); return; }
       if (e.key === 'ArrowDown') { e.preventDefault(); const n = Math.min(activeRef.current + 1, filtered.length - 1); activeRef.current = n; setActive(n); return; }
