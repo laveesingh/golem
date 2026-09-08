@@ -1,0 +1,169 @@
+// GOL-325: prove the instruction artifacts reaching both harness renders and the
+// real template/promotion APIs. Literal contracts guard shipped text; they do not
+// claim model compliance. Bounded native-model probes are separate evidence.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { execFileSync, spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import { once } from 'node:events';
+import matter from 'gray-matter';
+import { lintSubstrate, lintFiles } from '../lib/compiler/lint.js';
+import { createScratchTicket, promoteScratchIdea, archiveTicket, SMOKE_PROJECT } from '../dashboard/scripts/_scratch.mjs';
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const source = path.join(repo, 'substrate');
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-instruction-workflow-'));
+const home = path.join(temp, 'home');
+const state = path.join(temp, 'state');
+const env = {
+  PATH: process.env.PATH, HOME: home, TMPDIR: temp,
+  XDG_CONFIG_HOME: path.join(home, '.config'), GOLEM_HOME: state,
+  GOLEM_TRACKER_DB: path.join(state, 'tracker.db'),
+  GOLEM_PROJECTS_ROOT: path.join(temp, 'projects'), GOLEM_IDEAS_ROOT: path.join(temp, 'ideas'),
+  GOLEM_ROOT: repo, HOST: '127.0.0.1', LOG_LEVEL: 'error',
+};
+const read = (p) => fs.readFileSync(p, 'utf8');
+const ticks = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const cli = (args) => execFileSync(process.execPath, [path.join(repo, 'cli/golem.js'), ...args], {
+  cwd: repo, env, encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'],
+});
+const tickets = [];
+let child, base, ideaId, stderr = '';
+const previousApi = process.env.GOLEM_SMOKE_API;
+
+function authoringContract(text) {
+  assert.match(text, /Start design only after my go-ahead/);
+  assert.match(text, /scope\/requirements/);
+  assert.match(text, /design.*decisions/i);
+  assert.match(text, /not a second decision record/);
+  assert.match(text, /An explicit request to draft design is that go-ahead/);
+  assert.match(text, /No diagram\s+or subsection quotas/);
+}
+
+async function request(route, body, method = body === undefined ? 'GET' : 'POST') {
+  const response = await fetch(base + route, {
+    method, headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(5000),
+  });
+  assert.ok(response.ok, `${method} ${route}: ${response.status} ${await (!response.ok ? response.text() : Promise.resolve(''))}`);
+  return response.json();
+}
+
+try {
+  for (const dir of [home, state, env.GOLEM_PROJECTS_ROOT, env.GOLEM_IDEAS_ROOT]) fs.mkdirSync(dir, { recursive: true });
+  const lint = lintSubstrate({ substrateRoot: source });
+  assert.equal(lint.clean, true, JSON.stringify(lint.findings));
+  for (const file of lintFiles(source)) {
+    assert.doesNotMatch(read(file), /Heavy research and grounding go to|surveys to a builder|task→feature/);
+  }
+  const writing = read(path.join(source, 'skills/spec-writing/SKILL.md'));
+  authoringContract(writing);
+  // A test that would also accept removing the design boundary proves nothing.
+  assert.throws(() => authoringContract(writing.replace('Start design only after my go-ahead', 'Start design immediately')));
+  console.log(`source contracts passed: ${lint.total} words; negative control rejected`);
+
+  for (const target of ['cc', 'pi']) {
+    cli(['sync', '--target', target]);
+    cli(['sync', '--target', target, '--check']);
+    const render = path.join(state, 'renders', target === 'cc' ? 'cc-plugin' : 'pi');
+    const renderedWriting = read(path.join(render, 'skills/spec-writing/SKILL.md'));
+    assert.equal(matter(renderedWriting).data.name, 'spec-writing');
+    authoringContract(renderedWriting);
+    assert.equal(read(path.join(render, 'skills/tracker/templates/spec.md')), read(path.join(source, 'skills/tracker/templates/spec.md')));
+    for (const skill of ['lead', 'tracker']) {
+      assert.match(read(path.join(render, `skills/${skill}/SKILL.md`)), /golem:spec-writing/);
+    }
+    assert.match(read(path.join(render, 'skills/tracker/SKILL.md')), /Never start a body with an HTML tag/,
+      'mechanical body constraints reach task/doc authors through tracker, not a spec-only skill');
+    assert.match(read(path.join(render, 'skills/night-shift/SKILL.md')), /Unattended permission prompts stop the run/,
+      'authority clarification retains the unattended stop boundary');
+    assert.match(read(path.join(render, 'skills/night-shift/SKILL.md')), /New explicit human authorization can change those limits/,
+      'default authority limits do not erase a new human directive');
+    assert.match(read(path.join(render, 'skills/team-ops/SKILL.md')), /the human resolves it, not the agent/,
+      'comment resolution owner is unambiguous');
+    const rules = read(target === 'cc' ? path.join(home, '.claude/CLAUDE.md') : path.join(render, 'instructions/AGENTS.md'));
+    assert.match(rules, /lead personally surveys code and grounds scope and design/);
+    assert.doesNotMatch(rules, /Research, surveys, and builds go to the team/);
+    const { GOLEM_TOOL_CONTRACTS } = await import(pathToFileURL(path.join(render, 'lib/golem-tool-contracts.js')));
+    const create = GOLEM_TOOL_CONTRACTS.find((c) => c.name === 'ticket_create');
+    assert.match(create.description, /task→task, spec→spec, doc→doc/);
+    assert.match(create.description, /golem:spec-writing/);
+    assert.doesNotMatch(create.inputSchema.properties.body.description, /task→feature/);
+    console.log(`${target} isolated render and drift check passed`);
+  }
+  assert.match(read(path.join(state, 'renders/pi/golem.ts')), /follow the assigned role card/);
+
+  const reservation = createServer();
+  reservation.listen(0, '127.0.0.1');
+  await once(reservation, 'listening');
+  const port = reservation.address().port;
+  await new Promise((resolve) => reservation.close(resolve));
+  base = `http://127.0.0.1:${port}`;
+  process.env.GOLEM_SMOKE_API = base;
+  child = spawn(process.execPath, [path.join(repo, 'dashboard/server/index.js')], {
+    cwd: repo, env: { ...env, PORT: String(port) }, stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const deadline = Date.now() + 20_000;
+  while (true) {
+    try { await request('/api/health'); break; } catch (error) {
+      if (child.exitCode !== null || Date.now() > deadline) throw new Error(`isolated dashboard failed: ${error}\n${stderr}`);
+      await ticks(100);
+    }
+  }
+  const templates = await request('/api/templates');
+  assert.deepEqual(templates.map((t) => t.id).sort(), ['doc', 'spec', 'task']);
+  const template = templates.find((t) => t.id === 'spec').body;
+  assert.equal(template, read(path.join(source, 'skills/tracker/templates/spec.md')));
+  assert.match(template, /golem:spec-writing/);
+  assert.doesNotMatch(template, /1–6 diagrams|3–7 subsections|Form: Global Rules/);
+  const spec = await createScratchTicket({ kind: 'spec', title: 'instruction contract', body: template });
+  tickets.push(spec.id);
+  const doc = await createScratchTicket({ kind: 'doc', title: 'research', parent_id: spec.id, body: 'Evidence to consume.' });
+  tickets.push(doc.id);
+  await request(`/api/tickets/${doc.id}`, { state: 'review', assignee: 'human', actor: 'smoke' }, 'PATCH');
+  let returned = await request(`/api/tickets/${doc.id}`);
+  assert.equal(returned.state, 'review');
+  assert.equal(returned.assignee, 'human');
+  await request(`/api/tickets/${doc.id}`, { state: 'done', actor: 'smoke' }, 'PATCH');
+  returned = await request(`/api/tickets/${doc.id}`);
+  assert.equal(returned.state, 'done');
+  const comment = await request(`/api/tickets/${spec.id}/comments`, { author: 'smoke', body: 'Clarify this choice.' });
+  await request(`/api/tickets/${spec.id}/comments/${comment.id}/reply`, { author: 'smoke', body: 'Reply in the original thread.' });
+  const withReply = await request(`/api/tickets/${spec.id}`);
+  assert.ok(withReply.comments.some((c) => c.parent_id === comment.id));
+
+  const intent = 'SMOKE-precise original idea\nPreserve these requirements, not a chosen design.';
+  const idea = await request('/api/ideas', { body: intent });
+  ideaId = idea.id;
+  const promoted = await promoteScratchIdea(ideaId, 'instruction idea');
+  tickets.push(promoted.ticket.id);
+  assert.equal(promoted.ticket.project_id, SMOKE_PROJECT);
+  assert.equal(promoted.ticket.created_by, 'smoke');
+  assert.ok(promoted.ticket.body.includes(intent));
+  assert.match(promoted.ticket.body, /Requirements discussion/);
+  assert.match(promoted.ticket.body, /golem:spec-writing/);
+  assert.match(promoted.ticket.body, /after the human's go-ahead/);
+  assert.doesNotMatch(promoted.ticket.body, /The chosen direction/);
+  assert.equal((await request(`/api/tickets/${promoted.ticket.id}`)).body, promoted.ticket.body);
+  assert.equal((await request('/api/ideas')).some((i) => i.id === ideaId), false);
+  ideaId = null;
+  console.log('real API/SQLite journey passed: template creation, doc disposition, same-thread reply, staged idea promotion');
+} finally {
+  if (base) {
+    for (const id of tickets) await archiveTicket(id);
+    if (ideaId) await request(`/api/ideas/${ideaId}/pop`, {}).catch(() => {});
+  }
+  if (previousApi === undefined) delete process.env.GOLEM_SMOKE_API;
+  else process.env.GOLEM_SMOKE_API = previousApi;
+  if (child && child.exitCode === null) {
+    const stopped = once(child, 'exit');
+    child.kill('SIGTERM');
+    const force = setTimeout(() => child.kill('SIGKILL'), 3000);
+    try { await stopped; } finally { clearTimeout(force); }
+  }
+  fs.rmSync(temp, { recursive: true, force: true });
+}

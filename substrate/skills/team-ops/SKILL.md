@@ -8,10 +8,17 @@ description: The team surface for every role — see teammates, message them, di
 ## Common protocol
 
 - Ack every inbound channel event at once with one sentence. Then work. Then reply.
-- Returns bind to the envelope's sender id (Global Rules § Delegation). A reused teammate
-  serves several leads; only the envelope says which one asked.
-- Durable report first, ping after: the comment or doc goes into the tracker, then
-  `session_notify` with the id and three lines.
+- Choose the return surface from the inbound context, not an ack result:
+
+| Input | Reply |
+|---|---|
+| Human's native chat | Native chat answer |
+| Human's ticket comment | `ticket_comment_reply` in that thread; the human resolves it, not the agent |
+| Peer request | Durable result where required, then `session_notify` to its authenticated sender id |
+
+- A skipped/uncorrelated ack does not change the reply route. A dashboard human identity is
+  not a live peer session. On an unavailable peer return, keep the report on the ticket and
+  report the failure; do not rediscover a substitute recipient or loop retries.
 - A report over 30 lines goes into a child `doc`; the comment or message carries a three-line
   summary and the id.
 - My comments reach a ticket's assignee, so assign per `golem:tracker` § Assignment.
@@ -27,6 +34,13 @@ description: The team surface for every role — see teammates, message them, di
 
 Worker names repeat across projects (every project has a `builder1`). That is why
 `--project .` is not optional.
+
+## Dispatch timing
+
+Use one `ticket_dispatch` with its note for an assignment, not another copy via `session_notify`.
+For routine work, queue for idle when the recipient is busy/waiting. Use immediate messaging
+for deliberate steering or an urgent interruption, not to bury another task mid-turn. Peer
+consultation remains advisory; it does not transfer work ownership.
 
 ## Spawning
 

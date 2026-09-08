@@ -1,6 +1,6 @@
 ---
 name: transcript-workflow-review
-description: Load to review AI session transcripts across Claude Code, Codex, Pi, and other harnesses for evidence-backed workflow, instruction, and tool improvements — retrospectives, cross-harness comparison, or analysis of a chosen corpus. Never assess personality or performance.
+description: Load when reviewing AI session transcripts across harnesses for evidence-backed workflow, instruction, and tool improvements — retrospectives, comparison, or a chosen corpus. Never assess personality or performance.
 ---
 
 # Transcript workflow review

@@ -1,17 +1,17 @@
 ---
 name: test-policy
-description: Load when you write tests, tell a builder how to test, or scope a check budget. Journey-level proof through real layers, inside the repo's existing test system.
+description: Load when writing tests or scoping checks. Prove behavior and affected consumers through isolated tests and real integration paths, using the project's test system.
 ---
 
 # Test policy
 
-- Follow the repository's test system: framework, layout, naming, runners. This governs the
-  tests you add.
-- Prove observable behavior through the layers that make it real: route plus validation plus
-  persistence, against real databases and harnesses where the repo supports it.
-- The smallest set that covers the changed behavior and its consumers. A unit test only where
-  isolated logic is the clearest proof.
-- A test that asserts the code's own call sequence tests structure, not behavior. Delete it.
-- What cannot be covered mechanically: say so and name the manual step. No hollow tests.
-- Scratch and smoke tickets never go on a real board. Use the quarantined path the repo's
-  `AGENTS.md` names; archive fixtures in a `finally` block.
+- Follow the repository's test framework, layout, and runners; no parallel framework.
+- Prove observable behavior, failures, and affected consumers. Unit-test isolated logic;
+  integrate real storage, services, and harnesses where available. Mocks alone do not prove
+  the shipped path.
+- Use isolated state/resources, bounded waits, and cleanup. Never mutate live work in tests.
+- Assert fixtures exercise the behavior. For critical regressions, show the check fails when
+  that behavior is broken. Do not mirror the implementation's call sequence.
+- Report commands, outcomes, and checks not run with reasons. A passing subset is not a full
+  acceptance pass. Name any necessary manual probe.
+- Scratch tickets use the quarantined helper named in project `AGENTS.md`; archive in cleanup.

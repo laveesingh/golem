@@ -21,7 +21,8 @@ Ordered, concrete steps, enough to start without re-deriving the design.
 
 ## Acceptance
 
-Checkable, with exact commands and expected observations.
+Exact commands and expected observations, covering preserved/changed behavior, failures, and
+consumers. Report each check as ran (with output) or not run (why and who owns it).
 
 - [ ] `<command>` → <expected observation>
 

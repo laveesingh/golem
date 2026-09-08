@@ -273,7 +273,7 @@ export default function golem(pi) {
     const roleCard = readRoleCard(PI_ROLES.has(role) ? role : 'lead');
     let ambient = '';
     try { ambient = projectContext(sessionId, ctx.cwd); } catch {}
-    const boundary = 'Pi worker scope: this process may act as builder, explorer, reviewer, or lead. Pi-native subagent delegation is not available in this release.';
+    const boundary = 'Pi integration: follow the assigned role card, not every role supported by this harness. Golem teammates are separate sessions managed through golem CLI and team tools; Pi-native in-session subagents are unavailable.';
     return { systemPrompt: [event.systemPrompt, instructions, boundary, roleCard, ambient].filter(Boolean).join('\n\n') };
   });
 

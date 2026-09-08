@@ -1,59 +1,23 @@
-# Doc: <short title — what this page answers or explores>
+# Doc: <question this page answers>
 
-<!-- Form: Global Rules § How to talk to me; diagram rules as in templates/spec.md; mermaid rules
-in golem:tracker § Writing. Two shapes, keep the sections the job needs:
-  research → Question · Summary · Findings · Implications · Method
-  scratchpad → Question · Summary · one section per exploration thread -->
+<!-- Tracker operations: golem:tracker. Keep the sections needed for this research or scratchpad. -->
 
 ## Question
 
-<!-- The commission in 1–2 lines: what this doc answers or explores, and for which spec or
-decision. -->
+<the commission and the spec or decision it informs>
 
 ## Summary
 
-<!-- The standing answer, at most 7 bullets, kept current. Scratchpad shape: the insights and
-which D# each thread feeds. -->
-
-- <bullet>
+<what the lead needs to decide; detail below>
 
 ## Findings
 
-<!-- Research shape: facts with evidence, diagram-first; file:line refs in the Evidence table. -->
-
-```mermaid
-flowchart LR
-  A[what exists] --> B[one concern per diagram]
-```
-
-*Caption: <what this diagram shows>.*
-
-- 📌 <fact a diagram cannot carry>
-
-### Evidence
-
-<details>
-<summary>fact → source refs</summary>
-
-| 📌 Fact | Refs |
-|---|---|
-| <fact> | `path/file.ext:12-34` |
-
-</details>
-
-## <exploration thread>
-
-<!-- Scratchpad shape: one section per thread; decisions live only in the parent spec. When a
-thread has served its purpose, note the D# it fed and wrap it in <details>. -->
-
-- 📌 <insight>
-- ▶ feeds: <D# in the parent spec>
+<evidence, conclusions, limitations, and source references>
 
 ## Implications
 
-<!-- Optional: what the findings mean for the spec or decision, plus your recommendation. -->
+<what this changes for the parent spec; decisions remain in that spec>
 
 ## Method
 
-<!-- Optional: commands run, sources consulted, scope covered. Keep when credibility or
-reproducibility matters. -->
+<sources, commands, coverage, and what was not checked>

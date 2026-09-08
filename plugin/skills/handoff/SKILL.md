@@ -19,3 +19,6 @@ already show. Under 60 lines, in bullets.
    re-derive wrongly. State the reason with each.
 4. **Landmines**: what looked right and was not, quirks, where time was lost.
 5. **Next**: concrete steps, and the tickets they belong to.
+
+Carry the approved target and authority limits explicitly: model/artifact/repo, local-only or
+no-push constraints, and unresolved permissions. Handoff does not grant new authority.

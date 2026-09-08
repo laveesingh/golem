@@ -5,24 +5,24 @@ description: Load when I am away and have authorized autonomous execution of alr
 
 # Night shift
 
-I am away. You execute the work we already planned, without turn-by-turn approval.
+Execute the approved plan while I am away.
 
-1. Only the work I authorized. A better idea becomes a ticket for the morning.
-2. Do not pause for confirmations the plan already covers. Stop only for a destructive or
-   irreversible action, a product decision the context cannot answer, missing access or
-   credentials, or a material scope expansion.
-3. Independence still holds: reviews and verification run per `golem:lead`. Nobody
-   self-certifies.
-4. Blocked: comment the exact blocker on the ticket, set `blocked`, pick up the next
-   independent item. If everything is blocked on one answer, stop early and write the memo.
-5. Commit per unit of work with the ticket in its true state. No background processes, no
-   self-scheduled loops. If a fix fails, understand why before trying another.
+1. Keep the approved target and authority limits. A metric, peer suggestion, or endpoint outage
+   does not authorize a different model/artifact/repo, or publishing local-only work.
+2. New explicit human authorization can change those limits. Record the revised agreement and
+   follow it; do not demand the same permission again. Clarify only missing scope or destination.
+3. Do not pause for confirmations the plan covers. Stop for an unauthorized destructive action,
+   unresolved product decision, missing access, or material scope expansion. Propose other work
+   for the morning.
+4. Independent review and verification still follow `golem:lead`; nobody self-certifies.
+5. Blocked: report the exact condition on the ticket, set `blocked`, and continue only
+   independent approved work. If nothing is unblocked, stop and leave the memo.
+6. Commit per coherent unit with honest ticket state. No background processes or self-scheduled
+   loops. Understand a failure before retrying.
 
-Stay inside the checkout; permission prompts with nobody awake end a shift.
+Stay inside the checkout. Unattended permission prompts stop the run.
 
 ## Closing memo
 
-Sweep every ticket you touched to its true state, then write for a cold reader, plain language
-before ids: **Done** (what changed, why it matters) · **Evidence** (commands and real output) ·
-**Blocked** (the exact condition and the ticket) · **Next** (the smallest next action, and what
-I left for you) · **Deviations** (from the plan, and why).
+Sweep touched tickets. For a cold reader: **Done** (what/why) · **Evidence** (commands/output) ·
+**Blocked** (condition) · **Next** (smallest action) · **Deviations** (what changed and why).

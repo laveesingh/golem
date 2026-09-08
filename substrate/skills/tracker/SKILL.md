@@ -5,8 +5,7 @@ description: The tracker tools and model — spec, task, doc; one state lifecycl
 
 # Tracker
 
-The tracker is the source of truth for work. The dashboard owns the database; use the tracker
-tools, never direct writes.
+The dashboard owns work records; use tracker tools, never direct database writes.
 
 ## Tools
 
@@ -34,16 +33,17 @@ Tasks and docs hang under their spec via `parent_id`; a spec can parent child sp
 
 - The body is a living document. Fold decisions and outcomes in at boundaries, and batch
   edits, because every edit rewrites the whole body.
-- Decisions live in the spec's decision blocks and nowhere else. A scratchpad doc explores;
-  only its insights move into the spec.
-- Tasks: decompose a locked spec into one task normally, more when tasks can run in parallel or
-  land in stages with each stage working and verifiable. Parallel tasks need parallel builders
-  (`golem:team-ops` § Spawning). A task body carries what the builder cannot see: the decisions
-  it implements, the touch points, the acceptance commands.
-- Bodies: Markdown plus fenced mermaid, GitHub admonitions, and `<details>` with a blank line
-  after `</summary>`. Never start a body with an HTML tag. No `;` inside sequenceDiagram text;
-  escape `|` in table cells. Render each mermaid block before you save; the CLI exits 0 on
-  broken diagrams.
+- Load `golem:spec-writing` for substantive spec authoring/revision. It owns the writing
+  method; templates provide starting shapes. Metadata-only updates do not need it.
+- Task bodies carry the agreed decisions, constraints, touch points, and acceptance commands.
+  Decomposition belongs to `golem:lead`; do not make builders reconstruct the brainstorm.
+
+## Body format
+
+Use Markdown, Mermaid, admonitions, and `<details>`. Never start a body with an HTML tag.
+Leave a blank line after `</summary>`; escape table pipes. No semicolons in sequence messages.
+Render Mermaid before saving and inspect the result; exit 0 alone is not proof.
+No format-selector or block-edit tools exist.
 
 ## States
 
@@ -56,10 +56,17 @@ Whoever I should interact with through a ticket is its assignee, because my comm
 to the assignee. A lead assigns itself every spec and scratchpad it holds, and every worker doc
 that comes back. A dispatched task or doc is assigned to the worker while it works on it.
 
+## Returned docs
+
+The researcher returns the doc in `review`, assigned to the requesting lead, before notifying.
+The lead reads it, folds useful conclusions into the spec, and marks consumed research `done`.
+Superseded material may be archived deliberately. A doc with unresolved work stays open with
+an owner and next action; closing its parent must not silently discard it.
+
 ## Comments
 
 - Evidence over claims: the commands you ran and their real output.
-- My comments dispatch to your session. Reply in the thread or on the same block; I resolve.
+- Human comments dispatch to you. Reply in-thread; the human resolves them, not the agent.
 - Over 30 lines: a child doc, and a three-line comment with its id.
 - Secrets never enter a ticket, a comment, or chat. Name the key and a git-ignored file; I fill
   it in.
@@ -68,8 +75,7 @@ that comes back. A dispatched task or doc is assigned to the worker while it wor
 
 - Before going idle, sweep your assigned tickets to their true state. Stale assigned work is a
   defect.
-- A sweep on request: judge each open ticket's true state from evidence (a merged PR on
-  `main`, files present, tests green), comment the evidence, then move it. Archive superseded
-  or duplicate tickets; never delete. Leave ambiguous ones open with a question for me.
+- Sweep on request: check artifacts, merge state, and tests; comment evidence before state
+  moves. Archive superseded/duplicate tickets; never delete. Ask about ambiguous cases.
 - Scratch and smoke tickets never go on a real board; use the repo's quarantined path
   (`golem:test-policy`).

@@ -260,7 +260,11 @@ async function main() {
   const instructionsTitle = renderedInstructions.split('\n').find((line) => line.trim().length > 0).trim();
   assert.ok(prompt.systemPrompt.includes(instructionsTitle), 'Golem instructions are injected without a Pi profile file');
   assert.match(prompt.systemPrompt, /Role: builder/, 'role truth is read at the safe turn boundary');
-  assert.match(prompt.systemPrompt, /Recent commits:/, 'bounded shipped L4 context is injected');
+  assert.match(prompt.systemPrompt, /Recent commits(?: \(\d+ of \d+\))?:/, 'bounded shipped L4 context is injected, including its budget-truncated header');
+  assert.ok(prompt.systemPrompt.includes(execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()), 'L4 includes a real recent commit, not only a heading');
+  assert.match(prompt.systemPrompt, /lead personally surveys code and grounds scope and design/);
+  assert.match(prompt.systemPrompt, /follow the assigned role card/);
+  assert.ok(fs.existsSync(path.join(discovered.skillPaths[0], 'spec-writing', 'SKILL.md')), 'the discovered skill pool includes spec-writing');
   let lease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === sessionId);
   assert.equal(lease.kind, 'typed-worker');
   assert.equal(lease.delivery_ready, true);

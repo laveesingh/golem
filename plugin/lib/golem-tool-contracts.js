@@ -39,12 +39,12 @@ const contracts = [
   },
   {
     name: 'ticket_create',
-    description: 'Golem tracker — create a ticket. Three doc types: `task` (the unit of work; default), `spec` (the living design doc), `doc` (a supporting page — research report, survey, comparison). The body is Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Pick the genre template matching the kind — task→feature, spec→spec (a doc needs no template) — from plugin/skills/tracker/templates/ or GET /api/templates, and fill it in. Defaults to your current project and records you as created_by. Use parent_id to hang tasks and supporting docs under their spec.',
+    description: 'Golem tracker — create a ticket. Three doc types: `task` (the unit of work; default), `spec` (the living design doc), `doc` (a supporting page — research report, survey, comparison). The body is Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Use the matching starting template — task→task, spec→spec, doc→doc — from GET /api/templates or substrate/skills/tracker/templates/ in the source checkout. Load golem:spec-writing for substantive spec authoring; adapt optional blocks to the current discussion. Defaults to your current project and records you as created_by. Use parent_id to hang tasks and supporting docs under their spec.',
     inputSchema: object({
-      title: string('Short imperative title.'), body: string('Full description / acceptance criteria. Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Pick the template matching the kind: task→feature, spec→spec (plugin/skills/tracker/templates/ or GET /api/templates).'),
+      title: string('Short imperative title.'), body: string('Full description / acceptance criteria. Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Templates: task→task, spec→spec, doc→doc via GET /api/templates. Spec authoring follows golem:spec-writing; omit irrelevant blocks.'),
       kind: string('spec|task|doc (default task).'), priority: string('Optional priority label.'), state: string('todo|in_progress|blocked|review|done (default todo).'),
       parent_id: string('Optional parent display ticket id — hangs this ticket under a spec.'),
-      assignee: string('session_id | "human" | null.'), source_ref: string('Optional provenance link, e.g. "github:<owner>/<repo>#<N>" for a spec ingested from a GitHub issue (see golem:tracker § GitHub Bridge).'),
+      assignee: string('session_id | "human" | null.'), source_ref: string('Optional provenance link, e.g. "github:<owner>/<repo>#<N>" for a spec ingested from a GitHub issue (see golem:ingest-github-issues).'),
       project: string('Contract project_id. Defaults to your current project.'),
     }, ['title']),
   },

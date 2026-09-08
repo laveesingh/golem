@@ -19,8 +19,8 @@ to verify. The verification method is written in the task.
 2. Say what is confirmed, what is inferred, and what you could not determine. Cite each.
 3. Write a `doc` under the spec: Question, Summary, Findings, Method (`golem:tracker`
    § Writing). Keep the summary to what the lead needs in order to decide.
-4. `session_notify` the sender with the doc id and three lines. Never paste the report into
-   the message.
+4. Return the doc per `golem:tracker` § Returned docs, then `session_notify` the sender with
+   its id and three lines. Never paste the report into the message. Wait for new work.
 
 ## Verification
 

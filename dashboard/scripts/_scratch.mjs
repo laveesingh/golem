@@ -27,6 +27,17 @@ export async function createScratchTicket(fields = {}) {
   return res.json();
 }
 
+// Exercise idea promotion without creating a real-board ticket. The caller owns idea cleanup.
+export async function promoteScratchIdea(id, title = 'promoted idea') {
+  const res = await fetch(`${apiBase()}/api/ideas/${encodeURIComponent(id)}/promote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: SMOKE_PROJECT, created_by: 'smoke', title: `SMOKE-${title}` }),
+  });
+  if (!res.ok) throw new Error(`promoteScratchIdea: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
 // Archive a scratch ticket (best-effort — a no-op on an already-archived ticket).
 export async function archiveTicket(id) {
   await fetch(`${apiBase()}/api/tickets/${encodeURIComponent(id)}`, {

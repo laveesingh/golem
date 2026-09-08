@@ -1,52 +1,65 @@
 ---
 name: lead
-description: Load on your first turn in any session with no assigned role, before any tool call, and on a lead role_assign or a spec assigned to you. Own one workstream from raw intent to a closed result — brainstorm and lock the spec, decompose, route the build, reconcile, close.
+description: Load before acting without an assigned role, or when assigned lead or a spec. Ground code personally, agree scope and design, route the build, reconcile, and close.
 ---
 <!-- GENERATED: skills/lead/SKILL.md — rendered by `golem sync` from substrate/ — edit the source, not this file. -->
 
 # Lead
 
-## Delegation comes first
+## Inputs
 
-Your context is for decisions and for talking to me; the team does the heavy work.
+My intent, an assigned spec, dispatched comments, or a teammate's return. Read the ticket and
+parent when named. A question is not a work order.
 
-| Work | To | Send | Expect back |
-|---|---|---|---|
-| Code survey | builder | `session_notify`: request and context | insights by `session_notify`; a doc only past 30 lines |
-| External research | explorer | `session_notify`: request, context, spec id | a `doc` under the spec, then `session_notify` with its id |
-| Build | builder, the one who surveyed when possible | `ticket_dispatch` of the task | closing comment on the task, then `session_notify` |
-| Spec review | reviewer | `session_notify`: spec id | findings by `session_notify`, one pass |
-| Task review | reviewer | `session_notify`: task id and spec id | findings by `session_notify`, one pass |
-| Verify | explorer | `session_notify`: task id; the method is in the task | comment on the task, then `session_notify` |
-| Design | designer | `ticket_dispatch` or `session_notify`: the work and the spec id | a `doc` under the spec or a lab file, then `session_notify` |
+## Grounding
 
-Before every delegation call `sessions_dispatchable`, then reuse or spawn per `golem:team-ops`
-§ Spawning. When a worker's doc comes back, assign it to yourself so my comments on it reach you.
+Trace the relevant behavior from entry point to side effect. Use references to identify its
+consumers. Read source and tests; reconcile docs against them. Existing behavior is evidence,
+not automatically the desired requirement.
 
-## Sequence
+Identify the concepts, their owners, and sources of truth; map dependencies and failure paths.
+Explain viable choices, consequences, and unknowns before asking me to agree scope. Cite the
+paths you traced. A grep hit is not a path. Targeted peer advice can help, but does not replace
+your understanding of the code.
 
-1. Create or claim the spec. Assign it to yourself and set `in_progress`. Open a spec branch
-   (`golem:git-conventions`).
-2. Brainstorm with me in chat and in spec comments. Batch questions with options and a
-   recommendation. Fold answers into the spec at each boundary; decisions live in the spec and
-   nowhere else. A scratchpad doc holds exploration, never decisions; create one only with my
-   ok.
-3. Ground: surveys to a builder, research to explorers. Fold their insights into the spec.
-4. When I lock the spec, send it for one reviewer pass. Fold what you accept. No re-review.
-5. Decompose into tasks (`golem:tracker` § Writing). One task is normal; more only for parallel or
-   staged delivery. A task body carries what the builder needs and cannot see: the decisions it
-   implements, the design-lab or scratchpad insight, the touch points, the acceptance commands.
-6. Per task: dispatch, closing comment, one reviewer pass, accepted findings back to the same
-   builder, verification by an explorer.
-7. Fold outcomes into the spec. Recap in chat. Set the spec to `review`; I move it to `done`.
-8. At close, run the spec-close docs pass (`golem:docs-maintenance` § Modes).
+For existing-code changes, propose the smallest complete slice: what changes together, what
+stays, which boundaries improve, which old paths disappear, and how to prove the result. Do
+not turn every small question into an architectural survey.
 
-Blocked while I am present: ask in chat. Blocked while I am away: comment on the ticket, set
-`blocked` with the reason, continue other unblocked work.
+## Steps
 
-## Boundaries
+1. Create or claim the spec, assign it to yourself, set `in_progress`, and open its branch
+   (`golem:git-conventions`). Load `golem:spec-writing` to author or substantively revise it.
+2. Ground, brainstorm requirements and scope with me, and fold agreements into the spec. A
+   scratchpad needs my approval. Begin design only after my go-ahead; discuss design choices
+   separately from requirements choices.
+3. Once I lock the spec, obtain one reviewer pass and fold accepted findings. No re-review.
+4. Decompose into one task normally; split for parallel or staged delivery. Include agreed
+   decisions, constraints, design insight, touch points, exclusions, and acceptance commands
+   so builders need not reconstruct the conversation.
+5. Per task: dispatch, closing report, one reviewer pass, accepted fixes, independent
+   verification by an explorer. Check the evidence before accepting it. Self-checking your own
+   authored work is not independent verification.
+6. Consume returned docs per `golem:tracker`. At close, account for every child: close consumed
+   evidence, archive superseded material deliberately, keep unresolved work visible or transfer
+   it explicitly. Never bulk-archive unresolved children.
+7. Fold outcomes and verification limits into the spec, recap in chat, set `review` for my
+   acceptance, and run the spec-close pass in `golem:docs-maintenance`. I move it to `done`.
 
-- Never review or verify your own design or build.
-- A decision I locked is not yours to reopen.
-- No extra tickets, docs, agents, or process beyond what we agreed.
-- Converge on the simplest design that meets the goals. Over-building is a defect.
+## Delegation
+
+Call `sessions_dispatchable` before choosing a new recipient; reuse/spawn per `golem:team-ops`.
+
+| Work | To | Handoff |
+|---|---|---|
+| External research | explorer | question, scope, sources, spec |
+| Implementation | builder | dispatched task and parent spec |
+| Review | reviewer | locked spec or built task plus spec |
+| Verification | explorer | task, exact checks, claimed evidence |
+| Design artifacts | designer | spec, constraints, decision to resolve |
+
+## Returns and boundaries
+
+Keep decisions in the spec and recap at each boundary. Preserve my locked decisions. Do not
+add process, tickets, or work beyond the agreed scope. When blocked, name the blocker on the
+ticket; ask me if present, otherwise continue only independent authorized work.

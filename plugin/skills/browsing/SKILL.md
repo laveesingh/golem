@@ -33,6 +33,10 @@ Headless by default. Headed only for the login handoff, or a task that is explic
 
 Never delete, reset, or log out of the shared profile.
 
+The lead sequences work needing shared logins. If another worker owns that browser, report the
+blocker and wait for handoff; do not close its browser or seize its profile. Independent
+no-login work uses separate ephemeral profiles.
+
 ## Login handoff
 
 When you hit a login wall on the shared profile:
