@@ -410,28 +410,27 @@ async function main() {
   await resumed.emit('session_shutdown', { reason: 'quit' });
   await forked.emit('session_shutdown', { reason: 'quit' });
 
-  // Crash before correlated agent_start releases the exact claim for replay.
+  // Queue admission already crossed native invocation. Even before correlated
+  // agent_start, shutdown/restart must preserve uncertainty and first lineage.
   const preCrashId = 'pi-preaccept-crash';
   const preCrash = createHarness(extension, preCrashId);
   await preCrash.start();
   let preCrashLease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === preCrashId);
   const preCrashResponse = postLease(preCrashLease, typedEnvelope(preCrashId, 'precrash', 'retry after preaccept crash', 'brief', 'pre-attempt-a'));
   await waitFor(() => preCrash.sent.length === 1, 'pre-crash injection did not start');
-  // Issue #34: queued-accept answers immediately with lifecycle 'claimed';
-  // a shutdown before pickup still releases the exact claim for replay below.
+  // Queued-accept answers with lifecycle 'claimed', but that is NOT proof
+  // native input was never invoked. The old replay expectation was unsafe.
   assert.equal((await preCrashResponse).status, 200);
   await preCrash.emit('session_shutdown', { reason: 'quit' });
   const preCrashRestart = createHarness(extension, preCrashId, { reason: 'resume' });
   await preCrashRestart.start();
   preCrashLease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === preCrashId);
-  const preRetry = postLease(preCrashLease, typedEnvelope(preCrashId, 'precrash', 'retry after preaccept crash', 'brief', 'pre-attempt-b'));
-  await waitFor(() => preCrashRestart.sent.length === 1, 'pre-crash retry did not inject');
-  await preCrashRestart.emit('input', { source: 'extension', text: 'retry after preaccept crash' });
-  preCrashRestart.setIdle(false);
-  await preCrashRestart.emit('agent_start', {});
-  assert.equal((await (await preRetry).json()).accepted_attempt_id, 'pre-attempt-b');
-  preCrashRestart.setIdle(true);
-  await preCrashRestart.emit('agent_settled', {});
+  const preRetry = await postLease(preCrashLease, typedEnvelope(preCrashId, 'precrash', 'retry after preaccept crash', 'brief', 'pre-attempt-b'));
+  const preRetryBody = await preRetry.json();
+  assert.equal(preRetryBody.delivery_state, 'recovery_required');
+  assert.equal(preRetryBody.accepted_attempt_id, 'pre-attempt-a', 'first queued acceptance lineage is immutable');
+  assert.equal(preCrashRestart.sent.length, 0, 'uncertain pre-start handoff is not injected again');
+  assert.equal(preCrashLease.delivery_ready, false);
   await preCrashRestart.emit('session_shutdown', { reason: 'quit' });
 
   // Crash after acceptance freezes the first attempt as recovery-required. A

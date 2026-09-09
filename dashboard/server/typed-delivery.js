@@ -12,10 +12,18 @@ const TERMINAL_DELIVERY_STATES = new Set(['settled', 'interrupted', 'recovery_re
 
 export function recordTypedEnvelopeOutcome(tracker, envelopeId, attemptId, delivery) {
   if (!envelopeId || !attemptId) return null;
-  const outcome = parseTypedDeliveryResponse(delivery, { envelopeId, attemptId });
+  let outcome = parseTypedDeliveryResponse(delivery, { envelopeId, attemptId });
   if (!outcome?.accepted) return null;
-  const error = delivery?.ok ? null : (outcome.error || delivery?.error || null);
-  const current = tracker.getEnvelope(envelopeId)?.delivery_state || 'pending';
+  const existing = tracker.getEnvelope(envelopeId);
+  const current = existing?.delivery_state || 'pending';
+  if (existing?.accepted_attempt_id && outcome.accepted_attempt_id !== existing.accepted_attempt_id) {
+    // Old queued-accept adapters could release a claim on restart and invent
+    // another first-acceptance id. Do not silently accept that contradiction.
+    outcome = { ...outcome, accepted_attempt_id: existing.accepted_attempt_id,
+      delivery_state: TERMINAL_DELIVERY_STATES.has(current) ? current : 'recovery_required',
+      correlation_error: true, error: 'accepted delivery lineage changed; inspect before recovery' };
+  }
+  const error = outcome.correlation_error ? outcome.error : delivery?.ok ? null : (outcome.error || delivery?.error || null);
   // A terminal adapter callback can beat the original HTTP acceptance
   // response. Tracker terminal truth wins; the stale response still counts as
   // accepted but must not attempt an illegal terminal -> accepted regression.

@@ -17,6 +17,7 @@ import { marked } from 'marked';
 import TurndownService from 'turndown';
 import { gfm as turndownGfm } from 'turndown-plugin-gfm';
 import { trackerDbPath } from '../../lib/golem-home.js';
+import { notificationReceipt } from '../../lib/notification-receipt.js';
 import { loadConfig } from '../../lib/golem-config.js';
 import { createCommentDispatchService, defaultDispatchStateForComment } from './comment-dispatch.js';
 
@@ -801,7 +802,9 @@ WHERE state_changed_at IS NULL`).run();
       ),
       getEnvelopeRetry: db.prepare('SELECT * FROM envelope_delivery_retries WHERE envelope_id = ?'),
       listPendingEnvelopeRetries: db.prepare(
-        "SELECT * FROM envelope_delivery_retries WHERE status IN ('pending','publishing') ORDER BY created_at ASC, envelope_id ASC"
+        `SELECT r.* FROM envelope_delivery_retries r JOIN message_envelopes e ON e.id = r.envelope_id
+         WHERE r.status IN ('pending','publishing') AND e.status NOT IN ('cancelled','expired','superseded')
+         ORDER BY r.created_at ASC, r.envelope_id ASC`
       ),
       insertEnvelopeRetry: db.prepare(`
         INSERT OR IGNORE INTO envelope_delivery_retries
@@ -813,10 +816,23 @@ WHERE state_changed_at IS NULL`).run();
         SET status = 'publishing', publishing_owner = @owner, publishing_expires_at = @expires
         WHERE envelope_id = @envelope_id
           AND (status = 'pending' OR (status = 'publishing' AND publishing_expires_at < @now))
+          AND EXISTS (SELECT 1 FROM message_envelopes e WHERE e.id = @envelope_id
+            AND e.status NOT IN ('cancelled','expired','superseded')
+            AND ((@settlement = 1 AND e.delivery_state IN ('published','settled','interrupted','recovery_required'))
+              OR (@settlement = 0 AND e.delivery_state IN ('pending','claimed')
+                AND e.accepted_attempt_id IS NULL)))
       `),
+      blockEnvelopeRetry: db.prepare(`UPDATE envelope_delivery_retries
+        SET status = 'blocked', publishing_owner = NULL, publishing_expires_at = NULL, last_error = @error
+        WHERE envelope_id = @id AND status = 'publishing' AND publishing_owner = @owner`),
+      cancelEnvelopeRetry: db.prepare(`UPDATE envelope_delivery_retries
+        SET status = 'cancelled', publishing_owner = NULL, publishing_expires_at = NULL, resolved_at = @ts
+        WHERE envelope_id = @id AND status IN ('pending','blocked')`),
       releaseEnvelopeRetry: db.prepare(`
         UPDATE envelope_delivery_retries
-        SET status = 'pending', publishing_owner = NULL, publishing_expires_at = NULL, last_error = @last_error
+        SET status = CASE WHEN EXISTS (SELECT 1 FROM message_envelopes e WHERE e.id = @envelope_id
+              AND e.status IN ('cancelled','expired','superseded')) THEN 'cancelled' ELSE 'pending' END,
+            publishing_owner = NULL, publishing_expires_at = NULL, last_error = @last_error
         WHERE envelope_id = @envelope_id AND status = 'publishing' AND publishing_owner = @owner
       `),
       deliverEnvelopeRetry: db.prepare(`
@@ -884,7 +900,7 @@ WHERE state_changed_at IS NULL`).run();
       `),
       updateTypedEnvelopeLifecycle: db.prepare(`
         UPDATE message_envelopes
-        SET status = @status,
+        SET status = CASE WHEN status IN ('cancelled','expired','superseded') THEN status ELSE @status END,
             delivery_state = @delivery_state,
             delivery_attempt_id = COALESCE(@delivery_attempt_id, delivery_attempt_id),
             accepted_attempt_id = COALESCE(accepted_attempt_id, @accepted_attempt_id),
@@ -2159,12 +2175,18 @@ WHERE state_changed_at IS NULL`).run();
     // ticket ids; this layer deliberately accepts canonical ids only.
     listEnvelopeViews,
 
+    getEnvelopeReceipt(envelopeId, options = {}) {
+      return notificationReceipt(stmts.getEnvelope.get(envelopeId), stmts.getEnvelopeRetry.get(envelopeId), options);
+    },
+
     getEnvelopeView(envelopeId) {
       const envelope = stmts.getEnvelope.get(envelopeId);
       if (!envelope) return null;
       const rootId = envelope.root_id || envelope.id;
       const root = stmts.getEnvelope.get(rootId);
-      if (!root || root.kind !== 'ticket_dispatch') return null;
+      if (!root || root.kind !== 'ticket_dispatch') {
+        return notificationReceipt(envelope, stmts.getEnvelopeRetry.get(envelopeId));
+      }
       const row = envelopeRootRows({ envelope_id: root.id, limit: 1 })[0];
       return row ? envelopeView(row) : null;
     },
@@ -2227,6 +2249,9 @@ WHERE state_changed_at IS NULL`).run();
       const existing = stmts.getEnvelope.get(envelopeId);
       if (!existing) throw new Error(`recordTypedEnvelopeLifecycle: envelope '${envelopeId}' not found`);
       const prior = existing.delivery_state || 'pending';
+      if (state === 'pending' && existing.accepted_attempt_id) {
+        throw new Error('recordTypedEnvelopeLifecycle: accepted admission cannot return to pending');
+      }
       if (prior === state
         && (attempt_id == null || attempt_id === existing.delivery_attempt_id)
         && (accepted_attempt_id == null || accepted_attempt_id === existing.accepted_attempt_id)) return existing;
@@ -2386,8 +2411,14 @@ WHERE state_changed_at IS NULL`).run();
       if (!['cancelled', 'expired'].includes(status)) throw new Error('resolveEnvelope: status must be cancelled or expired');
       const existing = stmts.getEnvelope.get(envelopeId);
       if (!existing) throw new Error(`resolveEnvelope: envelope '${envelopeId}' not found`);
-      stmts.resolveEnvelope.run({ id: envelopeId, status, ts: now(), last_error: error ?? null });
-      return stmts.getEnvelope.get(envelopeId);
+      return db.transaction(() => {
+        const ts = now();
+        stmts.resolveEnvelope.run({ id: envelopeId, status, ts, last_error: error ?? null });
+        const current = stmts.getEnvelope.get(envelopeId);
+        if (['cancelled', 'expired'].includes(current.status)) stmts.cancelEnvelopeRetry.run({ id: envelopeId, ts });
+        // Publishing ownership is retained: cancellation cannot recall a send.
+        return current;
+      }).immediate();
     },
 
     acknowledgeEnvelope(envelopeId, { target_session_id, kind = 'brief', summary = '' } = {}) {
@@ -2421,7 +2452,7 @@ WHERE state_changed_at IS NULL`).run();
       const ts = now();
       const txn = db.transaction(() => {
         stmts.cancelQueueRow.run({ resolved_at: ts, id: queueId });
-        if (row.envelope_id) stmts.resolveEnvelope.run({ id: row.envelope_id, status: 'cancelled', ts, last_error: null });
+        if (row.envelope_id) api.resolveEnvelope(row.envelope_id, { status: 'cancelled' });
         recordEvent({
           ticket_id: row.ticket_id,
           project_id: row.project_id,
@@ -2451,7 +2482,7 @@ WHERE state_changed_at IS NULL`).run();
       const ts = now();
       const txn = db.transaction(() => {
         stmts.expireQueueRow.run({ last_error: reason ?? null, resolved_at: ts, id: queueId });
-        if (row.envelope_id) stmts.resolveEnvelope.run({ id: row.envelope_id, status: 'expired', ts, last_error: reason ?? null });
+        if (row.envelope_id) api.resolveEnvelope(row.envelope_id, { status: 'expired', error: reason });
         recordEvent({
           ticket_id: row.ticket_id,
           project_id: row.project_id,
@@ -2561,6 +2592,25 @@ WHERE state_changed_at IS NULL`).run();
       return result.changes === 1;
     },
 
+    blockQueuedDispatch(queueId, { ownerToken = null, error = 'delivery requires inspection', nowMs = Date.now() } = {}) {
+      return db.transaction(() => {
+        const row = stmts.getQueueRow.get(queueId);
+        if (!row) return null;
+        const changed = db.prepare(`UPDATE dispatch_queue SET status = 'blocked',
+          publishing_owner = NULL, publishing_expires_at = NULL, resolved_at = @ts, last_error = @error
+          WHERE id = @id AND (status = 'pending' OR (status = 'publishing'
+            AND (publishing_owner = @owner OR publishing_expires_at < @ts)))
+          AND EXISTS (SELECT 1 FROM envelope_delivery_retries r WHERE r.envelope_id = dispatch_queue.envelope_id
+            AND r.status IN ('blocked','cancelled'))`).run({
+          id: queueId, owner: ownerToken, ts: new Date(nowMs).toISOString(), error,
+        });
+        if (changed.changes) recordEvent({ ticket_id: row.ticket_id, project_id: row.project_id,
+          type: 'dispatch_delivery_blocked', actor: 'golem-drainer',
+          data: { queue_id: queueId, envelope_id: row.envelope_id, reason: error } });
+        return stmts.getQueueRow.get(queueId);
+      }).immediate();
+    },
+
     releaseQueuePublishing(queueId, { ownerToken } = {}) {
       if (!ownerToken) throw new Error('releaseQueuePublishing: ownerToken is required');
       return stmts.releaseQueuePublishingRow.run({ id: queueId, owner: ownerToken }).changes === 1;
@@ -2597,14 +2647,59 @@ WHERE state_changed_at IS NULL`).run();
       return stmts.getEnvelopeRetry.get(envelopeId) ?? null;
     },
 
-    claimEnvelopeRetry(envelopeId, { ownerToken, leaseMs = 30_000, nowMs = Date.now() } = {}) {
+    claimEnvelopeRetry(envelopeId, { ownerToken, leaseMs = 45_000, nowMs = Date.now(), settlementOnly = false } = {}) {
       if (!ownerToken) throw new Error('claimEnvelopeRetry: ownerToken is required');
-      return stmts.claimEnvelopeRetry.run({
-        envelope_id: envelopeId,
-        owner: ownerToken,
-        now: new Date(nowMs).toISOString(),
-        expires: new Date(nowMs + leaseMs).toISOString(),
-      }).changes === 1;
+      return db.transaction(() => {
+        const retry = stmts.getEnvelopeRetry.get(envelopeId);
+        const envelope = stmts.getEnvelope.get(envelopeId);
+        if (!envelope || ['cancelled', 'expired', 'superseded'].includes(envelope.status)) return false;
+        if (!settlementOnly && envelope.accepted_attempt_id && envelope.delivery_state === 'pending') {
+          api.markEnvelopeUncertain(envelopeId, { error: 'historic pending row retains native admission; inspect before recovery' });
+          return false;
+        }
+        // A crashed legacy publisher has no receiver dedupe. Expired ownership
+        // is not proof that channel publication never happened.
+        if (!settlementOnly && retry?.status === 'publishing' && !retry.require_typed
+          && Date.parse(retry.publishing_expires_at) < nowMs) {
+          api.markEnvelopeUncertain(envelopeId, { error: 'legacy publication lease expired; delivery may have occurred' });
+          stmts.blockEnvelopeRetry.run({ id: envelopeId, owner: retry.publishing_owner, error: 'legacy handoff uncertain' });
+          return false;
+        }
+        return stmts.claimEnvelopeRetry.run({
+          envelope_id: envelopeId, owner: ownerToken, settlement: settlementOnly ? 1 : 0,
+          now: new Date(nowMs).toISOString(), expires: new Date(nowMs + leaseMs).toISOString(),
+        }).changes === 1;
+      }).immediate();
+    },
+
+    canPublishEnvelope(envelopeId, { ownerToken = null, nowMs = Date.now() } = {}) {
+      const envelope = stmts.getEnvelope.get(envelopeId);
+      if (!envelope || ['cancelled', 'expired', 'superseded'].includes(envelope.status)
+        || !['pending', 'claimed'].includes(envelope.delivery_state || 'pending')
+        || envelope.accepted_attempt_id) return false;
+      if (!ownerToken) return true;
+      const retry = stmts.getEnvelopeRetry.get(envelopeId);
+      return retry?.status === 'publishing' && retry.publishing_owner === ownerToken
+        && Date.parse(retry.publishing_expires_at) > nowMs;
+    },
+
+    markEnvelopeUncertain(envelopeId, { error } = {}) {
+      const envelope = stmts.getEnvelope.get(envelopeId);
+      if (!envelope) return null;
+      if ((envelope.delivery_state || 'pending') === 'pending') {
+        api.recordTypedEnvelopeLifecycle(envelopeId, { state: 'claimed', attempt_id: envelope.delivery_attempt_id || crypto.randomUUID() });
+      }
+      const current = stmts.getEnvelope.get(envelopeId);
+      if (['claimed', 'accepted'].includes(current.delivery_state)) {
+        api.recordTypedEnvelopeLifecycle(envelopeId, { state: 'recovery_required',
+          attempt_id: current.delivery_attempt_id, accepted_attempt_id: current.accepted_attempt_id || current.delivery_attempt_id, error });
+      }
+      return stmts.getEnvelope.get(envelopeId);
+    },
+
+    blockEnvelopeRetry(envelopeId, { ownerToken, error } = {}) {
+      if (!ownerToken) throw new Error('blockEnvelopeRetry: ownerToken is required');
+      return stmts.blockEnvelopeRetry.run({ id: envelopeId, owner: ownerToken, error: error ?? null }).changes === 1;
     },
 
     releaseEnvelopeRetry(envelopeId, { ownerToken, error = null } = {}) {

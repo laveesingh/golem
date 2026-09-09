@@ -27,6 +27,12 @@ export function settleDurableEnvelope({ tracker, envelope, retry, retryOwnerToke
   if (!tracker || !envelope?.id || !retryOwnerToken) throw new Error('settleDurableEnvelope requires tracker, envelope, and retry owner');
   const settlement = storedSettlement(retry);
   try {
+    if (['cancelled', 'expired', 'superseded'].includes(tracker.getEnvelope(envelope.id)?.status)) {
+      // Retain terminal facts, but never turn logical cancellation into delivery
+      // success or settle unrelated ticket/comment owners as delivered.
+      tracker.releaseEnvelopeRetry(envelope.id, { ownerToken: retryOwnerToken, error: 'publication cancelled' });
+      return true;
+    }
     const comments = settlement?.comment_dispatch;
     const commentDispatchIds = Array.isArray(comments?.dispatch_ids)
       ? comments.dispatch_ids.filter((id) => typeof id === 'string' && id)
@@ -71,7 +77,7 @@ export async function publishDurableEnvelope({
   content,
   legacy = null,
   typedTarget = false,
-  durableRetry = typedTarget,
+  durableRetry = typedTarget || envelope?.kind === 'session_notify',
   settlement = null,
   retryOwnerToken = crypto.randomUUID(),
   retryAlreadyOwned = false,
@@ -99,13 +105,19 @@ export async function publishDurableEnvelope({
     if (!retryOwned) {
       return {
         envelope,
-        delivery: { ok: false, status: 409, typed_worker: true, error: 'original typed envelope is already publishing' },
+        delivery: { ok: false, status: 409, typed_worker: typedTarget,
+          error: `original envelope is not publishable (${tracker.getEnvelopeReceipt(envelope.id).state})`, failure_stage: 'before_native' },
         typedOutcome: null,
         delivered: false,
         retry_queued: !!retry?.queued,
         retry,
       };
     }
+  }
+  if (!tracker.canPublishEnvelope(envelope.id, { ownerToken: usesRetry ? retryOwnerToken : null })) {
+    if (retryOwned) tracker.releaseEnvelopeRetry(envelope.id, { ownerToken: retryOwnerToken, error: 'publication fenced' });
+    return { envelope, delivery: { ok: false, status: 409, error: 'publication fenced', failure_stage: 'before_native' },
+      typedOutcome: null, delivered: false, settled: false, retry_queued: false, retry: tracker.getEnvelopeRetry(envelope.id) };
   }
   // Typed lifecycle state is durable before bytes leave the dashboard. A
   // deterministic refusal returns this exact attempt to pending below; a
@@ -118,6 +130,11 @@ export async function publishDurableEnvelope({
   }
   let delivery;
   try {
+    if (!tracker.canPublishEnvelope(envelope.id, { ownerToken: usesRetry ? retryOwnerToken : null })) {
+      if (retryOwned) tracker.releaseEnvelopeRetry(envelope.id, { ownerToken: retryOwnerToken, error: 'publication fenced' });
+      return { envelope, delivery: { ok: false, status: 409, error: 'publication fenced', failure_stage: 'before_native' },
+        typedOutcome: null, delivered: false, settled: false, retry_queued: false, retry: tracker.getEnvelopeRetry(envelope.id) };
+    }
     delivery = await publish({ envelope, sessionId, content, legacy, metadata });
   } catch (error) {
     delivery = { ok: false, status: 0, error: String(error?.message ?? error) };
@@ -125,14 +142,25 @@ export async function publishDurableEnvelope({
   if (typedTarget && delivery?.typed_attempt_id == null && metadata?.attempt_id) {
     delivery = { ...delivery, typed_attempt_id: metadata.attempt_id, typed_worker: delivery?.typed_worker ?? true };
   }
-  const typedOutcome = typedTarget
+  let typedOutcome = typedTarget
     ? recordTypedEnvelopeOutcome(tracker, envelope.id, metadata?.attempt_id, delivery)
     : null;
+  // A terminal callback may beat a lost HTTP response. Its durable evidence
+  // wins: never downgrade that fact to pending and manufacture a new attempt.
+  if (typedTarget && !typedOutcome) {
+    const observed = tracker.getEnvelope(envelope.id);
+    if (observed?.accepted_attempt_id && ['claimed', 'accepted', 'settled', 'interrupted', 'recovery_required'].includes(observed.delivery_state)) {
+      typedOutcome = { accepted: true, envelope_id: envelope.id, accepted_attempt_id: observed.accepted_attempt_id,
+        delivery_state: observed.delivery_state, source: 'durable_callback' };
+    }
+  }
   if (typedOutcome?.accepted && !delivery?.accepted) delivery = { ...delivery, accepted: true };
   const delivered = acceptedDelivery(delivery);
+  const failureReason = delivery?.error || (delivery?.ok
+    ? 'endpoint did not confirm native acceptance' : `transport returned HTTP ${delivery?.status ?? '?'}`);
   if (!typedOutcome) {
     tracker.markEnvelopeDelivery(envelope.id, {
-      error: delivered ? null : (delivery?.error || `status ${delivery?.status ?? '?'}`),
+      error: delivered ? null : failureReason,
     });
   }
 
@@ -159,26 +187,29 @@ export async function publishDurableEnvelope({
       settled = false;
       tracker.releaseEnvelopeRetry(envelope.id, { ownerToken: retryOwnerToken, error: null });
     } else if (!delivered) {
-      if (typedTarget && metadata?.attempt_id) {
-        tracker.recordTypedEnvelopeLifecycle(envelope.id, {
-          state: 'pending',
-          attempt_id: metadata.attempt_id,
-          error: delivery?.error || `status ${delivery?.status ?? '?'}`,
-        });
+      if (!typedTarget && delivery?.failure_stage !== 'before_native') {
+        tracker.markEnvelopeUncertain(envelope.id, { error: delivery?.error || 'channel handoff uncertain' });
+        tracker.blockEnvelopeRetry(envelope.id, { ownerToken: retryOwnerToken, error: delivery?.error || 'channel handoff uncertain' });
+      } else {
+        if (typedTarget && metadata?.attempt_id) {
+          tracker.recordTypedEnvelopeLifecycle(envelope.id, {
+            state: 'pending', attempt_id: metadata.attempt_id, error: failureReason,
+          });
+        }
+        if (delivery?.retryable === false && delivery?.failure_stage === 'before_native') {
+          tracker.blockEnvelopeRetry(envelope.id, { ownerToken: retryOwnerToken, error: failureReason });
+        } else tracker.releaseEnvelopeRetry(envelope.id, { ownerToken: retryOwnerToken, error: failureReason });
       }
-      tracker.releaseEnvelopeRetry(envelope.id, {
-        ownerToken: retryOwnerToken,
-        error: delivery?.error || `status ${delivery?.status ?? '?'}`,
-      });
     }
   }
+  const finalRetry = usesRetry ? tracker.getEnvelopeRetry(envelope.id) : null;
   return {
     envelope,
     delivery,
     typedOutcome,
     delivered,
     settled,
-    retry_queued: !!retry?.queued && (!delivered || !settled),
-    retry,
+    retry_queued: ['pending', 'publishing'].includes(finalRetry?.status) && !settled,
+    retry: finalRetry,
   };
 }

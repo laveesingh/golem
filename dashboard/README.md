@@ -43,6 +43,32 @@ Open <http://dashboard.golem.localhost:7420> (fallback: <http://127.0.0.1:7420>)
 To smoke-check a running instance: `npm run check:dashboard` (from the repo
 root) or `golem status`.
 
+## Delivery inspection and recovery
+
+`GET /api/message-envelopes/:id` also exposes ordinary notifications. Use
+`?view=receipt` for the compact projection of any envelope; add `&content=1`
+only when the message text is needed. Receipts distinguish native input,
+Claude channel submission, uncertainty, and turn settlement—not task completion.
+
+Pi persists its admission boundary before native input. After possible input,
+restart retains the original attempt and requires recovery rather than replay.
+Only a definite pre-input failure releases that reservation. Running workers
+must be upgraded/restarted together with the dashboard to acquire this repair;
+updating source alone does not.
+
+Cancellation fences unclaimed retries, not input already in flight. A legacy
+channel's ambiguous handoff is blocked, never automatically repeated. Blocked
+queued tickets retain their envelope/error in `GET /api/dispatch-queue?status=all`
+and leave the active FIFO; this neither cancels their task nor claims delivery.
+
+`npm run test:collaboration` covers the delivery journeys. Its native matrix
+requires the Codex schema recorded in `lib/codex-app-server-contract.js`. To test
+with that recorded binary without changing the installed CLI:
+
+```bash
+npm exec --yes --package=@openai/codex@0.146.0 -- npm test
+```
+
 ## Configuration
 
 Environment variables (all optional):

@@ -592,7 +592,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       const senderId = caller.sessionId;
       if (!senderId) return { isError: true, content: [{ type: 'text', text: 'session_notify: no trusted caller session id.' }] };
       const delivery = await tracker.notifySession({ session_id: target.session_id, text: message, sender_id: senderId, project_id: target.project_id || null });
-      return { content: [{ type: 'text', text: JSON.stringify({ ok: true, session_id: target.session_id, delivery }, null, 2) }] };
+      return { isError: delivery?.ok === false, content: [{ type: 'text', text: JSON.stringify({ ok: delivery?.ok !== false, session_id: target.session_id, delivery }, null, 2) }] };
     } catch (err) {
       return { isError: true, content: [{ type: 'text', text: `session_notify: delivery failed — ${err instanceof Error ? err.message : String(err)}` }] };
     }
@@ -822,6 +822,7 @@ async function pushEvent(kind, content, extraMeta = {}, targetSessionId = null) 
   if (!consumer.ready) {
     const error = new Error(channelReadinessError(consumer.reason));
     error.statusCode = 503;
+    error.failureStage = 'before_native';
     throw error;
   }
   await mcp.notification({
@@ -944,7 +945,11 @@ const server = http.createServer(async (req, res) => {
       const status = Number(err?.statusCode) >= 400 && Number(err?.statusCode) <= 599
         ? Number(err.statusCode)
         : 500;
-      sendJson(res, status, { ok: false, error: msg });
+      sendJson(res, status, { ok: false, error: msg,
+        ...(method === 'POST' && path === '/brief'
+          ? { failure_stage: err?.failureStage || 'after_native', retryable: err?.failureStage === 'before_native' }
+          : {}),
+      });
     } catch {
       // headers already sent; nothing else to do.
     }

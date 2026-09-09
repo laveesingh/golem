@@ -25,6 +25,7 @@ import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
 import { recordTypedEnvelopeOutcome } from './typed-delivery.js';
 import { sameEndpointSecret } from '../../lib/typed-worker-endpoint.js';
+import { closeTypedDeliveryStores } from '../../lib/typed-delivery-tombstones.js';
 import { hasTypedWorkerCapability, readEndpointLeases, readSessionFacts } from '../../lib/session-facts.js';
 import {
   clearRoleDefault,
@@ -910,7 +911,9 @@ async function main() {
   });
 
   fastify.get('/api/message-envelopes/:id', async (req, reply) => {
-    const item = tracker.getEnvelopeView(req.params.id);
+    const item = req.query?.view === 'receipt'
+      ? tracker.getEnvelopeReceipt(req.params.id, { includeContent: req.query?.content === '1' })
+      : tracker.getEnvelopeView(req.params.id);
     if (!item) return reply.code(404).send({ error: 'not_found' });
     return item;
   });
@@ -985,8 +988,10 @@ async function main() {
         metadata: { notification_text: String(b.text || '') },
         legacy: { path: '/brief', body: String(b.text || '') },
       });
+      const receipt = tracker.getEnvelopeReceipt(result.envelope.id);
       return {
-        ok: result.delivered || result.retry_queued,
+        receipt,
+        ok: receipt.state !== 'uncertain' && (result.delivered || result.retry_queued),
         queued: result.retry_queued,
         envelope_id: result.envelope.id,
         delivery: result.delivery,
@@ -2006,9 +2011,14 @@ async function main() {
       if (!['settled', 'interrupted', 'recovery_required'].includes(state)
         || typeof attemptId !== 'string' || !attemptId
         || typeof acceptedAttemptId !== 'string' || !acceptedAttemptId
-        || acceptedAttemptId !== envelope.accepted_attempt_id) {
+        || (envelope.accepted_attempt_id
+          ? acceptedAttemptId !== envelope.accepted_attempt_id
+          : (!envelope.delivery_attempt_id || attemptId !== acceptedAttemptId))) {
         return reply.code(409).send({ error: 'typed lifecycle report does not match the accepted envelope lineage' });
       }
+      // A lost acceptance response leaves the sender's first id unknown. The
+      // authenticated receiver's durable admission record can establish it;
+      // once recorded, the immutable first id above must match on every report.
       const lifecycleBody = {
         ok: state === 'settled',
         accepted: true,
@@ -2032,7 +2042,7 @@ async function main() {
       const retry = tracker.getEnvelopeRetry(envelope.id);
       if (retry) {
         const settlementOwner = crypto.randomUUID();
-        if (tracker.claimEnvelopeRetry(envelope.id, { ownerToken: settlementOwner })) {
+        if (tracker.claimEnvelopeRetry(envelope.id, { ownerToken: settlementOwner, settlementOnly: true })) {
           settled = settleDurableEnvelope({
             tracker,
             envelope: tracker.getEnvelope(envelope.id),
@@ -2688,6 +2698,7 @@ async function main() {
       chat.stop();
       await state.close();
       tracker.close();
+      closeTypedDeliveryStores();
       await fastify.close();
     } finally {
       process.exit(0);

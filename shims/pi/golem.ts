@@ -255,7 +255,8 @@ export default function golem(pi) {
             projectContext: () => projectContext(sessionId, ctx.cwd),
           });
           const result = await runtime.invoke(contract.name, params || {});
-          return { content: [{ type: 'text', text: toolText(result) }], details: { ok: true, result } };
+          const ok = !(contract.name === 'session_notify' && result?.ok === false);
+          return { content: [{ type: 'text', text: toolText(result) }], details: { ok, result }, ...(!ok ? { isError: true } : {}) };
         } catch (error) {
           const detail = typeof error?.toJSON === 'function' ? error.toJSON() : { name: error?.name || 'Error', message: error?.message || String(error) };
           return { content: [{ type: 'text', text: toolText(detail) }], details: { ok: false, error: detail }, isError: true };
