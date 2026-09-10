@@ -13,6 +13,7 @@ import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, channelHealth,
 import { createChat } from './chat.js';
 import { readNativeSessionPeek } from './native-session-peek.js';
 import { openTrackerDb } from './tracker-db.js';
+import { createNotificationService } from './notification-service.js';
 import { isChannelDeliveryReady, isTypedWorkerChannel, readChannels } from './channels.js';
 import { applyGateVerdict, createGate } from './projects.js';
 import { listIdeas, createIdea, popIdea, readIdea } from './ideas.js';
@@ -975,29 +976,14 @@ async function main() {
       ok, queued: result.retry_queued, envelope_id: result.envelope.id, delivery: result.delivery,
     });
   });
+  const notify = createNotificationService({ tracker, listTargets: () => state.nativeSessions(), listChannels, deliver: deliverControlEnvelope });
+  fastify.get('/api/messages/notify', async () => ({ notification_protocol: 1, idempotency: true }));
   fastify.post('/api/messages/notify', async (req, reply) => {
-    const b = req.body ?? {};
-    if (!b.sender_id || !b.session_id) return reply.code(400).send({ error: 'notification sender_id and session_id are required' });
     try {
-      const result = await deliverControlEnvelope(tracker, {
-        project_id: b.project_id ?? null,
-        sender_id: b.sender_id,
-        recipient_session_id: b.session_id,
-        kind: 'session_notify',
-        content: String(b.text || ''),
-        metadata: { notification_text: String(b.text || '') },
-        legacy: { path: '/brief', body: String(b.text || '') },
-      });
-      const receipt = tracker.getEnvelopeReceipt(result.envelope.id);
-      return {
-        receipt,
-        ok: receipt.state !== 'uncertain' && (result.delivered || result.retry_queued),
-        queued: result.retry_queued,
-        envelope_id: result.envelope.id,
-        delivery: result.delivery,
-      };
+      return await notify(req.body ?? {}, { caller: req.headers['x-golem-caller-session'] || null });
     } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
+      return reply.code(err.status || 503).send({ error: String(err?.message ?? err), code: err.code || 'NOTIFICATION_FAILED',
+        operation_id: err.operation_id ?? req.body?.operation_id ?? null });
     }
   });
   fastify.post('/api/messages/control', async (req, reply) => {

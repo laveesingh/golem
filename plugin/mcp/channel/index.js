@@ -31,6 +31,7 @@ import {
 import * as tracker from './tracker-client.js';
 import { GOLEM_TOOL_CONTRACTS } from '../../lib/golem-tool-contracts.js';
 import { bridgeEndpointForParent, managedCodexBinding, resolveCallerSessionId, resolveProjectCwd, sessionsForParent } from './identity.js';
+import { readClaudeSessionRecord } from '../../lib/claude-session-context.js';
 import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../../lib/session-role.js';
 import { releaseEndpointLeases, renewEndpointLease, upsertSessionFact } from '../../lib/session-facts.js';
 
@@ -77,8 +78,7 @@ const MANAGED_CODEX_MCP_ONLY = process.env.GOLEM_MANAGED_CODEX_MCP_ONLY === '1';
 // Prefer that file; fall back to the env ids only when it is unreadable.
 function readParentSessionFile() {
   try {
-    const f = path.join(os.homedir(), '.claude', 'sessions', `${process.ppid}.json`);
-    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    const j = readClaudeSessionRecord(process.ppid);
     if (j && typeof j === 'object') return j;
   } catch { /* missing / unreadable — fall through */ }
   return null;

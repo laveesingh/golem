@@ -18,10 +18,11 @@ import TurndownService from 'turndown';
 import { gfm as turndownGfm } from 'turndown-plugin-gfm';
 import { trackerDbPath } from '../../lib/golem-home.js';
 import { notificationReceipt } from '../../lib/notification-receipt.js';
+import { NotificationError } from '../../lib/notification-contract.js';
 import { loadConfig } from '../../lib/golem-config.js';
 import { createCommentDispatchService, defaultDispatchStateForComment } from './comment-dispatch.js';
 
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 20;
 
 // GOL-151: three doc types. `task` is the default unit of work, `spec` is the
 // living design doc, `doc` is any supporting page (research, survey,
@@ -665,6 +666,7 @@ WHERE state_changed_at IS NULL`).run();
     // or acknowledgement truth.
     const envelopeCols = db.prepare('PRAGMA table_info(message_envelopes)').all().map((c) => c.name);
     for (const [col, def] of [
+      ['request_fingerprint', 'TEXT'],
       ['root_id', 'TEXT'], ['parent_id', 'TEXT'], ['sender_id', 'TEXT'],
       ['reply_to_session_id', 'TEXT'], ['recipient_session_id', 'TEXT'],
       ['delivery_attempted_at', 'TEXT'], ['delivery_opportunity_at', 'TEXT'],
@@ -2198,7 +2200,24 @@ WHERE state_changed_at IS NULL`).run();
     // adapter accepts only an envelope and never a free-form channel route.
     // Keep the allowed vocabulary narrow so this table does not become a
     // generic, unaudited message bus.
-    createControlEnvelope({ project_id = null, sender_id, recipient_session_id, kind = 'session_notify', payload = '' } = {}) {
+    admitNotification({ id, fingerprint, sender_id, recipient_session_id, project_id = null, payload, require_typed = false } = {}) {
+      return db.transaction(() => {
+        const existing = stmts.getEnvelope.get(id);
+        if (existing) {
+          if (existing.kind !== 'session_notify' || existing.request_fingerprint !== fingerprint) {
+            throw new NotificationError('request-id already belongs to a different operation', 'OPERATION_CONFLICT', 409);
+          }
+          return { envelope: existing, created: false };
+        }
+        const envelope = api.createControlEnvelope({ id, project_id, sender_id, recipient_session_id, payload });
+        db.prepare('UPDATE message_envelopes SET request_fingerprint = ? WHERE id = ?').run(fingerprint, id);
+        api.enqueueEnvelopeRetry(id, { session_id: recipient_session_id, content: payload.content,
+          legacy: { path: '/brief', body: payload.content }, require_typed });
+        return { envelope: stmts.getEnvelope.get(id), created: true };
+      }).immediate();
+    },
+
+    createControlEnvelope({ id = crypto.randomUUID(), project_id = null, sender_id, recipient_session_id, kind = 'session_notify', payload = '' } = {}) {
       const allowedKinds = new Set([
         'brief',
         'consult',
@@ -2214,7 +2233,7 @@ WHERE state_changed_at IS NULL`).run();
         ? { ...payload, content: String(payload.content ?? '') }
         : { content: String(payload) };
       const created_at = now();
-      const row = { id: crypto.randomUUID(), root_id: null, parent_id: null, ticket_id: null, project_id,
+      const row = { id, root_id: null, parent_id: null, ticket_id: null, project_id,
         sender_id, reply_to_session_id: sender_id, recipient_session_id, sender_session_id: sender_id,
         target_session_id: recipient_session_id, kind, payload: JSON.stringify(body),
         status: 'pending', ack_deadline_at: null, created_at, expires_at: expiresAt(created_at) };

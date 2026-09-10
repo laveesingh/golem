@@ -2,7 +2,8 @@
 // golem — minimal Node CLI for the v4 harness.
 //
 // v3 subcommands removed:
-//   install, cleanup, reinstall, session, project, dispatch, ack
+//   install, cleanup, reinstall, project, dispatch, ack
+//   The old session commands are replaced by session list/notify.
 //
 // Surviving subcommands:
 //   dashboard    Start the admin dashboard (node dashboard/server/index.js).
@@ -89,7 +90,6 @@ const removed = new Set([
   'install',
   'cleanup',
   'reinstall',
-  'session',
   'project',
   'dispatch',
   'ack',
@@ -2399,6 +2399,10 @@ Run:
                        --json preserves the machine-readable worker records.
   role <role|clear> [--session <id-or-name>]
                          Set or clear a session role (${SESSION_ROLES.join(', ')}).
+  session list|notify [--help]
+                         Discover sessions or send idempotent notifications.
+  message inspect <id> [--content] [--json]
+                         Inspect delivery without claiming task completion.
   sessions dedup [--apply]
                          Dry-run named-session duplicate cleanup; --apply marks
                          stale duplicate rows ended_at under sessions.json.lock.
@@ -2508,6 +2512,12 @@ async function main() {
     case 'role':
       await cmdRole(rest);
       break;
+    case 'session':
+    case 'message': {
+      const { runCollaboration } = await import('./collaboration.js');
+      process.exitCode = await runCollaboration(cmd, rest);
+      break;
+    }
     case 'sessions':
       await cmdSessions(rest);
       break;
