@@ -16,14 +16,14 @@ single writer; hooks, shims, and MCP tools connect live sessions to it.
 | Codex | Tier A through the managed private bridge; a separately launched `codex` is pull-only | `golem codex` |
 | Claude Code | Tier A development-channel delivery; plain `claude` can pull work only | `golem claude` |
 | OpenCode | Tier A checkout-bound shim and bridge; opt-in | `opencode` after sync |
-| Pi | Tier A worker with typed delivery; Node.js 22.19+ and Pi 0.84.3 | `golem pi` |
+| Pi | Tier A worker with typed delivery; Node.js 22.19+ and Pi 0.85.1 | `golem pi` |
 | Gemini CLI | Unsupported; no adapter or release contract is shipped | — |
 
 The built-in roles are `lead`, `builder`, `explorer`, and `reviewer`.
 
 ## Requirements
 
-- Golem requires Node.js 22.19 or newer and npm. Pi uses the pinned `@earendil-works/pi-coding-agent` 0.84.3 release.
+- Golem requires Node.js 22.19 or newer and npm. Pi uses the pinned `@earendil-works/pi-coding-agent` 0.85.1 release.
 - Git.
 - At least one supported coding harness installed separately.
 

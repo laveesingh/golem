@@ -51,7 +51,7 @@ registries, owns tracker writes, and dispatches to native channels or typed endp
   plugin or reload a running session.
 - OpenCode remains checkout-bound through absolute shim/MCP paths.
 - Standalone Codex is pull-only; managed `golem codex` is version-gated. Pi's supported
-  worker version is 0.84.3 with Node.js 22.19+.
+  worker version is 0.85.1 with Node.js 22.19+.
 - Mutable runtime state belongs outside the repository. Never commit credentials or journals.
 
 ## Common tasks

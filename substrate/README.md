@@ -27,7 +27,7 @@ dependencies. Keep the dashboard running before using tracker tools or dispatch.
 - **OpenCode** — opt-in through `~/.golem/config.json`; its MCP server and
   runtime shim point to this checkout by absolute path.
 - **Pi** — `golem sync --target pi` renders the native extension. `golem pi`
-  provides typed-worker delivery and requires Pi 0.84.3 with Node.js 22.19+
+  provides typed-worker delivery and requires Pi 0.85.1 with Node.js 22.19+
   or newer.
 
 The built-in roles are `lead`, `builder`, `explorer`, and `reviewer`. Role
