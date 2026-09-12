@@ -15,7 +15,7 @@ description: The team surface for every role — see teammates, message them, di
 |---|---|
 | Human's native chat | Native chat answer |
 | Human's ticket comment | `ticket_comment_reply` in that thread; the human resolves it, not the agent |
-| Peer request | Durable result where required, then `session_notify` to its authenticated sender id |
+| Peer request | Durable result where required, then notify its authenticated sender id |
 
 - A skipped/uncorrelated ack does not change the reply route. A dashboard human identity is
   not a live peer session. On an unavailable peer return, keep the report on the ticket and
@@ -28,10 +28,13 @@ description: The team surface for every role — see teammates, message them, di
 
 | Do | Use |
 |---|---|
-| See the team: roles, status, workload | `sessions_dispatchable`, called right before every delegation, never from memory |
-| Message a teammate | `session_notify` |
+| See the team | `golem session list --json` on Pi/Claude; compatibility discovery tool elsewhere. Refresh before delegation. |
+| Message a teammate | `golem session notify --to <id> --message-file <file>` on Pi/Claude; compatibility notify elsewhere. |
+| Manage reminders | `golem schedule list/inspect/cancel` |
 | Hand a ticket to a teammate | `ticket_dispatch({id, session_id})` |
 | See, add, watch, retire managed workers | `golem list`, `golem spawn <role>`, `golem peek <name>`, `golem attach <name>`, `golem kill <name>`, always with `--project .` |
+
+Reminder method: `golem:lead` § Follow-up.
 
 Worker names repeat across projects (every project has a `builder1`). That is why
 `--project .` is not optional.
@@ -55,7 +58,8 @@ consultation remains advisory; it does not transfer work ownership.
 
 ## Retiring
 
-- Retire only when I say so; surface candidates instead. Nothing reaps idle workers.
+- Retire when I ask, or for known-broken-worker recovery per `golem:lead` § Follow-up.
+  Never retire workers merely for being idle.
 - Check `golem list --project .` first; killing a busy worker abandons its dispatch.
 - Only `golem kill`; raw tmux leaves orphans. Never kill yourself.
 
@@ -73,7 +77,5 @@ reference, to the sender id: findings, risks, a recommended approach, what you c
 Never take the peer's ticket or edit its repo. Treat a reply you receive as advice: verify what
 matters, keep what holds.
 
-## For me
-
-Workers run on a tmux server per project, `golem-<project id>`, prefix `C-g`. `golem attach
---project .` with no name opens the whole swarm.
+Use command `--help` for parameters. A failed CLI identity check is not permission to switch
+to a compatibility tool or `--human`.

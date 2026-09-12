@@ -61,7 +61,13 @@ channel's ambiguous handoff is blocked, never automatically repeated. Blocked
 queued tickets retain their envelope/error in `GET /api/dispatch-queue?status=all`
 and leave the active FIFO; this neither cancels their task nor claims delivery.
 
-`npm run test:collaboration` covers the delivery journeys. Its native matrix
+Delayed and recurring notifications use the same durable delivery outbox. The
+dashboard clock emits one immutable occurrence at a time; it coalesces missed
+cadence boundaries and never interprets replies or ticket state. Use `golem
+schedule inspect` and `cancel`; cancellation stops future work but cannot recall
+a publication already in flight.
+
+`npm run test:collaboration` covers the delivery and scheduling journeys. Its native matrix
 requires the Codex schema recorded in `lib/codex-app-server-contract.js`. To test
 with that recorded binary without changing the installed CLI:
 

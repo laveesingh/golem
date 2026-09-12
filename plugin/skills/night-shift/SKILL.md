@@ -18,8 +18,9 @@ Execute the approved plan while I am away.
 4. Independent review and verification still follow `golem:lead`; nobody self-certifies.
 5. Blocked: report the exact condition on the ticket, set `blocked`, and continue only
    independent approved work. If nothing is unblocked, stop and leave the memo.
-6. Commit per coherent unit with honest ticket state. No background processes or self-scheduled
-   loops. Understand a failure before retrying.
+6. Commit per coherent unit with honest ticket state. Use Golem-managed reminders per
+   `golem:lead` § Follow-up, not agent-owned polling/sleep loops or background daemons.
+   Understand a failure before retrying.
 
 Stay inside the checkout. Unattended permission prompts stop the run.
 
