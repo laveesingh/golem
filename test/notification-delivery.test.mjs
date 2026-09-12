@@ -11,6 +11,7 @@ process.env.GOLEM_HOME = home;
 const { openTrackerDb } = await import('../dashboard/server/tracker-db.js');
 const { publishDurableEnvelope } = await import('../dashboard/server/envelope-delivery.js');
 const { initDispatchDrainer } = await import('../dashboard/server/dispatch-queue.js');
+const { createNotificationService } = await import('../dashboard/server/notification-service.js');
 const { closeTypedDeliveryStores } = await import('../lib/typed-delivery-tombstones.js');
 const dbPath = path.join(home, 'tracker.db');
 const tracker = openTrackerDb(dbPath);
@@ -27,6 +28,29 @@ const publish = (e, send, extra = {}) => publishDurableEnvelope({
 });
 
 try {
+  let backgroundSends = 0;
+  const backgroundNotify = createNotificationService({ tracker,
+    listTargets: async () => [{ session_id: 'background-cc', harness: 'claudecode', kind: 'background', alive: true }],
+    listChannels: async () => [{ session_id: 'background-cc', consumer_ready: true, delivery_ready: true }],
+    readFacts: () => [], deliver: async () => { backgroundSends++; },
+  });
+  await assert.rejects(() => backgroundNotify({ operation_id: 'ff55c10d-0dd6-466b-8717-8e19b2a607f8',
+    sender_id: 'caller', session_id: 'background-cc', text: 'must not disappear' }, { caller: 'caller' }), /do not consume channel notifications/);
+  assert.equal(backgroundSends, 0);
+  assert.equal(tracker.getEnvelope('ff55c10d-0dd6-466b-8717-8e19b2a607f8'), null);
+  const backgroundTicket = tracker.createTicket({ project_id: 'background-test-000000', title: 'must stay queued', created_by: 'test' });
+  const backgroundQueue = tracker.queueDispatch(backgroundTicket.id, { session_id: 'background-cc', payload: 'must not disappear', actor: 'test' });
+  const backgroundDrainer = initDispatchDrainer({ tracker,
+    state: { nativeSessions: () => [{ session_id: 'background-cc', harness: 'claudecode', kind: 'background', alive: true, status: 'idle' }] },
+    listChannels: async () => [{ session_id: 'background-cc', consumer_ready: true, delivery_ready: true }],
+    pushBrief: async () => { backgroundSends++; return { ok: true, status: 202 }; },
+    chat: { record() {} }, broadcastWS() {}, buildDispatchBrief: () => 'must not disappear',
+  });
+  try { await backgroundDrainer.tick(); } finally { backgroundDrainer.close(); }
+  assert.equal(backgroundSends, 0);
+  assert.equal(tracker.raw().prepare('SELECT status FROM dispatch_queue WHERE id=?').get(backgroundQueue.id).status, 'pending');
+  console.log('background Claude target is rejected before admission and retained in queued delivery: passed');
+
   let sends = 0;
   const send = async () => { sends++; return { ok: true, status: 202 }; };
   const cancelled = create(); enqueue(cancelled);

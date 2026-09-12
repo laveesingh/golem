@@ -642,14 +642,15 @@ async function main() {
   }
 
   const NORMALIZED_DELIVERY_REASONS = new Set([
-    'ready', 'busy', 'waiting', 'missing_channel', 'endpoint_unhealthy', 'not_ready',
+    'ready', 'busy', 'waiting', 'missing_channel', 'endpoint_unhealthy', 'not_ready', 'background_unsupported',
   ]);
 
   function deriveSessionDelivery(session, channel) {
     const channel_present = !!channel;
     const endpoint_health = channel?.endpoint_health
       ?? (session.fact_observed_at ? 'unreachable' : (session.endpoint_health ?? 'legacy'));
-    const delivery_ready = isChannelDeliveryReady(channel);
+    const backgroundUnsupported = session.harness === 'claudecode' && session.kind === 'background';
+    const delivery_ready = !backgroundUnsupported && isChannelDeliveryReady(channel);
     const endpointUnhealthy = endpoint_health === 'unreachable'
       || endpoint_health === 'unverified'
       || endpoint_health === 'unhealthy';
@@ -660,6 +661,7 @@ async function main() {
       ? publishedReason
       : null;
     const delivery_reason = delivery_ready ? 'ready'
+      : backgroundUnsupported ? 'background_unsupported'
       : !channel_present ? 'missing_channel'
       : endpointUnhealthy ? 'endpoint_unhealthy'
       : session.status === 'waiting' ? 'waiting'

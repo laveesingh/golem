@@ -389,7 +389,12 @@ export function initDispatchDrainer({
       // channel here so a queued envelope is held, never burned on a 409.
       // Legacy CC/OC rows remain eligible by their established presence rule.
       allChannels = await listChannels();
-      const readyChannels = allChannels.filter((channel) => isChannelDeliveryReady(channel));
+      const nonReceivingClaude = new Set(sessions.filter((session) => (
+        session.harness === 'claudecode' && session.kind === 'background'
+      )).map((session) => session.session_id));
+      const readyChannels = allChannels.filter((channel) => (
+        isChannelDeliveryReady(channel) && !nonReceivingClaude.has(channel.session_id)
+      ));
       channelIds = new Set(readyChannels.map((channel) => channel.session_id));
       channelsBySession = new Map(readyChannels.map((channel) => [channel.session_id, channel]));
     } catch { /* transient → everyone waits a tick */ }

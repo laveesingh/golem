@@ -49,6 +49,9 @@ export function createNotificationService({ tracker, listTargets, listChannels, 
     const channel = channels.find((item) => item.session_id === target);
     if (body.operation_id && ((!targetRow && !targetFact && !channel) || isSessionFactTerminal(targetFact)
       || (targetRow?.alive === false && !channel))) throw new NotificationError('target session is unknown or ended', 'INVALID_NOTIFICATION_TARGET', 404);
+    if (targetRow?.harness === 'claudecode' && targetRow.kind === 'background') {
+      throw new NotificationError('background Claude sessions do not consume channel notifications; use a live interactive session', 'INVALID_NOTIFICATION_TARGET', 409);
+    }
     const legacyPi = targetFact?.harness === 'pi' && !hasTypedWorkerCapability(targetFact)
       && targetFact?.delivery?.mode === 'next_turn' && targetFact?.delivery?.push === false;
     const typed = isTypedWorkerChannel(channel) || hasTypedWorkerCapability(targetFact) || (targetFact?.harness === 'pi' && !legacyPi);

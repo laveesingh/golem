@@ -465,9 +465,9 @@ export function dedupeNativeSessions(rows) {
  *   badge). Pure/sync.
  * @returns {Promise<Array<object>>}
  */
-export async function readNativeSessions(registeredIdLookup, verifiedChannels = []) {
+export async function readNativeSessions(registeredIdLookup, verifiedChannels = [], { cliRaw: injectedCliRaw } = {}) {
   const [cliRaw, registryRaw, golemRaw, opencodeBridges, liveChannelSessionIds, codexThreadNames] = await Promise.all([
-    runClaudeAgentsJson(),
+    injectedCliRaw ?? runClaudeAgentsJson(),
     readRegistrySessions(),
     readGolemRegistrySessions(),
     readOpencodeBridges(),
@@ -627,6 +627,7 @@ export async function readNativeSessions(registeredIdLookup, verifiedChannels = 
       started_at: s.started_at,
       updated_at: s.updated_at,
       harness,
+      kind: s.kind ?? null,
       model: s.model ?? null,
       provider: fact?.provider ?? null,
       continuation_key: fact?.continuation_key ?? null,
