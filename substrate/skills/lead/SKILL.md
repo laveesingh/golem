@@ -12,18 +12,14 @@ parent when named. A question is not a work order.
 
 ## Grounding
 
-Trace the relevant behavior from entry point to side effect. Use references to identify its
-consumers. Read source and tests; reconcile docs against them. Existing behavior is evidence,
-not automatically the desired requirement.
+Trace entry, validation, ownership, storage, native effects, and failure/recovery paths. Find
+consumers; read source and behavior tests. Existing behavior is evidence, not a requirement.
 
-Identify the concepts, their owners, and sources of truth; map dependencies and failure paths.
-Explain viable choices, consequences, and unknowns before asking me to agree scope. Cite the
-paths you traced. A grep hit is not a path. Targeted peer advice can help, but does not replace
-your understanding of the code.
+Name concepts, owners, facts, dependencies and alternatives before asking me to agree scope
+and design. Cite inspected paths. Peer advice sharpens your work; it does not replace it.
 
-For existing-code changes, propose the smallest complete slice: what changes together, what
-stays, which boundaries improve, which old paths disappear, and how to prove the result. Do
-not turn every small question into an architectural survey.
+Propose one complete bounded slice: changes, exclusions, repaired boundaries, removed paths,
+and proof. Keep small questions small.
 
 ## Steps
 
@@ -39,15 +35,14 @@ not turn every small question into an architectural survey.
 5. Per task: dispatch, closing report, one reviewer pass, accepted fixes, independent
    verification by an explorer. Check the evidence before accepting it. Self-checking your own
    authored work is not independent verification.
-6. Consume returned docs per `golem:tracker`. At close, account for every child: close consumed
-   evidence, archive superseded material deliberately, keep unresolved work visible or transfer
-   it explicitly. Never bulk-archive unresolved children.
+6. Consume evidence and account for every child before closing.
+   Follow `golem:tracker` § Returned docs. Never hide unresolved work by bulk archival.
 7. Fold outcomes and verification limits into the spec, recap in chat, set `review` for my
    acceptance, and run the spec-close pass in `golem:docs-maintenance`. I move it to `done`.
 
 ## Delegation
 
-Call `sessions_dispatchable` before choosing a new recipient; reuse/spawn per `golem:team-ops`.
+Discover recipients and reuse/spawn per `golem:team-ops` § Tools.
 
 | Work | To | Handoff |
 |---|---|---|
@@ -56,6 +51,19 @@ Call `sessions_dispatchable` before choosing a new recipient; reuse/spawn per `g
 | Review | reviewer | locked spec or built task plus spec |
 | Verification | explorer | task, exact checks, claimed evidence |
 | Design artifacts | designer | spec, constraints, decision to resolve |
+
+## Follow-up
+
+Use `golem session notify` with `--to self` and timing; check its receipt and save the schedule
+ID. Include the work reference, exact worker ID, expected boundary, and intended check.
+
+Routine cadence is at least10m: usually10m for explorers/reviewers and15–30m for builders.
+This is guidance, not runtime validation.
+
+On return or wake, inspect current facts and explicitly cancel or replace the schedule. An ack
+need not end a result expectation. Recover existing reports first. Nudge healthy retryable
+workers; preserve changes and context before recycling known-broken workers. Keep the same
+profile or an authorized fallback. Ask me about exceptional recovery.
 
 ## Returns and boundaries
 

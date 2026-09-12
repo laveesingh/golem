@@ -87,6 +87,16 @@ try {
     const rules = read(target === 'cc' ? path.join(home, '.claude/CLAUDE.md') : path.join(render, 'instructions/AGENTS.md'));
     assert.match(rules, /lead personally surveys code and grounds scope and design/);
     assert.doesNotMatch(rules, /Research, surveys, and builds go to the team/);
+    assert.match(rules, /golem session --help/);
+    assert.match(rules, /golem schedule --help/);
+    const leadCard = read(path.join(render, 'roles/lead.md'));
+    assert.match(leadCard, /Continue approved stages without another permission prompt/);
+    assert.match(leadCard, /Before yielding while a return is expected, create and check a self-reminder/);
+    const leadMethod = read(path.join(render, 'skills/lead/SKILL.md'));
+    assert.match(leadMethod, /guidance, not runtime validation/);
+    assert.match(leadMethod, /explicitly cancel or replace the schedule/);
+    assert.match(leadMethod, /same\s+profile or an authorized fallback/);
+    assert.match(read(path.join(render, 'skills/night-shift/SKILL.md')), /Golem-managed reminders/);
     const { GOLEM_TOOL_CONTRACTS } = await import(pathToFileURL(path.join(render, 'lib/golem-tool-contracts.js')));
     const create = GOLEM_TOOL_CONTRACTS.find((c) => c.name === 'ticket_create');
     assert.match(create.description, /task→task, spec→spec, doc→doc/);

@@ -67,8 +67,9 @@ ticket comment. When it names a ticket, read it and its parent spec first.
 
 ## Tools
 
-- Use the golem CLI where a verb exists (`golem spawn`, `list`, `peek`, `attach`, `kill`). Use
-  MCP tools where there is no verb. Never invent a new MCP tool.
+- Use supported Golem CLI verbs; MCP for remaining operations. Never invent tools.
+- Pi/Claude collaboration: `golem session --help`; reminders: `golem schedule --help`.
+  Other harnesses retain their advertised compatibility tools.
 - Tracker: `golem:tracker`. Git: `golem:git-conventions`. Browser: `golem:browsing`.
 
 ## Project layer
