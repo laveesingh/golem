@@ -128,9 +128,11 @@ copy or rewrite that configuration.
 
 The tracker is the source of truth for cross-session work. Ticket lifecycle is
 `state` only: `todo`, `in_progress`, `blocked`, `review`, `done`, or `archived`.
-Comments, dispatch, `session_notify`, and `sessions_dispatchable` provide the
-coordination surface. The dashboard event ledger is durable audit history, not
-a message subscription.
+Comments and dispatch preserve planned work. On Pi and interactive Claude,
+`golem session list/notify`, `golem message inspect`, and `golem schedule ...`
+provide direct coordination and agent-managed follow-up. The event ledger is
+audit history, not a message subscription. Other harnesses retain their
+advertised compatibility tools.
 
 Sessions register their project, harness, role, and delivery capability. Golem
 routes work only through a supported path: managed Codex delivery, Claude's
@@ -160,6 +162,9 @@ golem help
 | `golem doctor` | Check dependencies, local state, renders, integrations, and dashboard reachability. |
 | `golem sync ...` | Render or check `cc`, `cc-marketplace`, `opencode`, `codex`, and `pi` outputs. |
 | `golem role <role\|clear>` | Set or clear a session role. Built-ins are `lead`, `builder`, `explorer`, and `reviewer`. |
+| `golem session list\|notify ...` | Discover sessions or send an idempotent immediate/delayed/recurring notification. |
+| `golem message inspect <id>` | Inspect delivery without inferring work completion. |
+| `golem schedule list\|inspect\|cancel ...` | Manage follow-up reminders explicitly. |
 | `golem migrate-home` | Move legacy local state to `~/.golem`, with a backup and rollback. |
 | `golem codex-supervisor ...` | Run or inspect the managed Codex App Server supervisor. |
 

@@ -34,17 +34,23 @@ sequence; `POST /api/bus/prune` applies retention policy.
 
 ## Active handoffs
 
-Cross-session coordination uses ordinary `session_notify` messages. In an authorized live-team flow,
-call `sessions_dispatchable` immediately before choosing a new recipient. Send only to the exact
-immutable `session_id`; labels and names are display data, not routing keys.
+Cross-session coordination uses ordinary notification envelopes. Pi and interactive Claude agents
+use `golem session list/notify` and exact immutable session IDs; compatibility tools remain for
+other harnesses. Labels and names are display data, not routing keys. Claude background sessions do
+not consume development-channel messages and are rejected before notification admission.
 
 For delegated work, write the durable report/comment first, then notify the authenticated delegator
 with the report location, outcome, and next action. The dispatch envelope carries the sender id so
 a renamed lead remains the correct return target. Large reports stay in the tracker.
 
 User-facing answers are delivered via the harness's native chat response — no tool is used.
-Delegated returns and consultation replies always use `session_notify` with the authenticated exact
-session id.
+Delegated returns and consultation replies use the supported notify surface with the authenticated
+exact session id.
+
+Delayed and recurring notifications add one `notification_schedules` row and emit immutable ordinary
+envelopes through the same retry/outbox path. Schedule state controls timing only; it never classifies
+results, changes tickets, or retargets a worker. Cancellation fences future emission and safe retries,
+but cannot recall an owned or accepted occurrence.
 
 Consultation uses the same path: `CONSULT REQUEST — ADVISORY ONLY`, `CONSULT REPLY — ADVISORY ONLY`,
 or `CONSULT STATUS — ADVISORY ONLY`, each carrying a unique reference and sent to the exact
