@@ -34,6 +34,7 @@ import { isChannelDeliveryReady, isTypedWorkerChannel } from './channels.js';
 import { hasTypedWorkerCapability, readSessionFacts } from '../../lib/session-facts.js';
 import { isLegacyReplayFence } from './typed-delivery.js';
 import { publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
+import { createNotificationScheduleRuntime } from './notification-schedule-runtime.js';
 
 const TICK_MS = 5_000;
 const COOLDOWN_MS = 60_000;
@@ -67,6 +68,17 @@ export function initDispatchDrainer({
   const ackOwner = crypto.randomUUID();
   let timer = null;
   let stopped = false;
+  let runningTick = null;
+  const schedules = createNotificationScheduleRuntime({ tracker });
+  async function runTargets(entries, run) {
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(4, entries.length) }, async () => {
+      while (!stopped && cursor < entries.length) {
+        const entry = entries[cursor++];
+        try { await run(entry); } catch (error) { console.error('[dispatch-drainer] target failed:', error); }
+      }
+    }));
+  }
 
   function unackedWindowMinutes() {
     const n = Number(loadConfig()?.dispatch?.unackedWindowMinutes);
@@ -186,12 +198,12 @@ export function initDispatchDrainer({
     return leftId.localeCompare(rightId);
   }
 
-  async function drainEnvelopeRetries({ byId, channelsBySession, pendingQueue }) {
+  async function drainEnvelopeRetries({ byId, channelsBySession, pendingQueue, retries }) {
     let changed = false;
     // This is a required shared-tracker capability. Do not downgrade a missing
     // dependency to a noisy successful tick: callers/tests must see the error
     // rather than silently skipping durable typed retries.
-    const retries = tracker.listPendingEnvelopeRetries();
+    if (!Array.isArray(retries)) throw new Error('durable retry snapshot is required');
     // Retries are delivery work too: preserve FIFO and never stack multiple
     // native opportunities onto one session in the same tick.
     const blockedRetrySessions = new Set();
@@ -203,6 +215,7 @@ export function initDispatchDrainer({
       queueRowsBySession.set(row.session_id, rows);
     }
     for (const retry of retries) {
+      if (stopped) break;
       if (blockedRetrySessions.has(retry.session_id)) continue;
       let envelope = tracker.getEnvelope(retry.envelope_id);
       if (!envelope) {
@@ -311,7 +324,7 @@ export function initDispatchDrainer({
     }
     return { changed, queueBlockedByRetry };
   }
-  async function tick() {
+  async function performTick() {
     if (stopped) return;
     let pending;
     for (const ack of claimPiPickupAcks({ ownerToken: ackOwner })) {
@@ -369,19 +382,26 @@ export function initDispatchDrainer({
     // (safe), not burn.
     let channelIds = new Set();
     let channelsBySession = new Map();
+    let allChannels = [];
     try {
       // A managed Codex supervisor can keep a healthy loopback lease while it
       // is busy/recovering. Treat delivery_ready:false exactly like an absent
       // channel here so a queued envelope is held, never burned on a 409.
       // Legacy CC/OC rows remain eligible by their established presence rule.
-      const readyChannels = (await listChannels()).filter((channel) => isChannelDeliveryReady(channel));
+      allChannels = await listChannels();
+      const readyChannels = allChannels.filter((channel) => isChannelDeliveryReady(channel));
       channelIds = new Set(readyChannels.map((channel) => channel.session_id));
       channelsBySession = new Map(readyChannels.map((channel) => [channel.session_id, channel]));
     } catch { /* transient → everyone waits a tick */ }
     const byId = new Map();
     for (const s of sessions) if (s.session_id) byId.set(s.session_id, s);
-    const retryDrain = await drainEnvelopeRetries({ byId, channelsBySession, pendingQueue: pending });
-    if (retryDrain.changed) queueChanged = true;
+    if (schedules.prepare({ sessions, channels: allChannels, nowMs: nowMs() })) queueChanged = true;
+    const retrySnapshot = tracker.listPendingEnvelopeRetries();
+    const retriesBySession = new Map();
+    for (const retry of retrySnapshot) {
+      const rows = retriesBySession.get(retry.session_id) ?? [];
+      rows.push(retry); retriesBySession.set(retry.session_id, rows);
+    }
 
     // Group pending rows by session_id. listPendingDispatches returns FIFO by
     // created_at globally, so within each session the rows are also FIFO.
@@ -392,10 +412,13 @@ export function initDispatchDrainer({
       bySession.set(row.session_id, arr);
     }
 
+    for (const sessionId of retriesBySession.keys()) if (!bySession.has(sessionId)) bySession.set(sessionId, []);
     const now = nowMs();
-    // TKT-0286: broadcast dispatch-queue-updated once if any row transitioned this tick.
-    for (const [sessionId, rows] of bySession) {
-      if (retryDrain.queueBlockedByRetry.has(sessionId)) continue;
+    // FIFO is per target; one slow target must not monopolize unrelated work.
+    const processTarget = async ([sessionId, rows]) => {
+      const retryDrain = await drainEnvelopeRetries({ byId, channelsBySession, pendingQueue: rows, retries: retriesBySession.get(sessionId) ?? [] });
+      if (retryDrain.changed) queueChanged = true;
+      if (retryDrain.queueBlockedByRetry.has(sessionId)) return;
       const s = byId.get(sessionId);
       const isTypedWorker = isTypedWorkerChannel(channelsBySession.get(sessionId));
 
@@ -403,7 +426,7 @@ export function initDispatchDrainer({
       // hold rows pending (60m expiry), never burn one on a push that can't land.
       if (!s || !s.alive || !channelIds.has(sessionId)) {
         const oldest = rows[0];
-        if (!oldest) continue;
+        if (!oldest) return;
         const createdMs = Date.parse(oldest.created_at);
         if (Number.isFinite(createdMs) && now - createdMs > OFFLINE_EXPIRY_MS) {
           try {
@@ -421,23 +444,23 @@ export function initDispatchDrainer({
           }
         }
         // else skip — the session may come back.
-        continue;
+        return;
       }
 
       // Cooldown: never stack a second brief onto a session that hasn't
       // visibly gone busy yet. Status freshness is 3s and Claude's status
       // flip lags a prompt by seconds.
       const last = lastDeliveredAt.get(sessionId);
-      if (last != null && now - last < COOLDOWN_MS) continue;
+      if (last != null && now - last < COOLDOWN_MS) return;
 
       // waiting = mid-task blocked on human input — delivering there recreates
       // the original bug. Both busy AND waiting hold.
-      if (s.status !== 'idle') continue;
+      if (s.status !== 'idle') return;
 
       // GOL-151: dependency waves are gone, so the queue is plain FIFO —
       // deliver the oldest pending row only (one per session per tick).
       const row = rows[0];
-      if (!row) continue;
+      if (!row || stopped) return;
       try {
         const ticket = tracker.getTicket(row.ticket_id);
         if (!ticket) {
@@ -446,7 +469,7 @@ export function initDispatchDrainer({
           queueChanged = true;
           const refreshed = tracker.getTicket(row.ticket_id);
           if (refreshed) broadcastWS({ type: 'ticket-updated', ticket: refreshed });
-          continue;
+          return;
         }
         // Ticket dispatched to another session meanwhile (dispatched_at newer
         // than the queue row's created_at) → the queue row is stale; cancel
@@ -466,7 +489,7 @@ export function initDispatchDrainer({
             queueChanged = true;
             const refreshed = tracker.getTicket(row.ticket_id);
             if (refreshed) broadcastWS({ type: 'ticket-updated', ticket: refreshed });
-            continue;
+            return;
           }
         }
 
@@ -474,12 +497,12 @@ export function initDispatchDrainer({
         if (['blocked', 'cancelled'].includes(ownedRetry?.status)) {
           const blocked = tracker.blockQueuedDispatch(row.id, { error: ownedRetry.last_error || 'delivery requires inspection', nowMs: nowMs() });
           if (blocked?.status === 'blocked') queueChanged = true;
-          continue;
+          return;
         }
-        if (ownedRetry && ownedRetry.status !== 'delivered') continue;
+        if (ownedRetry && ownedRetry.status !== 'delivered') return;
         // Every transport owns publication before bytes, including Claude.
-        if (publishing.has(row.id)) continue;
-        if (!tracker.claimQueuePublishing(row.id, { ownerToken: publishingOwner })) continue;
+        if (publishing.has(row.id)) return;
+        if (!tracker.claimQueuePublishing(row.id, { ownerToken: publishingOwner })) return;
         publishing.add(row.id);
 
         let envelope = row.envelope_id ? tracker.getEnvelope(row.envelope_id) : null;
@@ -492,10 +515,10 @@ export function initDispatchDrainer({
             queueChanged = true;
             const refreshed = tracker.getTicket(row.ticket_id);
             if (refreshed) broadcastWS({ type: 'ticket-updated', ticket: refreshed });
-            continue;
+            return;
           }
-          if (reconciliation.action === 'accepted') continue;
-          if (reconciliation.action === 'not_owned') continue;
+          if (reconciliation.action === 'accepted') return;
+          if (reconciliation.action === 'not_owned') return;
           envelope = reconciliation.envelope;
         }
 
@@ -632,7 +655,9 @@ export function initDispatchDrainer({
       } finally {
         publishing.delete(row.id);
       }
-    }
+    };
+    await runTargets([...bySession], processTarget);
+    schedules.reconcile(nowMs());
     // TKT-0286: one signal per tick if any queue row transitioned (deliver,
     // expire, or a drainer-internal cancel) — queue-aware surfaces refetch.
     if (queueChanged) {
@@ -641,6 +666,12 @@ export function initDispatchDrainer({
       // drawer listens for this signal and refetches once; it never polls.
       broadcastWS({ type: 'communication-health-updated' });
     }
+  }
+
+  function tick() {
+    if (stopped) return Promise.resolve();
+    if (!runningTick) runningTick = performTick().finally(() => { runningTick = null; });
+    return runningTick;
   }
 
   timer = setInterval(() => {

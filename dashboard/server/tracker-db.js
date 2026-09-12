@@ -19,10 +19,11 @@ import { gfm as turndownGfm } from 'turndown-plugin-gfm';
 import { trackerDbPath } from '../../lib/golem-home.js';
 import { notificationReceipt } from '../../lib/notification-receipt.js';
 import { NotificationError } from '../../lib/notification-contract.js';
+import { createNotificationSchedules } from './notification-schedules.js';
 import { loadConfig } from '../../lib/golem-config.js';
 import { createCommentDispatchService, defaultDispatchStateForComment } from './comment-dispatch.js';
 
-const SCHEMA_VERSION = 20;
+const SCHEMA_VERSION = 21;
 
 // GOL-151: three doc types. `task` is the default unit of work, `spec` is the
 // living design doc, `doc` is any supporting page (research, survey,
@@ -664,14 +665,26 @@ WHERE state_changed_at IS NULL`).run();
     // GOL-421 additive facts/links. Keep old columns and rows intact; the old
     // status is compatibility display data, never the source of core delivery
     // or acknowledgement truth.
+    db.exec(`CREATE TABLE IF NOT EXISTS notification_schedules (
+      id TEXT PRIMARY KEY, creator_id TEXT NOT NULL, creator_kind TEXT NOT NULL,
+      owner_project_id TEXT, target_session_id TEXT NOT NULL, target_project_id TEXT,
+      request_fingerprint TEXT NOT NULL, message_text TEXT NOT NULL, ticket_context TEXT,
+      after_ms INTEGER NOT NULL, interval_ms INTEGER, require_typed INTEGER NOT NULL DEFAULT 0,
+      next_due_at TEXT, occurrence_seq INTEGER NOT NULL DEFAULT 0,
+      current_envelope_id TEXT REFERENCES message_envelopes(id),
+      status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      cancelled_at TEXT, blocked_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_notification_schedules_due ON notification_schedules(status, next_due_at);`);
     const envelopeCols = db.prepare('PRAGMA table_info(message_envelopes)').all().map((c) => c.name);
     for (const [col, def] of [
-      ['request_fingerprint', 'TEXT'],
+      ['request_fingerprint', 'TEXT'], ['schedule_id', 'TEXT REFERENCES notification_schedules(id)'], ['occurrence_seq', 'INTEGER'],
       ['root_id', 'TEXT'], ['parent_id', 'TEXT'], ['sender_id', 'TEXT'],
       ['reply_to_session_id', 'TEXT'], ['recipient_session_id', 'TEXT'],
       ['delivery_attempted_at', 'TEXT'], ['delivery_opportunity_at', 'TEXT'],
       ['delivery_error', 'TEXT'], ['ack_deadline_at', 'TEXT'], ['picked_up_at', 'TEXT'], ['reply_envelope_id', 'TEXT'], ['completed_event_id', 'INTEGER'],
     ]) if (!envelopeCols.includes(col)) db.exec(`ALTER TABLE message_envelopes ADD COLUMN ${col} ${def}`);
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_occurrence ON message_envelopes(schedule_id, occurrence_seq) WHERE schedule_id IS NOT NULL');
     const envelopeCols14 = db.prepare('PRAGMA table_info(message_envelopes)').all().map((c) => c.name);
     for (const [col, def] of [
       ['ping_envelope_id', 'TEXT'], ['escalate_after', 'TEXT'],
@@ -806,6 +819,8 @@ WHERE state_changed_at IS NULL`).run();
       listPendingEnvelopeRetries: db.prepare(
         `SELECT r.* FROM envelope_delivery_retries r JOIN message_envelopes e ON e.id = r.envelope_id
          WHERE r.status IN ('pending','publishing') AND e.status NOT IN ('cancelled','expired','superseded')
+           AND (e.schedule_id IS NULL OR EXISTS (SELECT 1 FROM notification_schedules s WHERE s.id=e.schedule_id AND s.status='active')
+             OR e.delivery_state IN ('published','settled','interrupted','recovery_required'))
          ORDER BY r.created_at ASC, r.envelope_id ASC`
       ),
       insertEnvelopeRetry: db.prepare(`
@@ -821,8 +836,13 @@ WHERE state_changed_at IS NULL`).run();
           AND EXISTS (SELECT 1 FROM message_envelopes e WHERE e.id = @envelope_id
             AND e.status NOT IN ('cancelled','expired','superseded')
             AND ((@settlement = 1 AND e.delivery_state IN ('published','settled','interrupted','recovery_required'))
-              OR (@settlement = 0 AND e.delivery_state IN ('pending','claimed')
-                AND e.accepted_attempt_id IS NULL)))
+              OR (@settlement = 0 AND e.delivery_state IN ('pending','claimed') AND e.accepted_attempt_id IS NULL
+                AND (e.schedule_id IS NULL OR EXISTS (SELECT 1 FROM notification_schedules s WHERE s.id=e.schedule_id AND s.status='active'))
+                AND (e.kind IN ('interrupt','halt','role_assign','gate_resolution') OR NOT EXISTS (
+                  SELECT 1 FROM envelope_delivery_retries other JOIN message_envelopes m ON m.id=other.envelope_id
+                  WHERE other.session_id=e.target_session_id AND other.envelope_id!=e.id
+                    AND other.status='publishing' AND other.publishing_expires_at > @now
+                    AND m.kind NOT IN ('interrupt','halt','role_assign','gate_resolution'))))))
       `),
       blockEnvelopeRetry: db.prepare(`UPDATE envelope_delivery_retries
         SET status = 'blocked', publishing_owner = NULL, publishing_expires_at = NULL, last_error = @error
@@ -833,7 +853,11 @@ WHERE state_changed_at IS NULL`).run();
       releaseEnvelopeRetry: db.prepare(`
         UPDATE envelope_delivery_retries
         SET status = CASE WHEN EXISTS (SELECT 1 FROM message_envelopes e WHERE e.id = @envelope_id
-              AND e.status IN ('cancelled','expired','superseded')) THEN 'cancelled' ELSE 'pending' END,
+              AND e.status IN ('cancelled','expired','superseded')) THEN 'cancelled'
+            WHEN EXISTS (SELECT 1 FROM message_envelopes e JOIN notification_schedules s ON s.id=e.schedule_id
+              WHERE e.id=@envelope_id AND s.status='cancelled') THEN 'cancelled'
+            WHEN EXISTS (SELECT 1 FROM message_envelopes e JOIN notification_schedules s ON s.id=e.schedule_id
+              WHERE e.id=@envelope_id AND s.status='blocked') THEN 'blocked' ELSE 'pending' END,
             publishing_owner = NULL, publishing_expires_at = NULL, last_error = @last_error
         WHERE envelope_id = @envelope_id AND status = 'publishing' AND publishing_owner = @owner
       `),
@@ -1475,6 +1499,7 @@ WHERE state_changed_at IS NULL`).run();
     init() {
       migrate();
       prepare();
+      api.schedules = createNotificationSchedules({ db, tracker: api });
       commentDispatch = createCommentDispatchService({
         db,
         now,
@@ -2202,6 +2227,7 @@ WHERE state_changed_at IS NULL`).run();
     // generic, unaudited message bus.
     admitNotification({ id, fingerprint, sender_id, recipient_session_id, project_id = null, payload, require_typed = false } = {}) {
       return db.transaction(() => {
+        if (api.schedules.get(id)) throw new NotificationError('request-id already belongs to a schedule', 'OPERATION_CONFLICT', 409);
         const existing = stmts.getEnvelope.get(id);
         if (existing) {
           if (existing.kind !== 'session_notify' || existing.request_fingerprint !== fingerprint) {
@@ -2696,6 +2722,7 @@ WHERE state_changed_at IS NULL`).run();
       if (!envelope || ['cancelled', 'expired', 'superseded'].includes(envelope.status)
         || !['pending', 'claimed'].includes(envelope.delivery_state || 'pending')
         || envelope.accepted_attempt_id) return false;
+      if (envelope.schedule_id && api.schedules.get(envelope.schedule_id)?.status !== 'active') return false;
       if (!ownerToken) return true;
       const retry = stmts.getEnvelopeRetry.get(envelopeId);
       return retry?.status === 'publishing' && retry.publishing_owner === ownerToken
