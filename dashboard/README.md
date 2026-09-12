@@ -57,7 +57,9 @@ must be upgraded/restarted together with the dashboard to acquire this repair;
 updating source alone does not.
 
 Cancellation fences unclaimed retries, not input already in flight. A legacy
-channel's ambiguous handoff is blocked, never automatically repeated. Blocked
+channel's ambiguous handoff is blocked, never automatically repeated. Claude background
+sessions do not consume channel notifications and are rejected before admission; use an
+interactive Claude session. Blocked
 queued tickets retain their envelope/error in `GET /api/dispatch-queue?status=all`
 and leave the active FIFO; this neither cancels their task nor claims delivery.
 

@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-08 @ 850218d — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-12 @ a35137b — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -16,22 +16,22 @@
 
 ### CLI and roles
 
-`cli/golem.js` owns launch, worker, dashboard, sync, and diagnostic verbs.
+`cli/golem.js` owns launch, worker, dashboard, sync, and diagnostic verbs; `cli/collaboration.js`
+owns session discovery, idempotent notify, delivery inspection, and schedule management.
 `lib/session-role.js` owns role definitions; retired names are migration input only.
 
 ### Instruction ownership
 
-`substrate/skills/lead/` owns orchestration and local code grounding;
-`spec-writing/` owns spec authorship; `tracker/` owns record operations and the lean
-spec/task/doc templates. Embedded prompts in `shims/pi/golem.ts`, tool contracts in
-`lib/golem-tool-contracts.js`, and the server's idea-promotion scaffold are consumers too.
+`substrate/skills/lead/` owns orchestration and grounding; `spec-writing/` owns spec
+authorship; `tracker/` owns records and templates. `shims/pi/golem.ts`, tool contracts,
+and the idea-promotion scaffold are consumers.
 
 ### Dashboard
 
-`dashboard/server/index.js` exposes REST/WebSocket routes, including native-session
-`terminal` and `message` routes for peek and steering. `tracker-db.js` owns persistence;
-`comment-dispatch.js` routes comment feedback. Agents use API/MCP, not direct database writes.
-Ticket `state` is the single lifecycle.
+`dashboard/server/index.js` exposes REST/WebSocket routes. `tracker-db.js` owns persistence;
+`notification-schedules.js` owns schedule transactions and `notification-schedule-runtime.js`
+feeds occurrences into the shared delivery outbox. `comment-dispatch.js` routes feedback.
+Agents use API/CLI/MCP, not direct database writes. Ticket `state` is the single lifecycle.
 
 ### Compiler and delivery
 
@@ -62,5 +62,6 @@ registries, owns tracker writes, and dispatches to native channels or typed endp
 | Instructions/templates | `node test/instruction-workflow.test.mjs` |
 | Installed render drift | `golem sync --check --all` |
 | Dashboard | `npm run check:dashboard` |
-| Harness delivery | `node test/cross-harness-matrix.test.mjs` |
+| Collaboration | `npm run test:collaboration` |
+| Schedule store/clock | `node test/notification-schedule.test.mjs` |
 | Any diff | `git diff --check` |
