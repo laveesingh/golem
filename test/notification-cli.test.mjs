@@ -38,9 +38,9 @@ try {
   assert.throws(() => resolveCliSessionContext({ ...piEvidence, readProcess: (pid) => pid === 20 ? { ...ancestry.get(pid), startedAt: Date.now() } : ancestry.get(pid), leases: [{ ...piEvidence.leases[0], renewed_at: '2000-01-01' }] }), /predates/);
   const ccEvidence = { pid: 30, env: { CLAUDE_CODE_SESSION_ID: 'per-run-id' }, leases: [], facts: [],
     readProcess: (pid) => pid === 30 ? { command: '/bin/sh', ppid: 20 } : { command: 'claude', ppid: 1, startedAt: 100 },
-    readClaude: () => ({ sessionId: 'logical-resume', pid: 20, recordMtimeMs: 101 }) };
+    readClaude: () => ({ sessionId: 'logical-resume', pid: 20, recordMtimeMs: 101, startedAt: 101 }) };
   assert.equal(resolveCliSessionContext(ccEvidence).sessionId, 'logical-resume');
-  assert.throws(() => resolveCliSessionContext({ ...ccEvidence, readClaude: () => ({ sessionId: 'wrong-birth', recordMtimeMs: 101, procStart: '2000-01-01' }) }), /birth identity/);
+  assert.throws(() => resolveCliSessionContext({ ...ccEvidence, readClaude: () => ({ sessionId: 'wrong-birth', recordMtimeMs: 101, startedAt: 999999 }) }), /birth identity/);
   assert.throws(() => resolveCliSessionContext({ ...ccEvidence, readClaude: () => ({ sessionId: 'stale', recordMtimeMs: 99 }) }), /predates/);
   const unboundHints = { pid: 30, env: { GOLEM_SESSION_ID: 'leftover', GOLEM_CEO_SESSION_ID: 'leftover', PI_SESSION_ID: 'leftover' },
     leases: [], facts: [], readProcess: () => ({ command: '/bin/zsh', ppid: 1 }) };
@@ -161,7 +161,7 @@ try {
   fs.writeFileSync(nativeFixture, `import fs from 'node:fs'; import path from 'node:path'; import {spawnSync} from 'node:child_process';
 process.title='claude';
 fs.mkdirSync(path.join(process.env.CLAUDE_CONFIG_DIR,'sessions'),{recursive:true});
-fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR,'sessions',process.pid+'.json'),JSON.stringify({sessionId:'resumed-native-caller',pid:process.pid}));
+fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR,'sessions',process.pid+'.json'),JSON.stringify({sessionId:'resumed-native-caller',pid:process.pid,startedAt:Date.now()}));
 const bridge=\`const {spawnSync}=require('node:child_process');const r=spawnSync(process.execPath,JSON.parse(process.env.CLI_ARGS),{encoding:'utf8'});process.stdout.write(r.stdout);process.stderr.write(r.stderr);process.exit(r.status??1);\`;
 const r=spawnSync(process.execPath,['-e',bridge],{encoding:'utf8'});process.stdout.write(r.stdout);process.stderr.write(r.stderr);process.exit(r.status??1);`);
   const nativeEnv = { ...process.env, CLAUDE_CONFIG_DIR: path.join(home, 'claude'), CLAUDE_CODE_SESSION_ID: 'per-run-not-logical',
