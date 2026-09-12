@@ -2401,6 +2401,8 @@ Run:
                          Set or clear a session role (${SESSION_ROLES.join(', ')}).
   session list|notify [--help]
                          Discover sessions or send idempotent notifications.
+  schedule list|inspect|cancel [--help]
+                         Manage durable delayed and recurring notifications.
   message inspect <id> [--content] [--json]
                          Inspect delivery without claiming task completion.
   sessions dedup [--apply]
@@ -2513,6 +2515,7 @@ async function main() {
       await cmdRole(rest);
       break;
     case 'session':
+    case 'schedule':
     case 'message': {
       const { runCollaboration } = await import('./collaboration.js');
       process.exitCode = await runCollaboration(cmd, rest);

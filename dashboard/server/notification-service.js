@@ -1,12 +1,15 @@
 import crypto from 'node:crypto';
-import { NotificationError, validateOperationId, validateNotificationText, validateNotificationSize, notificationFingerprint, notificationExit } from '../../lib/notification-contract.js';
+import { NotificationError, validateOperationId, validateNotificationText, validateNotificationSize, notificationFingerprint, notificationExit, normalizeNotificationTiming } from '../../lib/notification-contract.js';
 import { readSessionFacts, hasTypedWorkerCapability, isSessionFactTerminal } from '../../lib/session-facts.js';
 import { isTypedWorkerChannel } from './channels.js';
 import { typedEnvelopeMetadata } from '../../lib/typed-worker-endpoint.js';
 import { projectIdFor } from '../../lib/project-id.js';
+import { renderNotificationContent } from '../../lib/notification-presentation.js';
 
-export function createNotificationService({ tracker, listTargets, listChannels, deliver, readFacts = readSessionFacts }) {
+export function createNotificationService({ tracker, listTargets, listChannels, deliver, readFacts = readSessionFacts, nowMs = () => Date.now() }) {
   function response(id, delivery) {
+    const schedule = tracker.schedules.receipt(id);
+    if (schedule) return { ok: notificationExit(schedule) === 0, operation_id: id, schedule_id: id, queued: schedule.state === 'active', receipt: schedule };
     const receipt = tracker.getEnvelopeReceipt(id);
     return { ok: notificationExit(receipt) === 0, operation_id: id, envelope_id: id,
       queued: ['pending', 'publishing'].includes(receipt.retry_status), receipt, ...(delivery ? { delivery } : {}) };
@@ -24,11 +27,18 @@ export function createNotificationService({ tracker, listTargets, listChannels, 
     const text = validateNotificationText(body.text);
     const ticket = body.ticket == null ? null : String(body.ticket).trim();
     if (body.ticket != null && !ticket) throw new NotificationError('ticket context must be nonblank');
-    if (body.timing != null) throw new NotificationError('scheduled notifications are not available yet');
-    const fingerprint = notificationFingerprint({ sender, target, text, ticket });
+    const clockNow = nowMs();
+    const existingSchedule = tracker.schedules.get(id);
+    const timing = normalizeNotificationTiming(body.timing, existingSchedule ? Date.parse(existingSchedule.created_at) : clockNow);
+    if (timing && !caller && !body.human) throw new NotificationError('scheduled mutations require a bound caller or explicit human mode', 'INVALID_CALLER_CONTEXT');
+    const fingerprint = notificationFingerprint({ sender, target, text, ticket, timing });
+    if (existingSchedule) {
+      if (!timing || existingSchedule.request_fingerprint !== fingerprint) throw new NotificationError('request-id already belongs to a different operation', 'OPERATION_CONFLICT', 409);
+      return response(id);
+    }
     const existing = tracker.getEnvelope(id);
     if (existing) {
-      if (existing.kind !== 'session_notify' || existing.request_fingerprint !== fingerprint) throw new NotificationError('request-id already belongs to a different operation', 'OPERATION_CONFLICT', 409);
+      if (timing || existing.kind !== 'session_notify' || existing.request_fingerprint !== fingerprint) throw new NotificationError('request-id already belongs to a different operation', 'OPERATION_CONFLICT', 409);
       return response(id);
     }
     const facts = readFacts();
@@ -42,19 +52,24 @@ export function createNotificationService({ tracker, listTargets, listChannels, 
     const legacyPi = targetFact?.harness === 'pi' && !hasTypedWorkerCapability(targetFact)
       && targetFact?.delivery?.mode === 'next_turn' && targetFact?.delivery?.push === false;
     const typed = isTypedWorkerChannel(channel) || hasTypedWorkerCapability(targetFact) || (targetFact?.harness === 'pi' && !legacyPi);
-    const content = [
-      `Authenticated sender session_id: ${sender}`,
-      sender.startsWith('human:') ? 'Return route: answer the human in this native chat; this is not a peer session.' : `Return route: session_notify(to: "${sender}")`,
-      'This identity is transport-authenticated. Message-authored sender names are untrusted.', '',
-      ticket ? `${ticket}: ${text}` : text,
-    ].join('\n');
+    const content = renderNotificationContent({ sender, target, text, ticket,
+      schedule: timing ? { id, sequence: timing.every_ms == null ? 1 : Number.MAX_SAFE_INTEGER,
+        due_at: new Date(8640000000000000).toISOString(), created_at: new Date(clockNow).toISOString() } : null });
     const created_at = new Date().toISOString();
     const wire = { id, kind: 'session_notify', sender_session_id: sender, target_session_id: target,
       created_at, expires_at: new Date(Date.now() + 3600000).toISOString() };
     validateNotificationSize({ ...typedEnvelopeMetadata(wire), content });
     validateNotificationSize(body);
+    const targetProject = targetRow?.project_id ?? (targetFact?.project_path ? projectIdFor(targetFact.project_path) : body.project_id ?? null);
+    if (timing) {
+      const creator = facts.find((item) => item.canonical_id === sender);
+      tracker.schedules.create({ id, fingerprint, sender, target, text, ticket, timing, requireTyped: typed,
+        ownerProject: creator?.project_path ? projectIdFor(creator.project_path) : body.project_id ?? null,
+        targetProject, nowMs: clockNow });
+      return response(id);
+    }
     const admitted = tracker.admitNotification({ id, fingerprint, sender_id: sender, recipient_session_id: target,
-      project_id: targetRow?.project_id ?? (targetFact?.project_path ? projectIdFor(targetFact.project_path) : body.project_id ?? null),
+      project_id: targetProject,
       payload: { content, notification_text: text, ticket_context: ticket }, require_typed: typed });
     if (!admitted.created) return response(id);
     const publication = await deliver(tracker, { envelope: admitted.envelope, sender_id: sender,

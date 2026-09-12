@@ -5,13 +5,19 @@ import { createGolemClient, resolveGolemDashboardBaseUrl } from '../lib/golem-cl
 import { dashboardJsonPath } from '../lib/golem-home.js';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
 import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
-import { NotificationError, notificationBodyLimit, validateNotificationSize, validateNotificationText, validateOperationId, notificationExit } from '../lib/notification-contract.js';
+import { NotificationError, notificationBodyLimit, validateNotificationSize, validateNotificationText, validateOperationId, notificationExit, parseNotificationDuration, normalizeNotificationTiming } from '../lib/notification-contract.js';
 
 const commands = {
+  'schedule list': { flags: { '--all': 'bool', '--json': 'bool' }, args: 0,
+    help: 'golem schedule list [--all] [--json]\nList your schedules; --all or an unbound human view includes all local creators.' },
+  'schedule inspect': { flags: { '--content': 'bool', '--json': 'bool' }, args: 1,
+    help: 'golem schedule inspect <schedule-id> [--content] [--json]\nInspect cadence and occurrence delivery; content is opt-in.' },
+  'schedule cancel': { flags: { '--human': 'bool', '--json': 'bool' }, args: 1,
+    help: 'golem schedule cancel <schedule-id> [--human] [--json]\nStop future emission/retries. An in-flight occurrence may arrive; this does not cancel its task. Creators cancel their own schedules; explicit unbound human mode can cancel any.' },
   'session list': { flags: { '--project': 'value', '--all': 'bool', '--json': 'bool' }, args: 0,
     help: 'golem session list [--project <id-or-path>] [--all] [--json]\nList live canonical session ids, status and delivery readiness; defaults to the caller project.' },
-  'session notify': { flags: { '--to': 'value', '--message': 'value', '--message-file': 'value', '--ticket': 'value', '--request-id': 'value', '--json': 'bool', '--human': 'bool' }, args: 0,
-    help: 'golem session notify --to <id|self> (--message <text>|--message-file <path|->) [--ticket <ref>] [--request-id <uuid>] [--json] [--human]\nFile - reads stdin. The message is captured once. Reuse the request id after response loss; a fresh id is a new message. Unbound mutations require --human; bound agents must not use it.\nExit 0: durably admitted, not work completed. Exit 1: operational failure. Exit 2: invalid input/context. Exit 3: uncertain; inspect the original operation.' },
+  'session notify': { flags: { '--to': 'value', '--message': 'value', '--message-file': 'value', '--ticket': 'value', '--request-id': 'value', '--after': 'value', '--every': 'value', '--json': 'bool', '--human': 'bool' }, args: 0,
+    help: 'golem session notify --to <id|self> (--message <text>|--message-file <path|->) [--ticket <ref>] [--request-id <uuid>] [--after <duration>] [--every <duration>] [--json] [--human]\nDurations use integer ms/s/m/h/d. --after schedules once; --every repeats, first due after one interval unless --after is given. Zero delay is allowed. Delivery follows runtime ticks/readiness, not an exact-time alarm. File - reads stdin. The message is captured once. Reuse the request id after response loss; a fresh id is a new message. Unbound mutations require --human; bound agents must not use it.\nExit 0: durably admitted, not work completed. Exit 1: operational failure. Exit 2: invalid input/context. Exit 3: uncertain; inspect the original operation.' },
   'message inspect': { flags: { '--content': 'bool', '--json': 'bool' }, args: 1,
     help: 'golem message inspect <message-id> [--content] [--json]\nInspect durable delivery metadata. Content is opt-in; settlement does not mean task completion.' },
 };
@@ -50,6 +56,16 @@ async function readText(file, stdin) {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)); }
   catch { throw new NotificationError('message file/stdin must contain valid UTF-8 text'); }
 }
+async function requireProtocol(client, scheduling = false) {
+  let capability;
+  try { capability = await client.request('GET', '/api/messages/notify', { timeoutMs: 5000 }); }
+  catch (error) {
+    if (error.status === 404 || error.status === 405) throw new Error('dashboard does not support idempotent notifications; update it before sending');
+    throw error;
+  }
+  if (capability?.notification_protocol !== 1 || capability?.idempotency !== true) throw new Error('dashboard does not support idempotent notifications; update it before sending');
+  if (scheduling && capability.scheduling !== true) throw new Error('dashboard does not support scheduling; update it before sending');
+}
 export async function runCollaboration(family, args, {
   stdout = (text) => process.stdout.write(`${text}\n`), stderr = (text) => process.stderr.write(`${text}\n`),
   stdin = process.stdin, cwd = process.cwd(), resolveContext = resolveCliSessionContext, client: injectedClient,
@@ -74,15 +90,37 @@ export async function runCollaboration(family, args, {
       const items = rows.filter((row) => row.alive === true && (!project || row.project_id === project)).map((row) => ({
         session_id: row.session_id, name: row.name || row.label || null, project_id: row.project_id,
         alive: row.alive, status: row.status, harness: row.harness, role: row.role,
+        model: row.model, provider: row.provider, pending_count: row.pending_count ?? 0,
+        current_in_progress_ticket: row.current_in_progress_ticket
+          ? { id: row.current_in_progress_ticket.id, display_id: row.current_in_progress_ticket.display_id, title: row.current_in_progress_ticket.title } : null,
         delivery_ready: row.delivery_ready, reason: row.delivery_reason,
       }));
       stdout(json ? JSON.stringify(items) : items.map((row) => `${row.session_id}\t${JSON.stringify(row.name)}\t${row.status}\t${row.delivery_ready ? 'ready' : row.reason || 'not ready'}`).join('\n'));
       return 0;
     }
+    if (key === 'schedule list' || key === 'schedule inspect') {
+      const value = await client.request('GET', key === 'schedule list' ? '/api/schedules' : `/api/schedules/${encodeURIComponent(positional[0])}`,
+        { timeoutMs: 5000, params: { ...(o['--all'] ? { all: '1' } : {}), ...(o['--content'] ? { content: '1' } : {}) } });
+      if (key === 'schedule inspect') {
+        notificationExit(value);
+        if (value.kind !== 'schedule' || value.id !== positional[0]) throw new Error('inspection returned a different schedule');
+      } else if (!Array.isArray(value)) throw new Error('invalid schedule-list response');
+      stdout(JSON.stringify(value, null, json ? 0 : 2)); return 0;
+    }
+    if (key === 'schedule cancel') {
+      operationId = validateOperationId(positional[0]);
+      if (context && o['--human']) throw new NotificationError('bound agents cannot use --human', 'INVALID_CALLER_CONTEXT');
+      if (!context && !o['--human']) throw new NotificationError('unbound cancellation requires --human', 'INVALID_CALLER_CONTEXT');
+      await requireProtocol(client, true);
+      mutationStarted = true;
+      const receipt = await client.request('POST', `/api/schedules/${operationId}/cancel`, { timeoutMs: 40000, body: { human: !!o['--human'] } });
+      if (receipt?.kind !== 'schedule' || receipt.id !== operationId || receipt.state !== 'cancelled') throw new Error('cancellation outcome was not confirmed');
+      stdout(JSON.stringify(receipt, null, json ? 0 : 2)); return 0;
+    }
     if (key === 'message inspect') {
       const receipt = await client.request('GET', `/api/message-envelopes/${encodeURIComponent(positional[0])}`, { params: { view: 'receipt', ...(o['--content'] ? { content: '1' } : {}) } });
       notificationExit(receipt);
-      if (receipt.id !== positional[0]) throw new Error('inspection returned a different message id');
+      if (receipt.kind !== 'message' || receipt.id !== positional[0]) throw new Error('inspection returned a different message id');
       stdout(JSON.stringify(receipt, null, json ? 0 : 2)); return 0;
     }
     operationId = validateOperationId(o['--request-id'] ?? crypto.randomUUID());
@@ -94,22 +132,20 @@ export async function runCollaboration(family, args, {
     let text;
     try { text = validateNotificationText(Object.hasOwn(o, '--message') ? o['--message'] : await readText(o['--message-file'], stdin)); }
     catch (error) { if (error instanceof NotificationError) throw error; throw new NotificationError(error.message, 'MESSAGE_INPUT_ERROR'); }
+    const timing = o['--after'] !== undefined || o['--every'] !== undefined ? normalizeNotificationTiming({
+      ...(o['--after'] !== undefined ? { after_ms: parseNotificationDuration(o['--after']) } : {}),
+      ...(o['--every'] !== undefined ? { every_ms: parseNotificationDuration(o['--every']) } : {}),
+    }) : null;
     const body = { operation_id: operationId, sender_id: context?.sessionId || 'human:cli',
       session_id: o['--to'], text, ...(context?.projectId ? { project_id: context.projectId } : {}),
-      ...(o['--ticket'] ? { ticket: o['--ticket'] } : {}), ...(o['--human'] ? { human: true } : {}) };
+      ...(o['--ticket'] ? { ticket: o['--ticket'] } : {}), ...(o['--human'] ? { human: true } : {}), ...(timing ? { timing } : {}) };
     validateNotificationSize(body);
-    let capability;
-    try { capability = await client.request('GET', '/api/messages/notify', { timeoutMs: 5000 }); }
-    catch (error) {
-      if (error.status === 404 || error.status === 405) throw new Error('dashboard does not support idempotent notifications; update it before sending');
-      throw error;
-    }
-    if (capability?.notification_protocol !== 1 || capability?.idempotency !== true) throw new Error('dashboard does not support idempotent notifications; update it before sending');
+    await requireProtocol(client, !!timing);
     mutationStarted = true;
     const result = await client.notifySession(body);
     if (result?.operation_id !== operationId || result?.receipt?.id !== operationId) throw new Error('notification response did not confirm the original operation id');
     const exit = notificationExit(result.receipt);
-    stdout(json ? JSON.stringify(result.receipt) : `message ${operationId}: ${result.receipt.state}${result.receipt.reason ? ` — ${result.receipt.reason}` : ''}`);
+    stdout(json ? JSON.stringify(result.receipt) : `${result.receipt.kind} ${operationId}: ${result.receipt.state}${result.receipt.reason ? ` — ${result.receipt.reason}` : ''}`);
     return exit;
   } catch (error) {
     const refused = ['ECONNREFUSED', 'ENOTFOUND'].includes(error?.cause?.cause?.code ?? error?.cause?.code);
@@ -117,7 +153,7 @@ export async function runCollaboration(family, args, {
     const uncertain = mutationStarted && !invalid && !refused;
     const output = { ok: false, code: error.code || 'COLLABORATION_FAILED', error: error.message,
       ...(operationId ? { operation_id: operationId } : {}), state: uncertain ? 'uncertain' : 'rejected',
-      ...(uncertain ? { next_action: 'inspect or retry the same request id; do not create a fresh message' } : {}) };
+      ...(uncertain ? { next_action: family === 'schedule' ? 'inspect the schedule or repeat cancellation; do not assume an occurrence was recalled' : 'inspect or retry the same request id; do not create a fresh message' } : {}) };
     if (json) stdout(JSON.stringify(output)); else stderr(`${output.error}${operationId ? ` (operation ${operationId})` : ''}`);
     return uncertain ? 3 : invalid ? 2 : 1;
   }

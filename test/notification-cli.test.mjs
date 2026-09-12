@@ -174,6 +174,49 @@ const r=spawnSync(process.execPath,['-e',bridge],{encoding:'utf8'});process.stdo
   assert.equal(nativeExit, 0, nativeErr || nativeOut);
   assert.match(inputs.get(JSON.parse(nativeOut).id).content, /Authenticated sender session_id: resumed-native-caller/);
   console.log('actual CLI grandchild process uses canonical resumed Claude identity, not per-run environment id: passed');
+
+  const scheduleId = crypto.randomUUID();
+  const scheduleArgs = ['notify', '--to', target, '--message', 'scheduled context', '--after', '1h', '--every', '2h', '--request-id', scheduleId, '--json'];
+  result = await run('session', scheduleArgs);
+  assert.equal(result.exit, 0, result.out); const scheduled = JSON.parse(result.out);
+  assert.equal(scheduled.kind, 'schedule'); assert.equal(scheduled.state, 'active');
+  assert.equal(scheduled.interval_ms, 7200000); assert.equal(scheduled.current_occurrence, null);
+  result = await run('session', scheduleArgs);
+  assert.equal(JSON.parse(result.out).next_due_at, scheduled.next_due_at, 'idempotent retry never shifts the due time');
+  assert.equal((await run('session', ['notify', '--to', target, '--message', 'scheduled context', '--request-id', scheduleId, '--json'])).exit, 2);
+  assert.equal((await run('session', ['notify', '--to', target, '--message', text, '--ticket', 'GOL-331', '--after', '1h', '--request-id', id, '--json'])).exit, 2);
+  const stranger = { client: createGolemClient({ baseUrl: base, callerSessionId: 'stranger' }), resolveContext: () => ({ sessionId: 'stranger' }) };
+  assert.deepEqual(JSON.parse((await run('schedule', ['list', '--json'], stranger)).out), []);
+  assert.ok(JSON.parse((await run('schedule', ['list', '--all', '--json'], stranger)).out).some((s) => s.id === scheduleId));
+  assert.equal((await run('schedule', ['cancel', scheduleId, '--json'], stranger)).exit, 2);
+  result = await run('schedule', ['inspect', scheduleId, '--json']);
+  assert.equal(Object.hasOwn(JSON.parse(result.out), 'content'), false);
+  assert.equal(JSON.parse((await run('schedule', ['inspect', scheduleId, '--content', '--json'])).out).content, 'scheduled context');
+  const operator = { client: humanClient, resolveContext: () => null };
+  result = await run('schedule', ['cancel', scheduleId, '--human', '--json'], operator);
+  assert.equal(result.exit, 0); const cancelledAt = JSON.parse(result.out).cancelled_at;
+  assert.equal(JSON.parse((await run('schedule', ['cancel', scheduleId, '--human', '--json'], operator)).out).cancelled_at, cancelledAt);
+  for (const flags of [['--after', '-1s'], ['--every', '0s'], ['--after', '10'], ['--every', '99999999999999999d']]) {
+    assert.equal((await run('session', ['notify', '--to', target, '--message', 'invalid time', ...flags, '--json'])).exit, 2);
+  }
+  const preTimingClient = createGolemClient({ baseUrl: base, callerSessionId: caller, fetchImpl: async (_url, init) => {
+    assert.equal(init.method, 'GET'); return new Response('{"notification_protocol":1,"idempotency":true}');
+  } });
+  assert.equal((await run('session', ['notify', '--to', target, '--message', 'never send early', '--after', '1m', '--json'], { client: preTimingClient })).exit, 1);
+  const nowId = crypto.randomUUID();
+  result = await run('session', ['notify', '--to', target, '--message', 'clock delivers this', '--after', '0s', '--request-id', nowId, '--json']);
+  assert.equal(result.exit, 0, result.out);
+  let arrived;
+  for (let i = 0; i < 200; i++) {
+    arrived = await (await fetch(`${base}/api/schedules/${nowId}`)).json();
+    if (arrived.state === 'completed') break;
+    await sleep(50);
+  }
+  assert.equal(arrived.state, 'completed', serverErrors);
+  const occurrence = inputs.get(arrived.current_occurrence.id);
+  assert.ok(occurrence.content.includes(`Schedule: ${nowId}`));
+  assert.ok(occurrence.content.endsWith('clock delivers this'));
+  console.log('real schedule CLI/API management, ownership, cross-mode idempotency, capability and clock-to-endpoint delivery: passed');
 } finally {
   if (dashboard && dashboard.exitCode == null) {
     dashboard.kill('SIGTERM'); await Promise.race([new Promise((r) => dashboard.once('exit', r)), sleep(3000)]);

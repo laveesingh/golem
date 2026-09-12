@@ -977,7 +977,20 @@ async function main() {
     });
   });
   const notify = createNotificationService({ tracker, listTargets: () => state.nativeSessions(), listChannels, deliver: deliverControlEnvelope });
-  fastify.get('/api/messages/notify', async () => ({ notification_protocol: 1, idempotency: true }));
+  fastify.get('/api/messages/notify', async () => ({ notification_protocol: 1, idempotency: true, scheduling: true }));
+  fastify.get('/api/schedules', async (req) => tracker.schedules.list({
+    creatorId: req.query?.all === '1' ? null : req.headers['x-golem-caller-session'] || null,
+  }));
+  fastify.get('/api/schedules/:id', async (req, reply) => {
+    const receipt = tracker.schedules.receipt(req.params.id, { includeContent: req.query?.content === '1' });
+    return receipt || reply.code(404).send({ error: 'schedule not found' });
+  });
+  fastify.post('/api/schedules/:id/cancel', async (req, reply) => {
+    try {
+      return tracker.schedules.cancel(req.params.id, { caller: req.headers['x-golem-caller-session'] || null,
+        human: req.body?.human ?? false });
+    } catch (error) { return reply.code(error.status || 503).send({ error: error.message, code: error.code || 'SCHEDULE_CANCEL_FAILED' }); }
+  });
   fastify.post('/api/messages/notify', async (req, reply) => {
     try {
       return await notify(req.body ?? {}, { caller: req.headers['x-golem-caller-session'] || null });
