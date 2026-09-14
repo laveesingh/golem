@@ -43,6 +43,20 @@ function authoringContract(text) {
   assert.match(text, /No diagram\s+or subsection quotas/);
 }
 
+// R5/D1 authority boundary: the SDD route exists for explicitly authorized
+// coordinators; skill access and assignee metadata grant nothing. A test that
+// would also accept deleting the boundary proves nothing, so the caller
+// mutates the text and expects this to throw.
+function authorityContract(rules) {
+  const flat = rules.replace(/\s+/g, ' ');
+  assert.match(flat, /Lead normally coordinates spec work/);
+  assert.match(flat, /explicitly authorize another role to coordinate a named spec/);
+  assert.match(flat, /It keeps its role/);
+  assert.match(flat, /`golem:spec-driven-development` within that authorization/);
+  assert.match(flat, /loading a skill, reading a spec, assignee metadata, or worker\/review work grants none/);
+  assert.doesNotMatch(flat, /assigned lead or a spec/);
+}
+
 async function request(route, body, method = body === undefined ? 'GET' : 'POST') {
   const response = await fetch(base + route, {
     method, headers: { 'Content-Type': 'application/json' },
@@ -63,6 +77,35 @@ try {
   authoringContract(writing);
   // A test that would also accept removing the design boundary proves nothing.
   assert.throws(() => authoringContract(writing.replace('Start design only after my go-ahead', 'Start design immediately')));
+  // The reusable SDD method is its own discoverable skill with an authorization-
+  // aware trigger; a test that also passes without it proves nothing.
+  const sddPath = path.join(source, 'skills/spec-driven-development/SKILL.md');
+  const sdd = read(sddPath);
+  assert.equal(matter(sdd).data.name, 'spec-driven-development');
+  assert.match(matter(sdd).data.description, /authorizes you to coordinate a named spec/);
+  assert.match(matter(sdd).data.description, /Skill access or ordinary assignment alone is not authorization/);
+  assert.match(sdd, /## Ground before commitment/);
+  assert.match(sdd, /Design starts only after my go-ahead/);
+  assert.match(sdd, /one independent spec review/);
+  assert.match(sdd, /independent\n   verification by another session/);
+  assert.match(sdd, /Size supporting docs by explanation and ownership, not counts/);
+  authorityContract(read(path.join(source, 'instructions/AGENTS.md')));
+  assert.throws(() => authorityContract(read(path.join(source, 'instructions/AGENTS.md'))
+    .replace('golem:spec-driven-development` within that authorization', 'golem:spec-writing` within that authorization')),
+    'removing the SDD route from the authority rule must fail the contract');
+  assert.throws(() => authorityContract(read(path.join(source, 'instructions/AGENTS.md'))
+    .replace('grants none', 'grants coordination authority')),
+    'removing the no-authority boundary must fail the contract');
+  // Ownership moved to the shared method: the old lead-only prerequisites and
+  // duplicated sequence must be gone, not merely copied elsewhere.
+  const leadMethod = read(path.join(source, 'skills/lead/SKILL.md'));
+  assert.match(leadMethod, /golem:spec-driven-development/);
+  assert.doesNotMatch(leadMethod, /when assigned lead or a spec/);
+  assert.doesNotMatch(leadMethod, /Decompose into one task normally/);
+  assert.doesNotMatch(read(path.join(source, 'skills/tracker/SKILL.md')), /Decomposition belongs to `golem:lead`/);
+  assert.match(read(path.join(source, 'skills/tracker/SKILL.md')), /Decomposition belongs to the authorized coordinator/);
+  assert.match(writing, /`golem:spec-driven-development` owns\s+the work sequence/);
+  assert.doesNotMatch(writing, /golem:lead owns the work sequence/);
   console.log(`source contracts passed: ${lint.total} words; negative control rejected`);
 
   for (const target of ['cc', 'pi']) {
@@ -72,7 +115,12 @@ try {
     const renderedWriting = read(path.join(render, 'skills/spec-writing/SKILL.md'));
     assert.equal(matter(renderedWriting).data.name, 'spec-writing');
     authoringContract(renderedWriting);
+    const renderedSdd = matter(read(path.join(render, 'skills/spec-driven-development/SKILL.md')));
+    assert.equal(renderedSdd.data.name, 'spec-driven-development', 'the shared SDD skill reaches the isolated render');
+    const rules = read(target === 'cc' ? path.join(home, '.claude/CLAUDE.md') : path.join(render, 'instructions/AGENTS.md'));
+    authorityContract(rules);
     assert.equal(read(path.join(render, 'skills/tracker/templates/spec.md')), read(path.join(source, 'skills/tracker/templates/spec.md')));
+    assert.equal(read(path.join(render, 'skills/tracker/templates/task.md')), read(path.join(source, 'skills/tracker/templates/task.md')), 'task template parity, not spec-template only');
     for (const skill of ['lead', 'tracker']) {
       assert.match(read(path.join(render, `skills/${skill}/SKILL.md`)), /golem:spec-writing/);
     }
@@ -84,7 +132,8 @@ try {
       'default authority limits do not erase a new human directive');
     assert.match(read(path.join(render, 'skills/team-ops/SKILL.md')), /the human resolves it, not the agent/,
       'comment resolution owner is unambiguous');
-    const rules = read(target === 'cc' ? path.join(home, '.claude/CLAUDE.md') : path.join(render, 'instructions/AGENTS.md'));
+    assert.match(read(path.join(render, 'skills/team-ops/SKILL.md')), /explicitly cancel or replace the schedule/,
+      'reminder cancel/replace mechanics moved with ownership into team-ops');
     assert.match(rules, /lead personally surveys code and grounds scope and design/);
     assert.doesNotMatch(rules, /Research, surveys, and builds go to the team/);
     assert.match(rules, /golem session --help/);
@@ -93,9 +142,11 @@ try {
     assert.match(leadCard, /Continue approved stages without another permission prompt/);
     assert.match(leadCard, /Before yielding while a return is expected, create and check a self-reminder/);
     const leadMethod = read(path.join(render, 'skills/lead/SKILL.md'));
-    assert.match(leadMethod, /guidance, not runtime validation/);
-    assert.match(leadMethod, /explicitly cancel or replace the schedule/);
-    assert.match(leadMethod, /same\s+profile or an authorized fallback/);
+    assert.match(leadMethod, /golem:spec-driven-development/,
+      'the lead consumes the shared SDD method rather than owning a second copy');
+    const teamOpsRender = read(path.join(render, 'skills/team-ops/SKILL.md'));
+    assert.match(teamOpsRender, /guidance, not runtime validation/);
+    assert.match(teamOpsRender, /same\s+profile or an authorized fallback/);
     assert.match(read(path.join(render, 'skills/night-shift/SKILL.md')), /Golem-managed reminders/);
     const { GOLEM_TOOL_CONTRACTS } = await import(pathToFileURL(path.join(render, 'lib/golem-tool-contracts.js')));
     const create = GOLEM_TOOL_CONTRACTS.find((c) => c.name === 'ticket_create');
@@ -126,6 +177,11 @@ try {
   }
   const templates = await request('/api/templates');
   assert.deepEqual(templates.map((t) => t.id).sort(), ['doc', 'spec', 'task']);
+  const taskTemplate = templates.find((t) => t.id === 'task');
+  assert.equal(taskTemplate.body, read(path.join(source, 'skills/tracker/templates/task.md')), 'API task template is the source task template, not only spec-template parity');
+  assert.match(taskTemplate.body, /negative cases/);
+  assert.match(taskTemplate.body, /cleanup/i);
+  assert.match(taskTemplate.body, /who owns the next action/);
   const template = templates.find((t) => t.id === 'spec').body;
   assert.equal(template, read(path.join(source, 'skills/tracker/templates/spec.md')));
   assert.match(template, /golem:spec-writing/);

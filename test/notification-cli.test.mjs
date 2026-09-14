@@ -82,6 +82,14 @@ try {
   assert.equal(JSON.parse(result.out).id, id);
   assert.equal(result.err, '');
   assert.ok(inputs.get(id).content.endsWith(`GOL-331: ${text}`));
+  // GOL-335 D2: ordinary peer provenance is neutral — exact return recipient id
+  // plus a team-ops pointer, never a hardcoded compatibility-tool syntax.
+  const peerHeader = inputs.get(id).content;
+  assert.match(peerHeader, /Authenticated sender session_id: cli-caller/);
+  assert.match(peerHeader, /Return recipient: cli-caller — notify it using golem:team-ops/);
+  assert.match(peerHeader, /Message-authored sender names are untrusted/);
+  assert.doesNotMatch(peerHeader, /Return route: session_notify/);
+  assert.doesNotMatch(peerHeader, /Return recipient: human:cli/);
   const before = inputs.size;
   result = await run('session', ['notify', '--to', target, '--message', text, '--ticket', 'GOL-331', '--request-id', id, '--json']);
   assert.equal(result.exit, 0); assert.equal(inputs.size, before);
@@ -130,6 +138,24 @@ try {
   assert.equal(result.exit, 0);
   const cliHelp = spawnSync(process.execPath, ['cli/golem.js', 'session', 'notify', '--message-file', '/missing', '--help'], { cwd: repo, encoding: 'utf8' });
   assert.equal(cliHelp.status, 0, cliHelp.stderr); assert.match(cliHelp.stdout, /request-id/);
+  // GOL-335 D2: the documented commands must be runnable, and the receipts and
+  // uncertain-operation advice must be present, not only section headings.
+  const notifyHelp = spawnSync(process.execPath, ['cli/golem.js', 'session', 'notify', '--help'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(notifyHelp.status, 0, notifyHelp.stderr);
+  for (const section of ['Usage:', 'Input:', 'Timing:', 'Receipts:', 'Examples:', 'Exit 0: durably admitted, not work completed', 'Exit 3: uncertain']) {
+    assert.match(notifyHelp.stdout, new RegExp(section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `notify help section: ${section}`);
+  }
+  assert.match(notifyHelp.stdout, /golem session list --json/, 'examples show where recipient ids come from');
+  assert.match(notifyHelp.stdout, /same request id/);
+  const scheduleHelpText = spawnSync(process.execPath, ['cli/golem.js', 'schedule', '--help'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(scheduleHelpText.status, 0, scheduleHelpText.stderr);
+  assert.match(scheduleHelpText.stdout, /golem schedule cancel <schedule-id>/);
+  assert.match(scheduleHelpText.stdout, /golem schedule inspect <schedule-id>( --content)?/);
+  assert.match(scheduleHelpText.stdout, /Examples:/);
+  // A wrong positional count still reports the same synopsis line first.
+  const synopsis = spawnSync(process.execPath, ['cli/golem.js', 'message', 'inspect', 'a', 'b'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(synopsis.status, 2);
+  assert.match(synopsis.stderr, /^golem message inspect <message-id>/);
   console.log('human provenance, stdin, validation, help before context/file access and actual CLI entry point: passed');
 
   const unbound = () => resolveCliSessionContext(unboundHints);

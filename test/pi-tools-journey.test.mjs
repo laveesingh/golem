@@ -112,6 +112,28 @@ try {
   worker = harness(extension, 'pi-tools-worker');
   await worker.emit('session_start', { reason: 'startup' });
 
+  // GOL-335 D2: the actual Pi registration is the product surface. It must be
+  // the CLI-first selection — omit the outbound delivery/discovery tools, adapt
+  // descriptions — not just a contract list that happens to match.
+  const { resolveToolSurface, toolsForSurface } = await import(pathToFileURL(path.join(repo, 'lib/golem-tool-contracts.js')));
+  const registeredNames = [...worker.tools.keys()];
+  const cliFirstContracts = toolsForSurface(resolveToolSurface('cli-first'));
+  assert.deepEqual(registeredNames.sort(), cliFirstContracts.map((c) => c.name).sort(),
+    'Pi registers exactly the CLI-first surface');
+  assert.ok(!worker.tools.has('session_notify') && !worker.tools.has('sessions_dispatchable'),
+    'Pi must not register the outbound delivery/discovery tools');
+  for (const contract of cliFirstContracts) {
+    const registered = worker.tools.get(contract.name);
+    assert.equal(registered.description, contract.description, `description adapted for ${contract.name}`);
+    assert.ok(!JSON.stringify(registered).includes('sessions_dispatchable'), `${contract.name} must not reference hidden discovery tools`);
+  }
+  // Negative control: the compatibility surface (with the outbound tools) must
+  // fail this same checker, proving the check discriminates by surface.
+  assert.throws(() => {
+    assert.deepEqual(registeredNames.sort(), toolsForSurface(resolveToolSurface('compatibility')).map((c) => c.name).sort(),
+      'compatibility surface must not match the CLI-first registration');
+  }, 'restoring a hidden tool to the registered set must fail the CLI-first check');
+
   const role = await worker.tools.get('session_role').execute('role-call', { role: 'builder' }, undefined, undefined, worker.ctx);
   assert.equal(role.details.ok, true, role.content[0].text);
 

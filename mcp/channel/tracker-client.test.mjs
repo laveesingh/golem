@@ -9,6 +9,7 @@
 //
 // Exit 0 on full success; exit 1 on any failed assertion or round-trip.
 
+import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -162,6 +163,8 @@ let ccFallbackMcpTransport;
 let unsupportedCcMcpClient;
 let unsupportedCcMcpTransport;
 let uninitializedCcChild;
+let cliFirstMcpClient;
+let cliFirstMcpTransport;
 let bridgeCaptureServer;
 let port;
 
@@ -579,7 +582,9 @@ async function main() {
     !exactNotify.result.isError
       && notifyBody.session_id === siblingB
       && /Authenticated sender session_id: ses_identity_sibling_a/.test(notifyBody.content || '')
-      && /Return route: session_notify/.test(notifyBody.content || ''),
+      && /Return recipient: ses_identity_sibling_a/.test(notifyBody.content || '')
+      && /golem:team-ops/.test(notifyBody.content || '')
+      && !/Return route: session_notify/.test(notifyBody.content || ''),
     `${exactNotify.text} bridge=${JSON.stringify(notifyBody)}`);
 
   const identityTicket = await callToolFrom(identityMcpClient, 'ticket_create', {
@@ -976,7 +981,9 @@ async function main() {
   const dispatchBody = channelEvents.filter((event) => event.params?.meta?.kind === 'brief').at(-1)?.params?.content || '';
   check('ticket dispatch carries authenticated return route',
     dispatchBody.includes(`Authenticated delegating session_id: ${SESSION_ID}`)
-      && dispatchBody.includes('Return notification: call session_notify'),
+      && dispatchBody.includes('Return notification: notify that exact recipient id')
+      && dispatchBody.includes('golem:team-ops')
+      && !/session_notify\(/.test(dispatchBody),
     dispatchBody);
 
   const closed = await callTool('ticket_update', { id: walk.id, state: 'done' });
@@ -1006,6 +1013,112 @@ async function main() {
     Array.isArray(listed.json) && listed.json.some((ticket) => ticket.id === jump.id), listed.text);
   check('list payloads carry no phase field',
     Array.isArray(listed.json) && listed.json.every((ticket) => !('phase' in ticket)), listed.text);
+
+  // GOL-335 D2: a trusted launch selection advertises the CLI-first surface.
+  // Advertisement, server instructions, and direct-call rejection must agree,
+  // and identity rejection keeps its precedence over the surface intercept.
+  const cliFirstId = 'test-session-cli-first';
+  const cliFirstEvents = [];
+  const CliChannelNotificationSchema = z.object({
+    method: z.literal('notifications/claude/channel'),
+    params: z.object({ content: z.string(), meta: z.object({ kind: z.string() }).passthrough() }).passthrough(),
+  });
+  cliFirstMcpClient = new Client({ name: 'golem-cli-first-journey', version: '1.0.0' });
+  cliFirstMcpTransport = new StdioClientTransport({
+    command: process.execPath,
+    args: [CHANNEL_SERVER],
+    cwd: CHANNEL_ROOT,
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: tmpConfigHome,
+      GOLEM_HOME: tmpGolemHome,
+      GOLEM_CEO_SESSION_ID: cliFirstId,
+      GOLEM_CHANNEL_PORT: '0',
+      GOLEM_TOOL_SURFACE: 'cli-first',
+      ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+      CLAUDE_CODE_USE_BEDROCK: '',
+      CLAUDE_CODE_USE_VERTEX: '',
+      CLAUDE_CODE_USE_FOUNDRY: '',
+      HOME: tmpRoot,
+    },
+    stderr: 'pipe',
+  });
+  cliFirstMcpTransport.stderr?.on('data', (d) => process.stderr.write(`[mcp-cli-first:err] ${d}`));
+  cliFirstMcpClient.setNotificationHandler(CliChannelNotificationSchema, (notification) => cliFirstEvents.push(notification));
+  await cliFirstMcpClient.connect(cliFirstMcpTransport);
+  const cliFirstTools = await cliFirstMcpClient.listTools();
+  const cliFirstNames = cliFirstTools.tools.map((tool) => tool.name);
+  const omittedNames = ['session_notify', 'sessions_dispatchable'];
+  check('CLI-first selection omits outbound delivery and discovery tools',
+    omittedNames.every((name) => !cliFirstTools.tools.some((tool) => tool.name === name)),
+    cliFirstTools.tools.map((tool) => tool.name).join(', '));
+  check('CLI-first selection keeps tracker, dispatch, ack, role and context tools',
+    ['ack', 'ticket_list', 'ticket_get', 'ticket_create', 'ticket_update', 'ticket_comment',
+      'ticket_comment_update', 'ticket_comment_reply', 'session_role', 'ticket_dispatch', 'project_context']
+      .every((name) => cliFirstTools.tools.some((tool) => tool.name === name)),
+    cliFirstTools.tools.map((tool) => tool.name).join(', '));
+  check('no CLI-first advertised tool or schema field still names a hidden discovery tool',
+    !omittedNames.some((name) => JSON.stringify(cliFirstTools.tools).includes(name)),
+    JSON.stringify(cliFirstTools.tools).match(/sessions_dispatchable[^,]*/g) || '');
+  const cliFirstDispatchTool = cliFirstTools.tools.find((tool) => tool.name === 'ticket_dispatch');
+  check('CLI-first dispatch description points at golem session list',
+    /golem session list/.test(cliFirstDispatchTool?.description || '')
+      && /golem session list/.test(cliFirstDispatchTool?.inputSchema?.properties?.session_id?.description || ''),
+    JSON.stringify(cliFirstDispatchTool));
+  const cliInstructions = cliFirstMcpClient.getInstructions?.() || '';
+  check('CLI-first server instructions use neutral team-ops return guidance',
+    // 'session_notify brief' is valid envelope vocabulary; a tool-call
+    // prescription (`use \`session_notify\`` / `session_notify(`) is not.
+    !/use `session_notify`|session_notify\(/.test(cliInstructions) && /golem:team-ops/.test(cliInstructions),
+    cliInstructions);
+
+  const expectsActionableCliGuidance = (response) => response.result.isError
+    && /golem session notify/.test(response.text)
+    && /golem session list/.test(response.text)
+    && !/unknown tool/.test(response.text)
+    && !/no live dispatchable session/.test(response.text);
+  const sideEffectsBefore = cliFirstEvents.length;
+  const excludedNotify = await callToolFrom(cliFirstMcpClient, 'session_notify', {
+    to: SESSION_ID, text: 'must not deliver', __golem_session_id: cliFirstId, __golem_call_id: 'excluded-notify',
+  });
+  const excludedDiscovery = await callToolFrom(cliFirstMcpClient, 'sessions_dispatchable', {
+    __golem_session_id: cliFirstId, __golem_call_id: 'excluded-discovery',
+  });
+  check('CLI-first session_notify direct call rejects with actionable CLI guidance',
+    expectsActionableCliGuidance(excludedNotify), excludedNotify.text);
+  check('CLI-first sessions_dispatchable direct call rejects with actionable CLI guidance',
+    expectsActionableCliGuidance(excludedDiscovery), excludedDiscovery.text);
+  check('excluded direct calls cause zero delivery/discovery side effects',
+    cliFirstEvents.length === sideEffectsBefore, JSON.stringify(cliFirstEvents.length));
+  // Negative control: a generic unknown-tool fallback or a hidden-handler route
+  // would satisfy isError but must fail this check.
+  assert.equal(expectsActionableCliGuidance({ result: { isError: true }, text: 'unknown tool: session_notify' }), false);
+  assert.equal(expectsActionableCliGuidance({ result: { isError: false }, text: 'ok' }), false);
+  const spoofedExcluded = await callToolFrom(cliFirstMcpClient, 'session_notify', {
+    to: SESSION_ID, text: 'spoofed', __golem_session_id: 'spoofed-model-session', __golem_call_id: 'spoofed-excluded',
+  });
+  check('caller identity rejection keeps precedence over the surface intercept',
+    spoofedExcluded.result.isError && /conflicts with the launcher binding/.test(spoofedExcluded.text), spoofedExcluded.text);
+  const cliFirstTracker = await callToolFrom(cliFirstMcpClient, 'ticket_list', { project: PROJECT_ID, mine: true, __golem_session_id: cliFirstId, __golem_call_id: 'cli-first-list' });
+  check('CLI-first surface preserves tracker operations',
+    !cliFirstTracker.result.isError && Array.isArray(cliFirstTracker.json), cliFirstTracker.text);
+
+  // An invalid explicit selection refuses to boot instead of advertising an
+  // unintended surface.
+  await new Promise((resolve) => {
+    const bad = spawn(process.execPath, [CHANNEL_SERVER], {
+      cwd: CHANNEL_ROOT,
+      env: { ...process.env, XDG_CONFIG_HOME: tmpConfigHome, GOLEM_HOME: tmpGolemHome, GOLEM_TOOL_SURFACE: 'bogus' },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let badStderr = '';
+    bad.stderr.on('data', (d) => { badStderr += d; });
+    bad.once('exit', (code) => {
+      check('invalid explicit tool-surface selection refuses to boot with a clear error',
+        code !== 0 && /unknown Golem tool surface/.test(badStderr), `exit=${code} ${badStderr.slice(0, 400)}`);
+      resolve();
+    });
+  });
 }
 
 main()
@@ -1023,6 +1136,8 @@ main()
     try { await noIdentityMcpTransport?.close(); } catch { /* ignore */ }
     try { await ccFallbackMcpClient?.close(); } catch { /* ignore */ }
     try { await ccFallbackMcpTransport?.close(); } catch { /* ignore */ }
+    try { await cliFirstMcpClient?.close(); } catch { /* ignore */ }
+    try { await cliFirstMcpTransport?.close(); } catch { /* ignore */ }
     try { await unsupportedCcMcpClient?.close(); } catch { /* ignore */ }
     try { await unsupportedCcMcpTransport?.close(); } catch { /* ignore */ }
     try { uninitializedCcChild?.kill('SIGKILL'); } catch { /* ignore */ }
