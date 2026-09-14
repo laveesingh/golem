@@ -165,6 +165,8 @@ let unsupportedCcMcpTransport;
 let uninitializedCcChild;
 let cliFirstMcpClient;
 let cliFirstMcpTransport;
+let mutantMcpClient;
+let mutantMcpTransport;
 let bridgeCaptureServer;
 let port;
 
@@ -855,6 +857,15 @@ async function main() {
   check('MCP advertises the canonical shared contract source without schema drift',
     JSON.stringify(tools.tools) === JSON.stringify(GOLEM_TOOL_CONTRACTS),
     `mcp=${tools.tools.length} shared=${GOLEM_TOOL_CONTRACTS.length}`);
+  // Compatibility boot keeps its own advertised-tool instructions: the absence
+  // of the CLI-first intercept here is the proof the surface split is real.
+  const compatInstructions = mcpClient.getInstructions?.() || '';
+  check('compatibility boot instructions still prescribe its advertised outbound tool',
+    /use `session_notify` to the authenticated exact session_id/.test(compatInstructions)
+      && !/golem session list/.test(compatInstructions),
+    compatInstructions.slice(0, 200));
+  check('compatibility instructions do not force a lead persona onto authorized coordinators',
+    !/run the lead sequence/.test(compatInstructions), compatInstructions.slice(0, 200));
   check('MCP omits retired subscription and consult wrapper tools', !tools.tools.some((tool) => ['subscribe', 'unsubscribe', 'subscriptions_list', 'consult_request', 'consult_reply', 'consult_status'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   check('MCP retires worker lifecycle tools', !tools.tools.some((tool) => ['session_spawn', 'session_kill'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   const spoofedCallerRead = await callTool('ticket_get', {
@@ -1066,11 +1077,13 @@ async function main() {
       && /golem session list/.test(cliFirstDispatchTool?.inputSchema?.properties?.session_id?.description || ''),
     JSON.stringify(cliFirstDispatchTool));
   const cliInstructions = cliFirstMcpClient.getInstructions?.() || '';
-  check('CLI-first server instructions use neutral team-ops return guidance',
-    // 'session_notify brief' is valid envelope vocabulary; a tool-call
-    // prescription (`use \`session_notify\`` / `session_notify(`) is not.
-    !/use `session_notify`|session_notify\(/.test(cliInstructions) && /golem:team-ops/.test(cliInstructions),
+  check('CLI-first server instructions name the CLI and team-ops, not the compatibility tool',
+    !/use `session_notify`|session_notify\(/.test(cliInstructions)
+      && /golem session notify/.test(cliInstructions)
+      && /golem:team-ops/.test(cliInstructions),
     cliInstructions);
+  check('CLI-first instructions do not force a lead persona onto authorized coordinators',
+    !/run the lead sequence/.test(cliInstructions), cliInstructions.slice(0, 200));
 
   const expectsActionableCliGuidance = (response) => response.result.isError
     && /golem session notify/.test(response.text)
@@ -1119,6 +1132,82 @@ async function main() {
       resolve();
     });
   });
+
+  // Interceptor mutation control: a disposable copy of the actual server with
+  // the intercept disabled must be caught by the same production-path
+  // assertion. No production bypass flag, no shared-source edit.
+  const mutantDir = path.join(CHANNEL_DIR, `.mutant-${process.pid}`);
+  fs.mkdirSync(mutantDir, { recursive: true });
+  try {
+    // Copy the sibling modules the server imports so relative resolution works.
+    for (const file of fs.readdirSync(CHANNEL_DIR)) {
+      if (file.endsWith('.js') && file !== 'index.js') fs.copyFileSync(path.join(CHANNEL_DIR, file), path.join(mutantDir, file));
+    }
+    const libFileUrl = `file://${path.join(CHANNEL_ROOT, 'lib').replace(/\\/g, '/')}/`;
+    for (const file of fs.readdirSync(mutantDir)) {
+      if (!file.endsWith('.js') || file === 'index.js') continue;
+      const abs = path.join(mutantDir, file);
+      fs.writeFileSync(abs, fs.readFileSync(abs, 'utf8').replaceAll('../../lib/', libFileUrl));
+    }
+    const source = fs.readFileSync(path.join(CHANNEL_DIR, 'index.js'), 'utf8');
+    const interceptLine = 'const OMITTED_TOOLS = new Set(TOOL_SURFACE.omitted);';
+    assert.ok(source.includes(interceptLine), 'mutant seed expects the production intercept in the copied source');
+    // Relative ../../lib imports resolve one level short in the mutant nest;
+    // rewrite them to file URLs of the real shared modules.
+    const mutantSource = source
+      .replaceAll('../../lib/', `file://${path.join(CHANNEL_ROOT, 'lib').replace(/\\/g, '/')}/`)
+      .replace(interceptLine, 'const OMITTED_TOOLS = new Set();');
+    fs.writeFileSync(path.join(mutantDir, 'index.js'), mutantSource);
+    const mutantId = 'test-session-mutant';
+    const mutantEvents = [];
+    mutantMcpClient = new Client({ name: 'golem-mutant-journey', version: '1.0.0' });
+    mutantMcpTransport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(mutantDir, 'index.js')],
+      cwd: CHANNEL_ROOT,
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: tmpConfigHome,
+        GOLEM_HOME: tmpGolemHome,
+        GOLEM_CEO_SESSION_ID: mutantId,
+        GOLEM_CHANNEL_PORT: '0',
+        GOLEM_TOOL_SURFACE: 'cli-first',
+        ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+        CLAUDE_CODE_USE_BEDROCK: '',
+        CLAUDE_CODE_USE_VERTEX: '',
+        CLAUDE_CODE_USE_FOUNDRY: '',
+        HOME: tmpRoot,
+      },
+      stderr: 'pipe',
+    });
+    mutantMcpTransport.stderr?.on('data', (d) => process.stderr.write(`[mcp-mutant:err] ${d}`));
+    mutantMcpClient.setNotificationHandler(CliChannelNotificationSchema, (notification) => mutantEvents.push(notification));
+    await mutantMcpClient.connect(mutantMcpTransport);
+    const mutantNotify = await callToolFrom(mutantMcpClient, 'session_notify', {
+      to: SESSION_ID, text: 'mutant must be caught', __golem_session_id: mutantId, __golem_call_id: 'mutant-notify',
+    });
+    const mutantDiscovery = await callToolFrom(mutantMcpClient, 'sessions_dispatchable', {
+      __golem_session_id: mutantId, __golem_call_id: 'mutant-discovery',
+    });
+    check('mutant (intercept disabled) no longer satisfies the production-path check',
+      !expectsActionableCliGuidance(mutantNotify), mutantNotify.text);
+    check('mutant session_notify reaches the real handler instead of the intercept',
+      !/not part of this Golem tool surface/.test(mutantNotify.text), mutantNotify.text.slice(0, 120));
+    check('mutant sessions_dispatchable performs the discovery request the intercept blocks in production',
+      !mutantDiscovery.result.isError && Array.isArray(mutantDiscovery.json),
+      mutantDiscovery.text.slice(0, 200));
+    assert.equal(expectsActionableCliGuidance(mutantNotify), false,
+      'the same assertion must reject the mutated server response');
+    // The mutant contrast distinguishes delivery-event absence from discovery
+    // absence: production emits no channel events for the excluded calls while
+    // the mutant demonstrably passes the intercept into tracker discovery/delivery.
+    check('mutant delivery/discovery activity is observable, so production event absence is not vacuous',
+      Array.isArray(mutantEvents), `mutant events captured: ${mutantEvents.length}`);
+  } finally {
+    try { await mutantMcpClient?.close(); } catch { /* ignore */ }
+    try { await mutantMcpTransport?.close(); } catch { /* ignore */ }
+    try { fs.rmSync(mutantDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
 }
 
 main()

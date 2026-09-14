@@ -17,7 +17,7 @@ The dashboard owns work records; use tracker tools, never direct database writes
 | `ticket_update({id, ...})` | metadata and state; `body` replaces the whole body, so read first and rewrite in full |
 | `ticket_comment({id, body, ...})` | progress and evidence; anchor with a quote, prefix and suffix, or a section |
 | `ticket_comment_reply`, `ticket_comment_update` | thread a reply; resolve, reopen, or edit |
-| `ticket_dispatch`, `sessions_dispatchable` | team transport: `golem:team-ops` |
+| `ticket_dispatch` | team transport — discovery, recipients and returns per `golem:team-ops` |
 
 ## Three kinds
 

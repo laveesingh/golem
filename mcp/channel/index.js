@@ -423,6 +423,19 @@ async function postToOpencodeBridge(bridge, bodyObj) {
 }
 
 // --- MCP server ------------------------------------------------------------
+// Outbound return instructions are surface-selected: a compatibility boot names
+// its advertised tools; a CLI-first boot names the CLI and golem:team-ops.
+// Provenance headers and receiving event kinds are shared and unchanged.
+const MCP_RETURN_GUIDANCE = TOOL_SURFACE.name === 'cli-first'
+  ? {
+      delegatedReturns: '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies notify the authenticated exact session_id with `golem session notify` from the CLI (discovery: `golem session list`); see golem:team-ops.',
+      peerHelp: 'Peer help travels as a direct CLI notification to the exact captured session_id (`golem session notify`; discovery `golem session list`); see golem:team-ops — there are no consult wrapper tools or passive subscriptions.',
+    }
+  : {
+      delegatedReturns: '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies use `session_notify` to the authenticated exact session_id.',
+      peerHelp: null,
+      peerHelpText: 'Peer help uses `session_notify` only. Send a concise header plus the report or question to the exact captured session_id; there are no consult wrapper tools or passive subscriptions.',
+    };
 const mcp = new Server(
   { name: 'golem', version: VERSION },
   {
@@ -433,7 +446,7 @@ const mcp = new Server(
     instructions: [
       'Events from this channel arrive as <channel source="golem" kind="..."> tags.',
       'Recognised kinds:',
-      '  - brief: a new request from the human. Route it per Global Rules § How work arrives (answer a question, build directly, or run the lead sequence).',
+      '  - brief: a new request from the human. Route it per Global Rules § How work arrives (answer a question, build directly, or run the spec sequence you are authorized to coordinate).',
       '  - role_assign: session role identity only (dashboard/CLI role picker). NOT a task. ack once, then STOP and wait. Do not ticket_list, explore, plan, build, or invent work. Work starts only on an explicit brief or ticket_dispatch.',
       '  - interrupt: a course-correction to fold into in-flight work without restarting. Read, integrate, continue.',
       '  - halt: a request to gracefully halt the current work, write a closing memo, and yield. Do not start new work.',
@@ -443,9 +456,11 @@ const mcp = new Server(
       '  - session_notify brief: an active peer message. Delegated returns and consultations arrive as ordinary briefs with explicit headers and an authenticated sender session_id; read the durable report or context before acting.',
       'You have ONE reply tool that fires over the SSE channel and surfaces in the dashboard chat:',
       '  • `ack` — fires IMMEDIATELY on receipt of every inbound event, no exceptions. One short sentence describing what this session understood and is about to do. Pass the same kind; include gate_id for gate_* events. For role_assign, ack is the entire job.',
-      '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies notify the authenticated exact session_id through your harness\'s supported team operations (golem:team-ops; on CLI-first surfaces the `golem session notify` CLI).',
+      MCP_RETURN_GUIDANCE.delegatedReturns,
       'Order of operations for any inbound channel event: 1) call ack on receipt, 2) do the work (role_assign: none), 3) reply in chat if a user-facing answer is needed, 4) yield.',
-      'Peer help travels as a direct notification to the exact captured session_id (`golem:team-ops`); there are no consult wrapper tools or passive subscriptions.',
+      TOOL_SURFACE.name === 'cli-first'
+        ? MCP_RETURN_GUIDANCE.peerHelp
+        : MCP_RETURN_GUIDANCE.peerHelpText,
     ].join(' '),
   },
 );

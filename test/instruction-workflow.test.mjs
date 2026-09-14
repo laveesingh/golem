@@ -106,6 +106,11 @@ try {
   assert.match(read(path.join(source, 'skills/tracker/SKILL.md')), /Decomposition belongs to the authorized coordinator/);
   assert.match(writing, /`golem:spec-driven-development` owns\s+the work sequence/);
   assert.doesNotMatch(writing, /golem:lead owns the work sequence/);
+  // Active guidance must not prescribe the compatibility-only discovery tool;
+  // this bans the prescription, not the valid compatibility implementation or
+  // the session_notify envelope vocabulary.
+  assert.doesNotMatch(read(path.join(source, 'skills/tracker/SKILL.md')), /sessions_dispatchable/);
+  assert.doesNotMatch(writing, /golem:lead owns the work sequence/);
   console.log(`source contracts passed: ${lint.total} words; negative control rejected`);
 
   for (const target of ['cc', 'pi']) {
@@ -126,6 +131,8 @@ try {
     }
     assert.match(read(path.join(render, 'skills/tracker/SKILL.md')), /Never start a body with an HTML tag/,
       'mechanical body constraints reach task/doc authors through tracker, not a spec-only skill');
+    assert.doesNotMatch(read(path.join(render, 'skills/tracker/SKILL.md')), /sessions_dispatchable/,
+      'rendered tracker must not prescribe the compatibility-only discovery tool');
     assert.match(read(path.join(render, 'skills/night-shift/SKILL.md')), /Unattended permission prompts stop the run/,
       'authority clarification retains the unattended stop boundary');
     assert.match(read(path.join(render, 'skills/night-shift/SKILL.md')), /New explicit human authorization can change those limits/,
