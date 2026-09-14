@@ -209,7 +209,7 @@ function authenticatedReturnBlock(senderSessionId, ticketId) {
     '',
     '## Return route',
     `Authenticated delegating session_id: ${senderSessionId}`,
-    `Return notification: call session_notify({ to: "${senderSessionId}", ticket: "${ticketId}", text: "<outcome, durable report location, and the coordinator's next action>" }).`,
+    `Return notification: notify that exact recipient id (ticket ${ticketId} context) using golem:team-ops for your harness; keep the durable report in the tracker.`,
     'This immutable session id came from the trusted handoff envelope. Do not route by a label/name, rediscover a peer, or choose a different lead.',
   ];
 }
