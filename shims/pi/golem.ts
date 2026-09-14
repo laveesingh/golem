@@ -6,7 +6,7 @@ import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { golemHome } from './lib/golem-home.js';
 import { dashboardJsonPath } from './lib/golem-home.js';
 import { createGolemClient, resolveGolemDashboardBaseUrl } from './lib/golem-client.js';
-import { GOLEM_TOOL_CONTRACTS } from './lib/golem-tool-contracts.js';
+import { resolveToolSurface, toolsForSurface } from './lib/golem-tool-contracts.js';
 import { createGolemToolRuntime } from './lib/golem-tool-runtime.js';
 import { PiNativeAdapter } from './lib/pi-native-adapter.js';
 import { readRoleCard, sessionsJsonPath, setSessionRole, validateSessionRole } from './lib/session-role.js';
@@ -227,7 +227,11 @@ export default function golem(pi) {
   const adapter = new PiNativeAdapter(pi);
   adapter.bind();
 
-  for (const contract of GOLEM_TOOL_CONTRACTS) {
+  // Trusted launch selection: the Pi extension always registers the CLI-first
+  // surface (no session_notify/sessions_dispatchable advertisement); returns
+  // and recipient discovery go through the golem CLI per golem:team-ops.
+  const surface = resolveToolSurface('cli-first');
+  for (const contract of toolsForSurface(surface)) {
     pi.registerTool({
       name: contract.name,
       label: contract.name,
@@ -255,8 +259,7 @@ export default function golem(pi) {
             projectContext: () => projectContext(sessionId, ctx.cwd),
           });
           const result = await runtime.invoke(contract.name, params || {});
-          const ok = !(contract.name === 'session_notify' && result?.ok === false);
-          return { content: [{ type: 'text', text: toolText(result) }], details: { ok, result }, ...(!ok ? { isError: true } : {}) };
+          return { content: [{ type: 'text', text: toolText(result) }], details: { ok: true, result } };
         } catch (error) {
           const detail = typeof error?.toJSON === 'function' ? error.toJSON() : { name: error?.name || 'Error', message: error?.message || String(error) };
           return { content: [{ type: 'text', text: toolText(detail) }], details: { ok: false, error: detail }, isError: true };
