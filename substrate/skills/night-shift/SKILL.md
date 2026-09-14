@@ -14,11 +14,12 @@ Execute the approved plan while I am away.
 3. Do not pause for confirmations the plan covers. Stop for an unauthorized destructive action,
    unresolved product decision, missing access, or material scope expansion. Propose other work
    for the morning.
-4. Independent review and verification still follow `golem:lead`; nobody self-certifies.
+4. Independent review and verification still follow `golem:spec-driven-development`; nobody
+   self-certifies.
 5. Blocked: report the exact condition on the ticket, set `blocked`, and continue only
    independent approved work. If nothing is unblocked, stop and leave the memo.
 6. Commit per coherent unit with honest ticket state. Use Golem-managed reminders per
-   `golem:lead` § Follow-up, not agent-owned polling/sleep loops or background daemons.
+   `golem:team-ops` § Reminders, not agent-owned polling/sleep loops or background daemons.
    Understand a failure before retrying.
 
 Stay inside the checkout. Unattended permission prompts stop the run.

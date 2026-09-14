@@ -36,7 +36,8 @@ Tasks and docs hang under their spec via `parent_id`; a spec can parent child sp
 - Load `golem:spec-writing` for substantive spec authoring/revision. It owns the writing
   method; templates provide starting shapes. Metadata-only updates do not need it.
 - Task bodies carry the agreed decisions, constraints, touch points, and acceptance commands.
-  Decomposition belongs to `golem:lead`; do not make builders reconstruct the brainstorm.
+  Decomposition belongs to the authorized coordinator (`golem:spec-driven-development`); do
+  not make builders reconstruct the brainstorm.
 
 ## Body format
 
@@ -67,7 +68,8 @@ an owner and next action; closing its parent must not silently discard it.
 
 - Evidence over claims: the commands you ran and their real output.
 - Human comments dispatch to you. Reply in-thread; the human resolves them, not the agent.
-- Over 30 lines: a child doc, and a three-line comment with its id.
+- Over 30 lines: a child doc; the comment or return message carries a three-line summary and
+  the id.
 - Secrets never enter a ticket, a comment, or chat. Name the key and a git-ignored file; I fill
   it in.
 

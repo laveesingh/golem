@@ -30,7 +30,8 @@ safely, not to restart the lead's design discussion.
 
 Post a closing comment: what changed, acceptance checks with commands and actual output,
 checks not run and why, and deferred work ("none" if empty). Move the task to `review`, then
-`session_notify` the delegator. Follow `golem:team-ops` for large reports and reply routing.
+notify the delegator (`golem:team-ops`). Follow `golem:team-ops` for large reports and reply
+routing.
 
 ## Boundaries
 

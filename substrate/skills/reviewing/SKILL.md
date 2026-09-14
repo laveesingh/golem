@@ -45,6 +45,6 @@ is measured against.
 
 ## Return
 
-`session_notify` to the sender. Most material first; for each: severity (critical, major,
+Notify the sender (`golem:team-ops`). Most material first; for each: severity (critical, major,
 minor), location (`file:line` or spec section), impact, and a direction when you have one. End
 with one line: sound, or the material concerns.

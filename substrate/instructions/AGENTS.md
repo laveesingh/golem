@@ -49,7 +49,8 @@ every project and every harness.
 | reviewer | `golem:reviewing` |
 | designer | `golem:designing` |
 
-- Your role card is the contract; the skill is the method.
+- Your role card is the contract; the skill is the method. Authorized spec coordination:
+  `golem:spec-driven-development`.
 - Load `golem:team-ops` before you talk to the team.
 
 ## How work arrives
@@ -60,6 +61,10 @@ ticket comment. When it names a ticket, read it and its parent spec first.
 ## Delegation
 
 - `golem:lead` says which teammate gets what. In any other role, do the work you were sent.
+- Lead normally coordinates spec work. I may explicitly authorize another role to coordinate a
+  named spec — in chat or in an assignment that says to coordinate it. It keeps its role and
+  uses `golem:spec-driven-development` within that authorization; loading a skill, reading a
+  spec, assignee metadata, or worker/review work grants none.
 - Never use the harness's own in-session sub-agent tool. Its work dies with the turn and leaves
   no report. Only I can override this.
 - Reply to the authenticated sender session id in the message you are answering. Never route
