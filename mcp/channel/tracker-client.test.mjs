@@ -170,6 +170,11 @@ let mutantMcpClient;
 let mutantMcpTransport;
 let proxy = null;
 let proxyPort = null;
+let silentUpstream = null;
+const silentSockets = new Set();
+// The proxy's own upstream wait is bounded; the hung-upstream check below must
+// complete well inside it.
+const PROXY_UPSTREAM_TIMEOUT_MS = 1500;
 let bridgeCaptureServer;
 let port;
 
@@ -1038,17 +1043,25 @@ async function main() {
   const proxyCounts = new Map();
   const countKey = (method, urlPath) => `${method} ${urlPath.split('?')[0]}`;
   let proxyUpstream = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'dashboard.json'), 'utf8')).url.replace(/\/+$/, '');
+  // An ephemeral port reserved and released: a real closed allowed port for the
+  // refusal check (port 1 is fetch-forbidden locally, not a network refusal).
+  const reservedPortServer = net.createServer();
+  await new Promise((resolve) => reservedPortServer.listen(0, HOST, resolve));
+  const closedUpstreamPort = reservedPortServer.address().port;
+  await new Promise((resolve) => reservedPortServer.close(resolve));
   proxy = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', async () => {
       proxyCounts.set(countKey(req.method, req.url), (proxyCounts.get(countKey(req.method, req.url)) || 0) + 1);
-      // A real fetch failure (upstream unreachable) must yield a bounded 502
-      // response object that satisfies the header/arrayBuffer reads below.
+      // A real fetch failure (unreachable or hung upstream) must yield a
+      // bounded 502 response object that satisfies the header/arrayBuffer reads
+      // below; AbortSignal.timeout bounds the proxy's own wait.
       const upstream = await fetch(`${proxyUpstream}${req.url}`, {
         method: req.method, headers: { ...req.headers, host: new URL(proxyUpstream).host },
         body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks),
-      }).catch((error) => new Response(`proxy upstream unreachable: ${error?.cause?.code ?? error}`, {
+        signal: AbortSignal.timeout(PROXY_UPSTREAM_TIMEOUT_MS),
+      }).catch((error) => new Response(`proxy upstream unreachable: ${error?.cause?.code ?? error?.name ?? error}`, {
         status: 502, headers: { 'content-type': 'text/plain' },
       }));
       res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') || 'application/json' });
@@ -1242,22 +1255,43 @@ async function main() {
     try { fs.rmSync(mutantDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 
-  // Real failure/cleanup check on the proxy fixture itself: an unreachable
-  // upstream must yield the bounded 502 through the proxy, the failure must be
-  // counted, and closing must actually refuse new connections.
-  proxyUpstream = 'http://127.0.0.1:1'; // no listener on port 1
-  const failureResponse = await fetch(`http://127.0.0.1:${proxyPort}/api/health`);
-  check('proxy upstream failure yields the bounded 502 (real failure path exercised)',
-    failureResponse.status === 502, `status=${failureResponse.status}`);
-  check('proxy counted the failed request at the service boundary',
+  // Real failure/cleanup checks on the proxy fixture itself.
+  // (1) A real network hang: an accepting-never-responding loopback upstream,
+  // bounded by AbortSignal.timeout in the proxy and a client deadline here.
+  silentUpstream = net.createServer((socket) => {
+    silentSockets.add(socket);
+    socket.on('close', () => silentSockets.delete(socket));
+    socket.resume(); // accept and never respond
+  });
+  await new Promise((resolve) => silentUpstream.listen(0, HOST, resolve));
+  proxyUpstream = `http://127.0.0.1:${silentUpstream.address().port}`;
+  const hangStart = Date.now();
+  const hangResponse = await fetch(`http://127.0.0.1:${proxyPort}/api/health`, { signal: AbortSignal.timeout(10_000) });
+  const hangMs = Date.now() - hangStart;
+  check('accepting-never-responding upstream yields the bounded 502 within the proxy deadline (real network hang, not a forbidden port)',
+    hangResponse.status === 502 && hangMs < 5000, `status=${hangResponse.status} elapsed=${hangMs}ms`);
+  check('proxy counted the hung request at the service boundary',
     (proxyCounts.get('GET /api/health') || 0) >= 1, JSON.stringify([...proxyCounts]));
+
+  // (2) Refusal against an ephemeral closed allowed port (real ECONNREFUSED).
+  proxyUpstream = `http://127.0.0.1:${closedUpstreamPort}`;
+  const refusalResponse = await fetch(`http://127.0.0.1:${proxyPort}/api/health`, { signal: AbortSignal.timeout(10_000) });
+  check('closed allowed upstream port yields the bounded 502 refusal',
+    refusalResponse.status === 502, `status=${refusalResponse.status}`);
+
+  // (3) Cleanup: close proxy and silent upstream; the listener must refuse
+  // connections afterwards and the hung socket must be destroyed.
   await new Promise((resolve) => proxy.close(resolve));
   proxy = null;
-  const refusal = await fetch(`http://127.0.0.1:${proxyPort}/api/health`)
+  for (const socket of silentSockets) socket.destroy();
+  await new Promise((resolve) => silentUpstream.close(resolve));
+  silentUpstream = null;
+  const refusalAfterClose = await fetch(`http://127.0.0.1:${proxyPort}/api/health`, { signal: AbortSignal.timeout(5_000) })
     .then(() => 'still-open')
     .catch((error) => error?.cause?.code ?? error?.code ?? 'closed');
   check('proxy cleanup closes the listener (connection refused after close)',
-    refusal !== 'still-open', String(refusal));
+    refusalAfterClose !== 'still-open', String(refusalAfterClose));
+  check('hung upstream socket is destroyed with the silent server', silentSockets.size === 0, `remaining=${silentSockets.size}`);
 }
 
 main()
@@ -1282,6 +1316,8 @@ main()
     try { uninitializedCcChild?.kill('SIGKILL'); } catch { /* ignore */ }
     try { await new Promise((resolve) => bridgeCaptureServer?.close(resolve) ?? resolve()); } catch { /* ignore */ }
     try { if (proxy) await new Promise((resolve) => proxy.close(resolve)); } catch { /* ignore */ }
+    try { for (const socket of silentSockets) socket.destroy(); } catch { /* ignore */ }
+    try { if (silentUpstream) await new Promise((resolve) => silentUpstream.close(resolve)); } catch { /* ignore */ }
     try { child?.kill('SIGKILL'); } catch { /* ignore */ }
     try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
     if (failures === 0) {
