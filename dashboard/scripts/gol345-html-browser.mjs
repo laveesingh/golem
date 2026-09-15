@@ -217,22 +217,31 @@ try {
       /Revision conflict/.test(conflictText) && /preserved/.test(conflictText)
         && (await editTextarea.inputValue()).includes('browser draft'),
       conflictText);
-    await page.evaluate(() => {
-      const ws = window.SubstrateAPI.__lastSocket;
-      if (ws && window.__realOnmessage) ws.onmessage = window.__realOnmessage;
-      window.Store.upsertTrackerTicket = window.__realUpsert;
-    });
-    const detail = await (await fetch(`${base}/api/tickets/${spec.id}`)).json();
-    // Resync the store with the current server truth (the frozen window dropped
-    // the WS delta), then the retry save is a legitimate current-revision write.
-    await page.evaluate((t) => window.Store.upsertTrackerTicket(t), detail);
-    await editTextarea.fill(detail.body);
-    await drawer.getByRole('button', { name: /save/i }).first().click();
-    await waitFor(async () => !(await drawer.locator('.td-edit textarea').count()), 'edit closed after successful save');
-    check('A15 retry with the current revision succeeds', (await drawer.locator('.td-edit textarea').count()) === 0);
+    // GOL-350: the retry must NOT need a store refresh or a draft reset — the
+    // drawer carries the returned current revision locally. Keep the frozen
+    // store as-is, keep the browser draft, and save again.
+    const retryResponse = await (await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith(`/api/tickets/${spec.id}`) && r.request().method() === 'PATCH'),
+      drawer.locator('.td-edit-actions').getByRole('button', { name: 'Save' }).click(),
+    ]))[0];
+    const retryRequest = JSON.parse(retryResponse.request().postData() || '{}');
+    check('GOL-350 retry carries the server-returned current revision locally (no draft/store refresh)',
+      retryResponse.status() === 200 && retryRequest.expected_revision === 3
+        && retryRequest.body.includes('browser draft'),
+      `status=${retryResponse.status()} expected=${retryRequest.expected_revision}`);
+    await waitFor(async () => !(await drawer.locator('.td-edit textarea').count()), 'edit closed after successful retry');
+    check('A15 retry with the locally carried revision succeeds', (await drawer.locator('.td-edit textarea').count()) === 0);
   } else {
     check('A7/A15 full-source conflict journey (edit affordance not found in this build)', false, 'edit entry missing');
   }
+
+  // Unfreeze the store after the conflict journey (the freeze was test
+  // scaffolding for the lagging-tab race).
+  await page.evaluate(() => {
+    const ws = window.SubstrateAPI.__lastSocket;
+    if (ws && window.__realOnmessage) ws.onmessage = window.__realOnmessage;
+    window.Store.upsertTrackerTicket = window.__realUpsert;
+  });
 
   // ── A9: removed anchor detaches; retarget restores ─────────────────────────
   const outlineResponse = await fetch(`${base}/api/tickets/${spec.id}/outline`);
@@ -267,6 +276,29 @@ try {
   await waitFor(async () => /anchor (removed|lost)/i.test(await rail.innerText().catch(() => '')), 'detached anchor visible');
   const railText = await rail.innerText();
   check('A9 removed anchor shows the detached badge in comment history', /anchor (removed|lost)/i.test(railText), railText.slice(0, 300));
+  const detachedCard = rail.locator('.anno-card').filter({ hasText: 'block that will be removed' }).first();
+  await detachedCard.waitFor();
+  check('GOL-350 detached anchor has no Jump button', (await detachedCard.locator('.act-jump').count()) === 0);
+  // Explicit retarget restores the anchor (and Jump) — server-validated.
+  const detailNow = await (await fetch(`${base}/api/tickets/${spec.id}`)).json();
+  const detachedComment = detailNow.comments.find((c) => c.block_id === li.id);
+  assert.ok(detachedComment, 'detached comment found');
+  const outlineNow = await (await fetch(`${base}/api/tickets/${spec.id}/outline`)).json();
+  const liveBlock = outlineNow.blocks[0].id;
+  const retargetResponse = await fetch(`${base}/api/tickets/${spec.id}/comments/${detachedComment.id}`, { method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ block_id: liveBlock, anchor_kind: 'block', actor: 'smoke' }) });
+  assert.equal(retargetResponse.status, 200, await retargetResponse.text());
+  await page.reload();
+  await drawer.locator('.td-md').waitFor();
+  await page.locator('#anno-fab').click();
+  await rail.waitFor();
+  const retargetedCard = rail.locator('.anno-card').filter({ hasText: 'block that will be removed' }).first();
+  await retargetedCard.waitFor();
+  check('GOL-350 explicit retarget restores the anchor and the Jump action',
+    (await retargetedCard.locator('.act-jump').count()) === 1
+      && !/anchor (removed|lost)/i.test(await rail.innerText()),
+    await rail.innerText().then((t) => t.slice(0, 160)));
 
   // ── A10: Markdown regression ────────────────────────────────────────────────
   const mdCreated = await (await fetch(`${base}/api/tickets`, { method: 'POST', headers: { 'content-type': 'application/json' },

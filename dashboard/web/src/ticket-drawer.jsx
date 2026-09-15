@@ -441,18 +441,23 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
   // GOL-326: the full-source editor labels the stored format and sends the
   // optimistic revision for HTML bodies. A 409 keeps the draft intact and
   // surfaces the current revision so the human can retry deliberately —
-  // never an automatic overwrite.
+  // never an automatic overwrite. The returned current revision is held
+  // LOCALLY (editExpectedRevision) and used for the retry: the draft and the
+  // stale store ticket never need a refresh for the human to recover (GOL-350).
   const [editError, setEditError] = React.useState(null);
+  const [editExpectedRevision, setEditExpectedRevision] = React.useState(null);
 
   const onSaveEdit = React.useCallback(() => {
     if (!ticketId || !editBuf || isEditBodyUploading) return;
     setSaving(true);
     setEditError(null);
     const html = (ticket?.body_format ?? 'markdown') === 'html';
-    const patch = { body: editBuf.body, actor: 'human', ...(html ? { expected_revision: ticket.body_revision } : {}) };
+    const expected = html ? (editExpectedRevision ?? ticket.body_revision) : null;
+    const patch = { body: editBuf.body, actor: 'human', ...(expected != null ? { expected_revision: expected } : {}) };
     window.SubstrateAPI.updateTicket(ticketId, patch)
       .then((updated) => {
         if (updated && updated.id) window.Store.upsertTrackerTicket(updated);
+        setEditExpectedRevision(null);
         setEditBuf(null);
         setEditBodyUploads([]);
         setSaving(false);
@@ -461,13 +466,15 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
         console.error('save ticket failed', err);
         setSaving(false);
         if (err?.payload?.code === 'revision_conflict') {
-          // Draft preserved: keep editBuf exactly as the human left it.
+          // Draft preserved: keep editBuf exactly as the human left it, and
+          // carry the server's current revision for the explicit retry.
+          setEditExpectedRevision(err.payload.current_revision ?? null);
           setEditError(`Revision conflict — the document moved to revision ${err.payload.current_revision}. Your draft is preserved; review and save again.`);
         } else {
           setEditError(err?.payload?.error || err?.message || 'Save failed');
         }
       });
-  }, [ticketId, editBuf, isEditBodyUploading, ticket]);
+  }, [ticketId, editBuf, isEditBodyUploading, ticket, editExpectedRevision]);
 
   // ── GOL-326: block-scoped raw HTML editor ─────────────────────────────────
   // Entered from the comment composer's attachment pill (Edit block). Loads
@@ -1146,7 +1153,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                   )}
                   <button
                     className="orch-btn small ghost td-edit-btn"
-                    onClick={() => setEditBuf({ body: ticket.body || '' })}
+                    onClick={() => { setEditExpectedRevision(null); setEditError(null); setEditBuf({ body: ticket.body || '' }); }}
                     title="Edit body"
                   >
                     Edit

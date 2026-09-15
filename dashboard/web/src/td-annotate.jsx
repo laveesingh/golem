@@ -1969,7 +1969,11 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
         <button type="button" className="act-reply" onClick={(e) => { e.stopPropagation(); if (onStartReply) onStartReply(ann); }}>
           <span aria-hidden="true">💬</span> Reply
         </button>
-        {ann.block_id && onJump && (
+        {/* GOL-350: a detached anchor has nothing to jump to — Jump stays off
+            until a human explicitly retargets the comment (then anchor_status
+            returns to anchored and Jump works again). Markdown anchors carry
+            no anchor_status and keep Jump as before. */}
+        {ann.block_id && onJump && ann.anchor_status !== 'detached' && (
           <button type="button" className="act-jump" title="Jump to section" aria-label="Jump to section" onClick={(e) => { e.stopPropagation(); onJump(); }}>
             <span aria-hidden="true">⧉</span> Jump
           </button>
