@@ -18,6 +18,7 @@ import url from 'node:url';
 import crypto from 'node:crypto';
 import net from 'node:net';
 import { createServer } from 'node:http';
+import http from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { z } from 'zod';
@@ -1028,6 +1029,34 @@ async function main() {
   // GOL-335 D2: a trusted launch selection advertises the CLI-first surface.
   // Advertisement, server instructions, and direct-call rejection must agree,
   // and identity rejection keeps its precedence over the surface intercept.
+  // GOL-335 D2: a trusted launch selection advertises the CLI-first surface.
+  // Advertisement, server instructions, and direct-call rejection must agree,
+  // and identity rejection keeps its precedence over the surface intercept.
+  // A counting proxy sits at the service boundary (it forwards every request
+  // to the real isolated dashboard) so discovery/delivery requests are counted,
+  // not inferred from channel-event absence.
+  const proxyCounts = new Map();
+  const countKey = (method, urlPath) => `${method} ${urlPath.split('?')[0]}`;
+  const proxy = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', async () => {
+      proxyCounts.set(countKey(req.method, req.url), (proxyCounts.get(countKey(req.method, req.url)) || 0) + 1);
+      // Resolve the dashboard base per request; the proxy itself is what
+      // dashboard.json points at, so read the recorded url before overwrite.
+      const upstream = await fetch(`${dashboardUpstream}${req.url}`, {
+        method: req.method, headers: { ...req.headers, host: new URL(dashboardUpstream).host },
+        body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks),
+      }).catch((error) => ({ status: 502, text: async () => String(error) }));
+      res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') || 'application/json' });
+      res.end(Buffer.from(await upstream.arrayBuffer().catch(() => new Uint8Array())));
+    });
+  });
+  const dashboardUpstream = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'dashboard.json'), 'utf8')).url.replace(/\/+$/, '');
+  await new Promise((resolve) => proxy.listen(0, HOST, resolve));
+  const proxyUrl = `http://127.0.0.1:${proxy.address().port}`;
+  const proxyShutdown = () => new Promise((resolve) => proxy.close(resolve));
+  fs.writeFileSync(path.join(tmpGolemHome, 'dashboard.json'), JSON.stringify({ url: proxyUrl }));
   const cliFirstId = 'test-session-cli-first';
   const cliFirstEvents = [];
   const CliChannelNotificationSchema = z.object({
@@ -1090,7 +1119,9 @@ async function main() {
     && /golem session list/.test(response.text)
     && !/unknown tool/.test(response.text)
     && !/no live dispatchable session/.test(response.text);
-  const sideEffectsBefore = cliFirstEvents.length;
+  const discoveryRequests = () => proxyCounts.get('GET /api/sessions/dispatchable') || 0;
+  const deliveryRequests = () => proxyCounts.get('POST /api/messages/notify') || 0;
+  const sideEffectsBefore = { discovery: discoveryRequests(), delivery: deliveryRequests() };
   const excludedNotify = await callToolFrom(cliFirstMcpClient, 'session_notify', {
     to: SESSION_ID, text: 'must not deliver', __golem_session_id: cliFirstId, __golem_call_id: 'excluded-notify',
   });
@@ -1101,8 +1132,9 @@ async function main() {
     expectsActionableCliGuidance(excludedNotify), excludedNotify.text);
   check('CLI-first sessions_dispatchable direct call rejects with actionable CLI guidance',
     expectsActionableCliGuidance(excludedDiscovery), excludedDiscovery.text);
-  check('excluded direct calls cause zero delivery/discovery side effects',
-    cliFirstEvents.length === sideEffectsBefore, JSON.stringify(cliFirstEvents.length));
+  check('excluded direct calls perform zero discovery and zero delivery requests (service boundary observed)',
+    discoveryRequests() === sideEffectsBefore.discovery && deliveryRequests() === sideEffectsBefore.delivery,
+    JSON.stringify(Object.fromEntries(proxyCounts)));
   // Negative control: a generic unknown-tool fallback or a hidden-handler route
   // would satisfy isError but must fail this check.
   assert.equal(expectsActionableCliGuidance({ result: { isError: true }, text: 'unknown tool: session_notify' }), false);
@@ -1186,23 +1218,23 @@ async function main() {
     const mutantNotify = await callToolFrom(mutantMcpClient, 'session_notify', {
       to: SESSION_ID, text: 'mutant must be caught', __golem_session_id: mutantId, __golem_call_id: 'mutant-notify',
     });
+    check('mutant session_notify reaches the real handler instead of the intercept',
+      !/not part of this Golem tool surface/.test(mutantNotify.text), mutantNotify.text.slice(0, 120));
+    const mutantDiscoveryBaseline = discoveryRequests();
     const mutantDiscovery = await callToolFrom(mutantMcpClient, 'sessions_dispatchable', {
       __golem_session_id: mutantId, __golem_call_id: 'mutant-discovery',
     });
     check('mutant (intercept disabled) no longer satisfies the production-path check',
       !expectsActionableCliGuidance(mutantNotify), mutantNotify.text);
-    check('mutant session_notify reaches the real handler instead of the intercept',
-      !/not part of this Golem tool surface/.test(mutantNotify.text), mutantNotify.text.slice(0, 120));
-    check('mutant sessions_dispatchable performs the discovery request the intercept blocks in production',
-      !mutantDiscovery.result.isError && Array.isArray(mutantDiscovery.json),
-      mutantDiscovery.text.slice(0, 200));
+    check('mutant sessions_dispatchable genuinely performs the discovery request production blocks (service boundary observed)',
+      !mutantDiscovery.result.isError && Array.isArray(mutantDiscovery.json)
+        && discoveryRequests() > mutantDiscoveryBaseline,
+      `${mutantDiscovery.text.slice(0, 200)} discovery_requests=${discoveryRequests()}`);
     assert.equal(expectsActionableCliGuidance(mutantNotify), false,
       'the same assertion must reject the mutated server response');
-    // The mutant contrast distinguishes delivery-event absence from discovery
-    // absence: production emits no channel events for the excluded calls while
-    // the mutant demonstrably passes the intercept into tracker discovery/delivery.
-    check('mutant delivery/discovery activity is observable, so production event absence is not vacuous',
-      Array.isArray(mutantEvents), `mutant events captured: ${mutantEvents.length}`);
+    // The mutant contrast is real handler/response proof: production counts
+    // stay flat for the excluded calls (previous check) while the mutant
+    // demonstrably passes the intercept into tracker discovery.
   } finally {
     try { await mutantMcpClient?.close(); } catch { /* ignore */ }
     try { await mutantMcpTransport?.close(); } catch { /* ignore */ }
@@ -1231,6 +1263,7 @@ main()
     try { await unsupportedCcMcpTransport?.close(); } catch { /* ignore */ }
     try { uninitializedCcChild?.kill('SIGKILL'); } catch { /* ignore */ }
     try { await new Promise((resolve) => bridgeCaptureServer?.close(resolve) ?? resolve()); } catch { /* ignore */ }
+    try { await new Promise((resolve) => proxy?.close(resolve) ?? resolve()); } catch { /* ignore */ }
     try { child?.kill('SIGKILL'); } catch { /* ignore */ }
     try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
     if (failures === 0) {

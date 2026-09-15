@@ -22,9 +22,12 @@ owns session discovery, idempotent notify, delivery inspection, and schedule man
 
 ### Instruction ownership
 
-`substrate/skills/lead/` owns orchestration and grounding; `spec-writing/` owns spec
-authorship; `tracker/` owns records and templates. `shims/pi/golem.ts`, tool contracts,
-and the idea-promotion scaffold are consumers.
+`substrate/skills/spec-driven-development/` owns the reusable spec method and the
+authorized-coordinator routing; `skills/lead/` owns orchestration responsibility,
+team allocation, and personal grounding; `spec-writing/` owns spec authorship;
+`tracker/` owns records and templates; `team-ops/` owns team operations and
+reminder mechanics. `shims/pi/golem.ts`, tool contracts, and the idea-promotion
+scaffold are consumers.
 
 ### Dashboard
 
