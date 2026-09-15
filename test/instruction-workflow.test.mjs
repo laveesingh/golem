@@ -39,7 +39,7 @@ function authoringContract(text) {
   assert.match(text, /scope\/requirements/);
   assert.match(text, /design.*decisions/i);
   assert.match(text, /not a second decision record/);
-  assert.match(text, /An explicit request to draft design is that go-ahead/);
+  assert.match(text, /An explicit request to draft design is that go-ahead|an explicit request to draft design is that go-ahead/);
   assert.match(text, /No diagram\s+or subsection quotas/);
 }
 
@@ -128,8 +128,12 @@ try {
   assert.doesNotMatch(sourceTracker, /Never start a body with an HTML tag/);
   assert.match(sourceTracker, /Markdown body starting with an HTML tag is usually a mistake/);
   htmlWorkflowContract(writing);
-  assert.throws(() => htmlWorkflowContract(writing
-    .replace('reserve `replace-body` for the rewrite exception', 'always rewrite with `replace-body`')),
+  // Negative control on the flattened text (the contract flattens whitespace,
+  // so the mutation must too): replacing the exception rule with a routine
+  // rewrite rule must fail the contract.
+  const flatWriting = writing.replace(/\s+/g, ' ');
+  assert.throws(() => htmlWorkflowContract(flatWriting
+    .replace('reserve `replace-body` for the rewrite exception', 'rewrite routinely with `replace-body`')),
     'removing the no-routine-rewrite rule must fail the html workflow contract');
   assert.match(read(path.join(source, 'skills/spec-driven-development/SKILL.md')),
     /exact `golem ticket` block commands/, 'SDD carries the block commands into tasks');
@@ -150,7 +154,14 @@ try {
     assert.equal(read(path.join(render, 'skills/tracker/templates/spec.md')), read(path.join(source, 'skills/tracker/templates/spec.md')));
     assert.equal(read(path.join(render, 'skills/tracker/templates/task.md')), read(path.join(source, 'skills/tracker/templates/task.md')), 'task template parity, not spec-template only');
     assert.equal(read(path.join(render, 'skills/tracker/templates/spec-html.html')), read(path.join(source, 'skills/tracker/templates/spec-html.html')), 'html spec template reaches the render with format metadata');
-    htmlWorkflowContract(read(path.join(render, 'skills/spec-writing/SKILL.md')));
+    const renderedWritingFull = read(path.join(render, 'skills/spec-writing/SKILL.md'));
+    htmlWorkflowContract(renderedWritingFull);
+    assert.match(renderedWritingFull, /write path follows the format: Markdown edits replace the\s+whole body; html specs are edited per block/,
+      'spec-writing closes with the explicit Markdown-vs-html write-path split');
+    assert.doesNotMatch(renderedWritingFull, /Current tools replace whole bodies/,
+      'the old unconditional whole-body rule is gone from spec-writing');
+    assert.doesNotMatch(renderedWritingFull, /do not invent block-edit operations/,
+      'patch-blocks is the sanctioned block operation; the old blanket ban is gone');
     for (const skill of ['lead', 'tracker']) {
       assert.match(read(path.join(render, `skills/${skill}/SKILL.md`)), /golem:spec-writing/);
     }
@@ -165,9 +176,19 @@ try {
     assert.match(renderedTracker, /golem ticket --help/, 'tracker is the canonical ticket CLI reference');
     assert.match(renderedTracker, /--body-format html/, 'html format creation is documented');
     assert.match(renderedTracker, /spec-only/, 'html format is spec-only in guidance');
-    assert.match(renderedTracker, /no\s+block operations/, 'Codex/OpenCode compatibility limits preserved');
+    assert.match(renderedTracker, /revision-gated full replacement/,
+      'Codex/OpenCode compatibility limits preserved in the tools intro');
     assert.match(renderedTracker, /golem:spec-writing` § HTML spec bodies/,
       'the html editing workflow lives in spec-writing; tracker points instead of duplicating it');
+    // GOL-347 correction: no generic whole-body/MCP contradictions remain.
+    assert.doesNotMatch(renderedTracker, /Current tools replace whole bodies/,
+      'the old whole-body rule must be scoped away');
+    assert.doesNotMatch(renderedTracker, /read first and rewrite in full/,
+      'the compatibility ticket_update row must not prescribe whole-body rewrites unconditionally');
+    assert.match(renderedTracker, /Codex\/OpenCode compatibility surface/,
+      'the MCP tools table is explicitly the compatibility surface');
+    assert.match(renderedTracker, /Pi and Claude\s+author through `golem ticket`/,
+      'Pi/Claude are pointed at the canonical CLI');
     assert.doesNotMatch(read(path.join(render, 'skills/tracker/SKILL.md')), /sessions_dispatchable/,
       'rendered tracker must not prescribe the compatibility-only discovery tool');
     assert.match(read(path.join(render, 'skills/night-shift/SKILL.md')), /Unattended permission prompts stop the run/,
