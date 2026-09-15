@@ -6,16 +6,18 @@ description: The tracker tools and model — spec, task, doc; one state lifecycl
 
 # Tracker
 
-The dashboard owns work records; use tracker tools, never direct database writes.
+The dashboard owns work records; never direct database writes. These MCP tools are the
+Codex/OpenCode compatibility surface (reads, revision-gated full replacement); Pi and Claude
+author through `golem ticket` (§ Ticket CLI).
 
-## Tools
+## Compatibility tools
 
 | Tool | Use |
 |---|---|
 | `ticket_list({mine:true})` | work assigned to you; filters: state, kind, assignee, project |
 | `ticket_get({id})` | body, comments, children, events |
 | `ticket_create({title, kind, body, parent_id?})` | new ticket; kind defaults to `task`; fill the kind's template |
-| `ticket_update({id, ...})` | metadata and state; `body` replaces the whole body, so read first and rewrite in full |
+| `ticket_update({id, ...})` | metadata and state; `body` is the Markdown/compatibility full-body path — html needs expected_revision via `golem ticket` |
 | `ticket_comment({id, body, ...})` | progress and evidence; anchor with a quote, prefix and suffix, or a section |
 | `ticket_comment_reply`, `ticket_comment_update` | thread a reply; resolve, reopen, or edit |
 | `ticket_dispatch` | team transport — discovery, recipients and returns per `golem:team-ops` |
@@ -32,20 +34,29 @@ Tasks and docs hang under their spec via `parent_id`; a spec can parent child sp
 
 ## Writing
 
-- The body is a living document. Fold decisions and outcomes in at boundaries, and batch
-  edits, because every edit rewrites the whole body.
-- Load `golem:spec-writing` for substantive spec authoring/revision. It owns the writing
-  method; templates provide starting shapes. Metadata-only updates do not need it.
+- The body is a living document: Markdown edits replace it whole (batch edits); html folds
+  changes per block (§ Ticket CLI).
+- Load `golem:spec-writing` for substantive spec authoring/revision — it owns the writing
+  method; templates provide starting shapes.
 - Task bodies carry the agreed decisions, constraints, touch points, and acceptance commands.
   Decomposition belongs to the authorized coordinator (`golem:spec-driven-development`); do
   not make builders reconstruct the brainstorm.
 
+## Ticket CLI
+
+`golem ticket` is the canonical authoring family: list, get, create, update, replace-body,
+get-outline, get-block, patch-blocks, add-comment, reply-comment, update-comment.
+`golem ticket --help` carries exact syntax and runnable examples; payloads go through
+file/stdin flags; stdout is JSON only; mutations bind the trusted Pi/Claude session context.
+
 ## Body format
 
-Use Markdown, Mermaid, admonitions, and `<details>`. Never start a body with an HTML tag.
-Leave a blank line after `</summary>`; escape table pipes. No semicolons in sequence messages.
-Render Mermaid before saving and inspect the result; exit 0 alone is not proof.
-No format-selector or block-edit tools exist.
+Format is explicit data, never inferred from a body's first character. Markdown is the default
+(Mermaid, admonitions, `<details>`; blank line after `</summary>`; escape table pipes) — a
+Markdown body starting with an HTML tag is usually a mistake. An HTML spec is a complete safe
+fragment created with `--body-format html` (spec-only): the server sanitizes it and assigns
+stable per-block ids; the editing workflow is `golem:spec-writing` § HTML spec bodies.
+Render Mermaid before saving; exit 0 alone is not proof.
 
 ## States
 

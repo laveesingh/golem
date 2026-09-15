@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-12 @ 076e1a8 — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-15 @ 776e302 (GOL-346) — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -17,7 +17,9 @@
 ### CLI and roles
 
 `cli/golem.js` owns launch, worker, dashboard, sync, and diagnostic verbs; `cli/collaboration.js`
-owns session discovery, idempotent notify, delivery inspection, and schedule management.
+owns session discovery, idempotent notify, delivery inspection, and schedule management;
+`cli/ticket.js` owns the flat `golem ticket` authoring family (list/get/create/update/
+replace-body/get-outline/get-block/patch-blocks/comments) over the tracker REST boundary.
 `lib/session-role.js` owns role definitions; retired names are migration input only.
 
 ### Instruction ownership
@@ -31,10 +33,14 @@ scaffold are consumers.
 
 ### Dashboard
 
-`dashboard/server/index.js` exposes REST/WebSocket routes. `tracker-db.js` owns persistence;
+`dashboard/server/index.js` exposes REST/WebSocket routes (including the html outline/block
+routes). `tracker-db.js` owns persistence; `html-body.js` owns the html spec-body pipeline —
+parse5 sanitizer, stable `data-block-id` normalization, and atomic block operations.
 `notification-schedules.js` owns schedule transactions and `notification-schedule-runtime.js`
 feeds occurrences into the shared delivery outbox. `comment-dispatch.js` routes feedback.
-Agents use API/CLI/MCP, not direct database writes. Ticket `state` is the single lifecycle.
+Agents use API/CLI/MCP, not direct database writes. Ticket `state` is the single lifecycle;
+`body_format` (markdown|html, specs-only html) and monotonic `body_revision` gate every html
+write.
 
 ### Compiler and delivery
 

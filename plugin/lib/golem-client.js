@@ -14,6 +14,7 @@ export class GolemClientError extends Error {
     method = null,
     pathname = null,
     operationId = null,
+    body = null,
     cause,
   } = {}) {
     super(message, cause ? { cause } : undefined);
@@ -24,6 +25,9 @@ export class GolemClientError extends Error {
     this.method = method;
     this.pathname = pathname;
     this.operationId = operationId;
+    // The server's owned error payload (machine code + recovery fields such as
+    // current revision/outline) for callers that map conflicts onto recovery.
+    this.body = body;
   }
 
   toJSON() {
@@ -156,6 +160,7 @@ export function createGolemClient({
         status: response.status,
         method,
         pathname,
+        body: parsed && typeof parsed === 'object' ? parsed : null,
       });
     }
     return parsed;
@@ -165,6 +170,10 @@ export function createGolemClient({
     request,
     listTickets: (params = {}) => request('GET', '/api/tickets', { params }),
     getTicket: (id) => request('GET', `/api/tickets/${encodeURIComponent(requireNonblank(id, 'getTicket: id'))}`),
+    // GOL-326: HTML outline / block reads / atomic block patches (REST boundary).
+    getTicketOutline: (id) => request('GET', `/api/tickets/${encodeURIComponent(requireNonblank(id, 'getTicketOutline: id'))}/outline`),
+    getTicketBlock: (id, blockId) => request('GET', `/api/tickets/${encodeURIComponent(requireNonblank(id, 'getTicketBlock: id'))}/blocks/${encodeURIComponent(requireNonblank(blockId, 'getTicketBlock: blockId'))}`),
+    patchTicketBlocks: (id, body) => request('POST', `/api/tickets/${encodeURIComponent(requireNonblank(id, 'patchTicketBlocks: id'))}/block-patches`, { body }),
     createTicket: (body = {}) => request('POST', '/api/tickets', { body, requiredBodyFields: ['project_id'] }),
     updateTicket: (id, body) => request('PATCH', `/api/tickets/${encodeURIComponent(requireNonblank(id, 'updateTicket: id'))}`, { body }),
     addComment: (id, body) => request('POST', `/api/tickets/${encodeURIComponent(requireNonblank(id, 'addComment: id'))}/comments`, { body }),
