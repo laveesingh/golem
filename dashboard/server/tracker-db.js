@@ -2229,7 +2229,13 @@ WHERE state_changed_at IS NULL`).run();
         if (Number(input.expected_revision) !== currentRevision) {
           throw revisionConflict(
             `stale body_revision: expected ${input.expected_revision}, current ${currentRevision}`,
-            { expected_revision: Number(input.expected_revision), current_revision: currentRevision });
+            {
+              expected_revision: Number(input.expected_revision),
+              current_revision: currentRevision,
+              // Recovery payload: the current outline lets a stale writer
+              // reconcile without re-reading the full body (A7).
+              outline: parseAndNormalizeDoc(current.body).blocks,
+            });
         }
         const before = parseAndNormalizeDoc(current.body);
         let result;

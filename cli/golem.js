@@ -2399,6 +2399,16 @@ Run:
                        --json preserves the machine-readable worker records.
   role <role|clear> [--session <id-or-name>]
                          Set or clear a session role (${SESSION_ROLES.join(', ')}).
+  ticket <operation> [args] [flags]
+                       Flat agent authoring family over the tracker REST API:
+                       list, get, create, update, replace-body, get-outline,
+                       get-block, patch-blocks, add-comment, reply-comment,
+                       update-comment. Mutations bind the trusted Pi/Claude CLI
+                       session context (--human for unbound human shells);
+                       Codex/OpenCode receive a stable unsupported-caller
+                       result. --json is the stable contract: stdout carries
+                       only result JSON, diagnostics go to stderr. See
+                       golem ticket --help.
   session list|notify [--help]
                          Discover sessions or send idempotent notifications.
   schedule list|inspect|cancel [--help]
@@ -2519,6 +2529,11 @@ async function main() {
     case 'message': {
       const { runCollaboration } = await import('./collaboration.js');
       process.exitCode = await runCollaboration(cmd, rest);
+      break;
+    }
+    case 'ticket': {
+      const { runTicket } = await import('./ticket.js');
+      process.exitCode = await runTicket(rest);
       break;
     }
     case 'sessions':

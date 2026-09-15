@@ -1498,9 +1498,7 @@ async function main() {
       }
       return reply.code(201).send(publicComment(comment, ticketRef));
     } catch (err) {
-      const msg = String(err?.message ?? err);
-      const code = /not found/i.test(msg) ? 404 : 400;
-      return reply.code(code).send({ error: msg });
+      return sendTrackerError(reply, err);
     }
   });
 
@@ -1530,9 +1528,7 @@ async function main() {
       if (ticket) broadcastWS({ type: 'ticket-updated', ticket });
       return publicComment(comment, ticketRef);
     } catch (err) {
-      const msg = String(err?.message ?? err);
-      const code = /not found/i.test(msg) ? 404 : 400;
-      return reply.code(code).send({ error: msg });
+      return sendTrackerError(reply, err);
     }
   });
 

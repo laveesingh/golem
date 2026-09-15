@@ -715,6 +715,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           project_id,
           title: args.title,
           body: args.body,
+          ...(args.body_format ? { body_format: args.body_format } : {}),
           kind: args.kind,
           priority: args.priority,
           state: args.state,
@@ -730,7 +731,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       if (name === 'ticket_update') {
         if (!args.id) throw new Error('ticket_update: id is required');
         const patch = { actor: sessionId ?? undefined };
-        for (const k of ['state', 'title', 'body', 'kind', 'priority', 'labels', 'parent_id', 'assignee']) {
+        for (const k of ['state', 'title', 'body', 'body_format', 'expected_revision', 'kind', 'priority', 'labels', 'parent_id', 'assignee']) {
           if (args[k] !== undefined) patch[k] = args[k];
         }
         return await jsonResult(await tracker.updateTicket(args.id, patch));
