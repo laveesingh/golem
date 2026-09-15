@@ -1255,6 +1255,21 @@ async function main() {
     return tracker.searchTickets(filter);
   });
 
+  // GOL-326: owned tracker input errors (400/404/409) map onto real HTTP
+  // statuses; conflicts carry the current revision and outline so a stale
+  // writer can recover without a full-body rewrite.
+  const sendTrackerError = (reply, err) => {
+    if (err?.name === 'TrackerInputError') {
+      // `error` carries the human-readable message (the long-standing REST
+      // contract, asserted verbatim by compatibility tests); `code` carries the
+      // owned machine-readable code; conflicts add revision/outline recovery
+      // fields at the top level.
+      const payload = { error: err.message, code: err.code, ...(err.extra ?? {}) };
+      return reply.code(err.status ?? 400).send(payload);
+    }
+    return reply.code(400).send({ error: String(err?.message ?? err) });
+  };
+
   // POST /api/tickets — create. 400 on validation error.
   fastify.post('/api/tickets', async (req, reply) => {
     const b = req.body ?? {};
@@ -1266,6 +1281,7 @@ async function main() {
         kind: b.kind,
         title: b.title,
         body: b.body,
+        body_format: b.body_format,
         priority: b.priority,
         labels: b.labels,
         parent_id: resolveTicketIdField(b.parent_id),
@@ -1276,7 +1292,7 @@ async function main() {
       broadcastWS({ type: 'ticket-created', ticket });
       return reply.code(201).send(ticket);
     } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
+      return sendTrackerError(reply, err);
     }
   });
 
@@ -1286,6 +1302,49 @@ async function main() {
     const ticket = resolveTicketRef(req.params.id);
     if (!ticket) return reply.code(404).send({ error: 'not_found' });
     return { ...ticket, events: tracker.listEvents({ ticket_id: ticket.id }) };
+  });
+
+  // GET /api/tickets/:id/outline — ordered HTML block outline (GOL-326).
+  fastify.get('/api/tickets/:id/outline', async (req, reply) => {
+    const ticket = resolveTicketRef(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: 'not_found' });
+    try {
+      return tracker.getTicketOutline(ticket.id);
+    } catch (err) {
+      return sendTrackerError(reply, err);
+    }
+  });
+
+  // GET /api/tickets/:id/blocks/:blockId — one canonical block + its comments.
+  fastify.get('/api/tickets/:id/blocks/:blockId', async (req, reply) => {
+    const ticket = resolveTicketRef(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: 'not_found' });
+    try {
+      return tracker.getTicketBlock(ticket.id, req.params.blockId);
+    } catch (err) {
+      return sendTrackerError(reply, err);
+    }
+  });
+
+  // POST /api/tickets/:id/block-patches — atomic insert/replace/move/remove
+  // batch against expected_revision (GOL-326 D3/D4).
+  fastify.post('/api/tickets/:id/block-patches', async (req, reply) => {
+    const existing = resolveTicketRef(req.params.id);
+    if (!existing) return reply.code(404).send({ error: 'not_found' });
+    const b = req.body ?? {};
+    try {
+      const result = tracker.patchTicketBlocks(existing.id, {
+        expected_revision: b.expected_revision,
+        operations: b.operations,
+        actor: b.actor ?? 'human',
+      });
+      // WebSocket updates fire only after the transaction committed — the
+      // tracker call returned a persisted result.
+      broadcastWS({ type: 'ticket-updated', ticket: resolveTicketRef(existing.id) });
+      return result;
+    } catch (err) {
+      return sendTrackerError(reply, err);
+    }
   });
 
   // PATCH /api/tickets/:id — partial update. 404 if missing, 400 on invalid.
@@ -1307,7 +1366,7 @@ async function main() {
       broadcastWS({ type: 'ticket-updated', ticket });
       return ticket;
     } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
+      return sendTrackerError(reply, err);
     }
   });
 
