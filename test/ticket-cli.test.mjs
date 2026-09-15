@@ -85,6 +85,10 @@ try {
     && Array.isArray(created.json.outline) && created.json.outline.length > 0
     && created.json.created_by === CALLER, created.err || created.out.slice(0, 200));
   const specId = created.json.id;
+  check('create output is compact: no body/comments/events/children echo (GOL-349)',
+    !('body' in created.json) && !('comments' in created.json) && !('events' in created.json)
+      && !('children' in created.json) && !('pending_dispatch' in created.json)
+      && Array.isArray(created.json.outline));
 
   // A4: outline + get-block.
   const outline = await run(['get-outline', specId]);
@@ -170,10 +174,14 @@ try {
   check('retarget to a nonexistent block exits 2 block_not_found', retarget.exit === 2
     && retarget.json.code === 'block_not_found');
 
-  // Markdown unsupported block operations.
+  // Markdown spec: create via stdin payload, compact output.
   const md = await run(['create', '--project', projectId, '--kind', 'spec', '--title', 'MD spec', '--body-file', '-'],
     { stdin: Readable.from(['plain markdown body']) });
-  check('create accepts stdin body payloads', md.exit === 0 && md.json.body === 'plain markdown body');
+  check('create accepts stdin body payloads and never echoes the body back',
+    md.exit === 0 && !('body' in md.json) && md.json.body_format === 'markdown'
+      && md.json.body_revision === 1);
+
+  // Markdown unsupported block operations.
   const mdOutline = await run(['get-outline', md.json.id]);
   const mdPatch = await run(['patch-blocks', md.json.id, '--expected-revision', '1', '--operations-file', opsFile]);
   const mdBlock = await run(['get-block', md.json.id, 'b-000000000000']);
@@ -181,6 +189,18 @@ try {
     mdOutline.exit === 2 && mdOutline.json.code === 'unsupported_format'
       && mdPatch.exit === 2 && mdPatch.json.code === 'unsupported_format'
       && mdBlock.exit === 2 && mdBlock.json.code === 'unsupported_format');
+
+  // replace-body: deliberate full-rewrite escape hatch, compact output.
+  const mdTicketRow = (await run(['get', md.json.id])).json;
+  if (!mdTicketRow) throw new Error('md ticket disappeared');
+  const replacedBody = await run(['replace-body', md.json.id, '--body-file', bodyFile,
+    '--body-format', 'html', '--expected-revision', String(mdTicketRow.body_revision)]);
+  check('replace-body converts via file payload and stays compact (no body echo)',
+    replacedBody.exit === 0 && replacedBody.json.body_format === 'html'
+      && replacedBody.json.body_revision === mdTicketRow.body_revision + 1
+      && !('body' in replacedBody.json) && !('comments' in replacedBody.json)
+      && !('events' in replacedBody.json) && Array.isArray(replacedBody.json.outline),
+    replacedBody.err || replacedBody.out.slice(0, 160));
 
   // Grammar: no nested command aliases; per-operation help.
   const nested = await run(['block', 'get', specId]);
@@ -197,6 +217,12 @@ try {
     && ['list', 'get', 'create', 'update', 'replace-body', 'get-outline', 'get-block',
       'patch-blocks', 'add-comment', 'reply-comment', 'update-comment']
       .every((op) => listHelp.out.includes(`golem ticket ${op}`)));
+
+  // Positive control: get remains the deliberate full-body read.
+  const fullRead = await run(['get', specId]);
+  check('get stays the deliberate full-body read (body/comments/events present)',
+    fullRead.exit === 0 && typeof fullRead.json.body === 'string' && fullRead.json.body.length > 0
+      && Array.isArray(fullRead.json.comments) && Array.isArray(fullRead.json.events));
 
   // Caller binding: unbound mutations require --human; bound agents reject it.
   const unbound = await runTicket(['create', '--project', projectId, '--title', 'x'], {

@@ -28,7 +28,9 @@ const OPS = {
 
 Usage: list tickets, most recently updated first.
 Input: defaults to the caller's project; --project takes a contract id or a project path.
-Output: JSON array of ticket summaries (id, display_id, title, kind, state, assignee).
+Output: JSON array of compact ticket summaries (id, display_id, title, kind,
+state, assignee, body_format, body_revision) — no body echo; golem ticket get
+is the deliberate full-body read.
 Examples:
   golem ticket list --project golem-38ab8a --kind spec --json
   golem ticket list --kind task --state todo --json` },
@@ -47,8 +49,9 @@ Usage: create a ticket. HTML bodies are spec-only; the server sanitizes, assigns
 stable block ids and returns the normalized outline.
 Input: --body-file takes a path or - for stdin; complete bodies never belong in
 shell arguments.
-Output: created ticket JSON with body_format, body_revision and (for html) the
-normalized outline with assigned block ids.
+Output: compact ticket summary with body_format and body_revision — for html
+also the normalized outline with assigned block ids. The body never echoes
+back; golem ticket get is the deliberate full-body read.
 Examples:
   golem ticket create --project golem-38ab8a --kind spec --title "Spec" --body-format html --body-file spec.html --json
   golem ticket create --project . --title "Task" --body-file - --json < body.md` },
@@ -57,7 +60,7 @@ Examples:
 
 Usage: metadata or state update. Never touches the body — body edits go through
 replace-body or patch-blocks.
-Output: updated ticket JSON.
+Output: compact ticket summary (no body echo).
 Examples:
   golem ticket update GOL-326 --state review --json` },
   'replace-body': { args: 1, mutation: true,
@@ -69,7 +72,8 @@ agents fold agreed changes through patch-blocks instead.
 Input: --body-file path or -; --body-format is required for the first html
 conversion of a non-empty markdown spec; --expected-revision is required for
 every html write and for any format change.
-Output: updated ticket JSON (html bodies include the normalized outline).
+Output: compact ticket summary — for html also the normalized outline. The body
+never echoes back.
 Examples:
   golem ticket replace-body GOL-326 --body-format html --body-file body.html --expected-revision 7 --json` },
   'get-outline': { args: 1, mutation: false,
@@ -188,6 +192,24 @@ function exitPayload(payload) {
   return JSON.stringify(payload, null, 2);
 }
 
+// GOL-349 response shaping: machine-facing ticket outputs are compact. The
+// ticket body, comments, events and children never echo back — `golem ticket
+// get` is the deliberate full-body read.
+const TICKET_SUMMARY_FIELDS = ['id', 'display_id', 'seq', 'project_id', 'kind', 'title', 'state',
+  'priority', 'assignee', 'assignee_label', 'parent_id', 'labels', 'body_format', 'body_revision',
+  'created_by', 'created_at', 'updated_at'];
+function compactTicket(ticket) {
+  if (!ticket || typeof ticket !== 'object') return ticket;
+  const summary = {};
+  for (const field of TICKET_SUMMARY_FIELDS) {
+    if (ticket[field] !== undefined) summary[field] = ticket[field];
+  }
+  // D3: html create/update responses carry the normalized outline with the
+  // assigned block ids — that is the useful payload, not the body.
+  if (Array.isArray(ticket.outline)) summary.outline = ticket.outline;
+  return summary;
+}
+
 function errorPayload(err) {
   // The server's owned payload (code + revision/outline recovery fields) is
   // the machine contract; the human message stays in `error`.
@@ -304,7 +326,8 @@ export async function runTicket(args, {
         if (options['--state']) params.state = options['--state'];
         if (options['--assignee']) params.assignee = options['--assignee'];
         if (options['--parent']) params.parent = options['--parent'];
-        return jsonOut(await client.listTickets(params)), 0;
+        const rows = await client.listTickets(params);
+        return jsonOut(Array.isArray(rows) ? rows.map(compactTicket) : rows), 0;
       }
       case 'get':
         return jsonOut(await client.getTicket(positional[0])), 0;
@@ -324,7 +347,7 @@ export async function runTicket(args, {
           ...(options['--parent'] ? { parent_id: options['--parent'] } : {}),
           ...(options['--assignee'] ? { assignee: options['--assignee'] } : {}),
         };
-        return jsonOut(await client.createTicket(payload)), 0;
+        return jsonOut(compactTicket(await client.createTicket(payload))), 0;
       }
       case 'update': {
         const patch = { actor };
@@ -333,7 +356,7 @@ export async function runTicket(args, {
           if (options[flag]) patch[key] = options[flag];
         }
         if (options['--labels']) patch.labels = options['--labels'].split(',').map((l) => l.trim()).filter(Boolean);
-        return jsonOut(await client.updateTicket(positional[0], patch)), 0;
+        return jsonOut(compactTicket(await client.updateTicket(positional[0], patch))), 0;
       }
       case 'replace-body': {
         const payload = {
@@ -342,7 +365,7 @@ export async function runTicket(args, {
           actor,
           ...(options['--body-format'] ? { body_format: options['--body-format'] } : {}),
         };
-        return jsonOut(await client.updateTicket(positional[0], payload)), 0;
+        return jsonOut(compactTicket(await client.updateTicket(positional[0], payload))), 0;
       }
       case 'get-outline':
         return jsonOut(await client.getTicketOutline(positional[0])), 0;
