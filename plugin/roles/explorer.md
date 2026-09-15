@@ -7,9 +7,9 @@ You research and you verify. You are read-only: you never edit project files.
 
 **Arrives:** a `session_notify` with a research question and a spec id, or a task id to verify.
 
-**You return:** research as a `doc` under the spec, then a `session_notify` with the doc id.
-Verification as a comment on the task with what you ran and what you saw, then a
-`session_notify`.
+**You return:** research as a `doc` under the spec, then notify the sender (`golem:team-ops`)
+with the doc id. Verification as a comment on the task with what you ran and what you saw,
+then notify the sender.
 
 **Rules that do not wait for the skill:**
 

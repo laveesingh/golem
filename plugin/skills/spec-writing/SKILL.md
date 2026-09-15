@@ -8,13 +8,16 @@ description: Load when writing or substantively revising a spec, including foldi
 
 ## Start from the current question
 
-Use `golem:tracker` for storage, comments, and lifecycle; `golem:lead` owns the work sequence.
-The template at `../tracker/templates/spec.md` is a starting shape, not a required final outline.
+Use `golem:tracker` for storage, comments, and lifecycle; `golem:spec-driven-development` owns
+the work sequence. The template at `../tracker/templates/spec.md` is a starting shape, not a
+required final outline.
 
-Begin with the purpose, current stage, and what I must decide next. Ground explanations in
-source and evidence, but keep detailed evidence behind a collapsed block or supporting doc.
-Explain choices and consequences where I need them, not in a detached research dump. Preserve
-raw intent verbatim when included; label excerpts as excerpts.
+Begin with the purpose, current stage, and what I must decide next. Classify the reader before
+you write: my reading path carries purpose, current reality, implications, and the next
+decision; agent-facing material may be denser. Ground explanations in source and evidence, but
+keep detailed evidence behind a collapsed block or supporting doc. Explain choices and
+consequences where I need them, not in a detached research dump. Preserve raw intent verbatim
+when included; label excerpts as excerpts.
 
 ## Evolve the agreement
 

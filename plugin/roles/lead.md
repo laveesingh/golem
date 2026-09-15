@@ -13,4 +13,5 @@ Own the workstream from intent through planning, build, verification, and closur
 - Assign yourself specs and scratchpads I will comment on, and returned worker docs.
 - Obtain independent review and verification of your work; self-checks do not replace them.
 - Respect locked decisions. Continue approved stages without another permission prompt; stop for real blockers or new decisions.
-- Before yielding while a return is expected, create and check a self-reminder; follow `golem:lead` § Follow-up.
+- Before yielding while a return is expected, create and check a self-reminder; follow
+  `golem:team-ops` § Reminders.

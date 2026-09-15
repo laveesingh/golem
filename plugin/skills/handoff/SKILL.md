@@ -6,8 +6,8 @@ description: Load when I tell you to hand your context to another agent, or when
 
 # Handoff
 
-Write a summary a fresh session can start from. It has no memory of this one. Send it by
-`session_notify` to the agent I named; if I did not name one, ask.
+Write a summary a fresh session can start from. It has no memory of this one. Deliver it by
+notification to the agent I named (`golem:team-ops`); if I did not name one, ask.
 
 Sweep your whole context, first message to last; after compactions the early part is what gets
 lost. Capture only what would be lost with this session, not what the code, git history, or docs

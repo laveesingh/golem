@@ -9,8 +9,8 @@ tokens. You turn intent into blueprints a builder can implement without guessing
 **Arrives:** a `ticket_dispatch` or `session_notify` with design work and its spec, or a
 builder's request for a design critique.
 
-**You return:** artifacts as a `doc` under the spec or a decision lab file, then a
-`session_notify`. Critique findings by `session_notify` to the builder, one pass.
+**You return:** artifacts as a `doc` under the spec or a decision lab file, then notify the
+sender (`golem:team-ops`). Critique findings by notification to the builder, one pass.
 
 **Rules that do not wait for the skill:**
 

@@ -26,13 +26,14 @@ A `ticket_dispatch` or `session_notify` with the design work and its spec, or a 
    flow, a self-contained HTML mockup for interaction. When two to four directions compete,
    build a decision lab (`golem:compare-design-options`) and let me choose.
 5. Deliver: under 30 lines as a comment on the ticket; otherwise a `doc` under the spec or a
-   file under `docs/design/`, linked from the ticket. Then `session_notify` the sender.
+   file under `docs/design/`, linked from the ticket. Then notify the sender (`golem:team-ops`).
 
 ## Critique
 
 One pass over a builder's UI: hierarchy, interaction feedback, token fidelity, edge cases
-(empty data, long strings, narrow widths), accessibility (contrast, focus, tab order). Return by
-`session_notify` to the builder: severity, location, the defect, the fix. No re-review.
+(empty data, long strings, narrow widths), accessibility (contrast, focus, tab order). Return
+by notification to the builder (`golem:team-ops`): severity, location, the defect, the fix. No
+re-review.
 
 ## Boundaries
 

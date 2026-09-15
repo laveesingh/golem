@@ -9,6 +9,7 @@
 //
 // Exit 0 on full success; exit 1 on any failed assertion or round-trip.
 
+import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -17,6 +18,7 @@ import url from 'node:url';
 import crypto from 'node:crypto';
 import net from 'node:net';
 import { createServer } from 'node:http';
+import http from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { z } from 'zod';
@@ -162,6 +164,17 @@ let ccFallbackMcpTransport;
 let unsupportedCcMcpClient;
 let unsupportedCcMcpTransport;
 let uninitializedCcChild;
+let cliFirstMcpClient;
+let cliFirstMcpTransport;
+let mutantMcpClient;
+let mutantMcpTransport;
+let proxy = null;
+let proxyPort = null;
+let silentUpstream = null;
+const silentSockets = new Set();
+// The proxy's own upstream wait is bounded; the hung-upstream check below must
+// complete well inside it.
+const PROXY_UPSTREAM_TIMEOUT_MS = 1500;
 let bridgeCaptureServer;
 let port;
 
@@ -579,7 +592,9 @@ async function main() {
     !exactNotify.result.isError
       && notifyBody.session_id === siblingB
       && /Authenticated sender session_id: ses_identity_sibling_a/.test(notifyBody.content || '')
-      && /Return route: session_notify/.test(notifyBody.content || ''),
+      && /Return recipient: ses_identity_sibling_a/.test(notifyBody.content || '')
+      && /golem:team-ops/.test(notifyBody.content || '')
+      && !/Return route: session_notify/.test(notifyBody.content || ''),
     `${exactNotify.text} bridge=${JSON.stringify(notifyBody)}`);
 
   const identityTicket = await callToolFrom(identityMcpClient, 'ticket_create', {
@@ -850,6 +865,15 @@ async function main() {
   check('MCP advertises the canonical shared contract source without schema drift',
     JSON.stringify(tools.tools) === JSON.stringify(GOLEM_TOOL_CONTRACTS),
     `mcp=${tools.tools.length} shared=${GOLEM_TOOL_CONTRACTS.length}`);
+  // Compatibility boot keeps its own advertised-tool instructions: the absence
+  // of the CLI-first intercept here is the proof the surface split is real.
+  const compatInstructions = mcpClient.getInstructions?.() || '';
+  check('compatibility boot instructions still prescribe its advertised outbound tool',
+    /use `session_notify` to the authenticated exact session_id/.test(compatInstructions)
+      && !/golem session list/.test(compatInstructions),
+    compatInstructions.slice(0, 200));
+  check('compatibility instructions do not force a lead persona onto authorized coordinators',
+    !/run the lead sequence/.test(compatInstructions), compatInstructions.slice(0, 200));
   check('MCP omits retired subscription and consult wrapper tools', !tools.tools.some((tool) => ['subscribe', 'unsubscribe', 'subscriptions_list', 'consult_request', 'consult_reply', 'consult_status'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   check('MCP retires worker lifecycle tools', !tools.tools.some((tool) => ['session_spawn', 'session_kill'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   const spoofedCallerRead = await callTool('ticket_get', {
@@ -976,7 +1000,9 @@ async function main() {
   const dispatchBody = channelEvents.filter((event) => event.params?.meta?.kind === 'brief').at(-1)?.params?.content || '';
   check('ticket dispatch carries authenticated return route',
     dispatchBody.includes(`Authenticated delegating session_id: ${SESSION_ID}`)
-      && dispatchBody.includes('Return notification: call session_notify'),
+      && dispatchBody.includes('Return notification: notify that exact recipient id')
+      && dispatchBody.includes('golem:team-ops')
+      && !/session_notify\(/.test(dispatchBody),
     dispatchBody);
 
   const closed = await callTool('ticket_update', { id: walk.id, state: 'done' });
@@ -1006,6 +1032,266 @@ async function main() {
     Array.isArray(listed.json) && listed.json.some((ticket) => ticket.id === jump.id), listed.text);
   check('list payloads carry no phase field',
     Array.isArray(listed.json) && listed.json.every((ticket) => !('phase' in ticket)), listed.text);
+
+  // GOL-335 D2: a trusted launch selection advertises the CLI-first surface.
+  // Advertisement, server instructions, and direct-call rejection must agree,
+  // and identity rejection keeps its precedence over the surface intercept.
+  // A counting proxy sits at the service boundary (it forwards every request
+  // to the real isolated dashboard) so discovery/delivery requests are counted,
+  // not inferred from channel-event absence. Module-scoped handle so the outer
+  // finally can close it if main() aborts before its own cleanup.
+  const proxyCounts = new Map();
+  const countKey = (method, urlPath) => `${method} ${urlPath.split('?')[0]}`;
+  let proxyUpstream = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'dashboard.json'), 'utf8')).url.replace(/\/+$/, '');
+  // An ephemeral port reserved and released: a real closed allowed port for the
+  // refusal check (port 1 is fetch-forbidden locally, not a network refusal).
+  const reservedPortServer = net.createServer();
+  await new Promise((resolve) => reservedPortServer.listen(0, HOST, resolve));
+  const closedUpstreamPort = reservedPortServer.address().port;
+  await new Promise((resolve) => reservedPortServer.close(resolve));
+  proxy = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', async () => {
+      proxyCounts.set(countKey(req.method, req.url), (proxyCounts.get(countKey(req.method, req.url)) || 0) + 1);
+      // A real fetch failure (unreachable or hung upstream) must yield a
+      // bounded 502 response object that satisfies the header/arrayBuffer reads
+      // below; AbortSignal.timeout bounds the proxy's own wait.
+      const upstream = await fetch(`${proxyUpstream}${req.url}`, {
+        method: req.method, headers: { ...req.headers, host: new URL(proxyUpstream).host },
+        body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks),
+        signal: AbortSignal.timeout(PROXY_UPSTREAM_TIMEOUT_MS),
+      }).catch((error) => new Response(`proxy upstream unreachable: ${error?.cause?.code ?? error?.name ?? error}`, {
+        status: 502, headers: { 'content-type': 'text/plain' },
+      }));
+      res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') || 'application/json' });
+      res.end(Buffer.from(await upstream.arrayBuffer().catch(() => new Uint8Array())));
+    });
+  });
+  await new Promise((resolve) => proxy.listen(0, HOST, resolve));
+  proxyPort = proxy.address().port;
+  fs.writeFileSync(path.join(tmpGolemHome, 'dashboard.json'), JSON.stringify({ url: `http://127.0.0.1:${proxyPort}` }));
+  const cliFirstId = 'test-session-cli-first';
+  const cliFirstEvents = [];
+  const CliChannelNotificationSchema = z.object({
+    method: z.literal('notifications/claude/channel'),
+    params: z.object({ content: z.string(), meta: z.object({ kind: z.string() }).passthrough() }).passthrough(),
+  });
+  cliFirstMcpClient = new Client({ name: 'golem-cli-first-journey', version: '1.0.0' });
+  cliFirstMcpTransport = new StdioClientTransport({
+    command: process.execPath,
+    args: [CHANNEL_SERVER],
+    cwd: CHANNEL_ROOT,
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: tmpConfigHome,
+      GOLEM_HOME: tmpGolemHome,
+      GOLEM_CEO_SESSION_ID: cliFirstId,
+      GOLEM_CHANNEL_PORT: '0',
+      GOLEM_TOOL_SURFACE: 'cli-first',
+      ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+      CLAUDE_CODE_USE_BEDROCK: '',
+      CLAUDE_CODE_USE_VERTEX: '',
+      CLAUDE_CODE_USE_FOUNDRY: '',
+      HOME: tmpRoot,
+    },
+    stderr: 'pipe',
+  });
+  cliFirstMcpTransport.stderr?.on('data', (d) => process.stderr.write(`[mcp-cli-first:err] ${d}`));
+  cliFirstMcpClient.setNotificationHandler(CliChannelNotificationSchema, (notification) => cliFirstEvents.push(notification));
+  await cliFirstMcpClient.connect(cliFirstMcpTransport);
+  const cliFirstTools = await cliFirstMcpClient.listTools();
+  const cliFirstNames = cliFirstTools.tools.map((tool) => tool.name);
+  const omittedNames = ['session_notify', 'sessions_dispatchable'];
+  check('CLI-first selection omits outbound delivery and discovery tools',
+    omittedNames.every((name) => !cliFirstTools.tools.some((tool) => tool.name === name)),
+    cliFirstTools.tools.map((tool) => tool.name).join(', '));
+  check('CLI-first selection keeps tracker, dispatch, ack, role and context tools',
+    ['ack', 'ticket_list', 'ticket_get', 'ticket_create', 'ticket_update', 'ticket_comment',
+      'ticket_comment_update', 'ticket_comment_reply', 'session_role', 'ticket_dispatch', 'project_context']
+      .every((name) => cliFirstTools.tools.some((tool) => tool.name === name)),
+    cliFirstTools.tools.map((tool) => tool.name).join(', '));
+  check('no CLI-first advertised tool or schema field still names a hidden discovery tool',
+    !omittedNames.some((name) => JSON.stringify(cliFirstTools.tools).includes(name)),
+    JSON.stringify(cliFirstTools.tools).match(/sessions_dispatchable[^,]*/g) || '');
+  const cliFirstDispatchTool = cliFirstTools.tools.find((tool) => tool.name === 'ticket_dispatch');
+  check('CLI-first dispatch description points at golem session list',
+    /golem session list/.test(cliFirstDispatchTool?.description || '')
+      && /golem session list/.test(cliFirstDispatchTool?.inputSchema?.properties?.session_id?.description || ''),
+    JSON.stringify(cliFirstDispatchTool));
+  const cliInstructions = cliFirstMcpClient.getInstructions?.() || '';
+  check('CLI-first server instructions name the CLI and team-ops, not the compatibility tool',
+    !/use `session_notify`|session_notify\(/.test(cliInstructions)
+      && /golem session notify/.test(cliInstructions)
+      && /golem:team-ops/.test(cliInstructions),
+    cliInstructions);
+  check('CLI-first instructions do not force a lead persona onto authorized coordinators',
+    !/run the lead sequence/.test(cliInstructions), cliInstructions.slice(0, 200));
+
+  const expectsActionableCliGuidance = (response) => response.result.isError
+    && /golem session notify/.test(response.text)
+    && /golem session list/.test(response.text)
+    && !/unknown tool/.test(response.text)
+    && !/no live dispatchable session/.test(response.text);
+  const discoveryRequests = () => proxyCounts.get('GET /api/sessions/dispatchable') || 0;
+  const deliveryRequests = () => proxyCounts.get('POST /api/messages/notify') || 0;
+  const sideEffectsBefore = { discovery: discoveryRequests(), delivery: deliveryRequests() };
+  const excludedNotify = await callToolFrom(cliFirstMcpClient, 'session_notify', {
+    to: SESSION_ID, text: 'must not deliver', __golem_session_id: cliFirstId, __golem_call_id: 'excluded-notify',
+  });
+  const excludedDiscovery = await callToolFrom(cliFirstMcpClient, 'sessions_dispatchable', {
+    __golem_session_id: cliFirstId, __golem_call_id: 'excluded-discovery',
+  });
+  check('CLI-first session_notify direct call rejects with actionable CLI guidance',
+    expectsActionableCliGuidance(excludedNotify), excludedNotify.text);
+  check('CLI-first sessions_dispatchable direct call rejects with actionable CLI guidance',
+    expectsActionableCliGuidance(excludedDiscovery), excludedDiscovery.text);
+  check('excluded direct calls perform zero discovery and zero delivery requests (service boundary observed)',
+    discoveryRequests() === sideEffectsBefore.discovery && deliveryRequests() === sideEffectsBefore.delivery,
+    JSON.stringify(Object.fromEntries(proxyCounts)));
+  // Negative control: a generic unknown-tool fallback or a hidden-handler route
+  // would satisfy isError but must fail this check.
+  assert.equal(expectsActionableCliGuidance({ result: { isError: true }, text: 'unknown tool: session_notify' }), false);
+  assert.equal(expectsActionableCliGuidance({ result: { isError: false }, text: 'ok' }), false);
+  const spoofedExcluded = await callToolFrom(cliFirstMcpClient, 'session_notify', {
+    to: SESSION_ID, text: 'spoofed', __golem_session_id: 'spoofed-model-session', __golem_call_id: 'spoofed-excluded',
+  });
+  check('caller identity rejection keeps precedence over the surface intercept',
+    spoofedExcluded.result.isError && /conflicts with the launcher binding/.test(spoofedExcluded.text), spoofedExcluded.text);
+  const cliFirstTracker = await callToolFrom(cliFirstMcpClient, 'ticket_list', { project: PROJECT_ID, mine: true, __golem_session_id: cliFirstId, __golem_call_id: 'cli-first-list' });
+  check('CLI-first surface preserves tracker operations',
+    !cliFirstTracker.result.isError && Array.isArray(cliFirstTracker.json), cliFirstTracker.text);
+
+  // An invalid explicit selection refuses to boot instead of advertising an
+  // unintended surface.
+  await new Promise((resolve) => {
+    const bad = spawn(process.execPath, [CHANNEL_SERVER], {
+      cwd: CHANNEL_ROOT,
+      env: { ...process.env, XDG_CONFIG_HOME: tmpConfigHome, GOLEM_HOME: tmpGolemHome, GOLEM_TOOL_SURFACE: 'bogus' },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let badStderr = '';
+    bad.stderr.on('data', (d) => { badStderr += d; });
+    bad.once('exit', (code) => {
+      check('invalid explicit tool-surface selection refuses to boot with a clear error',
+        code !== 0 && /unknown Golem tool surface/.test(badStderr), `exit=${code} ${badStderr.slice(0, 400)}`);
+      resolve();
+    });
+  });
+
+  // Interceptor mutation control: a disposable copy of the actual server with
+  // the intercept disabled must be caught by the same production-path
+  // assertion. No production bypass flag, no shared-source edit.
+  const mutantDir = path.join(CHANNEL_DIR, `.mutant-${process.pid}`);
+  fs.mkdirSync(mutantDir, { recursive: true });
+  try {
+    // Copy the sibling modules the server imports so relative resolution works.
+    for (const file of fs.readdirSync(CHANNEL_DIR)) {
+      if (file.endsWith('.js') && file !== 'index.js') fs.copyFileSync(path.join(CHANNEL_DIR, file), path.join(mutantDir, file));
+    }
+    const libFileUrl = `file://${path.join(CHANNEL_ROOT, 'lib').replace(/\\/g, '/')}/`;
+    for (const file of fs.readdirSync(mutantDir)) {
+      if (!file.endsWith('.js') || file === 'index.js') continue;
+      const abs = path.join(mutantDir, file);
+      fs.writeFileSync(abs, fs.readFileSync(abs, 'utf8').replaceAll('../../lib/', libFileUrl));
+    }
+    const source = fs.readFileSync(path.join(CHANNEL_DIR, 'index.js'), 'utf8');
+    const interceptLine = 'const OMITTED_TOOLS = new Set(TOOL_SURFACE.omitted);';
+    assert.ok(source.includes(interceptLine), 'mutant seed expects the production intercept in the copied source');
+    // Relative ../../lib imports resolve one level short in the mutant nest;
+    // rewrite them to file URLs of the real shared modules.
+    const mutantSource = source
+      .replaceAll('../../lib/', `file://${path.join(CHANNEL_ROOT, 'lib').replace(/\\/g, '/')}/`)
+      .replace(interceptLine, 'const OMITTED_TOOLS = new Set();');
+    fs.writeFileSync(path.join(mutantDir, 'index.js'), mutantSource);
+    const mutantId = 'test-session-mutant';
+    const mutantEvents = [];
+    mutantMcpClient = new Client({ name: 'golem-mutant-journey', version: '1.0.0' });
+    mutantMcpTransport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(mutantDir, 'index.js')],
+      cwd: CHANNEL_ROOT,
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: tmpConfigHome,
+        GOLEM_HOME: tmpGolemHome,
+        GOLEM_CEO_SESSION_ID: mutantId,
+        GOLEM_CHANNEL_PORT: '0',
+        GOLEM_TOOL_SURFACE: 'cli-first',
+        ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+        CLAUDE_CODE_USE_BEDROCK: '',
+        CLAUDE_CODE_USE_VERTEX: '',
+        CLAUDE_CODE_USE_FOUNDRY: '',
+        HOME: tmpRoot,
+      },
+      stderr: 'pipe',
+    });
+    mutantMcpTransport.stderr?.on('data', (d) => process.stderr.write(`[mcp-mutant:err] ${d}`));
+    mutantMcpClient.setNotificationHandler(CliChannelNotificationSchema, (notification) => mutantEvents.push(notification));
+    await mutantMcpClient.connect(mutantMcpTransport);
+    const mutantNotify = await callToolFrom(mutantMcpClient, 'session_notify', {
+      to: SESSION_ID, text: 'mutant must be caught', __golem_session_id: mutantId, __golem_call_id: 'mutant-notify',
+    });
+    check('mutant session_notify reaches the real handler instead of the intercept',
+      !/not part of this Golem tool surface/.test(mutantNotify.text), mutantNotify.text.slice(0, 120));
+    const mutantDiscoveryBaseline = discoveryRequests();
+    const mutantDiscovery = await callToolFrom(mutantMcpClient, 'sessions_dispatchable', {
+      __golem_session_id: mutantId, __golem_call_id: 'mutant-discovery',
+    });
+    check('mutant (intercept disabled) no longer satisfies the production-path check',
+      !expectsActionableCliGuidance(mutantNotify), mutantNotify.text);
+    check('mutant sessions_dispatchable genuinely performs the discovery request production blocks (service boundary observed)',
+      !mutantDiscovery.result.isError && Array.isArray(mutantDiscovery.json)
+        && discoveryRequests() > mutantDiscoveryBaseline,
+      `${mutantDiscovery.text.slice(0, 200)} discovery_requests=${discoveryRequests()}`);
+    assert.equal(expectsActionableCliGuidance(mutantNotify), false,
+      'the same assertion must reject the mutated server response');
+    // The mutant contrast is real handler/response proof: production counts
+    // stay flat for the excluded calls (previous check) while the mutant
+    // demonstrably passes the intercept into tracker discovery.
+  } finally {
+    try { await mutantMcpClient?.close(); } catch { /* ignore */ }
+    try { await mutantMcpTransport?.close(); } catch { /* ignore */ }
+    try { fs.rmSync(mutantDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+
+  // Real failure/cleanup checks on the proxy fixture itself.
+  // (1) A real network hang: an accepting-never-responding loopback upstream,
+  // bounded by AbortSignal.timeout in the proxy and a client deadline here.
+  silentUpstream = net.createServer((socket) => {
+    silentSockets.add(socket);
+    socket.on('close', () => silentSockets.delete(socket));
+    socket.resume(); // accept and never respond
+  });
+  await new Promise((resolve) => silentUpstream.listen(0, HOST, resolve));
+  proxyUpstream = `http://127.0.0.1:${silentUpstream.address().port}`;
+  const hangStart = Date.now();
+  const hangResponse = await fetch(`http://127.0.0.1:${proxyPort}/api/health`, { signal: AbortSignal.timeout(10_000) });
+  const hangMs = Date.now() - hangStart;
+  check('accepting-never-responding upstream yields the bounded 502 within the proxy deadline (real network hang, not a forbidden port)',
+    hangResponse.status === 502 && hangMs < 5000, `status=${hangResponse.status} elapsed=${hangMs}ms`);
+  check('proxy counted the hung request at the service boundary',
+    (proxyCounts.get('GET /api/health') || 0) >= 1, JSON.stringify([...proxyCounts]));
+
+  // (2) Refusal against an ephemeral closed allowed port (real ECONNREFUSED).
+  proxyUpstream = `http://127.0.0.1:${closedUpstreamPort}`;
+  const refusalResponse = await fetch(`http://127.0.0.1:${proxyPort}/api/health`, { signal: AbortSignal.timeout(10_000) });
+  check('closed allowed upstream port yields the bounded 502 refusal',
+    refusalResponse.status === 502, `status=${refusalResponse.status}`);
+
+  // (3) Cleanup: close proxy and silent upstream; the listener must refuse
+  // connections afterwards and the hung socket must be destroyed.
+  await new Promise((resolve) => proxy.close(resolve));
+  proxy = null;
+  for (const socket of silentSockets) socket.destroy();
+  await new Promise((resolve) => silentUpstream.close(resolve));
+  silentUpstream = null;
+  const refusalAfterClose = await fetch(`http://127.0.0.1:${proxyPort}/api/health`, { signal: AbortSignal.timeout(5_000) })
+    .then(() => 'still-open')
+    .catch((error) => error?.cause?.code ?? error?.code ?? 'closed');
+  check('proxy cleanup closes the listener (connection refused after close)',
+    refusalAfterClose !== 'still-open', String(refusalAfterClose));
+  check('hung upstream socket is destroyed with the silent server', silentSockets.size === 0, `remaining=${silentSockets.size}`);
 }
 
 main()
@@ -1023,10 +1309,15 @@ main()
     try { await noIdentityMcpTransport?.close(); } catch { /* ignore */ }
     try { await ccFallbackMcpClient?.close(); } catch { /* ignore */ }
     try { await ccFallbackMcpTransport?.close(); } catch { /* ignore */ }
+    try { await cliFirstMcpClient?.close(); } catch { /* ignore */ }
+    try { await cliFirstMcpTransport?.close(); } catch { /* ignore */ }
     try { await unsupportedCcMcpClient?.close(); } catch { /* ignore */ }
     try { await unsupportedCcMcpTransport?.close(); } catch { /* ignore */ }
     try { uninitializedCcChild?.kill('SIGKILL'); } catch { /* ignore */ }
     try { await new Promise((resolve) => bridgeCaptureServer?.close(resolve) ?? resolve()); } catch { /* ignore */ }
+    try { if (proxy) await new Promise((resolve) => proxy.close(resolve)); } catch { /* ignore */ }
+    try { for (const socket of silentSockets) socket.destroy(); } catch { /* ignore */ }
+    try { if (silentUpstream) await new Promise((resolve) => silentUpstream.close(resolve)); } catch { /* ignore */ }
     try { child?.kill('SIGKILL'); } catch { /* ignore */ }
     try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
     if (failures === 0) {

@@ -8,8 +8,9 @@ including what the checklist never covered?
 
 **Arrives:** a `session_notify` with a spec id, or a task id plus its spec.
 
-**You return:** findings by `session_notify` to the sender, most material first, each with
-severity, location, impact, and a direction. One line at the end: sound, or the concerns.
+**You return:** findings by notification to the sender (`golem:team-ops`), most material first,
+each with severity, location, impact, and a direction. One line at the end: sound, or the
+concerns.
 
 **Rules that do not wait for the skill:**
 

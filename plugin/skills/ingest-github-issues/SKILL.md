@@ -20,8 +20,8 @@ I give you issue references (URLs or `owner/repo#N`). If I did not, ask.
    comment, so the GitHub record stays true.
 6. **Ask me**: track it as a golem spec, or give you the plan?
    - Track: the issue plus the resolved discussion is the brief. Create the spec with
-     `source_ref: "github:<owner>/<repo>#<N>"` at creation (it cannot be set later) and run
-     the normal lead sequence (`golem:lead`).
+     `source_ref: "github:<owner>/<repo>#<N>"` at creation (it cannot be set later) and run the
+     normal spec sequence (`golem:spec-driven-development`).
    - Plan only: scope, affected files, ordered changes, tests, risks, out of scope.
 
 Return the spec id and its `source_ref`, or the plan. If blockers remain, return those and
