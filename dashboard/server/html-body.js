@@ -79,7 +79,15 @@ const TAG_ATTRS = new Map([
 const SAFE_URL_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
 function isSafeUrl(value, { attributeName, tagName }) {
   const raw = String(value ?? '').trim();
-  if (raw === '' || raw.startsWith('#') || raw.startsWith('/') || raw.startsWith('./')) return true;
+  if (raw === '' || raw.startsWith('#')) return true;
+  // SVG <use> may only reference same-document fragments: external file or
+  // cross-origin references would fetch content the document does not own.
+  if (tagName === 'use') return false;
+  if (raw.startsWith('/') && !raw.startsWith('//')) return true;
+  if (raw.startsWith('./')) return true;
+  // Protocol-relative URLs inherit the scheme at render time and can point at
+  // any external origin — rejected alongside the executable ones.
+  if (raw.startsWith('//')) return false;
   if (/^data:image\/(?:png|jpeg|jpg|gif|webp);base64,/i.test(raw)) {
     return attributeName === 'src' && tagName === 'img';
   }

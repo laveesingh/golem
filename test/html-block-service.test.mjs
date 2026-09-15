@@ -246,6 +246,36 @@ try {
       catch (e) { return e.code === 'revision_conflict' && e.extra?.current_revision === 2; }
     })());
 
+  // GOL-348 fix 1: the spec-only HTML invariant holds across kind PATCH.
+  check('html spec PATCHed to a non-spec kind rejects (no stranded html body)',
+    (() => {
+      try { db.updateTicket(htmlSpec.id, { kind: 'task', actor: 'smoke' }); return false; }
+      catch (e) { return e.code === 'unsupported_format'; }
+    })());
+  check('kind change is allowed once the body is explicitly converted to markdown first',
+    (() => {
+      const convertible = db.createTicket({ project_id: 'proj-abc123', kind: 'spec', title: 'Convert then retag', body: '<p>html body</p>', body_format: 'html', created_by: 'smoke' });
+      const converted = db.updateTicket(convertible.id, {
+        body_format: 'markdown', body: 'now markdown', expected_revision: 1, actor: 'smoke',
+      });
+      const retagged = db.updateTicket(convertible.id, { kind: 'task', actor: 'smoke' });
+      return converted.body_format === 'markdown' && retagged.kind === 'task';
+    })());
+
+  // GOL-348 fix 2: protocol-relative and external SVG-use references rejected.
+  const useProbe = normalizeHtmlBody(
+    `<svg viewBox="0 0 10 10"><use href="//evil.example/icons.svg#x"></use><use xlink:href="https://evil.example/y#z"></use><use href="#local-shape"></use></svg>`);
+  check('svg <use> keeps only same-document fragment references',
+    /<use href="#local-shape"><\/use>/.test(useProbe.html)
+      && !/href="\/\//.test(useProbe.html)
+      && !/evil\.example/.test(useProbe.html),
+    useProbe.html.slice(0, 200));
+  check('protocol-relative href/src on any element is stripped (external origin escape)',
+    (() => {
+      const probe = normalizeHtmlBody('<p><a href="//evil.example/x">rel</a></p>');
+      return !/evil\.example/.test(probe.html) && /<a>rel<\/a>/.test(probe.html);
+    })());
+
   // A10: Markdown spec behavior unchanged around the migration.
   check('A10 markdown comments/search unchanged (no block gates)',
     (() => {

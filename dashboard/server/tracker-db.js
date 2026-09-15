@@ -2006,6 +2006,20 @@ WHERE state_changed_at IS NULL`).run();
       if ('kind' in updates && !KINDS.has(updates.kind)) {
         throw badRequest(`updateTicket: invalid kind '${updates.kind}'`);
       }
+      // GOL-326 D1 invariant: HTML bodies are spec-only. A kind change cannot
+      // strand an html body on a task/doc — the caller must convert the format
+      // explicitly (body_format + complete body + expected_revision) first or
+      // in the same request.
+      if ('kind' in updates && updates.kind !== 'spec') {
+        const effectiveFormat = 'body_format' in updates
+          ? validateBodyFormat(updates.body_format)
+          : validateBodyFormat(existing.body_format ?? 'markdown');
+        if (effectiveFormat === 'html') {
+          throw badRequest(
+            `html body_format is supported for specs only; change body_format to markdown (with the complete body and expected_revision) before changing kind`,
+            'unsupported_format');
+        }
+      }
       if ('state' in updates && !STATES.has(updates.state)) {
         throw badRequest(`updateTicket: invalid state '${updates.state}'`);
       }
