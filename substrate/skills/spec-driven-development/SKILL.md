@@ -25,7 +25,8 @@ grounding cannot answer.
    explicit request to draft design is that go-ahead. Never re-ask for an authorized stage.
 3. Fold locked decisions into the spec. Only I reopen a locked call; conflicting evidence asks.
 4. Obtain one independent spec review; fold accepted findings. No re-review.
-5. Decompose into detailed tasks (`golem:tracker` § Writing); one task when one fits.
+5. Decompose into detailed tasks (`golem:tracker` § Writing); one task when one fits. Carry the
+   exact `golem ticket` block commands (tracker owns the grammar) into implementation tasks.
 6. Dispatch, consume the closing report, obtain one implementation review, then independent
    verification by another session. Re-run evidence before accepting it.
 7. Reconcile every child (`golem:tracker` § Returned docs), fold outcomes and verification

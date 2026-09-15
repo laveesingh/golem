@@ -47,6 +47,18 @@ function authoringContract(text) {
 // coordinators; skill access and assignee metadata grant nothing. A test that
 // would also accept deleting the boundary proves nothing, so the caller
 // mutates the text and expects this to throw.
+// GOL-347: spec-writing owns initialize -> outline/read -> targeted patch ->
+// rare rewrite, and the persisted ids are never retyped. A test that would
+// also accept routine full rewrites proves nothing.
+function htmlWorkflowContract(writing) {
+  const flat = writing.replace(/\s+/g, ' ');
+  assert.match(flat, /Initialize with `golem ticket create --body-format html`/);
+  assert.match(flat, /orient with `get-outline`/);
+  assert.match(flat, /`patch-blocks` against the returned revision/);
+  assert.match(flat, /reserve `replace-body` for the rewrite exception/);
+  assert.match(flat, /Never retype the server's stable block ids/);
+}
+
 function authorityContract(rules) {
   const flat = rules.replace(/\s+/g, ' ');
   assert.match(flat, /Lead normally coordinates spec work/);
@@ -110,6 +122,17 @@ try {
   // this bans the prescription, not the valid compatibility implementation or
   // the session_notify envelope vocabulary.
   assert.doesNotMatch(read(path.join(source, 'skills/tracker/SKILL.md')), /sessions_dispatchable/);
+  // GOL-347: the universal HTML-tag ban is removed and the format split is in;
+  // a test that would also accept the old ban proves nothing.
+  const sourceTracker = read(path.join(source, 'skills/tracker/SKILL.md'));
+  assert.doesNotMatch(sourceTracker, /Never start a body with an HTML tag/);
+  assert.match(sourceTracker, /Markdown body starting with an HTML tag is usually a mistake/);
+  htmlWorkflowContract(writing);
+  assert.throws(() => htmlWorkflowContract(writing
+    .replace('reserve `replace-body` for the rewrite exception', 'always rewrite with `replace-body`')),
+    'removing the no-routine-rewrite rule must fail the html workflow contract');
+  assert.match(read(path.join(source, 'skills/spec-driven-development/SKILL.md')),
+    /exact `golem ticket` block commands/, 'SDD carries the block commands into tasks');
   assert.doesNotMatch(writing, /golem:lead owns the work sequence/);
   console.log(`source contracts passed: ${lint.total} words; negative control rejected`);
 
@@ -126,11 +149,25 @@ try {
     authorityContract(rules);
     assert.equal(read(path.join(render, 'skills/tracker/templates/spec.md')), read(path.join(source, 'skills/tracker/templates/spec.md')));
     assert.equal(read(path.join(render, 'skills/tracker/templates/task.md')), read(path.join(source, 'skills/tracker/templates/task.md')), 'task template parity, not spec-template only');
+    assert.equal(read(path.join(render, 'skills/tracker/templates/spec-html.html')), read(path.join(source, 'skills/tracker/templates/spec-html.html')), 'html spec template reaches the render with format metadata');
+    htmlWorkflowContract(read(path.join(render, 'skills/spec-writing/SKILL.md')));
     for (const skill of ['lead', 'tracker']) {
       assert.match(read(path.join(render, `skills/${skill}/SKILL.md`)), /golem:spec-writing/);
     }
-    assert.match(read(path.join(render, 'skills/tracker/SKILL.md')), /Never start a body with an HTML tag/,
-      'mechanical body constraints reach task/doc authors through tracker, not a spec-only skill');
+    const renderedTracker = read(path.join(render, 'skills/tracker/SKILL.md'));
+    // GOL-347: the universal HTML-tag ban is gone; guidance is format-split and
+    // tracker is the canonical golem ticket CLI reference.
+    assert.doesNotMatch(renderedTracker, /Never start a body with an HTML tag/,
+      'the universal tag-leading ban must not survive (html spec bodies start with tags)');
+    assert.match(renderedTracker, /Format is explicit data/, 'format ownership is explicit');
+    assert.match(renderedTracker, /Markdown body starting with an HTML tag is usually a mistake/,
+      'the tag-leading warning is scoped to Markdown bodies');
+    assert.match(renderedTracker, /golem ticket --help/, 'tracker is the canonical ticket CLI reference');
+    assert.match(renderedTracker, /--body-format html/, 'html format creation is documented');
+    assert.match(renderedTracker, /spec-only/, 'html format is spec-only in guidance');
+    assert.match(renderedTracker, /no\s+block operations/, 'Codex/OpenCode compatibility limits preserved');
+    assert.match(renderedTracker, /golem:spec-writing` § HTML spec bodies/,
+      'the html editing workflow lives in spec-writing; tracker points instead of duplicating it');
     assert.doesNotMatch(read(path.join(render, 'skills/tracker/SKILL.md')), /sessions_dispatchable/,
       'rendered tracker must not prescribe the compatibility-only discovery tool');
     assert.match(read(path.join(render, 'skills/night-shift/SKILL.md')), /Unattended permission prompts stop the run/,

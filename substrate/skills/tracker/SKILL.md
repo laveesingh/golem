@@ -33,18 +33,29 @@ Tasks and docs hang under their spec via `parent_id`; a spec can parent child sp
 
 - The body is a living document. Fold decisions and outcomes in at boundaries, and batch
   edits, because every edit rewrites the whole body.
-- Load `golem:spec-writing` for substantive spec authoring/revision. It owns the writing
-  method; templates provide starting shapes. Metadata-only updates do not need it.
+- Load `golem:spec-writing` for substantive spec authoring/revision — it owns the writing
+  method; templates provide starting shapes.
 - Task bodies carry the agreed decisions, constraints, touch points, and acceptance commands.
   Decomposition belongs to the authorized coordinator (`golem:spec-driven-development`); do
   not make builders reconstruct the brainstorm.
 
+## Ticket CLI
+
+`golem ticket` is the canonical authoring family: list, get, create, update, replace-body,
+get-outline, get-block, patch-blocks, add-comment, reply-comment, update-comment.
+`golem ticket --help` carries exact syntax and runnable examples; payloads go through
+file/stdin flags; stdout is JSON only. Mutations bind the trusted Pi/Claude session context;
+Codex/OpenCode keep their compatibility tools (reads, revision-gated full replacement; no
+block operations).
+
 ## Body format
 
-Use Markdown, Mermaid, admonitions, and `<details>`. Never start a body with an HTML tag.
-Leave a blank line after `</summary>`; escape table pipes. No semicolons in sequence messages.
-Render Mermaid before saving and inspect the result; exit 0 alone is not proof.
-No format-selector or block-edit tools exist.
+Format is explicit data, never inferred from a body's first character. Markdown is the default
+(Mermaid, admonitions, `<details>`; blank line after `</summary>`; escape table pipes) — a
+Markdown body starting with an HTML tag is usually a mistake. An HTML spec is a complete safe
+fragment created with `--body-format html` (spec-only): the server sanitizes it and assigns
+stable per-block ids; the editing workflow is `golem:spec-writing` § HTML spec bodies. Render
+Mermaid before saving; exit 0 alone is not proof.
 
 ## States
 

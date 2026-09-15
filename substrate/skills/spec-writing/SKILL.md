@@ -8,8 +8,7 @@ description: Load when writing or substantively revising a spec, including foldi
 ## Start from the current question
 
 Use `golem:tracker` for storage, comments, and lifecycle; `golem:spec-driven-development` owns
-the work sequence. The template at `../tracker/templates/spec.md` is a starting shape, not a
-required final outline.
+the work sequence; the spec template is a starting shape, not a required final outline.
 
 Begin with the purpose, current stage, and what I must decide next. Classify the reader before
 you write: my reading path carries purpose, current reality, implications, and the next
@@ -17,6 +16,12 @@ decision; agent-facing material may be denser. Ground explanations in source and
 keep detailed evidence behind a collapsed block or supporting doc. Explain choices and
 consequences where I need them, not in a detached research dump. Preserve raw intent verbatim
 when included; label excerpts as excerpts.
+
+## HTML spec bodies
+
+Initialize with `golem ticket create --body-format html`; orient with `get-outline`, read only
+affected blocks, fold agreed changes with `patch-blocks` against the returned revision, and
+reserve `replace-body` for the rewrite exception. Never retype the server's stable block ids.
 
 ## Evolve the agreement
 
@@ -54,7 +59,7 @@ Omit empty or irrelevant blocks; adapt heading order to the discussion. Prefer a
 for comparisons and diagrams for relationships the prose cannot explain clearly. No diagram
 or subsection quotas. Give each diagram one concern and a caption.
 
-Follow `golem:tracker` § Body format. Those constraints apply to every doc kind.
+Follow `golem:tracker` § Body format; those constraints apply to every doc kind.
 
 Read the current body and comments before revising. Preserve unrelated content, agreement
 history, and comment context. Current tools replace whole bodies; do not invent block-edit
