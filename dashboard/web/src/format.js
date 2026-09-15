@@ -125,6 +125,36 @@
     return escapedTextBody(text);
   }
 
+  // GOL-326: format-aware ticket rendering. The stored body_format decides —
+  // the body's first character never does. HTML spec bodies are sanitized
+  // server-side (GOL-343) and re-sanitized here as defense in depth; per-spec
+  // <style> is excluded by the locked boundary, so the defensive pass strips
+  // <style> even if a stored body ever carried one. Markdown rendering is the
+  // legacy pipeline, unchanged.
+  const HTML_SANITIZE_CFG = {
+    ADD_TAGS: ['svg', 'figure', 'figcaption'],
+    ALLOW_DATA_ATTR: true,
+  };
+
+  function renderBody(text, format) {
+    if (String(format || '').toLowerCase() === 'html') {
+      if (!text) return '';
+      return window.DOMPurify ? window.DOMPurify.sanitize(text, HTML_SANITIZE_CFG) : escapedTextBody(text);
+    }
+    return renderMarkdown(text);
+  }
+
+  // Format-aware image paste: Markdown bodies emit Markdown image syntax;
+  // HTML bodies emit a safe figure/figcaption-free img wrapped in <figure>.
+  function imageMarkupFor(format, url, name) {
+    const safeUrl = String(url || '');
+    const safeName = String(name || '').replace(/[<>&"']/g, '');
+    if (String(format || '').toLowerCase() === 'html') {
+      return `\n<figure><img src="${safeUrl}" alt="${safeName}"></figure>\n`;
+    }
+    return `\n![${safeName}](${safeUrl})\n`;
+  }
+
   function renderAnsi(text) {
     if (!text) return '';
     let escaped = escMd(text);
@@ -158,5 +188,5 @@
   // name auto-covers those call sites.
   const htmlBody = renderMarkdown;
 
-  window.SubstrateFmt = { fmtRuntime, fmtTimeAgo, fmtClock, glyphFor, renderMarkdown, htmlBody, renderAnsi };
+  window.SubstrateFmt = { fmtRuntime, fmtTimeAgo, fmtClock, glyphFor, renderMarkdown, renderBody, imageMarkupFor, htmlBody, renderAnsi };
 })();

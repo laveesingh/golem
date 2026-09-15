@@ -183,7 +183,13 @@ try {
     }
   }
   const templates = await request('/api/templates');
-  assert.deepEqual(templates.map((t) => t.id).sort(), ['doc', 'spec', 'task']);
+  assert.deepEqual(templates.map((t) => t.id).sort(), ['doc', 'spec', 'spec-html', 'task']);
+  const htmlTemplate = templates.find((t) => t.id === 'spec-html');
+  assert.equal(htmlTemplate.body_format, 'html');
+  assert.match(htmlTemplate.body, /<h1>/);
+  for (const t of templates) {
+    assert.equal(t.body_format, t.id === 'spec-html' ? 'html' : 'markdown', 'template format metadata');
+  }
   const taskTemplate = templates.find((t) => t.id === 'task');
   assert.equal(taskTemplate.body, read(path.join(source, 'skills/tracker/templates/task.md')), 'API task template is the source task template, not only spec-template parity');
   assert.match(taskTemplate.body, /negative cases/);

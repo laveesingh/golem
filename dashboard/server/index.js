@@ -2482,8 +2482,10 @@ async function main() {
   fastify.get('/api/templates', async () => {
     let files = [];
     try {
+      // GOL-326: templates declare their format. Markdown scaffolds are .md;
+      // the HTML spec scaffold is .html and carries body_format 'html'.
       files = fs.readdirSync(TEMPLATES_DIR)
-        .filter((f) => f.endsWith('.md'))
+        .filter((f) => f.endsWith('.md') || f.endsWith('.html'))
         .sort();
     } catch (err) {
       fastify.log.error({ err }, '[templates] could not read templates dir %s', TEMPLATES_DIR);
@@ -2491,7 +2493,8 @@ async function main() {
     }
     const out = [];
     for (const file of files) {
-      const id = file.slice(0, -3); // strip .md
+      const isHtml = file.endsWith('.html');
+      const id = file.slice(0, -(isHtml ? 5 : 3));
       let body = '';
       try {
         body = fs.readFileSync(path.join(TEMPLATES_DIR, file), 'utf8');
@@ -2505,7 +2508,7 @@ async function main() {
         const m = /^#\s+(.+?)\s*$/.exec(line);
         if (m) { title = m[1]; break; }
       }
-      out.push({ id, title, body });
+      out.push({ id, title, body, body_format: isHtml ? 'html' : 'markdown' });
     }
     return out;
   });

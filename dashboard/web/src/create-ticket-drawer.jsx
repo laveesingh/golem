@@ -65,6 +65,7 @@ function snapshot(fields) {
     kind: fields.kind,
     title: fields.title,
     body: fields.body,
+    body_format: fields.bodyFormat,
     priority: fields.priority,
     assignee: fields.assignee,
     dispatch_session: fields.dispatchSession,
@@ -82,6 +83,7 @@ function applyDraft(d, setProjectId, setters, fallbackPid, bodyTemplateIdRef) {
   setters.setKind(d?.kind || 'task');
   setters.setTitle(d?.title || '');
   setters.setBody(d?.body || '');
+  setters.setBodyFormat(d?.body_format || 'markdown');
   setters.setPriority(d?.priority || '');
   setters.setAssignee(d?.assignee || '');
   setters.setDispatchSession(d?.dispatch_session || '');
@@ -112,6 +114,9 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
   const [kind, setKind] = React.useState('task');
   const [title, setTitle] = React.useState('');
   const [body, setBody] = React.useState('');
+  // GOL-326: explicit spec body format. Markdown is the default; HTML is
+  // spec-only and selected deliberately (format picker or the html template).
+  const [bodyFormat, setBodyFormat] = React.useState('markdown');
   const [priority, setPriority] = React.useState('');
   const [assignee, setAssignee] = React.useState('');
   const [dispatchSession, setDispatchSession] = React.useState('');
@@ -152,7 +157,7 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
     try { localStorage.setItem(CT_WIDTH_KEY, v); } catch {}
   };
 
-  const setters = { setKind, setTitle, setBody, setPriority, setAssignee, setDispatchSession, setUploads, setError, setSubmitting };
+  const setters = { setKind, setTitle, setBody, setBodyFormat, setPriority, setAssignee, setDispatchSession, setUploads, setError, setSubmitting };
 
   // ── Image paste/drop (ported verbatim from create-ticket.jsx) ──────────────
   const uploadOne = React.useCallback(async (file) => {
@@ -161,7 +166,7 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
     try {
       const res = await window.SubstrateAPI.uploadAsset(file);
       setUploads((u) => u.map((x) => x.id === id ? { ...x, status: 'done', url: res.url } : x));
-      return { id, md: `![](${res.url})`, url: res.url };
+      return { id, md: `![](${res.url})`, url: res.url, name: file.name || 'image.png' };
     } catch (err) {
       setUploads((u) => u.map((x) => x.id === id ? { ...x, status: 'error', error: String(err?.message || err) } : x));
       throw err;
@@ -195,8 +200,8 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
     const after = bodyRef.current?.selectionEnd ?? body.length;
     for (const f of files) {
       try {
-        const { md } = await uploadOne(f);
-        const insert = `${before === after ? '' : ''}\n${md}\n`;
+        const { url, name } = await uploadOne(f);
+        const insert = window.SubstrateFmt.imageMarkupFor(bodyFormat, url, name);
         setBody((cur) => {
           const next = cur.slice(0, before) + insert + cur.slice(after);
           bodyTemplateIdRef.current = null; // pasted content = user-edited
@@ -220,8 +225,9 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
     e.preventDefault();
     for (const f of files) {
       try {
-        const { md } = await uploadOne(f);
-        setBody((cur) => { bodyTemplateIdRef.current = null; return cur + (cur.endsWith('\n') ? '' : '\n') + md + '\n'; });
+        const { url, name } = await uploadOne(f);
+        const insert = window.SubstrateFmt.imageMarkupFor(bodyFormat, url, name);
+        setBody((cur) => { bodyTemplateIdRef.current = null; return cur + (cur.endsWith('\n') ? '' : '\n') + insert; });
       } catch (err) { /* surfaced in uploads strip */ }
     }
   }, [uploadOne]);
@@ -318,7 +324,7 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
   // indicator while you keep editing the restored draft).
   React.useEffect(() => {
     if (!open) return;
-    window.CtDraft.scheduleSave(projectId, snapshot({ projectId, kind, title, body, priority, assignee, dispatchSession, uploads }));
+    window.CtDraft.scheduleSave(projectId, snapshot({ projectId, kind, title, body, bodyFormat, priority, assignee, dispatchSession, uploads }));
   }, [open, projectId, kind, title, body, priority, assignee, dispatchSession, uploads]);
 
   // ── TKT-0174: genre templates ─────────────────────────────────────────────
@@ -343,6 +349,8 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
     if (!open) return;
     setTemplateOverride(false);
     setTemplateId(TYPE_TEMPLATE[kind] || '');
+    // GOL-326: HTML is spec-only — leaving spec resets the format to Markdown.
+    if (kind !== 'spec') setBodyFormat('markdown');
   }, [open, kind]);
 
   // When the template picker value changes (whether by type-change above or
@@ -356,6 +364,10 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
     if (!open || !templateId || !templates.length) return;
     const t = templates.find((x) => x.id === templateId);
     if (!t) return;
+    // GOL-326: a template declares its format; picking the HTML spec template
+    // selects HTML explicitly (when the kind allows it).
+    if (t.body_format === 'html' && kind === 'spec') setBodyFormat('html');
+    else if (t.body_format !== 'html') setBodyFormat((cur) => (kind === 'spec' ? cur || 'markdown' : cur));
     setBody((cur) => {
       if (!cur.trim()) {
         // Empty body — always fill.
@@ -392,19 +404,21 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
     if (!id) return;
     const t = templates.find((x) => x.id === id);
     if (!t) return;
+    if (t.body_format === 'html' && kind === 'spec') setBodyFormat('html');
     setBody((cur) => {
       if (!cur.trim()) {
         bodyTemplateIdRef.current = t.id;
         return t.body;
       }
       if (bodyTemplateIdRef.current === t.id) return cur;
-      if (bodyTemplateIdRef.current) {
+      if (bodyTemplateRef_current()) {
         bodyTemplateIdRef.current = t.id;
         return t.body;
       }
       return cur;
     });
   };
+  function bodyTemplateRef_current() { return bodyTemplateIdRef.current; }
 
   if (!open) return null;
 
@@ -416,6 +430,7 @@ function CreateTicketDrawer({ open, preselectProject, preselectKind, preselectPa
     kind,
     title: title.trim(),
     body: body.trim() || undefined,
+    ...(kind === 'spec' ? { body_format: bodyFormat } : {}),
     priority: priority || undefined,
     assignee: assignee || undefined,
     parent_id: parentIdRef.current || undefined,
@@ -431,7 +446,7 @@ const discard = () => {
     // Clear the in-progress content but keep the project context — discarding
     // a draft shouldn't also wipe the project dropdown the user just picked.
     window.CtDraft.discard(projectId);
-    setKind('task'); setTitle(''); setBody(''); setPriority('');
+    setKind('task'); setTitle(''); setBody(''); setBodyFormat('markdown'); setPriority('');
     setAssignee(''); setDispatchSession('');
     setUploads([]); setError(null); setSubmitting(false); setRestored(false);
     setTemplateId(''); setTemplateOverride(false);
@@ -546,6 +561,26 @@ const discard = () => {
                 {CT_PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
             </div>
+          {kind === 'spec' && (
+            <div className="ct-row">
+              <div className="ct-field">
+                <label className="ct-label">Body format</label>
+                <select className="ct-input" value={bodyFormat}
+                  onChange={(e) => setBodyFormat(e.target.value)} disabled={submitting}>
+                  <option value="markdown">Markdown</option>
+                  <option value="html">HTML</option>
+                </select>
+              </div>
+              <div className="ct-field ct-field--hint">
+                <span className="ct-label-hint">
+                  {bodyFormat === 'html'
+                    ? 'HTML spec: the server sanitizes it and assigns stable block ids.'
+                    : 'Markdown is the default spec format.'}
+                </span>
+              </div>
+            </div>
+          )}
+
             <div className="ct-field">
               <label className="ct-label">Template</label>
               <select className="ct-input" value={templateId} onChange={onTemplateChange}
@@ -576,9 +611,9 @@ const discard = () => {
           {error && <div className="ct-error">{error}</div>}
 
           <div className="ct-field ct-field--grow">
-            <label className="ct-label">Body <span className="ct-label-hint">Markdown · paste or drop images</span></label>
+            <label className="ct-label">Body <span className="ct-label-hint">{kind === 'spec' && bodyFormat === 'html' ? 'HTML · paste or drop images inserts a figure/img block' : 'Markdown · paste or drop images'}</span></label>
             <textarea ref={bodyRef} className="orch-modal-textarea" rows={5} value={body}
-              placeholder="Details, context, acceptance… (Markdown is rendered; empty body fills with the selected template; manually edited bodies are preserved through template changes)"
+              placeholder={kind === 'spec' && bodyFormat === 'html' ? "Details, context, acceptance… (safe HTML fragment; the server sanitizes it and assigns stable block ids)" : "Details, context, acceptance… (Markdown is rendered; empty body fills with the selected template; manually edited bodies are preserved through template changes)"}
               onChange={(e) => { bodyTemplateIdRef.current = null; setBody(e.target.value); }}
               onPaste={onPaste}
               onDrop={onDrop}

@@ -906,7 +906,7 @@ function locateAnnotation(root, idx, ann) {
 // annotation rail and FAB portal into. The ticket drawer passes
 // `.drawer-ticket` (position:fixed); the standalone ticket page passes
 // `.ticket-page`. Defaults to `.drawer-ticket` for backward compatibility.
-function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateAndDispatch, onUpdate, onReply, onReplyAndDispatch, onDispatchComment, canDispatchComments = false, undispatchedCount = 0, dispatchTargetLabel = null, onBatchDispatch, commentDispatching = false, commentDispatchNote = null, containerSelector = '.drawer-ticket', documentKey = '', documentTitle = '' }) {
+function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateAndDispatch, onUpdate, onReply, onReplyAndDispatch, onDispatchComment, canDispatchComments = false, undispatchedCount = 0, dispatchTargetLabel = null, onBatchDispatch, commentDispatching = false, commentDispatchNote = null, containerSelector = '.drawer-ticket', documentKey = '', documentTitle = '', bodyFormat = 'markdown', onEditBlock = null }) {
   const rootRef = React.useRef(null);
   const railRef = React.useRef(null);
   const listRef = React.useRef(null);
@@ -1017,9 +1017,13 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
   // inside TdAnnotate (it previously received pre-rendered HTML) so the
   // annotation engine operates on the live, sanitized DOM, and so mermaid
   // can be lazy-loaded against the injected nodes.
+  // GOL-326: render by the stored body_format — the body's first character
+  // never decides. HTML spec bodies re-sanitize defensively (SubstrateFmt).
   const html = React.useMemo(
-    () => (window.SubstrateFmt?.renderMarkdown ? window.SubstrateFmt.renderMarkdown(body) : (body || '')),
-    [body],
+    () => (window.SubstrateFmt?.renderBody
+      ? window.SubstrateFmt.renderBody(body, bodyFormat)
+      : (window.SubstrateFmt?.renderMarkdown ? window.SubstrateFmt.renderMarkdown(body) : (body || ''))),
+    [body, bodyFormat],
   );
 
   React.useEffect(() => {
@@ -1090,7 +1094,9 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
     if (lastHtmlRef.current !== html) {
       lastHtmlRef.current = html;
       root.innerHTML = html || '';
-      assignBlockIds(root);
+      // GOL-326 D3: HTML bodies carry server-persisted block ids — the browser
+      // must not strip or regenerate them. Markdown keeps its positional ids.
+      if (bodyFormat !== 'html') assignBlockIds(root);
       if (window.runMermaid) {
         const nodes = root.querySelectorAll('.mermaid');
         if (nodes.length) {
@@ -1124,7 +1130,7 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
     // block_id-anchored comments can match their block element. Marks from a
     // prior render are unwrapped after (they live inside blocks, not at the
     // top level, so they don't disturb the block-id walk).
-    assignBlockIds(root);
+    if (bodyFormat !== 'html') assignBlockIds(root);
     root.querySelectorAll('mark.anno').forEach((m) => { const p = m.parentNode; while (m.firstChild) p.insertBefore(m.firstChild, m); p.removeChild(m); });
     clearBlockAnnotationState(root);
     root.normalize();
@@ -1602,6 +1608,8 @@ React.useEffect(() => {
             onCancel={() => { setPendingComposer(null); setPendingReply(null); }}
             onClearAttachment={() => { setPendingComposer(null); setPendingReply(null); }}
             onEscape={closeRail}
+            canEditBlock={bodyFormat === 'html' && typeof onEditBlock === 'function'}
+            onEditBlock={onEditBlock}
           />
         </div>
       </div>
@@ -1985,7 +1993,7 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
   );
 }
 
-function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatch = false, dispatchLabel = 'Dispatch', onCancel, onClearAttachment, rail = false, autoFocus = true, focusToken = null, onEscape = null }) {
+function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatch = false, dispatchLabel = 'Dispatch', onCancel, onClearAttachment, rail = false, autoFocus = true, focusToken = null, onEscape = null, canEditBlock = false, onEditBlock = null }) {
   const [text, setText] = React.useState('');
   const [uploads, setUploads] = React.useState([]);
   const taRef = React.useRef(null);
@@ -2110,6 +2118,12 @@ function AnnoComposer({ quote, attachment, onSend, onSendAndDispatch, canDispatc
         <div className="anno-attachment-pill" title={attachment.title || attachment.id || 'Attached section'}>
           <span aria-hidden="true">{attachment.kind === 'reply' ? '↩ Reply' : attachment.kind === 'block' ? '⧉ Block' : '⧉ Section'}</span>
           {attachment.title && <span className="anno-attachment-title">· {attachment.title}</span>}
+          {/* GOL-326: for an HTML block the attachment pill also exposes the
+              block-scoped raw HTML editor (same patch endpoint as the CLI). */}
+          {canEditBlock && onEditBlock && attachment.kind === 'block' && attachment.id && (
+            <button type="button" className="anno-edit-block" title="Edit this block's raw HTML"
+              onClick={(e) => { e.stopPropagation(); onEditBlock(attachment.id); }}>Edit block</button>
+          )}
           {onClearAttachment && (
             <button type="button" aria-label={attachment.kind === 'reply' ? 'Remove reply reference' : attachment.kind === 'block' ? 'Remove block attachment' : 'Remove section attachment'} title={attachment.kind === 'reply' ? 'Remove reply reference' : attachment.kind === 'block' ? 'Remove block attachment' : 'Remove section attachment'} onClick={(e) => { e.stopPropagation(); onClearAttachment(); }}>×</button>
           )}

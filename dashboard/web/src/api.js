@@ -109,6 +109,9 @@
       setStatus('connecting');
       try {
         socket = new WebSocket(url);
+        // Test/debug hook: the browser journeys freeze live deltas by
+        // replacing socket.onmessage; keep the instance reachable.
+        try { window.SubstrateAPI.__lastSocket = socket; } catch { /* non-window */ }
       } catch (err) {
         setStatus('disconnected');
         scheduleReconnect();
@@ -270,6 +273,10 @@
     createTicket: (body) => postJSON('/api/tickets', body),
     getTicket: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}`),
     updateTicket: (id, patch) => patchJSON(`/api/tickets/${encodeURIComponent(id)}`, patch),
+    // GOL-326: html outline / block reads / atomic block patches (dashboard UI).
+    getTicketOutline: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}/outline`),
+    getTicketBlock: (id, blockId) => getJSON(`/api/tickets/${encodeURIComponent(id)}/blocks/${encodeURIComponent(blockId)}`),
+    patchTicketBlocks: (id, payload) => postJSON(`/api/tickets/${encodeURIComponent(id)}/block-patches`, payload),
     addComment: (id, body) => postJSON(`/api/tickets/${encodeURIComponent(id)}/comments`, body),
     dispatchComment: (commentId, body) => postJSON(`/api/comments/${encodeURIComponent(commentId)}/dispatch`, body),
     batchDispatchComments: (id, body) => postJSON(`/api/tickets/${encodeURIComponent(id)}/comments/batch-dispatch`, body),
