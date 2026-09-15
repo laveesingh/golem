@@ -168,6 +168,8 @@ let cliFirstMcpClient;
 let cliFirstMcpTransport;
 let mutantMcpClient;
 let mutantMcpTransport;
+let proxy = null;
+let proxyPort = null;
 let bridgeCaptureServer;
 let port;
 
@@ -1029,34 +1031,33 @@ async function main() {
   // GOL-335 D2: a trusted launch selection advertises the CLI-first surface.
   // Advertisement, server instructions, and direct-call rejection must agree,
   // and identity rejection keeps its precedence over the surface intercept.
-  // GOL-335 D2: a trusted launch selection advertises the CLI-first surface.
-  // Advertisement, server instructions, and direct-call rejection must agree,
-  // and identity rejection keeps its precedence over the surface intercept.
   // A counting proxy sits at the service boundary (it forwards every request
   // to the real isolated dashboard) so discovery/delivery requests are counted,
-  // not inferred from channel-event absence.
+  // not inferred from channel-event absence. Module-scoped handle so the outer
+  // finally can close it if main() aborts before its own cleanup.
   const proxyCounts = new Map();
   const countKey = (method, urlPath) => `${method} ${urlPath.split('?')[0]}`;
-  const proxy = http.createServer((req, res) => {
+  let proxyUpstream = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'dashboard.json'), 'utf8')).url.replace(/\/+$/, '');
+  proxy = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', async () => {
       proxyCounts.set(countKey(req.method, req.url), (proxyCounts.get(countKey(req.method, req.url)) || 0) + 1);
-      // Resolve the dashboard base per request; the proxy itself is what
-      // dashboard.json points at, so read the recorded url before overwrite.
-      const upstream = await fetch(`${dashboardUpstream}${req.url}`, {
-        method: req.method, headers: { ...req.headers, host: new URL(dashboardUpstream).host },
+      // A real fetch failure (upstream unreachable) must yield a bounded 502
+      // response object that satisfies the header/arrayBuffer reads below.
+      const upstream = await fetch(`${proxyUpstream}${req.url}`, {
+        method: req.method, headers: { ...req.headers, host: new URL(proxyUpstream).host },
         body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks),
-      }).catch((error) => ({ status: 502, text: async () => String(error) }));
+      }).catch((error) => new Response(`proxy upstream unreachable: ${error?.cause?.code ?? error}`, {
+        status: 502, headers: { 'content-type': 'text/plain' },
+      }));
       res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') || 'application/json' });
       res.end(Buffer.from(await upstream.arrayBuffer().catch(() => new Uint8Array())));
     });
   });
-  const dashboardUpstream = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'dashboard.json'), 'utf8')).url.replace(/\/+$/, '');
   await new Promise((resolve) => proxy.listen(0, HOST, resolve));
-  const proxyUrl = `http://127.0.0.1:${proxy.address().port}`;
-  const proxyShutdown = () => new Promise((resolve) => proxy.close(resolve));
-  fs.writeFileSync(path.join(tmpGolemHome, 'dashboard.json'), JSON.stringify({ url: proxyUrl }));
+  proxyPort = proxy.address().port;
+  fs.writeFileSync(path.join(tmpGolemHome, 'dashboard.json'), JSON.stringify({ url: `http://127.0.0.1:${proxyPort}` }));
   const cliFirstId = 'test-session-cli-first';
   const cliFirstEvents = [];
   const CliChannelNotificationSchema = z.object({
@@ -1240,6 +1241,23 @@ async function main() {
     try { await mutantMcpTransport?.close(); } catch { /* ignore */ }
     try { fs.rmSync(mutantDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
+
+  // Real failure/cleanup check on the proxy fixture itself: an unreachable
+  // upstream must yield the bounded 502 through the proxy, the failure must be
+  // counted, and closing must actually refuse new connections.
+  proxyUpstream = 'http://127.0.0.1:1'; // no listener on port 1
+  const failureResponse = await fetch(`http://127.0.0.1:${proxyPort}/api/health`);
+  check('proxy upstream failure yields the bounded 502 (real failure path exercised)',
+    failureResponse.status === 502, `status=${failureResponse.status}`);
+  check('proxy counted the failed request at the service boundary',
+    (proxyCounts.get('GET /api/health') || 0) >= 1, JSON.stringify([...proxyCounts]));
+  await new Promise((resolve) => proxy.close(resolve));
+  proxy = null;
+  const refusal = await fetch(`http://127.0.0.1:${proxyPort}/api/health`)
+    .then(() => 'still-open')
+    .catch((error) => error?.cause?.code ?? error?.code ?? 'closed');
+  check('proxy cleanup closes the listener (connection refused after close)',
+    refusal !== 'still-open', String(refusal));
 }
 
 main()
@@ -1263,7 +1281,7 @@ main()
     try { await unsupportedCcMcpTransport?.close(); } catch { /* ignore */ }
     try { uninitializedCcChild?.kill('SIGKILL'); } catch { /* ignore */ }
     try { await new Promise((resolve) => bridgeCaptureServer?.close(resolve) ?? resolve()); } catch { /* ignore */ }
-    try { await new Promise((resolve) => proxy?.close(resolve) ?? resolve()); } catch { /* ignore */ }
+    try { if (proxy) await new Promise((resolve) => proxy.close(resolve)); } catch { /* ignore */ }
     try { child?.kill('SIGKILL'); } catch { /* ignore */ }
     try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
     if (failures === 0) {
