@@ -1214,10 +1214,14 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
               {/* ── GOL-326: block-scoped raw HTML editor (attachment pill entry) ── */}
               {blockEdit && (
                 <div className="td-block-editor" data-testid="block-editor">
+                  {/* GOL-355: dedicated header layout — flex with the close control
+                      pushed right; the editor no longer reuses .drawer-close
+                      positioning semantics (which collided with the title). */}
                   <div className="td-block-editor-head">
                     <span className="td-block-editor-title">Edit block <code>{blockEdit.blockId}</code></span>
-                    {blockEdit.revision != null && <span className="td-block-editor-rev">document revision {blockEdit.revision}</span>}
-                    <button className="drawer-close" aria-label="Close block editor" onClick={() => setBlockEdit(null)}>×</button>
+                    <span className="td-block-editor-rev">document revision {blockEdit.revision}</span>
+                    <button className="td-block-editor-close" aria-label="Close block editor"
+                      title="Close block editor" onClick={() => setBlockEdit(null)}>×</button>
                   </div>
                   {blockEdit.error && <div className="ct-error" role="alert">{blockEdit.error}</div>}
                   <textarea

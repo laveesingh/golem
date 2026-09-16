@@ -188,6 +188,46 @@ try {
   // The draft queue appears with the recovery picker (no fallback target).
   const recovery = drawer.locator('[data-testid="comment-dispatch-recovery"]');
   await recovery.waitFor();
+  // ── GOL-355: Edit-block header bbox regression (1280 and 900 widths) ───────
+  const shotsDir = path.join(temp, 'screenshots');
+  fs.mkdirSync(shotsDir, { recursive: true });
+  for (const width of [1280, 900]) {
+    await page.setViewportSize({ width, height: 900 });
+    await drawer.locator('.td-md [data-block-id]').first().waitFor();
+    await drawer.locator('.td-md [data-block-id]').first().click();
+    const editBtn = drawer.locator('.anno-edit-block');
+    await editBtn.waitFor();
+    await editBtn.click();
+    const editorHead = drawer.locator('.td-block-editor-head');
+    await editorHead.waitFor();
+    const boxes = await editorHead.evaluate((head) => {
+      const headRect = head.getBoundingClientRect();
+      const title = head.querySelector('.td-block-editor-title').getBoundingClientRect();
+      const rev = head.querySelector('.td-block-editor-rev').getBoundingClientRect();
+      const close = head.querySelector('.td-block-editor-close').getBoundingClientRect();
+      const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) > 0
+        && Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)) > 0;
+      return {
+        head: { left: headRect.left, right: headRect.right },
+        title: { left: title.left, right: title.right, top: title.top, bottom: title.bottom },
+        rev: { left: rev.left, right: rev.right },
+        close: { left: close.left, right: close.right, top: close.top, bottom: close.bottom },
+        titleCloseOverlap: overlap(title, close),
+        revCloseOverlap: rev.width > 0 && overlap(rev, close),
+        closeInsideHead: close.left >= headRect.left && close.right <= headRect.right
+          && close.top >= headRect.top && close.bottom <= headRect.bottom,
+      };
+    });
+    check(`GOL-355 header bbox no-overlap at ${width}px`,
+      boxes.titleCloseOverlap === false && boxes.revCloseOverlap === false
+        && boxes.closeInsideHead,
+      JSON.stringify(boxes));
+    await drawer.locator('.td-block-editor').screenshot({ path: path.join(shotsDir, `gol355-editor-${width}.png`) });
+    await drawer.locator('.td-block-editor-close').click();
+    check(`GOL-355 close control works at ${width}px`,
+      (await drawer.locator('.td-block-editor').count()) === 0);
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
   // The dispatchable roster loads asynchronously; wait for the live session to
   // appear in the visible picker before judging it.
   await waitFor(async () => (await recovery.locator('select option').count()) > 1,

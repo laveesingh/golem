@@ -6764,3 +6764,51 @@ body.substrate-split-open { overflow: hidden; }
     padding: 14px 12px 36px;
   }
 }
+
+/* GOL-355: block editor header — flex layout so the title, revision label and
+   close control align without overlapping at any drawer width. Wrapping-safe:
+   long block ids wrap inside the title instead of colliding with the close. */
+.td-block-editor { display: flex; flex: 0 0 auto; flex-direction: column; gap: 8px; }
+.td-block-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.td-block-editor-title {
+  font-weight: 600;
+  color: var(--text-0);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+}
+.td-block-editor-head code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.td-block-editor-rev {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.td-block-editor-close {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-1);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+.td-block-editor-close:hover { background: var(--bg-3); color: var(--text-0); }
+.td-block-editor-preview {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  padding: 8px;
+  max-height: 200px;
+  overflow: auto;
+}
