@@ -906,7 +906,7 @@ function locateAnnotation(root, idx, ann) {
 // annotation rail and FAB portal into. The ticket drawer passes
 // `.drawer-ticket` (position:fixed); the standalone ticket page passes
 // `.ticket-page`. Defaults to `.drawer-ticket` for backward compatibility.
-function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateAndDispatch, onUpdate, onReply, onReplyAndDispatch, onDispatchComment, canDispatchComments = false, undispatchedCount = 0, dispatchTargetLabel = null, onBatchDispatch, commentDispatching = false, commentDispatchNote = null, containerSelector = '.drawer-ticket', documentKey = '', documentTitle = '', bodyFormat = 'markdown', onEditBlock = null }) {
+function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateAndDispatch, onUpdate, onReply, onReplyAndDispatch, onDispatchComment, canDispatchComments = false, undispatchedCount = 0, dispatchTargetLabel = null, onBatchDispatch, commentDispatching = false, commentDispatchNote = null, containerSelector = '.drawer-ticket', documentKey = '', documentTitle = '', bodyFormat = 'markdown', onEditBlock = null, dispatchTargets = [], selectedDispatchTarget = '', onSelectDispatchTarget = null, offlineAssigneeLabel = null }) {
   const rootRef = React.useRef(null);
   const railRef = React.useRef(null);
   const listRef = React.useRef(null);
@@ -1558,12 +1558,37 @@ React.useEffect(() => {
                     <div className="draft-queue-items">{drafts.map(renderComment)}</div>
                     {onBatchDispatch && (
                       <div className="draft-queue-foot">
+                        {/* GOL-353: with no live/selected recipient the target is
+                            NOT guessed — the picker is visible, the offline
+                            assignee is named, and Dispatch stays disabled until
+                            the human chooses an explicit live session. */}
+                        {!dispatchTargetLabel && (
+                          <div className="draft-queue-recovery" data-testid="comment-dispatch-recovery">
+                            {offlineAssigneeLabel && (
+                              <div className="draft-queue-offline">Assignee {offlineAssigneeLabel} is not a live recipient.</div>
+                            )}
+                            <div className="draft-queue-offline-hint">Pick a live recipient to dispatch comments:</div>
+                            {dispatchTargets.length > 0 ? (
+                              <select
+                                className="td-select draft-queue-picker"
+                                value={selectedDispatchTarget}
+                                onChange={(e) => onSelectDispatchTarget && onSelectDispatchTarget(e.target.value)}
+                                aria-label="Comment dispatch recipient"
+                              >
+                                <option value="">Pick a live session…</option>
+                                {dispatchTargets.map((t) => <option key={t.session_id} value={t.session_id}>{t.label}</option>)}
+                              </select>
+                            ) : (
+                              <div className="draft-queue-offline">No live session in this project.</div>
+                            )}
+                          </div>
+                        )}
                         <button
                           type="button"
                           className="rail-btn rail-dispatch-btn draft-queue-dispatch-btn"
                           onClick={onBatchDispatch}
-                          disabled={commentDispatching}
-                          title={dispatchTargetLabel ? `Dispatch all ${undispatchedCount} undispatched comment${undispatchedCount === 1 ? '' : 's'} to @${dispatchTargetLabel}` : `Dispatch all ${undispatchedCount} undispatched comment${undispatchedCount === 1 ? '' : 's'}`}
+                          disabled={commentDispatching || !dispatchTargetLabel}
+                          title={dispatchTargetLabel ? `Dispatch all ${undispatchedCount} undispatched comment${undispatchedCount === 1 ? '' : 's'} to @${dispatchTargetLabel}` : `Pick a live recipient first`}
                         >
                           {commentDispatching ? 'Dispatching…' : (dispatchTargetLabel ? `↗ Dispatch all to @${dispatchTargetLabel}` : `↗ Dispatch all (${undispatchedCount})`)}
                         </button>

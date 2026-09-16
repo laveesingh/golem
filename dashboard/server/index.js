@@ -1562,11 +1562,19 @@ async function main() {
     }
   });
 
+  // GOL-353: a LIVE assignee is the only implicit comment recipient. An
+  // offline/unreachable assignee is not selected at all (a doomed delivery
+  // would look like routing) — the caller must name an explicit live recipient.
   function commentDispatchTarget(ticket, body = {}) {
     const explicit = typeof body.session_id === 'string' && body.session_id.trim() ? body.session_id.trim() : null;
     if (explicit) return explicit;
     const assignee = typeof ticket?.assignee === 'string' && ticket.assignee.trim() ? ticket.assignee.trim() : null;
-    return assignee && assignee !== 'human' ? assignee : null;
+    if (!assignee || assignee === 'human') return null;
+    const native = state.nativeSessions().find((s) => s.session_id === assignee);
+    if (!native || native.alive === false) return null;
+    const channel = state.channels().find((c) => c.session_id === assignee) || null;
+    const { delivery_ready } = deriveSessionDelivery(native, channel);
+    return delivery_ready ? assignee : null;
   }
 
   function channelFailureDetail(channelResult) {

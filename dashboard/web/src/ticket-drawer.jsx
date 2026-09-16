@@ -253,10 +253,17 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
     if (!dispatchableLoaded) return true;
     return dispatchable.some((s) => s.session_id === assignee);
   }, [ticket?.assignee, dispatchable, dispatchableLoaded]);
-  const defaultCommentDispatchSession = assigneeIsLive
-    ? ticket.assignee
-    : (dispatchable.find((s) => s.session_id)?.session_id || '');
+  // GOL-353: a live assignee is the ONLY implicit comment recipient. When the
+  // assignee is offline, human, or unset, no fallback target is selected —
+  // the human reassigns the ticket or picks an explicit live recipient in the
+  // draft-queue picker (never an arbitrary first live session).
+  const defaultCommentDispatchSession = assigneeIsLive ? ticket.assignee : '';
   const selectedCommentDispatchSession = commentDispatchSession || defaultCommentDispatchSession;
+  // Offline/human/unassigned assignee, named for the recovery message: never
+  // hide the routing problem behind a generic Dispatch button.
+  const offlineAssigneeLabel = assigneeIsLive
+    ? null
+    : (!ticket?.assignee ? 'no assignee' : (ticket.assignee === 'human' ? 'you (human)' : `@${ticket.assignee} (offline)`));
   const undispatchedComments = React.useMemo(
     // Only open comments are dispatchable — resolved conversations and
     // soft-deleted (status='deleted') comments must not keep the bulk
@@ -1282,6 +1289,10 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                     onBatchDispatch={onBatchDispatchComments}
                     commentDispatching={commentDispatching}
                     commentDispatchNote={commentDispatchNote}
+                    dispatchTargets={dispatchable.map((s) => ({ session_id: s.session_id, label: s.label }))}
+                    selectedDispatchTarget={selectedCommentDispatchSession}
+                    onSelectDispatchTarget={(v) => setCommentDispatchSession(v)}
+                    offlineAssigneeLabel={offlineAssigneeLabel}
                     containerSelector={containerSelector}
                     documentKey={ticket.id}
                     documentTitle={ticket.title}
