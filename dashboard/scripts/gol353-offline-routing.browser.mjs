@@ -184,13 +184,53 @@ try {
   const composerTextarea = page.locator('.anno-composer textarea').first();
   await composerTextarea.waitFor();
   await composerTextarea.fill('browser-drafted feedback for the recovery path');
-  await composerTextarea.press('Enter');
+  // ── GOL-356: attachment pill bbox regression, drawer + full-screen ─────────
+  // (measured before Enter; the draft is submitted below)
+  // Measure the pill while it is attached to the open composer (before Enter).
+  const shotsDir = path.join(temp, 'screenshots');
+  fs.mkdirSync(shotsDir, { recursive: true });
+  const pillCheck = async (viewLabel) => {
+    for (const width of [1280, 900]) {
+      await page.setViewportSize({ width, height: 900 });
+      const pill = page.locator('.anno-attachment-pill').first();
+      await pill.waitFor();
+      await pill.locator('.anno-edit-block').waitFor();
+      const boxes = await pill.evaluate((p) => {
+        const pillRect = p.getBoundingClientRect();
+        const title = p.querySelector('.anno-attachment-title').getBoundingClientRect();
+        const edit = p.querySelector('.anno-edit-block').getBoundingClientRect();
+        const clear = p.querySelector('button:not(.anno-edit-block)').getBoundingClientRect();
+        const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) > 0
+          && Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)) > 0;
+        return {
+          title: { left: title.left, right: title.right },
+          edit: { left: edit.left, right: edit.right, width: edit.width },
+          clear: { left: clear.left, right: clear.right },
+          titleEditOverlap: overlap(title, edit),
+          editClearOverlap: overlap(edit, clear),
+          titleTruncated: getComputedStyle(p.querySelector('.anno-attachment-title')).textOverflow === 'ellipsis',
+          insidePill: edit.left >= pillRect.left && edit.right <= pillRect.right,
+        };
+      });
+      check(`GOL-356 pill bbox no-overlap (${viewLabel}, ${width}px)`,
+        boxes.titleEditOverlap === false && boxes.editClearOverlap === false
+          && boxes.titleTruncated && boxes.insidePill,
+        JSON.stringify(boxes));
+      await pill.screenshot({ path: path.join(shotsDir, `gol356-pill-${viewLabel}-${width}.png`) });
+    }
+  };
+  await pillCheck('drawer');
+
+  await drawer.locator('.td-md [data-block-id]').first().click();
+  const backComposer = page.locator('.anno-composer textarea').first();
+  await backComposer.waitFor();
+  await backComposer.fill('browser-drafted feedback for the recovery path');
+  await backComposer.press('Enter');
   // The draft queue appears with the recovery picker (no fallback target).
   const recovery = drawer.locator('[data-testid="comment-dispatch-recovery"]');
   await recovery.waitFor();
+
   // ── GOL-355: Edit-block header bbox regression (1280 and 900 widths) ───────
-  const shotsDir = path.join(temp, 'screenshots');
-  fs.mkdirSync(shotsDir, { recursive: true });
   for (const width of [1280, 900]) {
     await page.setViewportSize({ width, height: 900 });
     await drawer.locator('.td-md [data-block-id]').first().waitFor();
@@ -270,6 +310,16 @@ try {
     received.slice(receivedBeforePicker).every((r) => r.target_session_id === LIVE_ID)
       && browserDraftDelivered,
     JSON.stringify(deliveredTo));
+  // Full-screen ticket view serves the same composer — one fix covers both.
+  await page.evaluate((id) => {
+    window.history.replaceState(null, '', window.Router.buildHref({ kind: 'ticket', id, reader: true }));
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, created.id);
+  const ticketPage = page.locator('.ticket-page');
+  await ticketPage.waitFor();
+  await ticketPage.locator('.td-md [data-block-id]').first().click();
+  await page.locator('.anno-attachment-pill').first().waitFor();
+  await pillCheck('full-screen');
   check('no uncaught page errors during the journey', pageErrors.length === 0, JSON.stringify(pageErrors));
   console.log(failures === 0
     ? `GOL-353 offline routing journey passed: no fallback, visible recovery + picker, explicit exact-id dispatch; port=${port}`
