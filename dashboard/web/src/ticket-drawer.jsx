@@ -1219,7 +1219,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                       positioning semantics (which collided with the title). */}
                   <div className="td-block-editor-head">
                     <span className="td-block-editor-title">Edit block <code>{blockEdit.blockId}</code></span>
-                    <span className="td-block-editor-rev">document revision {blockEdit.revision}</span>
+                    {blockEdit.revision != null && <span className="td-block-editor-rev">document revision {blockEdit.revision}</span>}
                     <button className="td-block-editor-close" aria-label="Close block editor"
                       title="Close block editor" onClick={() => setBlockEdit(null)}>×</button>
                   </div>

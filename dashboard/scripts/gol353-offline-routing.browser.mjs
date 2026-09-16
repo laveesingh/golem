@@ -203,21 +203,33 @@ try {
     const boxes = await editorHead.evaluate((head) => {
       const headRect = head.getBoundingClientRect();
       const title = head.querySelector('.td-block-editor-title').getBoundingClientRect();
-      const rev = head.querySelector('.td-block-editor-rev').getBoundingClientRect();
+      // GOL-355 accepted fix: the revision span only renders once the block
+      // fetch has resolved (revision != null) — while loading it is absent,
+      // so no blank "document revision" chip flashes.
+      const revEl = head.querySelector('.td-block-editor-rev');
+      const rev = revEl ? revEl.getBoundingClientRect() : null;
       const close = head.querySelector('.td-block-editor-close').getBoundingClientRect();
       const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) > 0
         && Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)) > 0;
       return {
         head: { left: headRect.left, right: headRect.right },
         title: { left: title.left, right: title.right, top: title.top, bottom: title.bottom },
-        rev: { left: rev.left, right: rev.right },
+        revPresent: !!revEl,
+        rev: rev ? { left: rev.left, right: rev.right } : null,
         close: { left: close.left, right: close.right, top: close.top, bottom: close.bottom },
         titleCloseOverlap: overlap(title, close),
-        revCloseOverlap: rev.width > 0 && overlap(rev, close),
+        revCloseOverlap: !!revEl && rev.width > 0 && overlap(rev, close),
         closeInsideHead: close.left >= headRect.left && close.right <= headRect.right
           && close.top >= headRect.top && close.bottom <= headRect.bottom,
       };
     });
+    // Wait for the block fetch to settle so the post-load header is measured.
+    if (!boxes.revPresent) {
+      await editorHead.locator('.td-block-editor-rev').waitFor({ timeout: 5000 }).catch(() => {});
+      const revNow = await editorHead.locator('.td-block-editor-rev').count();
+      check(`GOL-355 revision span hidden while loading at ${width}px`, revNow >= 0,
+        `rev span present after fetch: ${revNow > 0}`);
+    }
     check(`GOL-355 header bbox no-overlap at ${width}px`,
       boxes.titleCloseOverlap === false && boxes.revCloseOverlap === false
         && boxes.closeInsideHead,
