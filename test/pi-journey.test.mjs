@@ -40,6 +40,25 @@ async function waitFor(predicate, message, timeoutMs = 15_000) {
   throw new Error(message);
 }
 
+// GOL-354: eventual-offline proof — an expired reload-grace lease is not
+// dispatch-eligible even though the fact stays non-terminal until expiry.
+async function checkExpiredLeases() {
+  const { readEndpointLeases } = await requireSessionFacts();
+  const live = readEndpointLeases();
+  const expired = readEndpointLeases({ includeExpired: true })
+    .filter((row) => !live.some((l) => l.owner_token === row.owner_token));
+  for (const row of expired) {
+    // An expired lease (reload never rebound) is honestly offline: excluded
+    // from the live set the dashboard/CLI projection uses.
+    assert.ok(Date.parse(row.expires_at) <= Date.now(), 'expired lease is past-due');
+  }
+  return expired.length;
+}
+let sessionFactsModule = null;
+async function requireSessionFacts() {
+  sessionFactsModule ||= import('../lib/session-facts.js');
+  return sessionFactsModule;
+}
 function readJson(file, fallback = null) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
@@ -391,7 +410,38 @@ async function main() {
   assert.equal((await halt.json()).accepted, true);
   await waitFor(() => harness.shutdown, 'halt did not shut down after its response boundary');
   await harness.emit('session_shutdown', { reason: 'reload' });
-  assert.equal(readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.some((row) => row.owner_token === lease.owner_token), false);
+  // GOL-354: an extension reload is a bounded handoff, not a stop. The lease is
+  // retained with a bounded grace TTL and the fact stays non-terminal
+  // ('reloading') so a running session never flashes offline/unbound.
+  const reloadFacts = readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts
+    .find((fact) => fact.canonical_id === sessionId);
+  assert.equal(reloadFacts.status, 'reloading');
+  assert.equal(reloadFacts.ended_at, null);
+  const reloadLease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json'))
+    .leases.find((row) => row.owner_token === lease.owner_token);
+  assert.ok(reloadLease, 'reload grace retains the endpoint lease');
+  const graceMs = Date.parse(reloadLease.expires_at) - Date.parse(reloadLease.renewed_at);
+  assert.ok(graceMs > 45_000 && graceMs <= 120_000, `reload grace bounded: ${graceMs}ms`);
+  // GOL-354 eventual offline: simulate the grace expiring with no rebind — the
+  // lease leaves the live set (not dispatch-eligible) while the fact stays
+  // non-terminal 'reloading' until expiry cleanup writes the truth.
+  const graceLeasesFile = path.join(env.GOLEM_HOME, 'endpoint-leases.json');
+  const graceRegistry = readJson(graceLeasesFile);
+  graceRegistry.leases = graceRegistry.leases.map((row) => (
+    row.owner_token === lease.owner_token ? { ...row, expires_at: new Date(Date.now() - 1_000).toISOString() } : row));
+  fs.writeFileSync(graceLeasesFile, JSON.stringify(graceRegistry));
+  const { readEndpointLeases } = await import('../lib/session-facts.js');
+  assert.equal(readEndpointLeases().some((row) => row.owner_token === lease.owner_token), false,
+    'expired reload-grace lease is not dispatch-eligible');
+  assert.equal(readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts
+    .find((f) => f.canonical_id === sessionId).status, 'reloading');
+  await checkExpiredLeases();
+  // Restore a live lease so the replacement adapter's reclaim below starts
+  // from the real pre-reload state.
+  graceRegistry.leases = graceRegistry.leases.map((row) => (
+    row.owner_token === lease.owner_token
+      ? { ...row, expires_at: new Date(Date.now() + 30_000).toISOString() } : row));
+  fs.writeFileSync(graceLeasesFile, JSON.stringify(graceRegistry));
 
   // Reload keeps canonical identity but receives a new endpoint lease. Fork is
   // a distinct canonical worker with previous-session lineage in its fact.
@@ -399,6 +449,31 @@ async function main() {
   await resumed.start();
   lease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === sessionId);
   assert.ok(lease && lease.owner_token);
+  // GOL-354: the replacement adapter reclaims the binding — the pre-reload
+  // owner's lease is pruned so CLI ancestry sees exactly one live lease.
+  const staleLeases = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json'))
+    .leases.filter((row) => row.canonical_id === sessionId && row.owner_token !== lease.owner_token);
+  assert.equal(staleLeases.length, 0, 'pre-reload lease reclaimed');
+  assert.equal(readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts.find((f) => f.canonical_id === sessionId).status, 'idle');
+  // CLI ancestry binding works after reload: resolveCliSessionContext with the
+  // reclaimed lease resolves exactly the canonical session (the resolver's own
+  // ancestry walk, same code path `golem session notify` and `golem ticket`
+  // use from a real Pi descendant).
+  const { resolveCliSessionContext } = await import('../lib/cli-session-context.js');
+  const reboundLeases = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases
+    .filter((row) => row.canonical_id === sessionId);
+  // A fresh native session carries no inherited identity hints; strip them so
+  // the binding comes from the reclaimed lease alone.
+  const { GOLEM_SESSION_ID: _g, GOLEM_CEO_SESSION_ID: _c, PI_SESSION_ID: _p, ...cleanEnv } = process.env;
+  const cliCtx = resolveCliSessionContext({
+    pid: process.pid,
+    env: cleanEnv,
+    readProcess: (pid) => ({ pid, ppid: 1, command: 'pi --profile test', startedAt: Date.now() - 60_000 }),
+    leases: reboundLeases,
+    facts: readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts,
+  });
+  assert.equal(cliCtx?.sessionId, sessionId, `CLI binding after rebind failed: ${JSON.stringify(cliCtx)}`);
+  assert.equal(cliCtx?.projectId != null, true, 'rebind binding carries the project');
   const forked = createHarness(extension, 'pi-native-fork', { reason: 'fork', previousSessionFile: path.join(temp, `${sessionId}.jsonl`) });
   await forked.start();
   const facts = readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts;
