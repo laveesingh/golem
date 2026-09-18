@@ -261,7 +261,12 @@ function ProviderOrbIcon({ model, provider: providerId, working = false }) {
   const iconSrc = working ? (provider.iconActiveSrc || provider.iconSrc) : (provider.iconIdleSrc || provider.iconSrc);
   return (
     <span className={`agent-model-icon provider-${provider.id || 'fallback'} ${working ? 'is-working' : 'is-idle'}`} role="img" title={`Model: ${providerLabel} — ${modelLabel}`} aria-label={`Model: ${providerLabel} — ${modelLabel}`}>
-      {iconSrc ? <img src={iconSrc} alt=""/> : (
+      {iconSrc ? (provider.iconReducedMotionSrc ? (
+        <picture style={{ display: 'contents' }}>
+          <source media="(prefers-reduced-motion: reduce)" srcSet={provider.iconReducedMotionSrc}/>
+          <img src={iconSrc} alt=""/>
+        </picture>
+      ) : <img src={iconSrc} alt=""/>) : (
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 20 8v8l-8 4.5L4 16V8l8-4.5Z" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M8.5 12h7M12 8.5v7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
       )}
     </span>

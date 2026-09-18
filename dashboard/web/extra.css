@@ -3510,11 +3510,14 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 }
 
 /* Tables — TKT-0208: 13.5px body + 8/12 cell padding breathe with the prose;
-   wide tables still scroll inside the column (display: block; overflow-x: auto). */
+   wide tables still scroll inside the column (display: block; overflow-x: auto).
+   GOL-316 D3: the 8px table padding makes the whole-table anchor holdable —
+   the ring (border + padding) is TABLE-owned space, rows stay row targets. */
 .td-md table {
   display: block; max-width: 100%; overflow-x: auto;
   width: 100%; border-collapse: collapse; margin: 14px 0;
   font-size: 13.5px; border: 1px solid var(--border-2); border-radius: var(--radius-2);
+  padding: 8px;
   overflow-wrap: break-word;
   word-break: normal;
 }
@@ -3693,17 +3696,6 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
   --anno-rail-gutter: 30px;
   --anno-fab-w: 52px;
 }
-#anno-pill {
-  position: absolute; z-index: 70; transform: translate(-50%, -100%);
-  display: none; align-items: center; gap: 6px;
-  background: var(--bg-2); border: 1px solid var(--border-2); border-radius: var(--radius-2);
-  padding: 6px 10px; box-shadow: var(--shadow-2);
-  font-family: var(--font-mono); font-size: 12px; color: var(--text-0);
-  cursor: pointer; user-select: none; white-space: nowrap;
-}
-#anno-pill:hover { border-color: var(--accent-border); }
-#anno-pill svg { width: 13px; height: 13px; }
-
 #anno-rail {
   position: absolute; top: 0; right: 0; height: 100%; width: var(--anno-rail-w); z-index: 65;
   min-height: 0; overflow: hidden;
@@ -4123,12 +4115,26 @@ mark.anno.anno-tail::after {
   border: 1px solid var(--accent-border); border-radius: 999px;
   font-family: var(--font-mono); font-size: 10px; line-height: 1.2;
 }
-.anno-attachment-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.anno-attachment-title {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--text-2);
+}
+/* GOL-356: the 16px icon box is for icon-only buttons (the × clear). The
+   'Edit block' text button gets its own chip sizing — a 16px box crushed its
+   text over the title and ×. */
 .anno-attachment-pill button {
   display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 2px;
   padding: 0; color: var(--text-3); background: transparent; border: 0; border-radius: 50%; cursor: pointer;
 }
-.anno-attachment-pill button:hover { color: var(--text-0); background: var(--bg-3); }
+.anno-attachment-pill button.anno-edit-block {
+  width: auto; height: auto; margin-left: 4px; padding: 2px 8px;
+  flex: 0 0 auto; white-space: nowrap;
+  border-radius: 999px; font-family: var(--font-mono); font-size: 10px; line-height: 1.2;
+  color: var(--accent); background: transparent; border: 1px solid var(--accent-border); cursor: pointer;
+}
+.anno-attachment-pill button.anno-edit-block:hover {
+  color: var(--text-0); background: var(--bg-3); border-color: var(--accent-border);
+}
 .anno-composer textarea {
   width: 100%; min-height: 60px; resize: vertical; box-sizing: border-box;
   background: var(--bg-0); border: 1px solid var(--border-2); border-radius: var(--radius-2);
@@ -4193,18 +4199,6 @@ mark.anno.anno-tail::after {
 #anno-save.saving { color: var(--status-review); }
 #anno-save.saved { color: var(--status-active); }
 #anno-save.err { color: var(--status-blocked); }
-
-/* Block-hover comment affordance. Position and visibility are set by the
-   annotation layer; the surface follows the active dashboard theme. */
-#anno-block-plus {
-  background: var(--bg-2);
-  border: 1px solid var(--border-2);
-  border-radius: var(--radius-1);
-  color: var(--text-0);
-  box-shadow: var(--shadow-1);
-}
-#anno-block-plus:hover { border-color: var(--accent-border); }
-#anno-block-plus .anno-block-count { color: var(--accent) !important; }
 
 /* Adjust drawer layout: body area hosts the annotation wrap. */
 .td-scroll { padding: 0; gap: 0; }
@@ -5392,9 +5386,7 @@ mark.anno.anno-tail::after {
   .spec-result-row,
   .drawer,
   #anno-rail,
-  #anno-pill,
   #anno-fab,
-  #anno-block-plus,
   .td-toc-panel,
   .anno-card
 ) {
@@ -6785,4 +6777,52 @@ body.substrate-split-open { overflow: hidden; }
   .substrate-split-preview {
     padding: 14px 12px 36px;
   }
+}
+
+/* GOL-355: block editor header — flex layout so the title, revision label and
+   close control align without overlapping at any drawer width. Wrapping-safe:
+   long block ids wrap inside the title instead of colliding with the close. */
+.td-block-editor { display: flex; flex: 0 0 auto; flex-direction: column; gap: 8px; }
+.td-block-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.td-block-editor-title {
+  font-weight: 600;
+  color: var(--text-0);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+}
+.td-block-editor-head code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.td-block-editor-rev {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.td-block-editor-close {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-1);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+.td-block-editor-close:hover { background: var(--bg-3); color: var(--text-0); }
+.td-block-editor-preview {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  padding: 8px;
+  max-height: 200px;
+  overflow: auto;
 }

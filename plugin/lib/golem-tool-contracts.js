@@ -39,21 +39,24 @@ const contracts = [
   },
   {
     name: 'ticket_create',
-    description: 'Golem tracker — create a ticket. Three doc types: `task` (the unit of work; default), `spec` (the living design doc), `doc` (a supporting page — research report, survey, comparison). The body is Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Pick the genre template matching the kind — task→feature, spec→spec (a doc needs no template) — from plugin/skills/tracker/templates/ or GET /api/templates, and fill it in. Defaults to your current project and records you as created_by. Use parent_id to hang tasks and supporting docs under their spec.',
+    description: 'Golem tracker — create a ticket. Three doc types: `task` (the unit of work; default), `spec` (the living design doc), `doc` (a supporting page — research report, survey, comparison). The body is Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions); an html body is spec-only — pass body_format "html" and the server sanitizes it and assigns stable block ids. Use the matching starting template — task→task, spec→spec, doc→doc — from GET /api/templates or substrate/skills/tracker/templates/ in the source checkout. Load golem:spec-writing for substantive spec authoring; adapt optional blocks to the current discussion. Defaults to your current project and records you as created_by. Use parent_id to hang tasks and supporting docs under their spec.',
     inputSchema: object({
-      title: string('Short imperative title.'), body: string('Full description / acceptance criteria. Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Pick the template matching the kind: task→feature, spec→spec (plugin/skills/tracker/templates/ or GET /api/templates).'),
+      title: string('Short imperative title.'), body: string('Full description / acceptance criteria. Markdown (+ fenced ```mermaid; GitHub-style > [!NOTE]/[!WARNING]/[!IMPORTANT] admonitions). Templates: task→task, spec→spec, doc→doc via GET /api/templates. Spec authoring follows golem:spec-writing; omit irrelevant blocks.'),
       kind: string('spec|task|doc (default task).'), priority: string('Optional priority label.'), state: string('todo|in_progress|blocked|review|done (default todo).'),
+      body_format: string('markdown (default) | html. html is spec-only; the server sanitizes and assigns stable block ids.'),
       parent_id: string('Optional parent display ticket id — hangs this ticket under a spec.'),
-      assignee: string('session_id | "human" | null.'), source_ref: string('Optional provenance link, e.g. "github:<owner>/<repo>#<N>" for a spec ingested from a GitHub issue (see golem:tracker § GitHub Bridge).'),
+      assignee: string('session_id | "human" | null.'), source_ref: string('Optional provenance link, e.g. "github:<owner>/<repo>#<N>" for a spec ingested from a GitHub issue (see golem:ingest-github-issues).'),
       project: string('Contract project_id. Defaults to your current project.'),
     }, ['title']),
   },
   {
     name: 'ticket_update',
-    description: 'Golem tracker — patch ticket metadata, including `state`: the single ticket lifecycle (todo → in_progress → review → done, plus blocked and archived). Every lifecycle move goes through this tool. The body field is Markdown (+ fenced ```mermaid). Records you as the actor.',
+    description: 'Golem tracker — patch ticket metadata, including `state`: the single ticket lifecycle (todo → in_progress → review → done, plus blocked and archived). Every lifecycle move goes through this tool. The body field is Markdown (+ fenced ```mermaid). For an html-bodied spec, a full-body write requires expected_revision — missing is rejected (400), stale returns 409 with the current revision/outline; prefer the `golem ticket patch-blocks` CLI for block edits, and body+expected_revision full replacement is the replace-body escape hatch. Records you as the actor.',
     inputSchema: object({
       id: string('Display ticket id, e.g. GOL-244. Legacy TKT refs still resolve.'), state: string('todo|in_progress|blocked|review|done|archived — the ticket lifecycle.'), title: string(),
-      body: string('Markdown body replacement (+ fenced ```mermaid; GitHub-style admonitions).'), kind: string('spec|task|doc'), priority: string(),
+      body: string('Markdown body replacement (+ fenced ```mermaid; GitHub-style admonitions). For an html-bodied ticket this requires expected_revision.'), kind: string('spec|task|doc'), priority: string(),
+      body_format: string('markdown | html. Required together with a complete body for an explicit format change.'),
+      expected_revision: { type: 'integer', description: 'Optimistic document revision (GOL-326 D4). Required for html body writes and format changes; stale values return 409 with the current revision/outline.' },
       labels: { type: 'array', items: { type: 'string' }, description: 'Full replacement label set.' }, parent_id: string('Parent display ticket id — hangs this ticket under a spec.'),
       assignee: string('session_id | "human" | null.'),
     }, ['id']),
@@ -103,6 +106,52 @@ const contracts = [
     inputSchema: object({}),
   },
 ];
+
+// Outbound tool surfaces. The full shared contract list is frozen compatibility
+// behavior; a launch/config-time selection may hide the outbound delivery and
+// discovery tools in favor of the golem CLI on harnesses that bind CLI caller
+// identity (Pi registration, Claude's rendered MCP launch). Selection comes
+// only from trusted launch configuration (GOLEM_TOOL_SURFACE / Pi registration),
+// never from model-authored arguments; absent selection stays compatibility.
+export const TOOL_SURFACES = Object.freeze({
+  compatibility: Object.freeze({ name: 'compatibility', omitted: Object.freeze([]) }),
+  'cli-first': Object.freeze({ name: 'cli-first', omitted: Object.freeze(['session_notify', 'sessions_dispatchable']) }),
+});
+
+export function resolveToolSurface(selection) {
+  if (selection == null || String(selection).trim() === '') return TOOL_SURFACES.compatibility;
+  const key = String(selection).trim();
+  const surface = TOOL_SURFACES[key];
+  if (!surface) {
+    throw new Error(`unknown Golem tool surface "${key}"; expected "compatibility" (default) or "cli-first" (GOLEM_TOOL_SURFACE)`);
+  }
+  return surface;
+}
+
+// CLI-first descriptions for contracts whose text or schema fields point at a
+// tool the surface omits; those references name `golem session list` instead.
+const CLI_FIRST_DESCRIPTIONS = Object.freeze({
+  ticket_dispatch: 'Golem tracker — dispatch a ticket to a live session: assigns the ticket and pushes a brief to it over the channel. Find live session ids with `golem session list` (see golem:team-ops). The target session must be a channel consumer (golemc) to receive the push. By default the brief is pushed immediately (mode "now"); pass when_idle:true to queue it until the target is idle — use this when the session is busy/waiting so the brief is not buried mid-turn.',
+  project_context: 'Re-render this session\'s ambient project context — role card, LSP, recently closed work as id+title pointers, and the last 40 commits. Live recipients are intentionally not boot context: run `golem session list` immediately before a new handoff. Returns pointers, never ticket bodies: pull those with ticket_get.',
+});
+
+export function toolsForSurface(surface) {
+  if (surface.name === 'compatibility') return GOLEM_TOOL_CONTRACTS;
+  const omitted = new Set(surface.omitted);
+  return GOLEM_TOOL_CONTRACTS
+    .filter((contract) => !omitted.has(contract.name))
+    .map((contract) => {
+      const description = CLI_FIRST_DESCRIPTIONS[contract.name] ?? contract.description;
+      const inputSchema = JSON.parse(JSON.stringify(contract.inputSchema, (key, value) => {
+        if (key === 'description' && typeof value === 'string') {
+          return value.replace(/\(from sessions_dispatchable\)/g, '(from `golem session list`)')
+            .replace(/Use sessions_dispatchable to find live session ids/g, 'Find live session ids with `golem session list`');
+        }
+        return value;
+      }));
+      return { ...contract, description, inputSchema };
+    });
+}
 
 export const RETIRED_GOLEM_TOOL_CONTRACTS = Object.freeze({
   subscriptions: 'Retired with passive handoffs; active delivery uses exact session_notify and tracker-backed dispatch.',

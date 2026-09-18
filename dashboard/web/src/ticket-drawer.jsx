@@ -253,10 +253,17 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
     if (!dispatchableLoaded) return true;
     return dispatchable.some((s) => s.session_id === assignee);
   }, [ticket?.assignee, dispatchable, dispatchableLoaded]);
-  const defaultCommentDispatchSession = assigneeIsLive
-    ? ticket.assignee
-    : (dispatchable.find((s) => s.session_id)?.session_id || '');
+  // GOL-353: a live assignee is the ONLY implicit comment recipient. When the
+  // assignee is offline, human, or unset, no fallback target is selected —
+  // the human reassigns the ticket or picks an explicit live recipient in the
+  // draft-queue picker (never an arbitrary first live session).
+  const defaultCommentDispatchSession = assigneeIsLive ? ticket.assignee : '';
   const selectedCommentDispatchSession = commentDispatchSession || defaultCommentDispatchSession;
+  // Offline/human/unassigned assignee, named for the recovery message: never
+  // hide the routing problem behind a generic Dispatch button.
+  const offlineAssigneeLabel = assigneeIsLive
+    ? null
+    : (!ticket?.assignee ? 'no assignee' : (ticket.assignee === 'human' ? 'you (human)' : `@${ticket.assignee} (offline)`));
   const undispatchedComments = React.useMemo(
     // Only open comments are dispatchable — resolved conversations and
     // soft-deleted (status='deleted') comments must not keep the bulk
@@ -386,7 +393,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
     try {
       const res = await window.SubstrateAPI.uploadAsset(file);
       setEditBodyUploads((u) => u.map((x) => x.id === id ? { ...x, status: 'done', url: res.url } : x));
-      return { id, md: `![](${res.url})`, url: res.url };
+      return { id, md: `![](${res.url})`, url: res.url, name: file.name || 'image.png' };
     } catch (err) {
       setEditBodyUploads((u) => u.map((x) => x.id === id ? { ...x, status: 'error', error: String(err?.message || err) } : x));
       throw err;
@@ -401,10 +408,13 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
     const cur = editBuf?.body ?? '';
     const before = textarea?.selectionStart ?? cur.length;
     const after = textarea?.selectionEnd ?? cur.length;
+    const format = ticket?.body_format || 'markdown';
     for (const f of files) {
       try {
-        const { md } = await uploadEditBodyOne(f);
-        const insert = `\n${md}\n`;
+        const { md, url, name } = await uploadEditBodyOne(f);
+        // GOL-326: Markdown bodies take Markdown image syntax; HTML bodies
+        // take a safe <figure><img> so the block pipeline normalizes it.
+        const insert = window.SubstrateFmt.imageMarkupFor(format, url, name);
         const next = cur.slice(0, before) + insert + cur.slice(after);
         setEditBuf({ ...editBuf, body: next });
         requestAnimationFrame(() => {
@@ -417,34 +427,108 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
         break;
       } catch (err) { /* error surfaced in uploads strip */ }
     }
-  }, [editBuf, uploadEditBodyOne]);
+  }, [editBuf, uploadEditBodyOne, ticket]);
 
   const onEditBodyDrop = React.useCallback(async (e) => {
     const files = collectImages(e.dataTransfer);
     if (files.length === 0) return;
     e.preventDefault();
+    const format = ticket?.body_format || 'markdown';
     for (const f of files) {
       try {
-        const { md } = await uploadEditBodyOne(f);
-        setEditBuf((buf) => buf ? { ...buf, body: (buf.body || '') + (buf.body?.endsWith('\n') ? '' : '\n') + md + '\n' } : buf);
+        const { url, name } = await uploadEditBodyOne(f);
+        const insert = window.SubstrateFmt.imageMarkupFor(format, url, name);
+        setEditBuf((buf) => buf ? { ...buf, body: (buf.body || '') + (buf.body?.endsWith('\n') ? '' : '\n') + insert } : buf);
       } catch (err) { /* surfaced in uploads strip */ }
     }
-  }, [uploadEditBodyOne]);
+  }, [uploadEditBodyOne, ticket]);
 
   const isEditBodyUploading = editBodyUploads.some((u) => u.status === 'uploading');
+
+  // GOL-326: the full-source editor labels the stored format and sends the
+  // optimistic revision for HTML bodies. A 409 keeps the draft intact and
+  // surfaces the current revision so the human can retry deliberately —
+  // never an automatic overwrite. The returned current revision is held
+  // LOCALLY (editExpectedRevision) and used for the retry: the draft and the
+  // stale store ticket never need a refresh for the human to recover (GOL-350).
+  const [editError, setEditError] = React.useState(null);
+  const [editExpectedRevision, setEditExpectedRevision] = React.useState(null);
 
   const onSaveEdit = React.useCallback(() => {
     if (!ticketId || !editBuf || isEditBodyUploading) return;
     setSaving(true);
-    window.SubstrateAPI.updateTicket(ticketId, { body: editBuf.body, actor: 'human' })
+    setEditError(null);
+    const html = (ticket?.body_format ?? 'markdown') === 'html';
+    const expected = html ? (editExpectedRevision ?? ticket.body_revision) : null;
+    const patch = { body: editBuf.body, actor: 'human', ...(expected != null ? { expected_revision: expected } : {}) };
+    window.SubstrateAPI.updateTicket(ticketId, patch)
       .then((updated) => {
         if (updated && updated.id) window.Store.upsertTrackerTicket(updated);
+        setEditExpectedRevision(null);
         setEditBuf(null);
         setEditBodyUploads([]);
         setSaving(false);
       })
-      .catch((err) => { console.error('save ticket failed', err); setSaving(false); });
-  }, [ticketId, editBuf, isEditBodyUploading]);
+      .catch((err) => {
+        console.error('save ticket failed', err);
+        setSaving(false);
+        if (err?.payload?.code === 'revision_conflict') {
+          // Draft preserved: keep editBuf exactly as the human left it, and
+          // carry the server's current revision for the explicit retry.
+          setEditExpectedRevision(err.payload.current_revision ?? null);
+          setEditError(`Revision conflict — the document moved to revision ${err.payload.current_revision}. Your draft is preserved; review and save again.`);
+        } else {
+          setEditError(err?.payload?.error || err?.message || 'Save failed');
+        }
+      });
+  }, [ticketId, editBuf, isEditBodyUploading, ticket, editExpectedRevision]);
+
+  // ── GOL-326: block-scoped raw HTML editor ─────────────────────────────────
+  // Entered from the comment composer's attachment pill (Edit block). Loads
+  // one block, previews it sanitized, and saves through the same
+  // POST /block-patches endpoint the CLI uses. A 409 keeps the draft and
+  // adopts the returned current revision for an explicit re-save.
+  const [blockEdit, setBlockEdit] = React.useState(null); // { blockId, html, revision, busy, error }
+  const blockPreviewRef = React.useRef(null);
+  const openBlockEditor = React.useCallback(async (blockId) => {
+    setBlockEdit({ blockId, html: '', revision: null, busy: true, error: null });
+    try {
+      const block = await window.SubstrateAPI.getTicketBlock(ticketId, blockId);
+      setBlockEdit({ blockId, html: block.html || '', revision: block.body_revision, busy: false, error: null });
+    } catch (err) {
+      setBlockEdit(null);
+      setFieldToast({ msg: `Cannot load block: ${err?.payload?.error || err?.message || err}`, id: Math.random() });
+      setTimeout(() => setFieldToast(null), 4000);
+    }
+  }, [ticketId]);
+  const onBlockEditSave = React.useCallback(() => {
+    if (!blockEdit || blockEdit.busy) return;
+    setBlockEdit((cur) => ({ ...cur, busy: true, error: null }));
+    window.SubstrateAPI.patchTicketBlocks(ticketId, {
+      expected_revision: blockEdit.revision,
+      operations: [{ op: 'replace', block_id: blockEdit.blockId, html: blockEdit.html }],
+      actor: 'human',
+    })
+      .then((result) => {
+        setBlockEdit(null);
+        if (result?.ticket_id) {
+          // The WS delta will refresh the store; also pull the outline-bearing
+          // update so the persisted ids render immediately.
+          window.SubstrateAPI.getTicket(ticketId).then((t) => { if (t && t.id) window.Store.upsertTrackerTicket(t); }).catch(() => {});
+        }
+      })
+      .catch((err) => {
+        if (err?.payload?.code === 'revision_conflict') {
+          // Draft preserved; adopt the returned current revision for an
+          // explicit retry. Never an automatic overwrite.
+          setBlockEdit((cur) => ({ ...cur, busy: false,
+            revision: err.payload.current_revision ?? cur.revision,
+            error: `Revision conflict — document is now at revision ${err.payload.current_revision}. Your draft is preserved; save again to apply it to the current revision.` }));
+        } else {
+          setBlockEdit((cur) => ({ ...cur, busy: false, error: err?.payload?.error || err?.message || 'Save failed' }));
+        }
+      });
+  }, [ticketId, blockEdit]);
 
   // Editing has a fixed bottom action bar outside .td-scroll. Measure only the
   // direct layout landmarks (not every nested field) so the editor follows the
@@ -1076,7 +1160,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                   )}
                   <button
                     className="orch-btn small ghost td-edit-btn"
-                    onClick={() => setEditBuf({ body: ticket.body || '' })}
+                    onClick={() => { setEditExpectedRevision(null); setEditError(null); setEditBuf({ body: ticket.body || '' }); }}
                     title="Edit body"
                   >
                     Edit
@@ -1098,7 +1182,26 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                       {assigneeIcon
                         ? <span className="by-avatar by-avatar-icon"><img src={assigneeIcon} alt=""/></span>
                         : <span className={`by-avatar ${isHuman ? 'human' : ''}`} aria-hidden="true">{initials}</span>}
-                      <span>Assigned to <strong>{label}</strong></span>
+                      {/* GOL-316 D1: the byline assignee is a working PopSelect
+                          reusing the drawer's options builder + commitField —
+                          edit where you read. Same component and commit path
+                          as the drawer, no second options fetch (options load
+                          in the reader too, app.jsx open={true}). */}
+                      <span>Assigned to</span>
+                      <PopSelect
+                        value={ticket.assignee || ''}
+                        placeholder="Unassigned"
+                        searchable
+                        compact
+                        options={window.AssigneeOptions.buildAssigneeOptions({
+                          sessions: dispatchable,
+                          liveStatus: new Map(nativeSessionsNow.filter((s) => s.session_id).map((s) => [s.session_id, s.status ?? null])),
+                          offline: (ticket.assignee && ticket.assignee !== 'human' && !labelBySession.has(ticket.assignee))
+                            ? [{ value: ticket.assignee, label: ticket.assignee_label || `session ${String(ticket.assignee).slice(0, 8)}`, hint: 'offline' }]
+                            : [],
+                        })}
+                        onChange={(v) => commitField({ assignee: v || null })}
+                      />
                       <span className="byline-dot" aria-hidden="true" />
                       <span className={`pill ${statePill}`}>{ticket.state}</span>
                       <span className="pill td-kind-pill" data-kind={ticket.kind}>{ticket.kind}</span>
@@ -1107,6 +1210,38 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                   );
                 })()}
               </div>
+
+              {/* ── GOL-326: block-scoped raw HTML editor (attachment pill entry) ── */}
+              {blockEdit && (
+                <div className="td-block-editor" data-testid="block-editor">
+                  {/* GOL-355: dedicated header layout — flex with the close control
+                      pushed right; the editor no longer reuses .drawer-close
+                      positioning semantics (which collided with the title). */}
+                  <div className="td-block-editor-head">
+                    <span className="td-block-editor-title">Edit block <code>{blockEdit.blockId}</code></span>
+                    {blockEdit.revision != null && <span className="td-block-editor-rev">document revision {blockEdit.revision}</span>}
+                    <button className="td-block-editor-close" aria-label="Close block editor"
+                      title="Close block editor" onClick={() => setBlockEdit(null)}>×</button>
+                  </div>
+                  {blockEdit.error && <div className="ct-error" role="alert">{blockEdit.error}</div>}
+                  <textarea
+                    className="td-edit-body orch-modal-textarea"
+                    rows={6}
+                    value={blockEdit.html}
+                    onChange={(e) => setBlockEdit((cur) => ({ ...cur, html: e.target.value }))}
+                    placeholder="<section>…raw HTML for this block…</section>"
+                    disabled={blockEdit.busy}
+                  />
+                  <div className="td-block-editor-preview" ref={blockPreviewRef}
+                    dangerouslySetInnerHTML={{ __html: window.SubstrateFmt.renderBody(blockEdit.html, 'html') }} />
+                  <div className="row">
+                    <button className="orch-btn ghost" onClick={() => setBlockEdit(null)} disabled={blockEdit.busy}>Cancel</button>
+                    <button className="orch-btn primary" onClick={onBlockEditSave} disabled={blockEdit.busy}>
+                      {blockEdit.busy ? 'Saving…' : 'Save block'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* ── Body — read (TdAnnotate) or edit (TKT-0233: body-only) ── */}
               <div className="td-body-area">
@@ -1122,8 +1257,9 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                       onDrop={onEditBodyDrop}
                       onDragOver={(e) => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); }}
                       onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditBuf(null); setEditBodyUploads([]); } }}
-                      placeholder="Body (Markdown) — plain text auto-wraps into paragraphs (paste/drop images)"
+                      placeholder={(ticket?.body_format === 'html' ? "Body (HTML) — full source; saves through the revision gate (paste/drop images)" : "Body (Markdown) — plain text auto-wraps into paragraphs (paste/drop images)")}
                     />
+                    {editError && <div className="ct-error" role="alert">{editError}</div>}
                     {editBodyUploads.length > 0 && (
                       <div className="ct-uploads">
                         {editBodyUploads.map((u) => (
@@ -1141,6 +1277,8 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                 ) : ticket.body ? (
                   <TdAnnotate
                     body={ticket.body}
+                    bodyFormat={ticket.body_format || 'markdown'}
+                    onEditBlock={openBlockEditor}
                     comments={comments}
                     currentAuthor="you"
                     onCreate={onAddComment}
@@ -1155,6 +1293,10 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                     onBatchDispatch={onBatchDispatchComments}
                     commentDispatching={commentDispatching}
                     commentDispatchNote={commentDispatchNote}
+                    dispatchTargets={dispatchable.map((s) => ({ session_id: s.session_id, label: s.label }))}
+                    selectedDispatchTarget={selectedCommentDispatchSession}
+                    onSelectDispatchTarget={(v) => setCommentDispatchSession(v)}
+                    offlineAssigneeLabel={offlineAssigneeLabel}
                     containerSelector={containerSelector}
                     documentKey={ticket.id}
                     documentTitle={ticket.title}

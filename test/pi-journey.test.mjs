@@ -40,6 +40,25 @@ async function waitFor(predicate, message, timeoutMs = 15_000) {
   throw new Error(message);
 }
 
+// GOL-354: eventual-offline proof — an expired reload-grace lease is not
+// dispatch-eligible even though the fact stays non-terminal until expiry.
+async function checkExpiredLeases() {
+  const { readEndpointLeases } = await requireSessionFacts();
+  const live = readEndpointLeases();
+  const expired = readEndpointLeases({ includeExpired: true })
+    .filter((row) => !live.some((l) => l.owner_token === row.owner_token));
+  for (const row of expired) {
+    // An expired lease (reload never rebound) is honestly offline: excluded
+    // from the live set the dashboard/CLI projection uses.
+    assert.ok(Date.parse(row.expires_at) <= Date.now(), 'expired lease is past-due');
+  }
+  return expired.length;
+}
+let sessionFactsModule = null;
+async function requireSessionFacts() {
+  sessionFactsModule ||= import('../lib/session-facts.js');
+  return sessionFactsModule;
+}
 function readJson(file, fallback = null) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
@@ -260,7 +279,11 @@ async function main() {
   const instructionsTitle = renderedInstructions.split('\n').find((line) => line.trim().length > 0).trim();
   assert.ok(prompt.systemPrompt.includes(instructionsTitle), 'Golem instructions are injected without a Pi profile file');
   assert.match(prompt.systemPrompt, /Role: builder/, 'role truth is read at the safe turn boundary');
-  assert.match(prompt.systemPrompt, /Recent commits:/, 'bounded shipped L4 context is injected');
+  assert.match(prompt.systemPrompt, /Recent commits(?: \(\d+ of \d+\))?:/, 'bounded shipped L4 context is injected, including its budget-truncated header');
+  assert.ok(prompt.systemPrompt.includes(execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()), 'L4 includes a real recent commit, not only a heading');
+  assert.match(prompt.systemPrompt, /lead personally surveys code and grounds scope and design/);
+  assert.match(prompt.systemPrompt, /follow the assigned role card/);
+  assert.ok(fs.existsSync(path.join(discovered.skillPaths[0], 'spec-writing', 'SKILL.md')), 'the discovered skill pool includes spec-writing');
   let lease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === sessionId);
   assert.equal(lease.kind, 'typed-worker');
   assert.equal(lease.delivery_ready, true);
@@ -387,7 +410,38 @@ async function main() {
   assert.equal((await halt.json()).accepted, true);
   await waitFor(() => harness.shutdown, 'halt did not shut down after its response boundary');
   await harness.emit('session_shutdown', { reason: 'reload' });
-  assert.equal(readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.some((row) => row.owner_token === lease.owner_token), false);
+  // GOL-354: an extension reload is a bounded handoff, not a stop. The lease is
+  // retained with a bounded grace TTL and the fact stays non-terminal
+  // ('reloading') so a running session never flashes offline/unbound.
+  const reloadFacts = readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts
+    .find((fact) => fact.canonical_id === sessionId);
+  assert.equal(reloadFacts.status, 'reloading');
+  assert.equal(reloadFacts.ended_at, null);
+  const reloadLease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json'))
+    .leases.find((row) => row.owner_token === lease.owner_token);
+  assert.ok(reloadLease, 'reload grace retains the endpoint lease');
+  const graceMs = Date.parse(reloadLease.expires_at) - Date.parse(reloadLease.renewed_at);
+  assert.ok(graceMs > 45_000 && graceMs <= 120_000, `reload grace bounded: ${graceMs}ms`);
+  // GOL-354 eventual offline: simulate the grace expiring with no rebind — the
+  // lease leaves the live set (not dispatch-eligible) while the fact stays
+  // non-terminal 'reloading' until expiry cleanup writes the truth.
+  const graceLeasesFile = path.join(env.GOLEM_HOME, 'endpoint-leases.json');
+  const graceRegistry = readJson(graceLeasesFile);
+  graceRegistry.leases = graceRegistry.leases.map((row) => (
+    row.owner_token === lease.owner_token ? { ...row, expires_at: new Date(Date.now() - 1_000).toISOString() } : row));
+  fs.writeFileSync(graceLeasesFile, JSON.stringify(graceRegistry));
+  const { readEndpointLeases } = await import('../lib/session-facts.js');
+  assert.equal(readEndpointLeases().some((row) => row.owner_token === lease.owner_token), false,
+    'expired reload-grace lease is not dispatch-eligible');
+  assert.equal(readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts
+    .find((f) => f.canonical_id === sessionId).status, 'reloading');
+  await checkExpiredLeases();
+  // Restore a live lease so the replacement adapter's reclaim below starts
+  // from the real pre-reload state.
+  graceRegistry.leases = graceRegistry.leases.map((row) => (
+    row.owner_token === lease.owner_token
+      ? { ...row, expires_at: new Date(Date.now() + 30_000).toISOString() } : row));
+  fs.writeFileSync(graceLeasesFile, JSON.stringify(graceRegistry));
 
   // Reload keeps canonical identity but receives a new endpoint lease. Fork is
   // a distinct canonical worker with previous-session lineage in its fact.
@@ -395,6 +449,31 @@ async function main() {
   await resumed.start();
   lease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === sessionId);
   assert.ok(lease && lease.owner_token);
+  // GOL-354: the replacement adapter reclaims the binding — the pre-reload
+  // owner's lease is pruned so CLI ancestry sees exactly one live lease.
+  const staleLeases = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json'))
+    .leases.filter((row) => row.canonical_id === sessionId && row.owner_token !== lease.owner_token);
+  assert.equal(staleLeases.length, 0, 'pre-reload lease reclaimed');
+  assert.equal(readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts.find((f) => f.canonical_id === sessionId).status, 'idle');
+  // CLI ancestry binding works after reload: resolveCliSessionContext with the
+  // reclaimed lease resolves exactly the canonical session (the resolver's own
+  // ancestry walk, same code path `golem session notify` and `golem ticket`
+  // use from a real Pi descendant).
+  const { resolveCliSessionContext } = await import('../lib/cli-session-context.js');
+  const reboundLeases = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases
+    .filter((row) => row.canonical_id === sessionId);
+  // A fresh native session carries no inherited identity hints; strip them so
+  // the binding comes from the reclaimed lease alone.
+  const { GOLEM_SESSION_ID: _g, GOLEM_CEO_SESSION_ID: _c, PI_SESSION_ID: _p, ...cleanEnv } = process.env;
+  const cliCtx = resolveCliSessionContext({
+    pid: process.pid,
+    env: cleanEnv,
+    readProcess: (pid) => ({ pid, ppid: 1, command: 'pi --profile test', startedAt: Date.now() - 60_000 }),
+    leases: reboundLeases,
+    facts: readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts,
+  });
+  assert.equal(cliCtx?.sessionId, sessionId, `CLI binding after rebind failed: ${JSON.stringify(cliCtx)}`);
+  assert.equal(cliCtx?.projectId != null, true, 'rebind binding carries the project');
   const forked = createHarness(extension, 'pi-native-fork', { reason: 'fork', previousSessionFile: path.join(temp, `${sessionId}.jsonl`) });
   await forked.start();
   const facts = readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts;
@@ -406,28 +485,27 @@ async function main() {
   await resumed.emit('session_shutdown', { reason: 'quit' });
   await forked.emit('session_shutdown', { reason: 'quit' });
 
-  // Crash before correlated agent_start releases the exact claim for replay.
+  // Queue admission already crossed native invocation. Even before correlated
+  // agent_start, shutdown/restart must preserve uncertainty and first lineage.
   const preCrashId = 'pi-preaccept-crash';
   const preCrash = createHarness(extension, preCrashId);
   await preCrash.start();
   let preCrashLease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === preCrashId);
   const preCrashResponse = postLease(preCrashLease, typedEnvelope(preCrashId, 'precrash', 'retry after preaccept crash', 'brief', 'pre-attempt-a'));
   await waitFor(() => preCrash.sent.length === 1, 'pre-crash injection did not start');
-  // Issue #34: queued-accept answers immediately with lifecycle 'claimed';
-  // a shutdown before pickup still releases the exact claim for replay below.
+  // Queued-accept answers with lifecycle 'claimed', but that is NOT proof
+  // native input was never invoked. The old replay expectation was unsafe.
   assert.equal((await preCrashResponse).status, 200);
   await preCrash.emit('session_shutdown', { reason: 'quit' });
   const preCrashRestart = createHarness(extension, preCrashId, { reason: 'resume' });
   await preCrashRestart.start();
   preCrashLease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === preCrashId);
-  const preRetry = postLease(preCrashLease, typedEnvelope(preCrashId, 'precrash', 'retry after preaccept crash', 'brief', 'pre-attempt-b'));
-  await waitFor(() => preCrashRestart.sent.length === 1, 'pre-crash retry did not inject');
-  await preCrashRestart.emit('input', { source: 'extension', text: 'retry after preaccept crash' });
-  preCrashRestart.setIdle(false);
-  await preCrashRestart.emit('agent_start', {});
-  assert.equal((await (await preRetry).json()).accepted_attempt_id, 'pre-attempt-b');
-  preCrashRestart.setIdle(true);
-  await preCrashRestart.emit('agent_settled', {});
+  const preRetry = await postLease(preCrashLease, typedEnvelope(preCrashId, 'precrash', 'retry after preaccept crash', 'brief', 'pre-attempt-b'));
+  const preRetryBody = await preRetry.json();
+  assert.equal(preRetryBody.delivery_state, 'recovery_required');
+  assert.equal(preRetryBody.accepted_attempt_id, 'pre-attempt-a', 'first queued acceptance lineage is immutable');
+  assert.equal(preCrashRestart.sent.length, 0, 'uncertain pre-start handoff is not injected again');
+  assert.equal(preCrashLease.delivery_ready, false);
   await preCrashRestart.emit('session_shutdown', { reason: 'quit' });
 
   // Crash after acceptance freezes the first attempt as recovery-required. A

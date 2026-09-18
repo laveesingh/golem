@@ -8,6 +8,24 @@ This directory is the golem root: the source repo for the **golem v4 Claude Code
 the tail before starting anything non-trivial; append at spec close only when a future session
 working on something else would be wrong without the record. Swept via `golem:docs-maintenance`.
 
+## Primary goal: greenfield quality through brownfield slices
+
+Keep Golem usable while improving one complete, bounded behavior at a time. Use the existing
+spec-driven workflow, not a parallel analysis process.
+
+Before changing a slice, the lead grounds its concepts and ownership (ontology), dependencies
+and failure paths (topology), and affected consumers. Agree scope, desired boundaries, behavior
+changes, and exclusions with the human. Rewrite where justified; remove superseded paths and
+repair the affected consumers together. The boy-scout rule applies inside that agreed scope,
+not as permission for unrelated cleanup.
+
+Protect the result with isolated, repeatable behavior and failure tests plus real integration
+checks. Passing local tests must not hide broken consumers or untested behavior.
+
+Pi and Claude Code are the active priorities. Codex/OpenCode integration removal is separate
+work; do not remove their code or provider access as incidental cleanup. The greenfield PRD is
+paused. Document/editor redesign is separate from this instruction work.
+
 ## Layout
 
 | What | Where |
@@ -63,8 +81,8 @@ See `substrate/README.md` for the channel-consumer launch (`golemc`) and the ful
 
 ## Work Choreography
 
-The `lead` owns a workstream end to end and delegates per `golem:lead`
-§ Sequence and Delegation Protocol; builders, explorers, and reviewers work
+The `lead` owns a workstream end to end per `golem:lead`;
+builders, explorers, and reviewers work
 dispatched tickets and report back — durable report on the ticket first, then
 `session_notify` to the delegating session. Specs, tasks, and docs live in the
 tracker (`golem:tracker`); `state` is the single lifecycle. The event ledger is

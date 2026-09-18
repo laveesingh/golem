@@ -1,67 +1,65 @@
 # REPO-MAP.md
-> Last verified: 2026-08-27 @ a18bb6c — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-16 @ 03f0631 (GOL-353/354) — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
-- `cli/` — the `golem` entry point and command dispatch.
-- `lib/` — shared runtime, role, compiler, delivery, and harness helpers.
-- `substrate/` — canonical instructions, roles, skills, hooks, and Claude plugin sources.
-- `plugin/` — generated CC round-trip and rollback copy; never hand-edit it.
-- `dashboard/server/` — Fastify API and tracker single writer.
-- `dashboard/web/` — dashboard UI; output is `dashboard/dist/`.
-- `mcp/channel/` — tracker MCP server and dashboard REST client.
+- `cli/` — CLI entry points and command dispatch.
+- `lib/` — shared runtime, compiler, delivery, and harness helpers.
+- `substrate/` — instruction, role, skill, hook, and plugin sources.
+- `plugin/` — generated CC rollback copy; never hand-edit.
+- `dashboard/` — Fastify tracker/API, web source, and built UI.
+- `mcp/channel/` — tracker MCP server and REST client.
 - `shims/` — Codex hook, OpenCode bridge, and Pi extension.
 
-## Key modules and entry points
+## Key modules & entry points
 
-### `cli/golem.js`
-- Implements `dashboard`, `doctor`, `status`, `sync`, `role`, harness launchers,
-  worker commands, and home migration.
+### CLI and collaboration
 
-### `lib/session-role.js`
-- Source of built-in roles: `lead`, `builder`, `explorer`, `reviewer`.
-- Retired names are migration input only; they are not current role choices.
+`cli/golem.js` owns launch, worker, dashboard, sync, and diagnostic verbs.
+`cli/collaboration.js` owns session discovery, notify, inspection, and schedules.
+`cli/ticket.js` owns flat `golem ticket` authoring over tracker REST.
+`lib/session-role.js` owns role definitions; retired names are migration input only.
 
-### `dashboard/server/`
-- `index.js` exposes REST/WebSocket routes, including `/api/native-sessions/:sessionId/terminal` for live worker scrollback and `/api/native-sessions/:sessionId/message` for mid-turn steer/brief dispatch.
-- `tracker-db.js` owns persistence; `comment-dispatch.js` owns comment dispatch.
-  Agents use API/MCP, never direct database writes.
-- Ticket lifecycle is the `state` field: `todo`, `in_progress`, `blocked`,
-  `review`, `done`, or `archived`.
+### Instructions
 
-### `lib/compiler/`
-- Renders `substrate/` into harness outputs with lockfiles, drift checks,
-  tamper detection, and orphan pruning.
+`substrate/skills/spec-driven-development/` owns the reusable spec method. `lead/` owns
+orchestration and grounding; `spec-writing/` authors specs; `tracker/` owns records, templates,
+and ticket CLI guidance; `team-ops/` owns team operations and reminders.
 
-### `lib/typed-worker-endpoint.js`
-- Shared authenticated envelope protocol for typed Codex and Pi delivery.
+### Dashboard
+
+`dashboard/server/index.js` exposes REST/WebSocket routes. `tracker-db.js` owns persistence;
+`html-body.js` owns HTML sanitization, stable `data-block-id` values, and atomic block edits.
+`notification-schedules.js` and `notification-schedule-runtime.js` own durable schedules;
+`comment-dispatch.js` routes feedback. Agents use API/CLI/MCP, never SQLite directly. Ticket
+`state` is the lifecycle; explicit `body_format` and monotonic `body_revision` gate HTML writes.
+
+### Compiler and delivery
+
+`lib/compiler/` renders substrate with drift/tamper checks and orphan pruning.
+`lib/typed-worker-endpoint.js` owns the authenticated Codex/Pi envelope protocol.
 
 ## Data flow
 
-Hooks and shims register projects and sessions under `~/.golem/`. The dashboard
-reads those registries, owns tracker writes, and routes validated dispatch to a
-native channel or typed endpoint.
+Hooks/shims register projects and sessions under `~/.golem/`. The dashboard reads those
+registries, owns tracker writes, and dispatches to native channels or typed endpoints.
 
-## Constraints and gotchas
+## Constraints & gotchas
 
-- `AGENTS.md` is the project instruction source; `CLAUDE.md` imports it. Edit
-  canonical sources, not compatibility or generated copies.
-- `substrate/` is authoritative; renders are install output. Claude uses
-  `~/.golem/renders/`; committed `plugin/` is rollback.
-- OpenCode is bound to this checkout: its config contains absolute paths to the
-  MCP server and `shims/opencode/index.js`.
-- Separately launched Codex is pull-only. `golem codex` is the managed private
-  bridge and is version-gated. Pi is a typed Tier-A worker and requires Node.js
-  22.19+ with Pi 0.84.3.
-- Mutable state belongs outside the repository under `~/.golem/`; do not commit
-  journals, tracker databases, credentials, or generated runtime state.
+- Project rules come from `AGENTS.md`; shared rules come from `substrate/`, never renders.
+- Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
+- OpenCode remains checkout-bound through absolute shim/MCP paths.
+- Standalone Codex is pull-only; managed `golem codex` is version-gated.
+- Supported Pi worker version is 0.85.1 with Node.js 22.19+.
+- Runtime state, credentials, and journals stay outside the repository.
 
 ## Common tasks
 
-| Task | Files | Verify with |
-|------|-------|-------------|
-| CLI or runtime | `cli/`, `lib/` | `node cli/golem.js help` |
-| Substrate/render | `substrate/`, `lib/compiler/` | `golem sync --check --all` |
-| Dashboard | `dashboard/server/`, `dashboard/web/` | `npm run check:dashboard` |
-| Harness delivery | `mcp/channel/`, `shims/`, `lib/typed-worker-endpoint.js` | `node test/cross-harness-matrix.test.mjs` |
-| Any change | affected files | `git diff --check` |
+| Work | Check |
+|---|---|
+| CLI | `node cli/golem.js help` |
+| Instructions/templates | `node test/instruction-workflow.test.mjs` |
+| Installed render drift | `golem sync --check --all` |
+| Dashboard | `npm run check:dashboard` |
+| Collaboration | `npm run test:collaboration` |
+| Any diff | `git diff --check` |

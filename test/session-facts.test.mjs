@@ -41,6 +41,11 @@ assert.deepEqual(fs.readFileSync(corruptFacts), corruptBytes, 'malformed registr
 const projected = upsertSessionFact({ canonical_id: 'unprobed', harness: 'opencode', locator: { raw_session_id: 'unprobed' }, project_path: process.cwd(), status: 'idle' });
 renewEndpointLease({ canonical_id: projected.canonical_id, owner_token: 'unprobed-owner', host: '127.0.0.1', port: 9 });
 const { readNativeSessions } = await import('../dashboard/server/native-sessions.js');
+const backgroundProjection = (await readNativeSessions(() => true, [], { cliRaw: [{
+  sessionId: 'background-projection', pid: process.pid, cwd: process.cwd(), kind: 'background',
+  status: 'idle', startedAt: Date.now(),
+}] })).find((row) => row.session_id === 'background-projection');
+assert.equal(backgroundProjection?.kind, 'background', 'Claude native session kind survives the full source-to-API projection');
 const unprobed = (await readNativeSessions(() => true)).find((row) => row.session_id === projected.canonical_id);
 assert.equal(unprobed?.alive, false, 'valid but unprobed lease never makes projection alive');
 assert.equal(unprobed?.endpoint_health, 'unverified', 'lease validity is distinct from verified endpoint health');

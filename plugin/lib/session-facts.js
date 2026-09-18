@@ -188,6 +188,20 @@ export function renewEndpointLease(input, { file = endpointLeasesJsonPath(), now
     return lease;
   });
 }
+// GOL-354: a replacement adapter reclaims its canonical session's endpoint
+// binding — drop leases for the same canonical id held by other (pre-reload)
+// owner tokens so CLI ancestry cannot see an ambiguous pid.
+export function pruneStaleEndpointLeases(canonicalId, keepOwnerToken, { file = endpointLeasesJsonPath() } = {}) {
+  if (!canonicalId || !keepOwnerToken) return [];
+  return withRegistryLock(file, () => {
+    const registry = read(file, 'leases', ENDPOINT_LEASES_VERSION);
+    const before = registry.leases.length;
+    registry.leases = registry.leases.filter(
+      (lease) => lease.canonical_id !== canonicalId || lease.owner_token === keepOwnerToken);
+    if (registry.leases.length !== before) atomicWrite(file, registry);
+    return registry.leases;
+  });
+}
 export function releaseEndpointLeases(ownerToken, { file = endpointLeasesJsonPath(), canonicalId = null } = {}) {
   return withRegistryLock(file, () => {
     const registry = read(file, 'leases', ENDPOINT_LEASES_VERSION);

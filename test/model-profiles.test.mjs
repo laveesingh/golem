@@ -198,6 +198,7 @@ try {
   );
   assert.deepEqual(seeded.role_defaults, {
     builder: 'deepseek-v4-flash-0731-medium',
+    designer: 'deepseek-v4-flash-0731-medium',
     explorer: 'deepseek-v4-flash-0731-medium',
     reviewer: 'deepseek-v4-flash-0731-medium',
   });
@@ -206,7 +207,7 @@ try {
 
   // exec retained on every builtin role; the exec-loss detector never fired.
   const registry = readRoleRegistry();
-  for (const role of ['builder', 'explorer', 'reviewer']) {
+  for (const role of ['builder', 'designer', 'explorer', 'reviewer']) {
     assert.equal(Object.hasOwn(registry.find((row) => row.name === role), 'exec'), true, `exec retained on ${role}`);
   }
   console.log(JSON.stringify({ seed: '3 identical execs -> 1 shared profile', role_defaults: 3, exec_retained: true }));
@@ -231,7 +232,7 @@ try {
   assert.throws(() => createProfile({ name: 'luna-max', provider: 'xai', model: 'grok-4.6', thinking: 'high' }), /profile already exists/);
   assert.throws(() => createProfile({ name: 'bad\nname', provider: 'xai', model: 'grok-4.6', thinking: 'high' }), /profile name must be 1-80 characters/);
   assert.throws(() => createProfile({ name: 'bad-thinking', provider: 'xai', model: 'grok-4.6', thinking: 'turbo' }), /profile thinking must be one of/);
-  assert.throws(() => deleteProfile('deepseek-v4-flash-0731-medium'), /default model profile for role\(s\) builder, explorer, reviewer/);
+  assert.throws(() => deleteProfile('deepseek-v4-flash-0731-medium'), /default model profile for role\(s\) builder, designer, explorer, reviewer/);
   renameProfile('grok-4.6-high', 'grok-4.6-xhigh');
   assert.equal(getProfile('grok-4.6-high'), null);
   setRoleDefault('reviewer', 'grok-4.6-xhigh'); // rename did not strand reviewer's pointer below

@@ -9,20 +9,24 @@ Implements <GOL-XXX>: D<n>, D<n>.
 
 ## Context
 
-The two or three facts a builder needs that the diff will not show: touch points, files, gotchas
-discovered during design. Notes here are accelerators, not boundaries — verify from source and
-comment when a note is stale.
+What the builder needs and cannot see: the decisions this implements, design-lab or scratchpad
+insight, gotchas. Name the contracts and consumers the change touches, the behavior that must
+be preserved, and what transitions or removals the slice carries. Verify from source; comment
+when a note is stale.
 
 ## Plan
 
-Ordered, concrete steps — enough to start without re-deriving the design.
+Ordered, concrete steps, enough to start without re-deriving the design. Show dependencies and
+how a step handles failure or removal, not only the happy path.
 
 1. <step>
 2. <step>
 
 ## Acceptance
 
-Checkable, with exact commands and expected observations.
+Exact setup, commands, and expected observations: preserved and changed behavior, failures,
+negative cases, and affected consumers. Report each check as ran (with output) or not run
+(why, and who owns the next action). State cleanup and how the result is returned as evidence.
 
 - [ ] `<command>` → <expected observation>
 

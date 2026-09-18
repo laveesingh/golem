@@ -62,7 +62,9 @@ try {
   await page.waitForSelector('.td-md [data-block-id]');
   await wait(700);
 
-  // Hover a block until the "+" affordance attaches, then click it.
+  // GOL-313 single-step: click the block directly — it opens the rail
+  // anchored to that block, focused. (Hover only previews; there is no
+  // "+" affordance anymore.)
   async function openComposerForBlock(blockId) {
     const pt = await page.evaluate((wanted) => {
       const block = [...document.querySelectorAll('.td-md [data-block-id]')]
@@ -73,16 +75,7 @@ try {
       return { x: r.left + Math.min(60, r.width / 2), y: r.top + r.height / 2 };
     }, blockId);
     assert.ok(pt, `block ${blockId} rendered`);
-    await page.mouse.move(pt.x, pt.y);
-    await wait(200);
-    await page.mouse.move(pt.x + 4, pt.y + 2);
-    await wait(700); // 300ms show delay + margin
-    const plusVisible = await page.evaluate(() => {
-      const plus = document.getElementById('anno-block-plus');
-      return !!plus && plus.style.display === 'flex';
-    });
-    assert.equal(plusVisible, true, `+ affordance appears for ${blockId}`);
-    await page.click('#anno-block-plus');
+    await page.mouse.click(pt.x, pt.y);
     await wait(400);
   }
   const pillText = () => page.evaluate(

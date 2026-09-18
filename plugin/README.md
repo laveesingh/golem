@@ -29,7 +29,7 @@ dependencies. Keep the dashboard running before using tracker tools or dispatch.
 - **OpenCode** — opt-in through `~/.golem/config.json`; its MCP server and
   runtime shim point to this checkout by absolute path.
 - **Pi** — `golem sync --target pi` renders the native extension. `golem pi`
-  provides typed-worker delivery and requires Pi 0.84.3 with Node.js 22.19+
+  provides typed-worker delivery and requires Pi 0.85.1 with Node.js 22.19+
   or newer.
 
 The built-in roles are `lead`, `builder`, `explorer`, and `reviewer`. Role
@@ -86,8 +86,13 @@ raw equivalent is:
 claude --dangerously-load-development-channels plugin:golem@golem-workspace
 ```
 
-The launch flag is required for a Claude session to consume pushes. The
-channel server exposes `ack`, tracker tools, `session_notify`, and
+The launch flag is required for a Claude session to consume pushes. The rendered
+plugin sets `GOLEM_TOOL_SURFACE=cli-first`, so a Claude boot advertises the
+CLI-first surface — `ack`, tracker tools, `ticket_dispatch`, `session_role`, and
+`project_context`; returns and recipient discovery go through `golem session
+notify` / `golem session list` (`golem:team-ops`), and direct calls to the
+omitted outbound tools reject with that guidance. A boot without that selection
+keeps the compatibility list including `session_notify` and
 `sessions_dispatchable`. The dashboard remains the tracker database's single
 writer. Ticket lifecycle is the `state` field: `todo`, `in_progress`,
 `blocked`, `review`, `done`, or `archived`.

@@ -177,18 +177,20 @@ try {
   ok(await page.locator('.app > .main[inert]').count() === 0, 'closed drawer unmounts descendants and restores background interactivity');
 
   // Create an anchored comment and update the body using the exposed UI.
+  // GOL-311 D4: single-step — click the block containing the anchor sentence;
+  // there is no selection pill anymore.
   await page.goto(`${base}/project/${encodeURIComponent(alphaUiId)}?ticket=${encodeURIComponent(anchored.id)}`, { waitUntil: 'networkidle' });
   await page.waitForSelector('.td-md');
-  await page.evaluate(() => {
+  const anchorBlockText = await page.evaluate(() => {
     const root = document.querySelector('.td-md');
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let node; while ((node = walker.nextNode())) if (node.textContent.includes('Anchor sentence remains.')) break;
-    const start = node.textContent.indexOf('Anchor sentence remains.');
-    const range = document.createRange(); range.setStart(node, start); range.setEnd(node, start + 'Anchor sentence remains.'.length);
-    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
-    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    const block = [...root.querySelectorAll('[data-block-id]')].find((el) => el.textContent.includes('Anchor sentence remains.'));
+    if (!block) return null;
+    block.scrollIntoView({ block: 'center' });
+    const r = block.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, text: block.innerText.trim().replace(/\s+/g, ' ') };
   });
-  await page.locator('#anno-pill').click();
+  ok(anchorBlockText != null, 'anchor block rendered');
+  await page.mouse.click(anchorBlockText.x, anchorBlockText.y);
   await page.locator('textarea[placeholder^="Comment —"]').fill('Anchored note');
   await page.locator('button.send', { hasText: 'Comment' }).click();
   await page.getByTitle('Edit body').click();
@@ -196,9 +198,9 @@ try {
   await page.locator('.td-edit-actions button', { hasText: 'Save' }).click();
   await page.waitForFunction(async (id) => {
     const ticket = await (await fetch(`/api/tickets/${id}`)).json();
-    return ticket.body.startsWith('# Updated') && ticket.comments.some((c) => c.body === 'Anchored note' && c.quote === 'Anchor sentence remains.');
+    return ticket.body.startsWith('# Updated') && ticket.comments.some((c) => c.body === 'Anchored note' && !!c.block_id);
   }, anchored.id);
-  ok(true, 'anchored comment survives a body update through UI controls');
+  ok(true, 'block-anchored comment survives a body update through UI controls');
   await page.goto(`${base}/project/${encodeURIComponent(betaUiId)}`, { waitUntil: 'networkidle' });
   ok(page.url().includes(encodeURIComponent(betaUiId)) && await page.getByText('Beta fixture', { exact: true }).count() > 0, 'project deep link restores selection');
   await page.evaluate((id) => localStorage.setItem('golem.sidebar.pinnedProjects', JSON.stringify([id])), betaUiId);

@@ -2,7 +2,8 @@
 // golem — minimal Node CLI for the v4 harness.
 //
 // v3 subcommands removed:
-//   install, cleanup, reinstall, session, project, dispatch, ack
+//   install, cleanup, reinstall, project, dispatch, ack
+//   The old session commands are replaced by session list/notify.
 //
 // Surviving subcommands:
 //   dashboard    Start the admin dashboard (node dashboard/server/index.js).
@@ -31,6 +32,7 @@ import { projectIdFor } from '../lib/project-id.js';
 import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../lib/session-role.js';
 import { updateProjectLsp } from '../lib/lsp.js';
 import * as compiler from '../lib/compiler/engine.js';
+import { lintSubstrate } from '../lib/compiler/lint.js';
 import * as ccAdapter from '../lib/compiler/adapters/cc.js';
 import * as ocAdapter from '../lib/compiler/adapters/opencode.js';
 import * as codexAdapter from '../lib/compiler/adapters/codex.js';
@@ -88,7 +90,6 @@ const removed = new Set([
   'install',
   'cleanup',
   'reinstall',
-  'session',
   'project',
   'dispatch',
   'ack',
@@ -1969,6 +1970,17 @@ async function cmdSyncCheckAll({ quiet = false } = {}) {
   if (!quiet) log('');
   say('golem sync --check --all');
 
+  // Source lint runs once, before any render-drift check: word caps, resolving
+  // `§` and `golem:` references, and one owner per fingerprinted rule.
+  const lint = lintSubstrate({ substrateRoot: substrateRoot() });
+  if (!quiet) log('');
+  say(`substrate lint: ${lint.files} files, ${lint.total} words`);
+  if (!quiet) {
+    if (lint.clean) log('  clean');
+    for (const f of lint.findings) err(`  ${f.check}: ${f.file} — ${f.detail}`);
+  }
+  drift = drift || !lint.clean;
+
   const ccOut = renderDirFor('cc');
   const cc = compiler.checkDrift({ target: 'cc', outDir: ccOut, items: planForTarget('cc') });
   const ccInstrOut = ccAdapter.instructionOutDir();
@@ -2167,6 +2179,19 @@ async function cmdDoctor() {
   log('Tooling');
   (await hasCommand('node')) ? ok('node on PATH') : fail('node on PATH');
   (await hasCommand('npm')) ? ok('npm on PATH') : fail('npm on PATH');
+
+  // The Claude plugin is installed from the workspace render; a stale install
+  // means every Claude session runs old skills and hooks (GOL-303 C9).
+  try {
+    const installed = JSON.parse(readFileSync(join(homedir(), '.claude', 'plugins', 'installed_plugins.json'), 'utf8'));
+    const entry = installed?.plugins?.['golem@golem-workspace']?.[0];
+    const want = readPackageVersion();
+    if (!entry) skip('claude plugin golem@golem-workspace not installed');
+    else if (entry.version === want) ok(`claude plugin golem@golem-workspace ${entry.version} matches package.json`);
+    else fail(`claude plugin golem@golem-workspace is ${entry.version}, package.json is ${want} — golem sync --target cc && claude plugin update golem@golem-workspace`);
+  } catch (e) {
+    skip(`claude plugin parity not checked — ${e.message}`);
+  }
 
   log('');
   log('Dashboard');
@@ -2374,6 +2399,22 @@ Run:
                        --json preserves the machine-readable worker records.
   role <role|clear> [--session <id-or-name>]
                          Set or clear a session role (${SESSION_ROLES.join(', ')}).
+  ticket <operation> [args] [flags]
+                       Flat agent authoring family over the tracker REST API:
+                       list, get, create, update, replace-body, get-outline,
+                       get-block, patch-blocks, add-comment, reply-comment,
+                       update-comment. Mutations bind the trusted Pi/Claude CLI
+                       session context (--human for unbound human shells);
+                       Codex/OpenCode receive a stable unsupported-caller
+                       result. --json is the stable contract: stdout carries
+                       only result JSON, diagnostics go to stderr. See
+                       golem ticket --help.
+  session list|notify [--help]
+                         Discover sessions or send idempotent notifications.
+  schedule list|inspect|cancel [--help]
+                         Manage durable delayed and recurring notifications.
+  message inspect <id> [--content] [--json]
+                         Inspect delivery without claiming task completion.
   sessions dedup [--apply]
                          Dry-run named-session duplicate cleanup; --apply marks
                          stale duplicate rows ended_at under sessions.json.lock.
@@ -2483,6 +2524,18 @@ async function main() {
     case 'role':
       await cmdRole(rest);
       break;
+    case 'session':
+    case 'schedule':
+    case 'message': {
+      const { runCollaboration } = await import('./collaboration.js');
+      process.exitCode = await runCollaboration(cmd, rest);
+      break;
+    }
+    case 'ticket': {
+      const { runTicket } = await import('./ticket.js');
+      process.exitCode = await runTicket(rest);
+      break;
+    }
     case 'sessions':
       await cmdSessions(rest);
       break;

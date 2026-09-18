@@ -806,9 +806,8 @@ try {
     assert.equal(tracker.raw().prepare('SELECT status FROM dispatch_queue WHERE id = ?').get(recoveryQueued.id).status, 'delivered', 'recovery-required work leaves the shared queue instead of replaying');
     assert.equal(tracker.getEnvelope(recoveryQueued.envelope_id).delivery_state, 'recovery_required');
 
-    // Retry draining shares the queue's one-opportunity/cooldown rule. Two
-    // already-pending controls for one idle worker must not both become native
-    // turns merely because the first settles quickly in the same poll.
+    // Notification retries retain one publication per target per tick, but
+    // do not inherit the ticket queue's 60-second cooldown.
     const retryFifoSession = 'typed-retry-fifo';
     const retryFifoOne = tracker.createControlEnvelope({
       project_id: 'typed-test-000000', sender_id: 'test', recipient_session_id: retryFifoSession,
@@ -850,10 +849,10 @@ try {
     assert.deepEqual(retryFifoPublishes, [retryFifoOne.id], 'one retry opportunity publishes only the FIFO head in a tick');
     assert.equal(tracker.raw().prepare('SELECT status FROM envelope_delivery_retries WHERE envelope_id = ?').get(retryFifoTwo.id).status, 'pending', 'the second retry remains pending behind the FIFO head');
     await retryFifoDrainer.tick();
-    assert.deepEqual(retryFifoPublishes, [retryFifoOne.id], 'same-session retry cooldown holds the next retry after a fast settlement');
+    assert.deepEqual(retryFifoPublishes, [retryFifoOne.id, retryFifoTwo.id], 'next-tick notification does not inherit ticket cooldown');
     retryFifoClock += 60_001;
     await retryFifoDrainer.tick();
-    assert.deepEqual(retryFifoPublishes, [retryFifoOne.id, retryFifoTwo.id], 'the next FIFO retry publishes after the shared cooldown');
+    assert.deepEqual(retryFifoPublishes, [retryFifoOne.id, retryFifoTwo.id], 'later ticks do not repeat settled notifications');
     retryFifoDrainer.close();
 
     // Queue rows and retry rows are one per-session delivery stream. When
@@ -1082,6 +1081,38 @@ try {
     });
     await offlineDrainer.tick();
     assert.equal(tracker.raw().prepare('SELECT status FROM dispatch_queue WHERE id = ?').get(offlineQueued.id).status, 'pending', 'offline target retains shared work before expiry');
+
+    // Reuse existing isolated ticket fixtures. Unknown legacy handoff must stop
+    // its own replay, not capture a publishing lease forever or block all FIFO.
+    const legacySession = 'legacy-uncertain-fifo';
+    const legacyFirst = tracker.queueDispatch(offlineTicket.id, { session_id: legacySession, payload: 'first legacy', actor: 'test' });
+    const legacySecond = tracker.queueDispatch(reminderTicket.id, { session_id: legacySession, payload: 'second legacy', actor: 'test' });
+    tracker.raw().prepare('UPDATE dispatch_queue SET created_at = ? WHERE id = ?').run('2026-01-01T00:00:00.000Z', legacyFirst.id);
+    tracker.raw().prepare('UPDATE dispatch_queue SET created_at = ? WHERE id = ?').run('2026-01-01T00:00:00.001Z', legacySecond.id);
+    let legacyClock = Date.now(), legacyPublishes = [];
+    const legacyDrainer = initDispatchDrainer({
+      tracker, state: { nativeSessions: () => [{ session_id: legacySession, alive: true, status: 'idle' }] },
+      chat: { record() {} }, broadcastWS() {}, buildDispatchBrief: (ticket) => ticket.title,
+      listChannels: async () => [{ session_id: legacySession, harness: 'claudecode', consumer_ready: true, delivery_ready: true }],
+      nowMs: () => legacyClock,
+      pushBrief: async (_content, sessionId, metadata) => {
+        if (sessionId !== legacySession) return { ok: true, status: 202 };
+        legacyPublishes.push(metadata.envelope_id);
+        if (metadata.envelope_id === legacyFirst.envelope_id) throw new Error('legacy response lost');
+        return { ok: true, status: 202 };
+      },
+    });
+    try {
+      await legacyDrainer.tick();
+      const blocked = tracker.raw().prepare('SELECT * FROM dispatch_queue WHERE id = ?').get(legacyFirst.id);
+      assert.equal(blocked.status, 'blocked', 'uncertain queue attempt is retained outside active FIFO');
+      assert.equal(blocked.publishing_owner, null);
+      assert.equal(tracker.getEnvelope(legacyFirst.envelope_id).delivery_state, 'recovery_required');
+      legacyClock += 60_001;
+      await legacyDrainer.tick();
+      assert.deepEqual(legacyPublishes, [legacyFirst.envelope_id, legacySecond.envelope_id]);
+      assert.equal(tracker.raw().prepare('SELECT status FROM dispatch_queue WHERE id = ?').get(legacySecond.id).status, 'delivered');
+    } finally { legacyDrainer.close(); }
   } finally {
     tracker.close();
     if (priorGolemHome == null) delete process.env.GOLEM_HOME; else process.env.GOLEM_HOME = priorGolemHome;

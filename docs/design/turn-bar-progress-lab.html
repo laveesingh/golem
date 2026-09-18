@@ -1,0 +1,239 @@
+<<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Turn bar — compact progress bar · decision lab</title>
+<style>
+  :root{
+    --bg:#0e0e12; --panel:#17171c; --panel2:#1e1e26; --border:#2a2a34;
+    --muted:#9a9aaa; --dim:#6e6e7c; --success:#00c853; --accent:#7c7cff;
+    --text:#e8e8f0; --warn:#ffb300;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  a{color:var(--accent)}
+  .wrap{max-width:1120px;margin:32px auto;padding:0 16px}
+  h1{font-size:18px;letter-spacing:.02em;margin:0 0 6px;font-weight:700}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:18px}
+  .sub b{color:var(--text);font-weight:600}
+  .decision{border:1px solid var(--border);background:rgba(255,255,255,.03);border-radius:12px;padding:14px 14px 12px;margin-bottom:18px}
+  .decision p{margin:4px 0;color:var(--muted);font-size:12px}
+  .decision b{color:var(--text)}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0 16px}
+  .controls label{font-size:12px;color:var(--muted)}
+  .controls input[type=range]{width:180px}
+  .badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden;display:flex;flex-direction:column}
+  .card.hi{outline:2px solid var(--accent);border-color:transparent}
+  .head{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,.02)}
+  .head h3{margin:0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .head h3 b{color:var(--text)}
+  .pill{font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:999px;background:#0f0f14;border:1px solid var(--border);color:var(--dim)}
+  .thesis{padding:8px 12px 10px;font-size:11.5px;line-height:1.45;color:var(--muted);border-bottom:1px solid var(--border);background:rgba(255,255,255,.01)}
+  .spec{padding:12px;background:#0b0b0e}
+  .term{border:1px solid #242431;background:#08080b;border-radius:8px;overflow:hidden}
+  .term-head{height:22px;background:#14141a;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;padding:0 8px}
+  .dot{width:9px;height:9px;border-radius:50%}.r{background:#ff5f57}.y{background:#ffbd2e}.g{background:#28c940}
+  .term-body{padding:10px 10px 12px}
+  .line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px;line-height:1.6}
+  .muted{color:var(--muted)}
+  .dim{color:var(--dim)}
+  .succ{color:var(--success)}
+  .b{font-weight:700}
+  /* bar primitives */
+  .bar-track{height:4px;background:#1c1c24;border-radius:999px;overflow:hidden}
+  .bar-fill{height:100%;background:var(--muted);border-radius:999px}
+  .bar-fill.succ{background:var(--success)}
+  .bar-text{font-size:11px;color:var(--dim);margin-left:6px;vertical-align:middle}
+  .inline-bar{display:inline-flex;align-items:center;gap:6px;vertical-align:middle}
+  .suf{margin-top:6px;display:flex;align-items:center;gap:8px}
+  .suf .track{flex:1}
+  .under{margin-top:8px}
+  .under .track{height:3px}
+  .prefix{display:flex;gap:8px;align-items:center}
+  .prefix .track{width:72px}
+  .dense .seg{letter-spacing:.02em}
+  .pros{padding:10px 12px 12px;font-size:11.5px;line-height:1.5;color:var(--muted)}
+  .pros b{color:var(--text)}
+  .k{color:var(--warn)}
+  .sel{display:flex;gap:8px;margin:14px 0}
+  .sel button{flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--muted);cursor:pointer;font:12px/1 ui-monospace,monospace}
+  .sel button[aria-pressed="true"]{background:var(--accent);color:white;border-color:transparent;font-weight:700}
+  .note{font-size:11px;color:var(--dim);margin-top:10px}
+  .stage{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:14px;margin-top:14px}
+  .stage h4{margin:0 0 8px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Turn bar — compact progress lab</h1>
+  <div class="sub">Invariant: single-line `● Working/Worked (dur • ↑ • ⚡ • ↓)` in <b>muted grey</b>, blinking <b>●/○ green</b> dot during live. Data held constant: <b>Working • 12s • ↑ 8.2K • ⚡ 22K • ↓ 341 • 34%</b> (Worked shown where relevant). Terminal width 68ch.</div>
+
+  <div class="decision">
+    <p><b>Decision:</b> How to add a compact progress bar (context % or turn %) to the turn bar without breaking the 1-line, 68ch, muted aesthetic.</p>
+    <p><b>Axes:</b> scanability / hierarchy · density & wrapping in long sessions · feedback confidence</p>
+  </div>
+
+  <div class="controls">
+    <label>Progress <input id="pct" type="range" min="0" max="100" value="34"> <b id="pctv">34%</b></label>
+    <span class="badge">Width 68ch · muted · blinking dot live</span>
+    <span class="badge">Press 1–5 to highlight</span>
+  </div>
+
+  <div class="grid" role="list">
+    <!-- 0 baseline -->
+    <div class="card" data-opt="0" role="listitem" tabindex="0" aria-label="Baseline no bar">
+      <div class="head"><h3><b>0</b> Baseline — no bar</h3><span class="pill">control</span></div>
+      <div class="thesis">No bar at all. Keep today’s line exactly. The footer’s context meter remains the only progress.</div>
+      <div class="spec">
+        <div class="term">
+          <div class="term-head"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+          <div class="term-body">
+            <div class="line muted"><span class="succ">●</span> Working <span class="muted">(12s • ↑ 8.2K • ⚡ 22K • ↓ 341)</span></div>
+            <div class="line dim" style="margin-top:10px">⋮ transcript …</div>
+            <div class="line muted" style="margin-top:8px"><span class="succ">○</span> <i>Thinking</i> (4s • ↓ 128)</div>
+          </div>
+        </div>
+      </div>
+      <div class="pros"><b>Benefit:</b> zero added width, no visual noise.<br><b>Cost:</b> no glanceable % on the turn bar.<br><span class="k">Risk:</span> user watches footer meter (split attention).</div>
+    </div>
+
+    <!-- A inline suffix -->
+    <div class="card" data-opt="A" role="listitem" tabindex="0" aria-label="Inline suffix bar">
+      <div class="head"><h3><b>A</b> Inline suffix — after stats</h3><span class="pill">suffix</span></div>
+      <div class="thesis">Glanceable suffix. Bar lives after the closing `)` as muted track; % text stays outside. Does not disturb stats scan.</div>
+      <div class="spec">
+        <div class="term">
+          <div class="term-head"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+          <div class="term-body">
+            <div class="line muted"><span class="succ">●</span> Working <span class="muted">(12s • ↑ 8.2K • ⚡ 22K • ↓ 341)</span> <span class="inline-bar"><span class="bar-track" style="width:86px"><span class="bar-fill" id="Afill" style="width:34%"></span></span><span class="bar-text" id="Atxt">34%</span></span></div>
+            <div class="line muted" style="margin-top:8px"><span class="dim">●</span> Worked <span class="muted">(14s • ↑ 8.2K • ⚡ 22K • ↓ 410)</span> <span class="inline-bar"><span class="bar-track" style="width:86px"><span class="bar-fill dim" style="width:34%"></span></span><span class="dim" style="font-size:11px">34%</span></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="pros"><b>Benefit:</b> high scanability; stats + bar both visible, no line break.<br><b>Cost:</b> longest line (~+12ch); may truncate on narrow 60ch.<br><span class="k">Risk:</span> wraps on small panes; needs truncation guard.</div>
+    </div>
+
+    <!-- B under-bar -->
+    <div class="card" data-opt="B" role="listitem" tabindex="0" aria-label="Under bar two-line">
+      <div class="head"><h3><b>B</b> Under-bar — two-line layered</h3><span class="pill">layered</span></div>
+      <div class="thesis">Layered meter. Text stays on line 1; a 3px muted track sits directly below. Preserves 1-line scan, adds full-width gauge.</div>
+      <div class="spec">
+        <div class="term">
+          <div class="term-head"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+          <div class="term-body">
+            <div class="line muted"><span class="succ">●</span> Working <span class="muted">(12s • ↑ 8.2K • ⚡ 22K • ↓ 341)</span> <span class="dim">34%</span></div>
+            <div class="under"><div class="bar-track"><div class="bar-fill" id="Bfill" style="width:34%"></div></div></div>
+            <div class="line muted" style="margin-top:10px"><span class="dim">●</span> Worked <span class="muted">(14s • ↑ 8.2K • ⚡ 22K • ↓ 410)</span> <span class="dim">34%</span></div>
+            <div class="under"><div class="bar-track"><div class="bar-fill dim" style="width:34%"></div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="pros"><b>Benefit:</b> full-width bar without lengthening line 1; calm hierarchy.<br><b>Cost:</b> breaks 1-line invariant (2 lines); extra vertical space.<br><span class="k">Risk:</span> taller widget pushes prompt; blink + bar compete.</div>
+    </div>
+
+    <!-- C prefix bracket -->
+    <div class="card" data-opt="C" role="listitem" tabindex="0" aria-label="Prefix bracket bar">
+      <div class="head"><h3><b>C</b> Prefix — before the dot</h3><span class="pill">scan-first</span></div>
+      <div class="thesis">Scan-first. Bar is the leftmost anchor `[████░░░░]`, then `● Working`. Eye lands on progress before stats.</div>
+      <div class="spec">
+        <div class="term">
+          <div class="term-head"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+          <div class="term-body">
+            <div class="line muted prefix"><span class="bar-track"><span class="bar-fill" id="Cfill" style="width:34%"></span></span><span><span class="succ">●</span> Working <span class="muted">(12s • ↑ 8.2K • ⚡ 22K • ↓ 341)</span></span></div>
+            <div class="line muted prefix" style="margin-top:8px"><span class="bar-track"><span class="bar-fill dim" style="width:34%"></span></span><span><span class="dim">●</span> Worked <span class="muted">(14s • ↑ 8.2K • ⚡ 22K • ↓ 410)</span></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="pros"><b>Benefit:</b> strongest progress affordance; works at narrow widths.<br><b>Cost:</b> displaces dot/label from the left edge (habit break).<br><span class="k">Risk:</span> feels like a “battery” widget, competes with dot.</div>
+    </div>
+
+    <!-- D dense in-stats -->
+    <div class="card" data-opt="D" role="listitem" tabindex="0" aria-label="Dense in-stats meter">
+      <div class="head"><h3><b>D</b> Dense — bar inside stats</h3><span class="pill">dense</span></div>
+      <div class="thesis">Dense inline. Bar replaces the `%` token inside `()` — `12s • ▓▓▓░░░░ • ↓ 341`. Shortest line, bar is part of stats.</div>
+      <div class="spec">
+        <div class="term">
+          <div class="term-head"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+          <div class="term-body">
+            <div class="line muted"><span class="succ">●</span> Working <span class="muted">(12s • </span><span class="inline-bar"><span class="bar-track" style="width:64px"><span class="bar-fill" id="Dfill" style="width:34%"></span></span></span><span class="muted"> • ↓ 341)</span></div>
+            <div class="line muted" style="margin-top:8px"><span class="dim">●</span> Worked <span class="muted">(14s • </span><span class="inline-bar"><span class="bar-track" style="width:64px"><span class="bar-fill dim" style="width:34%"></span></span></span><span class="muted"> • ↓ 410)</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="pros"><b>Benefit:</b> no extra line, no suffix; stays under 68ch even at 60ch.<br><b>Cost:</b> loses explicit `34%` text (must infer).<br><span class="k">Risk:</span> bar too small to read at low %.</div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h4>Shared-stage preview — all options at current % (keyboard 0/A/B/C/D to highlight)</h4>
+    <div class="sel" role="tablist" aria-label="Highlight option">
+      <button data-tab="0" aria-pressed="false">0 Baseline</button>
+      <button data-tab="A" aria-pressed="true">A Suffix</button>
+      <button data-tab="B" aria-pressed="false">B Under</button>
+      <button data-tab="C" aria-pressed="false">C Prefix</button>
+      <button data-tab="D" aria-pressed="false">D Dense</button>
+    </div>
+    <div id="stageBox" class="term">
+      <div class="term-head"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="muted" style="margin-left:8px;font-size:11px">68ch · muted · ○/● blinks live</span></div>
+      <div class="term-body" id="stageBody"></div>
+    </div>
+    <p class="note">All options use same data (12s, ↑8.2K, ⚡22K, ↓341, <span id="notepct">34%</span>). Live dot blinks ○↔● every 500ms in the real TUI; lab shows static ● for reference. Width clamped at 68ch — no external deps.</p>
+  </div>
+</div>
+
+<script>
+const pct=document.getElementById('pct'), pctv=document.getElementById('pctv'), notepct=document.getElementById('notepct');
+const Afill=document.getElementById('Afill'), Atxt=document.getElementById('Atxt');
+const Bfill=document.getElementById('Bfill'), Cfill=document.getElementById('Cfill'), Dfill=document.getElementById('Dfill');
+function upd(v){
+  pctv.textContent=v+'%'; notepct.textContent=v+'%';
+  Atxt.textContent=v+'%';
+  Afill.style.width=v+'%'; Bfill.style.width=v+'%'; Cfill.style.width=v+'%'; Dfill.style.width=v+'%';
+  renderStage(current);
+}
+pct.addEventListener('input', e=> upd(e.target.value));
+let current='A';
+const stageBody=document.getElementById('stageBody');
+const templates={
+  '0': v=> `<div class="line muted"><span class="succ">●</span> Working <span class="muted">(12s • ↑ 8.2K • ⚡ 22K • ↓ 341)</span></div>`,
+  'A': v=> `<div class="line muted"><span class="succ">●</span> Working <span class="muted">(12s • ↑ 8.2K • ⚡ 22K • ↓ 341)</span> <span class="inline-bar"><span class="bar-track" style="width:86px"><span class="bar-fill" style="width:${v}%"></span></span><span class="dim" style="font-size:11px">${v}%</span></span></div>`,
+  'B': v=> `<div class="line muted"><span class="succ">●</span> Working <span class="muted">(12s • ↑ 8.2K • ⚡ 22K • ↓ 341)</span> <span class="dim">${v}%</span></div><div class="under"><div class="bar-track"><div class="bar-fill" style="width:${v}%"></div></div></div>`,
+  'C': v=> `<div class="line muted prefix"><span class="bar-track"><span class="bar-fill" style="width:${v}%"></span></span><span><span class="succ">●</span> Working <span class="muted">(12s • ↑ 8.2K • ⚡ 22K • ↓ 341)</span></span></div>`,
+  'D': v=> `<div class="line muted"><span class="succ">●</span> Working <span class="muted">(12s • </span><span class="inline-bar"><span class="bar-track" style="width:64px"><span class="bar-fill" style="width:${v}%"></span></span></span><span class="muted"> • ↓ 341)</span></div>`
+};
+function renderStage(k){
+  stageBody.innerHTML = templates[k](pct.value) + `<div class="line muted" style="margin-top:10px"><span class="dim">●</span> Worked <span class="muted">(14s • ↑ 8.2K • ⚡ 22K • ↓ 410)</span> ${k==='0'?'':`<span class="dim">${pct.value}% ${k==='A'?'':'· bar '+pct.value+'%'}</span>`}</div>`;
+}
+document.querySelectorAll('.sel button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    current=b.dataset.tab;
+    document.querySelectorAll('.sel button').forEach(x=>x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    renderStage(current);
+    document.querySelectorAll('.card').forEach(c=>c.classList.toggle('hi', c.dataset.opt===current));
+  });
+});
+document.addEventListener('keydown', e=>{
+  const k=e.key.toUpperCase();
+  if(['0','A','B','C','D'].includes(k)){
+    current=k; renderStage(k);
+    document.querySelectorAll('.sel button').forEach(x=>x.setAttribute('aria-pressed', x.dataset.tab===k?'true':'false'));
+    document.querySelectorAll('.card').forEach(c=>c.classList.toggle('hi', c.dataset.opt===k));
+  }
+});
+document.querySelectorAll('.card').forEach(c=>{
+  c.addEventListener('click', ()=>{ current=c.dataset.opt; renderStage(current);
+    document.querySelectorAll('.sel button').forEach(x=>x.setAttribute('aria-pressed', x.dataset.tab===current?'true':'false'));
+    document.querySelectorAll('.card').forEach(x=>x.classList.toggle('hi', x.dataset.opt===current));
+  });
+  c.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); c.click(); }});
+});
+renderStage(current);
+document.querySelector('.card[data-opt="A"]').classList.add('hi');
+</script>
+</body>
+</html>

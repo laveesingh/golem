@@ -17,10 +17,17 @@ import { marked } from 'marked';
 import TurndownService from 'turndown';
 import { gfm as turndownGfm } from 'turndown-plugin-gfm';
 import { trackerDbPath } from '../../lib/golem-home.js';
+import { notificationReceipt } from '../../lib/notification-receipt.js';
+import { NotificationError } from '../../lib/notification-contract.js';
+import { createNotificationSchedules } from './notification-schedules.js';
 import { loadConfig } from '../../lib/golem-config.js';
 import { createCommentDispatchService, defaultDispatchStateForComment } from './comment-dispatch.js';
+import {
+  BODY_FORMATS, TrackerInputError, applyBlockOperations, badRequest, blockHtmlFromDoc, notFound,
+  revisionConflict, parseAndNormalizeDoc, searchTextFromHtml,
+} from './html-body.js';
 
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 22;
 
 // GOL-151: three doc types. `task` is the default unit of work, `spec` is the
 // living design doc, `doc` is any supporting page (research, survey,
@@ -160,6 +167,76 @@ function toMarkdownBody(raw) {
   return String(raw).trim().replace(/\n{3,}/g, '\n\n');
 }
 
+// ---- GOL-326: HTML spec bodies ------------------------------------------
+
+/** Format is explicit data; the body's first character never decides it. */
+function validateBodyFormat(format) {
+  const value = format == null || format === '' ? 'markdown' : String(format);
+  if (!BODY_FORMATS.includes(value)) {
+    throw badRequest(`invalid body_format '${format}'; expected markdown or html`, 'invalid_body_format');
+  }
+  return value;
+}
+
+/**
+ * HTML create/full-update pipeline: parse → sanitize → validate → assign
+ * stable block IDs → canonical serialize. HTML is spec-only in this slice.
+ */
+function normalizeForStorage(rawBody, { kind } = {}) {
+  if (kind !== 'spec') {
+    throw badRequest('html body_format is supported for specs only', 'unsupported_format');
+  }
+  try {
+    const { html } = parseAndNormalizeDoc(rawBody ?? '');
+    if (!html.trim()) throw badRequest('html body is empty after sanitization', 'empty_html_body');
+    return html;
+  } catch (err) {
+    if (err?.name === 'TrackerInputError') throw err;
+    throw badRequest(`html body could not be parsed: ${err?.message ?? err}`, 'invalid_html');
+  }
+}
+
+/** Persisted block IDs present in a stored HTML body (derived, never stored). */
+function htmlBlockIdSet(body) {
+  try {
+    return parseAndNormalizeDoc(body ?? '').ids;
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Hydrate anchor status for comments on an HTML ticket: a persisted block_id
+ * that no longer exists in the document reports `detached` (GOL-326 comment
+ * behavior — history survives, nothing is rewritten).
+ */
+function withAnchorStatus(ticketRow, comments) {
+  if (!ticketRow || (ticketRow.body_format ?? 'markdown') !== 'html') return comments;
+  const ids = htmlBlockIdSet(ticketRow.body);
+  return comments.map((c) => (c.block_id
+    ? { ...c, anchor_status: ids.has(c.block_id) ? 'anchored' : 'detached' }
+    : c));
+}
+
+/** D4: missing expected_revision rejects (400); stale revision conflicts (409). */
+function requireExpectedRevision(existing, patch) {
+  if (patch.expected_revision == null) {
+    throw badRequest(
+      'html body writes require expected_revision; use golem ticket replace-body or patch-blocks for block edits',
+      'expected_revision_required');
+  }
+  const current = Number(existing.body_revision ?? 1);
+  if (Number(patch.expected_revision) !== current) {
+    // Recovery payload: current revision plus the current outline so a stale
+    // writer can reconcile without re-reading the full body (A7).
+    const extra = { expected_revision: Number(patch.expected_revision), current_revision: current };
+    if ((existing.body_format ?? 'markdown') === 'html') {
+      try { extra.outline = parseAndNormalizeDoc(existing.body).blocks; } catch { /* body unreadable: revision pointer is enough */ }
+    }
+    throw revisionConflict(`stale body_revision: expected ${patch.expected_revision}, current ${current}`, extra);
+  }
+}
+
 // Hydrate a raw ticket row into a plain object with labels parsed to an array.
 // Dormant columns are stripped here so no API/tool consumer can mistake one for
 // live truth: `phase` (GOL-150 — `state` is the only lifecycle) and
@@ -195,6 +272,13 @@ export function openTrackerDb(dbPath = defaultDbPath()) {
         kind          TEXT NOT NULL DEFAULT 'task',
         title         TEXT NOT NULL,
         body          TEXT NOT NULL DEFAULT '',
+        -- GOL-326: explicit body format. Format is data, never inferred from
+        -- the body's first character; existing rows default to Markdown and
+        -- are not rewritten.
+        body_format   TEXT NOT NULL DEFAULT 'markdown',
+        -- GOL-326 D4: monotonic optimistic document revision. Any body
+        -- mutation increments once; metadata-only updates do not.
+        body_revision INTEGER NOT NULL DEFAULT 1,
         state         TEXT NOT NULL DEFAULT 'todo',
         -- GOL-150: dormant. The phase machine is gone; state is the only
         -- lifecycle. The column survives so historical rows keep their value
@@ -526,6 +610,19 @@ WHERE state_changed_at IS NULL`).run();
       WHERE anchor_kind IS NULL
     `).run();
 
+    // GOL-326: explicit body format + optimistic document revision. Data-only:
+    // every existing row defaults to Markdown at revision 1, no body or
+    // comment is rewritten, and a body's first character never decides its
+    // format. (The CREATE TABLE above already carries both columns for fresh
+    // DBs; this ALTER makes existing DBs match.)
+    const ticketCols22 = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
+    if (!ticketCols22.includes('body_format')) {
+      db.exec("ALTER TABLE tickets ADD COLUMN body_format TEXT NOT NULL DEFAULT 'markdown'");
+    }
+    if (!ticketCols22.includes('body_revision')) {
+      db.exec('ALTER TABLE tickets ADD COLUMN body_revision INTEGER NOT NULL DEFAULT 1');
+    }
+
     // Schema migration v5 -> v6 (TKT-0519): per-project display ids (pseq +
     // display_id) + a project_prefixes table. Historical smoke debris is
     // quarantined to smoketests-000000 BEFORE backfill so real projects number
@@ -662,13 +759,26 @@ WHERE state_changed_at IS NULL`).run();
     // GOL-421 additive facts/links. Keep old columns and rows intact; the old
     // status is compatibility display data, never the source of core delivery
     // or acknowledgement truth.
+    db.exec(`CREATE TABLE IF NOT EXISTS notification_schedules (
+      id TEXT PRIMARY KEY, creator_id TEXT NOT NULL, creator_kind TEXT NOT NULL,
+      owner_project_id TEXT, target_session_id TEXT NOT NULL, target_project_id TEXT,
+      request_fingerprint TEXT NOT NULL, message_text TEXT NOT NULL, ticket_context TEXT,
+      after_ms INTEGER NOT NULL, interval_ms INTEGER, require_typed INTEGER NOT NULL DEFAULT 0,
+      next_due_at TEXT, occurrence_seq INTEGER NOT NULL DEFAULT 0,
+      current_envelope_id TEXT REFERENCES message_envelopes(id),
+      status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      cancelled_at TEXT, blocked_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_notification_schedules_due ON notification_schedules(status, next_due_at);`);
     const envelopeCols = db.prepare('PRAGMA table_info(message_envelopes)').all().map((c) => c.name);
     for (const [col, def] of [
+      ['request_fingerprint', 'TEXT'], ['schedule_id', 'TEXT REFERENCES notification_schedules(id)'], ['occurrence_seq', 'INTEGER'],
       ['root_id', 'TEXT'], ['parent_id', 'TEXT'], ['sender_id', 'TEXT'],
       ['reply_to_session_id', 'TEXT'], ['recipient_session_id', 'TEXT'],
       ['delivery_attempted_at', 'TEXT'], ['delivery_opportunity_at', 'TEXT'],
       ['delivery_error', 'TEXT'], ['ack_deadline_at', 'TEXT'], ['picked_up_at', 'TEXT'], ['reply_envelope_id', 'TEXT'], ['completed_event_id', 'INTEGER'],
     ]) if (!envelopeCols.includes(col)) db.exec(`ALTER TABLE message_envelopes ADD COLUMN ${col} ${def}`);
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_occurrence ON message_envelopes(schedule_id, occurrence_seq) WHERE schedule_id IS NOT NULL');
     const envelopeCols14 = db.prepare('PRAGMA table_info(message_envelopes)').all().map((c) => c.name);
     for (const [col, def] of [
       ['ping_envelope_id', 'TEXT'], ['escalate_after', 'TEXT'],
@@ -737,11 +847,11 @@ WHERE state_changed_at IS NULL`).run();
     stmts = {
       insertTicket: db.prepare(`
         INSERT INTO tickets
-          (id, seq, project_id, kind, title, body, state, priority, labels,
+          (id, seq, project_id, kind, title, body, body_format, body_revision, state, priority, labels,
            parent_id, assignee, created_by, dispatched_to,
            dispatched_at, source_ref, created_at, updated_at, pseq, display_id)
         VALUES
-          (@id, @seq, @project_id, @kind, @title, @body, @state, @priority, @labels,
+          (@id, @seq, @project_id, @kind, @title, @body, @body_format, @body_revision, @state, @priority, @labels,
            @parent_id, @assignee, @created_by, @dispatched_to,
            @dispatched_at, @source_ref, @created_at, @updated_at, @pseq, @display_id)
       `),
@@ -801,7 +911,11 @@ WHERE state_changed_at IS NULL`).run();
       ),
       getEnvelopeRetry: db.prepare('SELECT * FROM envelope_delivery_retries WHERE envelope_id = ?'),
       listPendingEnvelopeRetries: db.prepare(
-        "SELECT * FROM envelope_delivery_retries WHERE status IN ('pending','publishing') ORDER BY created_at ASC, envelope_id ASC"
+        `SELECT r.* FROM envelope_delivery_retries r JOIN message_envelopes e ON e.id = r.envelope_id
+         WHERE r.status IN ('pending','publishing') AND e.status NOT IN ('cancelled','expired','superseded')
+           AND (e.schedule_id IS NULL OR EXISTS (SELECT 1 FROM notification_schedules s WHERE s.id=e.schedule_id AND s.status='active')
+             OR e.delivery_state IN ('published','settled','interrupted','recovery_required'))
+         ORDER BY r.created_at ASC, r.envelope_id ASC`
       ),
       insertEnvelopeRetry: db.prepare(`
         INSERT OR IGNORE INTO envelope_delivery_retries
@@ -813,10 +927,32 @@ WHERE state_changed_at IS NULL`).run();
         SET status = 'publishing', publishing_owner = @owner, publishing_expires_at = @expires
         WHERE envelope_id = @envelope_id
           AND (status = 'pending' OR (status = 'publishing' AND publishing_expires_at < @now))
+          AND EXISTS (SELECT 1 FROM message_envelopes e WHERE e.id = @envelope_id
+            AND e.status NOT IN ('cancelled','expired','superseded')
+            AND ((@settlement = 1 AND e.delivery_state IN ('published','settled','interrupted','recovery_required'))
+              OR (@settlement = 0 AND e.delivery_state IN ('pending','claimed') AND e.accepted_attempt_id IS NULL
+                AND (e.schedule_id IS NULL OR EXISTS (SELECT 1 FROM notification_schedules s WHERE s.id=e.schedule_id AND s.status='active'))
+                AND (e.kind IN ('interrupt','halt','role_assign','gate_resolution') OR NOT EXISTS (
+                  SELECT 1 FROM envelope_delivery_retries other JOIN message_envelopes m ON m.id=other.envelope_id
+                  WHERE other.session_id=e.target_session_id AND other.envelope_id!=e.id
+                    AND other.status='publishing' AND other.publishing_expires_at > @now
+                    AND m.kind NOT IN ('interrupt','halt','role_assign','gate_resolution'))))))
       `),
+      blockEnvelopeRetry: db.prepare(`UPDATE envelope_delivery_retries
+        SET status = 'blocked', publishing_owner = NULL, publishing_expires_at = NULL, last_error = @error
+        WHERE envelope_id = @id AND status = 'publishing' AND publishing_owner = @owner`),
+      cancelEnvelopeRetry: db.prepare(`UPDATE envelope_delivery_retries
+        SET status = 'cancelled', publishing_owner = NULL, publishing_expires_at = NULL, resolved_at = @ts
+        WHERE envelope_id = @id AND status IN ('pending','blocked')`),
       releaseEnvelopeRetry: db.prepare(`
         UPDATE envelope_delivery_retries
-        SET status = 'pending', publishing_owner = NULL, publishing_expires_at = NULL, last_error = @last_error
+        SET status = CASE WHEN EXISTS (SELECT 1 FROM message_envelopes e WHERE e.id = @envelope_id
+              AND e.status IN ('cancelled','expired','superseded')) THEN 'cancelled'
+            WHEN EXISTS (SELECT 1 FROM message_envelopes e JOIN notification_schedules s ON s.id=e.schedule_id
+              WHERE e.id=@envelope_id AND s.status='cancelled') THEN 'cancelled'
+            WHEN EXISTS (SELECT 1 FROM message_envelopes e JOIN notification_schedules s ON s.id=e.schedule_id
+              WHERE e.id=@envelope_id AND s.status='blocked') THEN 'blocked' ELSE 'pending' END,
+            publishing_owner = NULL, publishing_expires_at = NULL, last_error = @last_error
         WHERE envelope_id = @envelope_id AND status = 'publishing' AND publishing_owner = @owner
       `),
       deliverEnvelopeRetry: db.prepare(`
@@ -884,7 +1020,7 @@ WHERE state_changed_at IS NULL`).run();
       `),
       updateTypedEnvelopeLifecycle: db.prepare(`
         UPDATE message_envelopes
-        SET status = @status,
+        SET status = CASE WHEN status IN ('cancelled','expired','superseded') THEN status ELSE @status END,
             delivery_state = @delivery_state,
             delivery_attempt_id = COALESCE(@delivery_attempt_id, delivery_attempt_id),
             accepted_attempt_id = COALESCE(accepted_attempt_id, @accepted_attempt_id),
@@ -1457,6 +1593,7 @@ WHERE state_changed_at IS NULL`).run();
     init() {
       migrate();
       prepare();
+      api.schedules = createNotificationSchedules({ db, tracker: api });
       commentDispatch = createCommentDispatchService({
         db,
         now,
@@ -1559,6 +1696,7 @@ WHERE state_changed_at IS NULL`).run();
         kind = DEFAULT_KIND,
         title,
         body = '',
+        body_format = 'markdown',
         state = 'todo',
         priority = null,
         labels = [],
@@ -1568,13 +1706,24 @@ WHERE state_changed_at IS NULL`).run();
         source_ref = null,
       } = input;
 
-      if (!project_id) throw new Error('createTicket: project_id is required');
-      if (!title) throw new Error('createTicket: title is required');
-      if (!KINDS.has(kind)) throw new Error(`createTicket: invalid kind '${kind}'`);
-      if (!STATES.has(state)) throw new Error(`createTicket: invalid state '${state}'`);
+      if (!project_id) throw badRequest('createTicket: project_id is required');
+      if (!title) throw badRequest('createTicket: title is required');
+      if (!KINDS.has(kind)) throw badRequest(`createTicket: invalid kind '${kind}'`);
+      if (!STATES.has(state)) throw badRequest(`createTicket: invalid state '${state}'`);
+      // GOL-326 D1: format is explicit data and HTML is spec-only in this
+      // slice. The body's first character never decides the format.
+      const format = validateBodyFormat(body_format);
+      if (format === 'html' && kind !== 'spec') {
+        throw badRequest(`html body_format is supported for specs only, not '${kind}'`, 'unsupported_format');
+      }
+      let bodyStored;
+      if (format === 'html') {
+        bodyStored = normalizeForStorage(body, { kind });
+      } else {
+        bodyStored = toMarkdownBody(body);
+      }
 
       const ts = now();
-      const bodyMd = toMarkdownBody(body);
       const txn = db.transaction(() => {
         const { id, seq, pseq, display_id } = allocateTicketId(project_id);
         const row = {
@@ -1583,7 +1732,9 @@ WHERE state_changed_at IS NULL`).run();
           project_id,
           kind,
           title,
-          body: bodyMd,
+          body: bodyStored,
+          body_format: format,
+          body_revision: 1,
           state,
           priority,
           labels: serializeLabels(labels),
@@ -1604,17 +1755,20 @@ WHERE state_changed_at IS NULL`).run();
           project_id,
           type: 'created',
           actor: created_by,
-          data: { kind, state, title },
+          data: { kind, state, title, body_format: format },
         });
         return row;
       });
-      return hydrateTicket(txn());
+      const ticket = hydrateTicket(txn());
+      // D3 rule 5: create responses carry the normalized outline + assigned IDs.
+      if (format === 'html') ticket.outline = parseAndNormalizeDoc(ticket.body).blocks;
+      return ticket;
     },
 
     getTicket(id) {
       const row = stmts.getTicket.get(id);
       if (!row) return null;
-      const comments = stmts.getComments.all(id).map(hydrateComment);
+      const comments = withAnchorStatus(row, stmts.getComments.all(id).map(hydrateComment));
       const links = stmts.listLinks.all(id, id);
       // TKT-0245: embed any pending dispatch so the drawer needs no extra fetch.
       const pending_dispatch = stmts.getPendingForTicket.get(id) ?? null;
@@ -1774,15 +1928,35 @@ WHERE state_changed_at IS NULL`).run();
       }
       where.push("(title LIKE @q ESCAPE '\\' OR body LIKE @q ESCAPE '\\' OR display_id LIKE @q ESCAPE '\\')");
       const sql =
-        'SELECT id, title, kind, state, body, updated_at, display_id FROM tickets ' +
+        'SELECT id, title, kind, state, body, body_format, updated_at, display_id FROM tickets ' +
         'WHERE ' + where.join(' AND ') + ' ' +
         'ORDER BY updated_at DESC LIMIT @limit';
       const rows = db.prepare(sql).all(params);
       const qLower = String(q).toLowerCase();
+      // GOL-326 A11: HTML bodies are matched on readable text — tags split
+      // phrases, so a raw-body LIKE can miss matches that span tags, and
+      // tag/style/script text must never surface in snippets. HTML rows that
+      // the raw LIKE missed are re-checked over extracted text in JS.
+      const htmlRows = db.prepare(
+        `SELECT id, title, kind, state, body, body_format, updated_at, display_id
+         FROM tickets
+         WHERE body_format = 'html'
+           ${project_id != null ? 'AND project_id = @project_id' : ''}
+           ${kind != null ? 'AND kind = @kind' : ''}
+         ORDER BY updated_at DESC LIMIT 400`).all(params);
+      const seen = new Set(rows.map((r) => r.id));
+      for (const row of htmlRows) {
+        if (seen.has(row.id)) continue;
+        if (searchTextFromHtml(row.body).toLowerCase().includes(qLower)) {
+          seen.add(row.id);
+          rows.push(row);
+        }
+      }
       const pad = 80;
       return rows.map((r) => {
         const title = r.title || '';
-        const body = r.body || '';
+        const htmlFormat = (r.body_format ?? 'markdown') === 'html';
+        const body = htmlFormat ? searchTextFromHtml(r.body) : (r.body || '');
         const titleMatch = title.toLowerCase().includes(qLower);
         const bodyIdx = body.toLowerCase().indexOf(qLower);
         let snippet = '';
@@ -1822,7 +1996,7 @@ WHERE state_changed_at IS NULL`).run();
       // not rewritable through the agent-facing tracker surface. That is a
       // guardrail against casual edits, not enforcement — anything with shell
       // access can reach this route directly.
-      const ALLOWED = ['title', 'body', 'kind', 'state', 'priority', 'labels', 'parent_id', 'assignee', 'source_ref'];
+      const ALLOWED = ['title', 'body', 'body_format', 'kind', 'state', 'priority', 'labels', 'parent_id', 'assignee', 'source_ref'];
       const updates = {};
       for (const key of ALLOWED) {
         if (Object.prototype.hasOwnProperty.call(patch, key)) {
@@ -1830,16 +2004,53 @@ WHERE state_changed_at IS NULL`).run();
         }
       }
       if ('kind' in updates && !KINDS.has(updates.kind)) {
-        throw new Error(`updateTicket: invalid kind '${updates.kind}'`);
+        throw badRequest(`updateTicket: invalid kind '${updates.kind}'`);
+      }
+      // GOL-326 D1 invariant: HTML bodies are spec-only. A kind change cannot
+      // strand an html body on a task/doc — the caller must convert the format
+      // explicitly (body_format + complete body + expected_revision) first or
+      // in the same request.
+      if ('kind' in updates && updates.kind !== 'spec') {
+        const effectiveFormat = 'body_format' in updates
+          ? validateBodyFormat(updates.body_format)
+          : validateBodyFormat(existing.body_format ?? 'markdown');
+        if (effectiveFormat === 'html') {
+          throw badRequest(
+            `html body_format is supported for specs only; change body_format to markdown (with the complete body and expected_revision) before changing kind`,
+            'unsupported_format');
+        }
       }
       if ('state' in updates && !STATES.has(updates.state)) {
-        throw new Error(`updateTicket: invalid state '${updates.state}'`);
+        throw badRequest(`updateTicket: invalid state '${updates.state}'`);
       }
       if ('labels' in updates) {
         updates.labels = serializeLabels(updates.labels);
       }
-      if ('body' in updates) {
-        updates.body = toMarkdownBody(updates.body);
+      // GOL-326 D4: every existing-HTML full-body write and every explicit
+      // format change requires expected_revision; stale writes conflict with
+      // the current revision and current outline. Markdown body writes stay
+      // ungated (compatibility) but still increment the revision once.
+      if ('body' in updates || 'body_format' in updates) {
+        const requestedFormat = 'body_format' in updates
+          ? validateBodyFormat(updates.body_format)
+          : validateBodyFormat(existing.body_format ?? 'markdown');
+        const currentFormat = validateBodyFormat(existing.body_format ?? 'markdown');
+        const isFormatChange = requestedFormat !== currentFormat;
+        if ('body_format' in updates && !('body' in updates)) {
+          throw badRequest('changing body_format requires the complete replacement body in the same request',
+            'body_required_for_format_change');
+        }
+        if (isFormatChange || currentFormat === 'html') {
+          requireExpectedRevision(existing, patch);
+        }
+        if (isFormatChange && requestedFormat === 'html' && existing.kind !== 'spec') {
+          throw badRequest(`html body_format is supported for specs only, not '${existing.kind}'`, 'unsupported_format');
+        }
+        updates.body = requestedFormat === 'html'
+          ? normalizeForStorage(updates.body, { kind: existing.kind })
+          : toMarkdownBody(updates.body);
+        updates.body_format = requestedFormat;
+        updates.body_revision = Number(existing.body_revision ?? 1) + 1;
       }
 
       const ts = now();
@@ -1901,7 +2112,176 @@ WHERE state_changed_at IS NULL`).run();
         }
         return stmts.getTicket.get(id);
       });
-      return hydrateTicket(txn());
+      const ticket = hydrateTicket(txn());
+      // D3 rule 5: full-update responses of HTML tickets carry the normalized
+      // outline + assigned IDs so callers never re-parse the body.
+      if ((ticket.body_format ?? 'markdown') === 'html') {
+        ticket.outline = parseAndNormalizeDoc(ticket.body).blocks;
+      }
+      return ticket;
+    },
+
+    // ---- GOL-326: HTML outline / block read / atomic block patch ----------
+
+    /** Shared guard: the block contracts apply to HTML spec bodies only. */
+    requireHtmlTicket(id) {
+      const row = stmts.getTicket.get(id);
+      if (!row) throw notFound(`ticket '${id}' not found`);
+      if ((row.body_format ?? 'markdown') !== 'html') {
+        throw badRequest(
+          `ticket '${id}' has a Markdown body; outline, block reads and block patches apply to html spec bodies`,
+          'unsupported_format', { body_format: 'markdown' });
+      }
+      return row;
+    },
+
+    /** Comment open/resolved counts per block for one ticket. */
+    blockCommentCounts(ticketId) {
+      const open = new Map();
+      const resolved = new Map();
+      for (const c of stmts.getComments.all(ticketId)) {
+        if (!c.block_id) continue;
+        const bucket = c.status === 'resolved' ? resolved : open;
+        bucket.set(c.block_id, (bucket.get(c.block_id) ?? 0) + 1);
+      }
+      return { open, resolved };
+    },
+
+    /** GET /api/tickets/:id/outline — ordered blocks with anchor metadata. */
+    getTicketOutline(id) {
+      const row = this.requireHtmlTicket(id);
+      const { blocks } = parseAndNormalizeDoc(row.body);
+      const { open, resolved } = this.blockCommentCounts(id);
+      return {
+        ticket_id: row.id,
+        display_id: row.display_id,
+        body_format: 'html',
+        body_revision: Number(row.body_revision ?? 1),
+        blocks: blocks.map((b) => ({
+          id: b.id,
+          parent_id: b.parent_id,
+          kind: b.kind,
+          tag: b.tag,
+          heading: b.heading,
+          short_text: b.short_text,
+          hash: b.hash,
+          comments: {
+            open: open.get(b.id) ?? 0,
+            resolved: resolved.get(b.id) ?? 0,
+          },
+        })),
+      };
+    },
+
+    /** GET /api/tickets/:id/blocks/:blockId — one block, not the full body. */
+    getTicketBlock(id, blockId) {
+      const row = this.requireHtmlTicket(id);
+      const parsed = parseAndNormalizeDoc(row.body);
+      const meta = parsed.blocks.find((b) => b.id === blockId);
+      if (!meta) {
+        throw notFound(`block '${blockId}' not found on ticket '${id}'`, 'block_not_found', {
+          block_id: blockId,
+          body_revision: Number(row.body_revision ?? 1),
+        });
+      }
+      const comments = withAnchorStatus(row, stmts.getComments.all(id))
+        .filter((c) => c.block_id === blockId);
+      return {
+        ticket_id: row.id,
+        display_id: row.display_id,
+        block_id: meta.id,
+        parent_id: meta.parent_id,
+        kind: meta.kind,
+        tag: meta.tag,
+        heading: meta.heading,
+        short_text: meta.short_text,
+        hash: meta.hash,
+        html: blockHtmlFromDoc(parsed.doc, blockId),
+        body_revision: Number(row.body_revision ?? 1),
+        comments,
+        child_blocks: parsed.blocks.filter((b) => b.parent_id === blockId)
+          .map((b) => ({ id: b.id, kind: b.kind })),
+      };
+    },
+
+    /**
+     * POST /api/tickets/:id/block-patches — one atomic operations batch
+     * (GOL-326 write contract). Revision is re-checked inside the transaction;
+     * any invalid operation rolls the whole batch back.
+     */
+    patchTicketBlocks(id, input = {}) {
+      const row = stmts.getTicket.get(id);
+      if (!row) throw notFound(`ticket '${id}' not found`);
+      if ((row.body_format ?? 'markdown') !== 'html') {
+        throw badRequest(
+          `ticket '${id}' has a Markdown body; block patches apply to html spec bodies`,
+          'unsupported_format', { body_format: 'markdown' });
+      }
+      if (input.expected_revision == null) {
+        throw badRequest('block patches require expected_revision', 'expected_revision_required');
+      }
+      const ts = now();
+      const txn = db.transaction(() => {
+        // Re-read inside the transaction so a concurrent body write serializes
+        // ahead of us instead of interleaving.
+        const current = stmts.getTicket.get(id);
+        const currentRevision = Number(current.body_revision ?? 1);
+        if (Number(input.expected_revision) !== currentRevision) {
+          throw revisionConflict(
+            `stale body_revision: expected ${input.expected_revision}, current ${currentRevision}`,
+            {
+              expected_revision: Number(input.expected_revision),
+              current_revision: currentRevision,
+              // Recovery payload: the current outline lets a stale writer
+              // reconcile without re-reading the full body (A7).
+              outline: parseAndNormalizeDoc(current.body).blocks,
+            });
+        }
+        const before = parseAndNormalizeDoc(current.body);
+        let result;
+        try {
+          result = applyBlockOperations(before.doc, input.operations);
+        } catch (err) {
+          if (err instanceof TrackerInputError) throw err;
+          throw badRequest(`block operations failed: ${err?.message ?? err}`, 'invalid_block_operations');
+        }
+        // Removed IDs = persisted IDs that no longer exist after the batch;
+        // their comments detach explicitly (never silently retargeted).
+        const removedIds = [...before.ids].filter((blockId) => !result.ids.has(blockId));
+        const detached = stmts.getComments.all(id)
+          .filter((c) => c.block_id && removedIds.includes(c.block_id))
+          .map((c) => ({ id: c.id, author: c.author, block_id: c.block_id, anchor_status: 'detached' }));
+        const nextRevision = currentRevision + 1;
+        db.prepare('UPDATE tickets SET body = ?, body_revision = ?, updated_at = ? WHERE id = ?')
+          .run(result.html, nextRevision, ts, id);
+        recordEvent({
+          ticket_id: id,
+          project_id: current.project_id,
+          type: 'block_patched',
+          actor: input.actor ?? 'human',
+          data: {
+            inserted: result.inserted,
+            removed: removedIds.length,
+            detached_comments: detached.length,
+            body_revision: nextRevision,
+          },
+        });
+        const { open, resolved } = this.blockCommentCounts(id);
+        return {
+          ticket_id: current.id,
+          display_id: current.display_id,
+          body_revision: nextRevision,
+          inserted: result.inserted,
+          removed: removedIds,
+          detached,
+          outline: result.blocks.map((b) => ({
+            id: b.id, parent_id: b.parent_id, kind: b.kind, tag: b.tag,
+            heading: b.heading, short_text: b.short_text, hash: b.hash,
+            comments: { open: open.get(b.id) ?? 0, resolved: resolved.get(b.id) ?? 0 },
+          })),
+        };
+      });
+      return txn();
     },
 
     // TKT-0105: state + rank move in a single transaction. Used by the
@@ -2159,12 +2539,18 @@ WHERE state_changed_at IS NULL`).run();
     // ticket ids; this layer deliberately accepts canonical ids only.
     listEnvelopeViews,
 
+    getEnvelopeReceipt(envelopeId, options = {}) {
+      return notificationReceipt(stmts.getEnvelope.get(envelopeId), stmts.getEnvelopeRetry.get(envelopeId), options);
+    },
+
     getEnvelopeView(envelopeId) {
       const envelope = stmts.getEnvelope.get(envelopeId);
       if (!envelope) return null;
       const rootId = envelope.root_id || envelope.id;
       const root = stmts.getEnvelope.get(rootId);
-      if (!root || root.kind !== 'ticket_dispatch') return null;
+      if (!root || root.kind !== 'ticket_dispatch') {
+        return notificationReceipt(envelope, stmts.getEnvelopeRetry.get(envelopeId));
+      }
       const row = envelopeRootRows({ envelope_id: root.id, limit: 1 })[0];
       return row ? envelopeView(row) : null;
     },
@@ -2176,7 +2562,25 @@ WHERE state_changed_at IS NULL`).run();
     // adapter accepts only an envelope and never a free-form channel route.
     // Keep the allowed vocabulary narrow so this table does not become a
     // generic, unaudited message bus.
-    createControlEnvelope({ project_id = null, sender_id, recipient_session_id, kind = 'session_notify', payload = '' } = {}) {
+    admitNotification({ id, fingerprint, sender_id, recipient_session_id, project_id = null, payload, require_typed = false } = {}) {
+      return db.transaction(() => {
+        if (api.schedules.get(id)) throw new NotificationError('request-id already belongs to a schedule', 'OPERATION_CONFLICT', 409);
+        const existing = stmts.getEnvelope.get(id);
+        if (existing) {
+          if (existing.kind !== 'session_notify' || existing.request_fingerprint !== fingerprint) {
+            throw new NotificationError('request-id already belongs to a different operation', 'OPERATION_CONFLICT', 409);
+          }
+          return { envelope: existing, created: false };
+        }
+        const envelope = api.createControlEnvelope({ id, project_id, sender_id, recipient_session_id, payload });
+        db.prepare('UPDATE message_envelopes SET request_fingerprint = ? WHERE id = ?').run(fingerprint, id);
+        api.enqueueEnvelopeRetry(id, { session_id: recipient_session_id, content: payload.content,
+          legacy: { path: '/brief', body: payload.content }, require_typed });
+        return { envelope: stmts.getEnvelope.get(id), created: true };
+      }).immediate();
+    },
+
+    createControlEnvelope({ id = crypto.randomUUID(), project_id = null, sender_id, recipient_session_id, kind = 'session_notify', payload = '' } = {}) {
       const allowedKinds = new Set([
         'brief',
         'consult',
@@ -2192,7 +2596,7 @@ WHERE state_changed_at IS NULL`).run();
         ? { ...payload, content: String(payload.content ?? '') }
         : { content: String(payload) };
       const created_at = now();
-      const row = { id: crypto.randomUUID(), root_id: null, parent_id: null, ticket_id: null, project_id,
+      const row = { id, root_id: null, parent_id: null, ticket_id: null, project_id,
         sender_id, reply_to_session_id: sender_id, recipient_session_id, sender_session_id: sender_id,
         target_session_id: recipient_session_id, kind, payload: JSON.stringify(body),
         status: 'pending', ack_deadline_at: null, created_at, expires_at: expiresAt(created_at) };
@@ -2227,6 +2631,9 @@ WHERE state_changed_at IS NULL`).run();
       const existing = stmts.getEnvelope.get(envelopeId);
       if (!existing) throw new Error(`recordTypedEnvelopeLifecycle: envelope '${envelopeId}' not found`);
       const prior = existing.delivery_state || 'pending';
+      if (state === 'pending' && existing.accepted_attempt_id) {
+        throw new Error('recordTypedEnvelopeLifecycle: accepted admission cannot return to pending');
+      }
       if (prior === state
         && (attempt_id == null || attempt_id === existing.delivery_attempt_id)
         && (accepted_attempt_id == null || accepted_attempt_id === existing.accepted_attempt_id)) return existing;
@@ -2386,8 +2793,14 @@ WHERE state_changed_at IS NULL`).run();
       if (!['cancelled', 'expired'].includes(status)) throw new Error('resolveEnvelope: status must be cancelled or expired');
       const existing = stmts.getEnvelope.get(envelopeId);
       if (!existing) throw new Error(`resolveEnvelope: envelope '${envelopeId}' not found`);
-      stmts.resolveEnvelope.run({ id: envelopeId, status, ts: now(), last_error: error ?? null });
-      return stmts.getEnvelope.get(envelopeId);
+      return db.transaction(() => {
+        const ts = now();
+        stmts.resolveEnvelope.run({ id: envelopeId, status, ts, last_error: error ?? null });
+        const current = stmts.getEnvelope.get(envelopeId);
+        if (['cancelled', 'expired'].includes(current.status)) stmts.cancelEnvelopeRetry.run({ id: envelopeId, ts });
+        // Publishing ownership is retained: cancellation cannot recall a send.
+        return current;
+      }).immediate();
     },
 
     acknowledgeEnvelope(envelopeId, { target_session_id, kind = 'brief', summary = '' } = {}) {
@@ -2421,7 +2834,7 @@ WHERE state_changed_at IS NULL`).run();
       const ts = now();
       const txn = db.transaction(() => {
         stmts.cancelQueueRow.run({ resolved_at: ts, id: queueId });
-        if (row.envelope_id) stmts.resolveEnvelope.run({ id: row.envelope_id, status: 'cancelled', ts, last_error: null });
+        if (row.envelope_id) api.resolveEnvelope(row.envelope_id, { status: 'cancelled' });
         recordEvent({
           ticket_id: row.ticket_id,
           project_id: row.project_id,
@@ -2451,7 +2864,7 @@ WHERE state_changed_at IS NULL`).run();
       const ts = now();
       const txn = db.transaction(() => {
         stmts.expireQueueRow.run({ last_error: reason ?? null, resolved_at: ts, id: queueId });
-        if (row.envelope_id) stmts.resolveEnvelope.run({ id: row.envelope_id, status: 'expired', ts, last_error: reason ?? null });
+        if (row.envelope_id) api.resolveEnvelope(row.envelope_id, { status: 'expired', error: reason });
         recordEvent({
           ticket_id: row.ticket_id,
           project_id: row.project_id,
@@ -2561,6 +2974,25 @@ WHERE state_changed_at IS NULL`).run();
       return result.changes === 1;
     },
 
+    blockQueuedDispatch(queueId, { ownerToken = null, error = 'delivery requires inspection', nowMs = Date.now() } = {}) {
+      return db.transaction(() => {
+        const row = stmts.getQueueRow.get(queueId);
+        if (!row) return null;
+        const changed = db.prepare(`UPDATE dispatch_queue SET status = 'blocked',
+          publishing_owner = NULL, publishing_expires_at = NULL, resolved_at = @ts, last_error = @error
+          WHERE id = @id AND (status = 'pending' OR (status = 'publishing'
+            AND (publishing_owner = @owner OR publishing_expires_at < @ts)))
+          AND EXISTS (SELECT 1 FROM envelope_delivery_retries r WHERE r.envelope_id = dispatch_queue.envelope_id
+            AND r.status IN ('blocked','cancelled'))`).run({
+          id: queueId, owner: ownerToken, ts: new Date(nowMs).toISOString(), error,
+        });
+        if (changed.changes) recordEvent({ ticket_id: row.ticket_id, project_id: row.project_id,
+          type: 'dispatch_delivery_blocked', actor: 'golem-drainer',
+          data: { queue_id: queueId, envelope_id: row.envelope_id, reason: error } });
+        return stmts.getQueueRow.get(queueId);
+      }).immediate();
+    },
+
     releaseQueuePublishing(queueId, { ownerToken } = {}) {
       if (!ownerToken) throw new Error('releaseQueuePublishing: ownerToken is required');
       return stmts.releaseQueuePublishingRow.run({ id: queueId, owner: ownerToken }).changes === 1;
@@ -2597,14 +3029,60 @@ WHERE state_changed_at IS NULL`).run();
       return stmts.getEnvelopeRetry.get(envelopeId) ?? null;
     },
 
-    claimEnvelopeRetry(envelopeId, { ownerToken, leaseMs = 30_000, nowMs = Date.now() } = {}) {
+    claimEnvelopeRetry(envelopeId, { ownerToken, leaseMs = 45_000, nowMs = Date.now(), settlementOnly = false } = {}) {
       if (!ownerToken) throw new Error('claimEnvelopeRetry: ownerToken is required');
-      return stmts.claimEnvelopeRetry.run({
-        envelope_id: envelopeId,
-        owner: ownerToken,
-        now: new Date(nowMs).toISOString(),
-        expires: new Date(nowMs + leaseMs).toISOString(),
-      }).changes === 1;
+      return db.transaction(() => {
+        const retry = stmts.getEnvelopeRetry.get(envelopeId);
+        const envelope = stmts.getEnvelope.get(envelopeId);
+        if (!envelope || ['cancelled', 'expired', 'superseded'].includes(envelope.status)) return false;
+        if (!settlementOnly && envelope.accepted_attempt_id && envelope.delivery_state === 'pending') {
+          api.markEnvelopeUncertain(envelopeId, { error: 'historic pending row retains native admission; inspect before recovery' });
+          return false;
+        }
+        // A crashed legacy publisher has no receiver dedupe. Expired ownership
+        // is not proof that channel publication never happened.
+        if (!settlementOnly && retry?.status === 'publishing' && !retry.require_typed
+          && Date.parse(retry.publishing_expires_at) < nowMs) {
+          api.markEnvelopeUncertain(envelopeId, { error: 'legacy publication lease expired; delivery may have occurred' });
+          stmts.blockEnvelopeRetry.run({ id: envelopeId, owner: retry.publishing_owner, error: 'legacy handoff uncertain' });
+          return false;
+        }
+        return stmts.claimEnvelopeRetry.run({
+          envelope_id: envelopeId, owner: ownerToken, settlement: settlementOnly ? 1 : 0,
+          now: new Date(nowMs).toISOString(), expires: new Date(nowMs + leaseMs).toISOString(),
+        }).changes === 1;
+      }).immediate();
+    },
+
+    canPublishEnvelope(envelopeId, { ownerToken = null, nowMs = Date.now() } = {}) {
+      const envelope = stmts.getEnvelope.get(envelopeId);
+      if (!envelope || ['cancelled', 'expired', 'superseded'].includes(envelope.status)
+        || !['pending', 'claimed'].includes(envelope.delivery_state || 'pending')
+        || envelope.accepted_attempt_id) return false;
+      if (envelope.schedule_id && api.schedules.get(envelope.schedule_id)?.status !== 'active') return false;
+      if (!ownerToken) return true;
+      const retry = stmts.getEnvelopeRetry.get(envelopeId);
+      return retry?.status === 'publishing' && retry.publishing_owner === ownerToken
+        && Date.parse(retry.publishing_expires_at) > nowMs;
+    },
+
+    markEnvelopeUncertain(envelopeId, { error } = {}) {
+      const envelope = stmts.getEnvelope.get(envelopeId);
+      if (!envelope) return null;
+      if ((envelope.delivery_state || 'pending') === 'pending') {
+        api.recordTypedEnvelopeLifecycle(envelopeId, { state: 'claimed', attempt_id: envelope.delivery_attempt_id || crypto.randomUUID() });
+      }
+      const current = stmts.getEnvelope.get(envelopeId);
+      if (['claimed', 'accepted'].includes(current.delivery_state)) {
+        api.recordTypedEnvelopeLifecycle(envelopeId, { state: 'recovery_required',
+          attempt_id: current.delivery_attempt_id, accepted_attempt_id: current.accepted_attempt_id || current.delivery_attempt_id, error });
+      }
+      return stmts.getEnvelope.get(envelopeId);
+    },
+
+    blockEnvelopeRetry(envelopeId, { ownerToken, error } = {}) {
+      if (!ownerToken) throw new Error('blockEnvelopeRetry: ownerToken is required');
+      return stmts.blockEnvelopeRetry.run({ id: envelopeId, owner: ownerToken, error: error ?? null }).changes === 1;
     },
 
     releaseEnvelopeRetry(envelopeId, { ownerToken, error = null } = {}) {
@@ -2811,6 +3289,15 @@ WHERE state_changed_at IS NULL`).run();
       const resolvedAnchorKind = anchor_kind
         ?? parent?.anchor_kind
         ?? (resolvedBlockId && !prefix && !suffix ? 'block' : 'text');
+      // GOL-326: block anchors on HTML tickets must exist. Nonexistent IDs are
+      // rejected before any write (A8); Markdown anchors keep current behavior.
+      if (resolvedBlockId && resolvedAnchorKind === 'block' && (existing.body_format ?? 'markdown') === 'html') {
+        const ids = htmlBlockIdSet(existing.body);
+        if (!ids.has(resolvedBlockId)) {
+          throw notFound(`block '${resolvedBlockId}' does not exist on ticket '${ticket_id}'`, 'block_not_found',
+            { block_id: resolvedBlockId });
+        }
+      }
       const ts = now();
       const row = {
         id: crypto.randomUUID(), ticket_id, author,
@@ -2912,6 +3399,17 @@ WHERE state_changed_at IS NULL`).run();
       }
       if ('anchor_kind' in updates && updates.anchor_kind && !['block', 'text'].includes(updates.anchor_kind)) {
         throw new Error(`updateComment: invalid anchor_kind '${updates.anchor_kind}'`);
+      }
+      // GOL-326: block retargeting on HTML tickets is server-validated — a
+      // comment cannot jump to a block that does not exist.
+      if ('block_id' in updates && updates.block_id
+        && (updates.anchor_kind ?? existing.anchor_kind) === 'block'
+        && (existingTicket.body_format ?? 'markdown') === 'html') {
+        const ids = htmlBlockIdSet(existingTicket.body);
+        if (!ids.has(updates.block_id)) {
+          throw notFound(`block '${updates.block_id}' does not exist on ticket '${ticket_id}'`, 'block_not_found',
+            { block_id: updates.block_id });
+        }
       }
       if (!Object.keys(updates).length) return existing;
       const setClause = Object.keys(updates).map((k) => `${k} = @${k}`).join(', ');

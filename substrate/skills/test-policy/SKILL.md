@@ -1,31 +1,17 @@
 ---
 name: test-policy
-description: Read when writing tests, telling a builder how to test, or scoping a check budget. Prefer journey-level proof of observable behavior through real layers; follow the repository's existing test system. Not for verifying a completion claim, use golem:verify-done.
+description: Load when writing tests or scoping checks. Prove behavior and affected consumers through isolated tests and real integration paths, using the project's test system.
 ---
 
 # Test policy
 
-Follow the repository's existing test system first — framework, layout, naming, and runners. The
-policy below governs the tests you add, not a rewrite of what exists.
-
-Prefer tests that prove observable behavior through the layers that make it real: route plus
-validation plus persistence, not a layer alone, against real databases and harnesses where the
-repo supports it. Add the smallest set that covers the changed behavior and its affected
-consumers.
-
-Use a focused unit test when isolated logic is the clearest proof — a parser, a pricing
-calculation, a tricky transform. Do not fan out one test per internal function; coverage of
-structure is not coverage of behavior.
-
-Do not write mock-heavy tests that restate the implementation. A test that asserts the same call
-sequence the code makes tests the code's structure, not its behavior — delete it.
-
-If a behavior cannot be covered mechanically, say so explicitly and name the manual step. Do not
-pad the suite with hollow tests to look thorough.
-
-## Scratch fixtures
-
-Never create scratch or smoke tickets in a real project — they pollute the board and burn
-per-project ticket numbers. Use the repo's quarantined scratch path if it has one, and archive
-fixtures in a `finally` block so a failing test still cleans up. The repo's own `AGENTS.md` names
-the mechanism.
+- Follow the repository's test framework, layout, and runners; no parallel framework.
+- Prove observable behavior, failures, and affected consumers. Unit-test isolated logic;
+  integrate real storage, services, and harnesses where available. Mocks alone do not prove
+  the shipped path.
+- Use isolated state/resources, bounded waits, and cleanup. Never mutate live work in tests.
+- Assert fixtures exercise the behavior. For critical regressions, show the check fails when
+  that behavior is broken. Do not mirror the implementation's call sequence.
+- Report commands, outcomes, and checks not run with reasons. A passing subset is not a full
+  acceptance pass. Name any necessary manual probe.
+- Scratch tickets use the quarantined helper named in project `AGENTS.md`; archive in cleanup.

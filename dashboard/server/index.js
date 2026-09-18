@@ -13,6 +13,7 @@ import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, channelHealth,
 import { createChat } from './chat.js';
 import { readNativeSessionPeek } from './native-session-peek.js';
 import { openTrackerDb } from './tracker-db.js';
+import { createNotificationService } from './notification-service.js';
 import { isChannelDeliveryReady, isTypedWorkerChannel, readChannels } from './channels.js';
 import { applyGateVerdict, createGate } from './projects.js';
 import { listIdeas, createIdea, popIdea, readIdea } from './ideas.js';
@@ -25,6 +26,7 @@ import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
 import { recordTypedEnvelopeOutcome } from './typed-delivery.js';
 import { sameEndpointSecret } from '../../lib/typed-worker-endpoint.js';
+import { closeTypedDeliveryStores } from '../../lib/typed-delivery-tombstones.js';
 import { hasTypedWorkerCapability, readEndpointLeases, readSessionFacts } from '../../lib/session-facts.js';
 import {
   clearRoleDefault,
@@ -207,7 +209,7 @@ function authenticatedReturnBlock(senderSessionId, ticketId) {
     '',
     '## Return route',
     `Authenticated delegating session_id: ${senderSessionId}`,
-    `Return notification: call session_notify({ to: "${senderSessionId}", ticket: "${ticketId}", text: "<outcome, durable report location, and the coordinator's next action>" }).`,
+    `Return notification: notify that exact recipient id (ticket ${ticketId} context) using golem:team-ops for your harness; keep the durable report in the tracker.`,
     'This immutable session id came from the trusted handoff envelope. Do not route by a label/name, rediscover a peer, or choose a different lead.',
   ];
 }
@@ -396,43 +398,40 @@ function ideaSpecBody(body) {
   return [
     '# Spec: Promoted idea',
     '',
-    '## 1. Intent (raw thoughts, preserved)',
+    '<!-- Authoring: golem:spec-writing. Keep only the blocks needed at the current stage. -->',
+    '',
+    '## Summary',
+    '',
+    'Requirements discussion. Ground the intent and surface the next human choices before design.',
+    '',
+    '## Intent (raw thoughts, preserved)',
     '',
     String(body || '').trim() || '(empty idea)',
     '',
-    '## 2. Current behavior and constraints',
+    '## Grounding',
     '',
-    'What the grounded code and research say: relevant existing behavior, the constraints that shape the design, and anything that rules a direction out. Cite paths and sources.',
+    '<relevant concepts, owners, dependencies, evidence, and unknowns>',
     '',
-    '## 3. Design',
+    '## Choices',
     '',
-    'The chosen direction and its important trade-offs, in enough depth that a builder never reconstructs the design conversation.',
+    '| Decision | Scope or design | Open or agreed | Detail |',
+    '|----------|-----------------|----------------|--------|',
+    '| <label> | <kind> | <status> | <link to the explanation> |',
     '',
-    '## 4. Decisions',
-    '',
-    'Choices the human committed during the brainstorm. These are locked; reopen only with the human.',
-    '',
-    '| Decision | Why | Road not taken |',
-    '|----------|-----|----------------|',
-    '| <decision> | <reason> | <rejected alternative, when it explains the choice> |',
-    '',
-    '## 5. Scope and non-goals',
+    '## Requirements and scope',
     '',
     '- In: <scope>',
     '- Out: <non-goal>',
     '',
-    '## 6. Acceptance',
+    '## Design',
+    '',
+    '<after the human\'s go-ahead: approach, boundaries, consumers, removals, transition>',
+    '',
+    '## Acceptance',
     '',
     '- [ ] <observable behavior or outcome>',
     '',
-    '## 7. Open questions',
-    '',
-    'Unresolved questions for the human. Delete this section when none exist.',
-    '',
-    '- [ ] <question>',
-    '',
-    '> [!NOTE]',
-    '> No fan-out section here. Child work items render below the spec body automatically.',
+    '<record actual evidence when checks run; a placeholder is not a passing check>',
   ].join('\n');
 }
 
@@ -643,14 +642,15 @@ async function main() {
   }
 
   const NORMALIZED_DELIVERY_REASONS = new Set([
-    'ready', 'busy', 'waiting', 'missing_channel', 'endpoint_unhealthy', 'not_ready',
+    'ready', 'busy', 'waiting', 'missing_channel', 'endpoint_unhealthy', 'not_ready', 'background_unsupported',
   ]);
 
   function deriveSessionDelivery(session, channel) {
     const channel_present = !!channel;
     const endpoint_health = channel?.endpoint_health
       ?? (session.fact_observed_at ? 'unreachable' : (session.endpoint_health ?? 'legacy'));
-    const delivery_ready = isChannelDeliveryReady(channel);
+    const backgroundUnsupported = session.harness === 'claudecode' && session.kind === 'background';
+    const delivery_ready = !backgroundUnsupported && isChannelDeliveryReady(channel);
     const endpointUnhealthy = endpoint_health === 'unreachable'
       || endpoint_health === 'unverified'
       || endpoint_health === 'unhealthy';
@@ -661,6 +661,7 @@ async function main() {
       ? publishedReason
       : null;
     const delivery_reason = delivery_ready ? 'ready'
+      : backgroundUnsupported ? 'background_unsupported'
       : !channel_present ? 'missing_channel'
       : endpointUnhealthy ? 'endpoint_unhealthy'
       : session.status === 'waiting' ? 'waiting'
@@ -913,7 +914,9 @@ async function main() {
   });
 
   fastify.get('/api/message-envelopes/:id', async (req, reply) => {
-    const item = tracker.getEnvelopeView(req.params.id);
+    const item = req.query?.view === 'receipt'
+      ? tracker.getEnvelopeReceipt(req.params.id, { includeContent: req.query?.content === '1' })
+      : tracker.getEnvelopeView(req.params.id);
     if (!item) return reply.code(404).send({ error: 'not_found' });
     return item;
   });
@@ -975,27 +978,27 @@ async function main() {
       ok, queued: result.retry_queued, envelope_id: result.envelope.id, delivery: result.delivery,
     });
   });
-  fastify.post('/api/messages/notify', async (req, reply) => {
-    const b = req.body ?? {};
-    if (!b.sender_id || !b.session_id) return reply.code(400).send({ error: 'notification sender_id and session_id are required' });
+  const notify = createNotificationService({ tracker, listTargets: () => state.nativeSessions(), listChannels, deliver: deliverControlEnvelope });
+  fastify.get('/api/messages/notify', async () => ({ notification_protocol: 1, idempotency: true, scheduling: true }));
+  fastify.get('/api/schedules', async (req) => tracker.schedules.list({
+    creatorId: req.query?.all === '1' ? null : req.headers['x-golem-caller-session'] || null,
+  }));
+  fastify.get('/api/schedules/:id', async (req, reply) => {
+    const receipt = tracker.schedules.receipt(req.params.id, { includeContent: req.query?.content === '1' });
+    return receipt || reply.code(404).send({ error: 'schedule not found' });
+  });
+  fastify.post('/api/schedules/:id/cancel', async (req, reply) => {
     try {
-      const result = await deliverControlEnvelope(tracker, {
-        project_id: b.project_id ?? null,
-        sender_id: b.sender_id,
-        recipient_session_id: b.session_id,
-        kind: 'session_notify',
-        content: String(b.text || ''),
-        metadata: { notification_text: String(b.text || '') },
-        legacy: { path: '/brief', body: String(b.text || '') },
-      });
-      return {
-        ok: result.delivered || result.retry_queued,
-        queued: result.retry_queued,
-        envelope_id: result.envelope.id,
-        delivery: result.delivery,
-      };
+      return tracker.schedules.cancel(req.params.id, { caller: req.headers['x-golem-caller-session'] || null,
+        human: req.body?.human ?? false });
+    } catch (error) { return reply.code(error.status || 503).send({ error: error.message, code: error.code || 'SCHEDULE_CANCEL_FAILED' }); }
+  });
+  fastify.post('/api/messages/notify', async (req, reply) => {
+    try {
+      return await notify(req.body ?? {}, { caller: req.headers['x-golem-caller-session'] || null });
     } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
+      return reply.code(err.status || 503).send({ error: String(err?.message ?? err), code: err.code || 'NOTIFICATION_FAILED',
+        operation_id: err.operation_id ?? req.body?.operation_id ?? null });
     }
   });
   fastify.post('/api/messages/control', async (req, reply) => {
@@ -1252,6 +1255,21 @@ async function main() {
     return tracker.searchTickets(filter);
   });
 
+  // GOL-326: owned tracker input errors (400/404/409) map onto real HTTP
+  // statuses; conflicts carry the current revision and outline so a stale
+  // writer can recover without a full-body rewrite.
+  const sendTrackerError = (reply, err) => {
+    if (err?.name === 'TrackerInputError') {
+      // `error` carries the human-readable message (the long-standing REST
+      // contract, asserted verbatim by compatibility tests); `code` carries the
+      // owned machine-readable code; conflicts add revision/outline recovery
+      // fields at the top level.
+      const payload = { error: err.message, code: err.code, ...(err.extra ?? {}) };
+      return reply.code(err.status ?? 400).send(payload);
+    }
+    return reply.code(400).send({ error: String(err?.message ?? err) });
+  };
+
   // POST /api/tickets — create. 400 on validation error.
   fastify.post('/api/tickets', async (req, reply) => {
     const b = req.body ?? {};
@@ -1263,6 +1281,7 @@ async function main() {
         kind: b.kind,
         title: b.title,
         body: b.body,
+        body_format: b.body_format,
         priority: b.priority,
         labels: b.labels,
         parent_id: resolveTicketIdField(b.parent_id),
@@ -1273,7 +1292,7 @@ async function main() {
       broadcastWS({ type: 'ticket-created', ticket });
       return reply.code(201).send(ticket);
     } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
+      return sendTrackerError(reply, err);
     }
   });
 
@@ -1283,6 +1302,49 @@ async function main() {
     const ticket = resolveTicketRef(req.params.id);
     if (!ticket) return reply.code(404).send({ error: 'not_found' });
     return { ...ticket, events: tracker.listEvents({ ticket_id: ticket.id }) };
+  });
+
+  // GET /api/tickets/:id/outline — ordered HTML block outline (GOL-326).
+  fastify.get('/api/tickets/:id/outline', async (req, reply) => {
+    const ticket = resolveTicketRef(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: 'not_found' });
+    try {
+      return tracker.getTicketOutline(ticket.id);
+    } catch (err) {
+      return sendTrackerError(reply, err);
+    }
+  });
+
+  // GET /api/tickets/:id/blocks/:blockId — one canonical block + its comments.
+  fastify.get('/api/tickets/:id/blocks/:blockId', async (req, reply) => {
+    const ticket = resolveTicketRef(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: 'not_found' });
+    try {
+      return tracker.getTicketBlock(ticket.id, req.params.blockId);
+    } catch (err) {
+      return sendTrackerError(reply, err);
+    }
+  });
+
+  // POST /api/tickets/:id/block-patches — atomic insert/replace/move/remove
+  // batch against expected_revision (GOL-326 D3/D4).
+  fastify.post('/api/tickets/:id/block-patches', async (req, reply) => {
+    const existing = resolveTicketRef(req.params.id);
+    if (!existing) return reply.code(404).send({ error: 'not_found' });
+    const b = req.body ?? {};
+    try {
+      const result = tracker.patchTicketBlocks(existing.id, {
+        expected_revision: b.expected_revision,
+        operations: b.operations,
+        actor: b.actor ?? 'human',
+      });
+      // WebSocket updates fire only after the transaction committed — the
+      // tracker call returned a persisted result.
+      broadcastWS({ type: 'ticket-updated', ticket: resolveTicketRef(existing.id) });
+      return result;
+    } catch (err) {
+      return sendTrackerError(reply, err);
+    }
   });
 
   // PATCH /api/tickets/:id — partial update. 404 if missing, 400 on invalid.
@@ -1304,7 +1366,7 @@ async function main() {
       broadcastWS({ type: 'ticket-updated', ticket });
       return ticket;
     } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
+      return sendTrackerError(reply, err);
     }
   });
 
@@ -1436,9 +1498,7 @@ async function main() {
       }
       return reply.code(201).send(publicComment(comment, ticketRef));
     } catch (err) {
-      const msg = String(err?.message ?? err);
-      const code = /not found/i.test(msg) ? 404 : 400;
-      return reply.code(code).send({ error: msg });
+      return sendTrackerError(reply, err);
     }
   });
 
@@ -1468,9 +1528,7 @@ async function main() {
       if (ticket) broadcastWS({ type: 'ticket-updated', ticket });
       return publicComment(comment, ticketRef);
     } catch (err) {
-      const msg = String(err?.message ?? err);
-      const code = /not found/i.test(msg) ? 404 : 400;
-      return reply.code(code).send({ error: msg });
+      return sendTrackerError(reply, err);
     }
   });
 
@@ -1504,11 +1562,19 @@ async function main() {
     }
   });
 
+  // GOL-353: a LIVE assignee is the only implicit comment recipient. An
+  // offline/unreachable assignee is not selected at all (a doomed delivery
+  // would look like routing) — the caller must name an explicit live recipient.
   function commentDispatchTarget(ticket, body = {}) {
     const explicit = typeof body.session_id === 'string' && body.session_id.trim() ? body.session_id.trim() : null;
     if (explicit) return explicit;
     const assignee = typeof ticket?.assignee === 'string' && ticket.assignee.trim() ? ticket.assignee.trim() : null;
-    return assignee && assignee !== 'human' ? assignee : null;
+    if (!assignee || assignee === 'human') return null;
+    const native = state.nativeSessions().find((s) => s.session_id === assignee);
+    if (!native || native.alive === false) return null;
+    const channel = state.channels().find((c) => c.session_id === assignee) || null;
+    const { delivery_ready } = deriveSessionDelivery(native, channel);
+    return delivery_ready ? assignee : null;
   }
 
   function channelFailureDetail(channelResult) {
@@ -2009,9 +2075,14 @@ async function main() {
       if (!['settled', 'interrupted', 'recovery_required'].includes(state)
         || typeof attemptId !== 'string' || !attemptId
         || typeof acceptedAttemptId !== 'string' || !acceptedAttemptId
-        || acceptedAttemptId !== envelope.accepted_attempt_id) {
+        || (envelope.accepted_attempt_id
+          ? acceptedAttemptId !== envelope.accepted_attempt_id
+          : (!envelope.delivery_attempt_id || attemptId !== acceptedAttemptId))) {
         return reply.code(409).send({ error: 'typed lifecycle report does not match the accepted envelope lineage' });
       }
+      // A lost acceptance response leaves the sender's first id unknown. The
+      // authenticated receiver's durable admission record can establish it;
+      // once recorded, the immutable first id above must match on every report.
       const lifecycleBody = {
         ok: state === 'settled',
         accepted: true,
@@ -2035,7 +2106,7 @@ async function main() {
       const retry = tracker.getEnvelopeRetry(envelope.id);
       if (retry) {
         const settlementOwner = crypto.randomUUID();
-        if (tracker.claimEnvelopeRetry(envelope.id, { ownerToken: settlementOwner })) {
+        if (tracker.claimEnvelopeRetry(envelope.id, { ownerToken: settlementOwner, settlementOnly: true })) {
           settled = settleDurableEnvelope({
             tracker,
             envelope: tracker.getEnvelope(envelope.id),
@@ -2419,8 +2490,10 @@ async function main() {
   fastify.get('/api/templates', async () => {
     let files = [];
     try {
+      // GOL-326: templates declare their format. Markdown scaffolds are .md;
+      // the HTML spec scaffold is .html and carries body_format 'html'.
       files = fs.readdirSync(TEMPLATES_DIR)
-        .filter((f) => f.endsWith('.md'))
+        .filter((f) => f.endsWith('.md') || f.endsWith('.html'))
         .sort();
     } catch (err) {
       fastify.log.error({ err }, '[templates] could not read templates dir %s', TEMPLATES_DIR);
@@ -2428,7 +2501,8 @@ async function main() {
     }
     const out = [];
     for (const file of files) {
-      const id = file.slice(0, -3); // strip .md
+      const isHtml = file.endsWith('.html');
+      const id = file.slice(0, -(isHtml ? 5 : 3));
       let body = '';
       try {
         body = fs.readFileSync(path.join(TEMPLATES_DIR, file), 'utf8');
@@ -2442,7 +2516,7 @@ async function main() {
         const m = /^#\s+(.+?)\s*$/.exec(line);
         if (m) { title = m[1]; break; }
       }
-      out.push({ id, title, body });
+      out.push({ id, title, body, body_format: isHtml ? 'html' : 'markdown' });
     }
     return out;
   });
@@ -2691,6 +2765,7 @@ async function main() {
       chat.stop();
       await state.close();
       tracker.close();
+      closeTypedDeliveryStores();
       await fastify.close();
     } finally {
       process.exit(0);

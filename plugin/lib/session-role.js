@@ -81,6 +81,7 @@ export const BUILTIN_ROLES = Object.freeze([
   { name: 'builder', color: '#4ade80', glyph: 'BU', builtin: true, exec: BUILTIN_PI_EXEC },
   { name: 'explorer', color: '#38bdf8', glyph: 'EX', builtin: true, exec: BUILTIN_PI_EXEC },
   { name: 'reviewer', color: '#f472b6', glyph: 'RV', builtin: true, exec: BUILTIN_PI_EXEC },
+  { name: 'designer', color: '#fb923c', glyph: 'DS', builtin: true, exec: BUILTIN_PI_EXEC },
 ]);
 // `manager` and `planner` merged into `lead` (GOL-103). `general` previously
 // pointed at `manager`, so it has to follow the merge or it would migrate to a

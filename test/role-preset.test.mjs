@@ -87,7 +87,7 @@ try {
   } = await import('../lib/role-preset.js');
 
   const seeded = readRoleRegistry();
-  for (const role of ['builder', 'explorer', 'reviewer']) {
+  for (const role of ['builder', 'designer', 'explorer', 'reviewer']) {
     assert.deepEqual(seeded.find((row) => row.name === role)?.exec, {
       harness: 'pi',
       provider: 'ollama-cloud',
@@ -100,7 +100,7 @@ try {
   assert.equal(migratedIndex.version, 2);
   assert.deepEqual(migratedIndex.roles.find((row) => row.name === 'explorer').exec, seeded.find((row) => row.name === 'explorer').exec);
   const provenance = JSON.parse(fs.readFileSync(path.join(state, 'roles', 'registry-state.json'), 'utf8'));
-  assert.deepEqual(Object.keys(provenance.known_exec).sort(), ['builder', 'explorer', 'reviewer']);
+  assert.deepEqual(Object.keys(provenance.known_exec).sort(), ['builder', 'designer', 'explorer', 'reviewer']);
   assert.deepEqual(GLOBAL_ROLE_EXEC_DEFAULTS, { harness: 'pi', provider: 'ollama-cloud' });
 
   assert.deepEqual(resolveRolePreset('explorer'), [
@@ -256,7 +256,7 @@ try {
   const noPreset = run(['pi', '--role', 'lead']);
   assert.equal(noPreset.status, 2);
   assert.match(noPreset.stderr, /no execution preset/);
-  assert.match(noPreset.stderr, /builder, explorer, reviewer/);
+  assert.match(noPreset.stderr, /builder, designer, explorer, reviewer/);
   assert.doesNotMatch(noPreset.stderr, /model is required/);
 
   const modelWithoutProvider = run(['pi', '--model', 'model-only']);

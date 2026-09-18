@@ -575,6 +575,35 @@ try {
   })();
   await waitForRetry(newerEnvelopeId, `newer exact comment retry (${dashboard.stderr()})`);
 
+  // Terminal report can establish first lineage when acceptance HTTP was lost.
+  // Keep the endpoint not-ready so the drainer cannot repair this by replay.
+  pauseAfterNativeAcceptance = true;
+  dropNextResponse = true;
+  const callbackStarts = nativeStarts;
+  const lostAdmission = await postJson(dashboard.baseUrl, '/api/messages/notify', {
+    project_id: 'typed-immediate-000000', sender_id: 'callback-source', session_id: canonicalId,
+    text: 'callback survives lost acceptance',
+  });
+  assert.equal(lostAdmission.json?.queued, true, lostAdmission.text);
+  const callbackId = lostAdmission.json.envelope_id;
+  const retained = inbox.deliveries.find((entry) => entry.envelope_id === callbackId);
+  assert.equal(retained.accepted_attempt_id, readTypedDeliveryTombstone(canonicalId, callbackId).accepted_attempt_id);
+  const terminalCallback = await postJson(dashboard.baseUrl, `/api/message-envelopes/${callbackId}/lifecycle`, {
+    state: 'settled', attempt_id: retained.attempt_id, accepted_attempt_id: retained.accepted_attempt_id,
+  }, { 'x-golem-target-session': canonicalId, 'x-golem-endpoint-owner': ownerToken });
+  assert.equal(terminalCallback.response.status, 200, terminalCallback.text);
+  await waitForRetry(callbackId, 'terminal callback settlement without acceptance response');
+  const inspected = await fetch(`${dashboard.baseUrl}/api/message-envelopes/${callbackId}`);
+  assert.equal(inspected.status, 200);
+  const receipt = await inspected.json();
+  assert.equal(receipt.envelope_id, callbackId);
+  assert.equal(receipt.state, 'settled');
+  assert.equal(Object.hasOwn(receipt, 'content'), false);
+  const withContent = await (await fetch(`${dashboard.baseUrl}/api/message-envelopes/${callbackId}?view=receipt&content=1`)).json();
+  assert.match(withContent.content, /callback survives lost acceptance/);
+  assert.equal(nativeStarts, callbackStarts + 1);
+  pauseAfterNativeAcceptance = false; forceBusy = false;
+
   console.log('typed immediate retry production journey passed: ticket/notification/control/comment lost response -> original shared envelope retry -> one native start; accepted-503, typed lease-gap, immediate+queued-ticket crash-after-accept settlement recovery, and exact older-comment CAS');
 } finally {
   await stopProcess(dashboard?.child);

@@ -167,9 +167,8 @@ async function main() {
     const body = document.querySelector('.td-md');
     const rail = document.getElementById('anno-rail');
     const fab = document.getElementById('anno-fab');
-    const pill = document.getElementById('anno-pill');
     return {
-      hasWrap: !!wrap, hasBody: !!body, hasRail: !!rail, hasFab: !!fab, hasPill: !!pill,
+      hasWrap: !!wrap, hasBody: !!body, hasRail: !!rail, hasFab: !!fab,
       wrapClass: wrap?.className, railClass: rail?.className, railOpen: rail?.classList.contains('open'),
       wrapOverflowX: wrap && getComputedStyle(wrap).overflowX,
       bodyFirst: body?.firstElementChild?.tagName,
@@ -201,7 +200,8 @@ async function main() {
     log('rail-toggled:', rail2);
     issues.push(`with-rail: drawer-h-scroll=${rail2.drawHScroll}, body-h-scroll=${rail2.bodyHScroll}`);
 
-    // Try selecting text and triggering the pill
+    // GOL-311 D4: text selection must never open anything — select text,
+    // then confirm the rail stays closed and no pill exists.
     await page.evaluate(() => {
       const root = document.querySelector('.td-md');
       if (!root) return false;
@@ -225,16 +225,25 @@ async function main() {
     });
     await wait(500);
     await shot('05-text-selected');
-    const pillInfo = await page.evaluate(() => {
-      const p = document.getElementById('anno-pill');
-      return { exists: !!p, display: p?.style.display, rect: p ? JSON.stringify({ x: Math.round(p.getBoundingClientRect().left), y: Math.round(p.getBoundingClientRect().top), w: Math.round(p.getBoundingClientRect().width), h: Math.round(p.getBoundingClientRect().height) }) : null };
-    });
-    log('pill:', pillInfo);
-    issues.push(`pill-display: ${pillInfo.display}`);
+    const pillInfo = await page.evaluate(() => ({
+      pillGone: !document.getElementById('anno-pill'),
+      railStillClosed: !document.getElementById('anno-rail')?.classList.contains('open'),
+    }));
+    log('selection invariants:', pillInfo);
+    issues.push(`selection-pill-gone: ${pillInfo.pillGone}`);
 
-    // If pill is visible, click it
-    if (pillInfo.display === 'flex') {
-      await page.click('#anno-pill');
+    // GOL-311 D4: single-step — click a block to open the rail anchored.
+    const blockPt = await page.evaluate(() => {
+      const root = document.querySelector('.td-md');
+      if (!root) return null;
+      const target = root.querySelector('p, li, h2, h3');
+      if (!target) return null;
+      target.scrollIntoView({ block: 'center' });
+      const r = target.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    if (blockPt) {
+      await page.mouse.click(blockPt.x, blockPt.y);
       await wait(600);
       await shot('06-composer');
       // Check that the composer exists
@@ -251,7 +260,6 @@ async function main() {
       await shot('07-after-comment');
       const afterComment = await page.evaluate(() => ({
         cardCount: document.querySelectorAll('.anno-card').length,
-        pillStillThere: document.getElementById('anno-pill')?.style.display,
         bodyHScroll: (() => { const b = document.querySelector('.td-md'); return b ? b.scrollWidth > b.clientWidth : null; })(),
       }));
       log('after-comment:', afterComment);

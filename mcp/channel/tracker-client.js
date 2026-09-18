@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { managedCodexBinding, resolveCallerSessionId, sessionsForParent } from './identity.js';
 import { createGolemClient, GolemClientError } from '../../lib/golem-client.js';
+import { readClaudeSessionRecord } from '../../lib/claude-session-context.js';
 
 export { GolemClientError };
 
@@ -87,8 +88,7 @@ export function currentSessionId(injectedId) {
   // channel registry and the dashboard.
   if (process.env.GOLEM_CEO_SESSION_ID) return process.env.GOLEM_CEO_SESSION_ID;
   try {
-    const f = path.join(os.homedir(), '.claude', 'sessions', `${process.ppid}.json`);
-    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    const j = readClaudeSessionRecord(process.ppid);
     if (j && typeof j.sessionId === 'string' && j.sessionId) return j.sessionId;
   } catch { /* missing / unreadable — fall through */ }
   if (process.env.CLAUDE_CODE_SESSION_ID) return process.env.CLAUDE_CODE_SESSION_ID;
