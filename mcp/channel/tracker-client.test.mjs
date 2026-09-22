@@ -557,14 +557,14 @@ async function main() {
   const siblingRows = siblingChannels.filter((channel) => channel.session_id === siblingA || channel.session_id === siblingB);
   check('shared MCP registers both sibling channel rows', siblingRows.length === 2 && siblingRows[0].port === siblingRows[1].port, JSON.stringify(siblingRows));
   fs.writeFileSync(path.join(tmpGolemHome, 'sessions.json'), JSON.stringify({ sessions: [
-    { session_id: siblingA, project_id: PROJECT_ID, harness: 'opencode', status: 'idle', updated_at: now },
-    { session_id: siblingB, project_id: PROJECT_ID, harness: 'opencode', status: 'idle', updated_at: now },
+    { session_id: siblingA, project_id: PROJECT_ID, harness: 'pi', status: 'idle', updated_at: now },
+    { session_id: siblingB, project_id: PROJECT_ID, harness: 'pi', status: 'idle', updated_at: now },
   ] }));
   const nativeModule = await import(url.pathToFileURL(path.resolve(__dirname, '../../dashboard/server/native-sessions.js')).href + `?t=${Date.now()}`);
   const channelsModule = await import(url.pathToFileURL(path.resolve(__dirname, '../../dashboard/server/channels.js')).href + `?t=${Date.now()}`);
   const verifiedSiblingChannels = await channelsModule.readChannels();
   const readySiblingChannels = verifiedSiblingChannels.filter((channel) => channel.session_id === siblingA || channel.session_id === siblingB);
-  check('OpenCode bridge readiness is preserved independently of Claude Channels',
+  check('session channel readiness is preserved independently of Claude Channels',
     readySiblingChannels.length === 2 && readySiblingChannels.every((channel) => channelsModule.isChannelDeliveryReady(channel)),
     JSON.stringify(verifiedSiblingChannels));
   const nativeSiblings = await nativeModule.readNativeSessions(() => true, verifiedSiblingChannels);
@@ -631,7 +631,7 @@ async function main() {
   const afterAmbiguous = await callToolFrom(identityMcpClient, 'ticket_get', { id: identityTicket.json?.id });
   check('ambiguous sibling refusal writes no comment', afterAmbiguous.json?.comments?.length === 2, JSON.stringify(afterAmbiguous.json?.comments));
 
-  fs.writeFileSync(bridgesFile, JSON.stringify({ bridges: [{ session_id: siblingA, opencode_pid: process.pid, pid: process.pid, host: HOST, port: bridgePort, updated_at: now }] }));
+  fs.writeFileSync(bridgesFile, JSON.stringify({ bridges: [{ session_id: siblingA, pid: process.pid, host: HOST, port: bridgePort, updated_at: now }] }));
   await sleep(100);
   const reapedSiblingRows = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'channels.json'), 'utf8')).channels
     .filter((channel) => channel.session_id === siblingA || channel.session_id === siblingB);
@@ -668,7 +668,7 @@ async function main() {
   const channelCountAfterNoIdentity = JSON.parse(fs.readFileSync(channelsFile, 'utf8')).channels.length;
   check('missing bridge channel does not register', channelCountAfterNoIdentity === channelCountBeforeNoIdentity, `${channelCountBeforeNoIdentity} -> ${channelCountAfterNoIdentity}`);
   const noBridgeWrite = await callToolFrom(noIdentityMcpClient, 'ticket_comment', { id: identityTicket.json?.id, body: 'must not write without bridge' });
-  check('missing bridge write is refused', noBridgeWrite.result.isError && /no live opencode bridge row.*refusing to write/.test(noBridgeWrite.text), noBridgeWrite.text);
+  check('missing channel write is refused', noBridgeWrite.result.isError && /no live channel row.*refusing to write/.test(noBridgeWrite.text), noBridgeWrite.text);
 
   const lateBridgeId = 'ses_late_opencode_bridge';
   const lateBridgeStarted = Date.now();
