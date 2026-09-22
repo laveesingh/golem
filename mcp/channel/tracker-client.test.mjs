@@ -529,8 +529,8 @@ async function main() {
   const now = new Date().toISOString();
   fs.writeFileSync(bridgesFile, JSON.stringify({
     bridges: [
-      { session_id: siblingA, opencode_pid: process.pid, pid: process.pid, host: HOST, port: bridgePort, updated_at: now },
-      { session_id: siblingB, opencode_pid: process.pid, pid: process.pid, host: HOST, port: bridgePort, updated_at: new Date(Date.now() + 1000).toISOString() },
+      { session_id: siblingA, pid: process.pid, host: HOST, port: bridgePort, updated_at: now },
+      { session_id: siblingB, pid: process.pid, host: HOST, port: bridgePort, updated_at: new Date(Date.now() + 1000).toISOString() },
     ],
   }));
   identityMcpClient = new Client({ name: 'golem-identity-journey', version: '1.0.0' });
@@ -555,7 +555,7 @@ async function main() {
   await sleep(50);
   const siblingChannels = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'channels.json'), 'utf8')).channels;
   const siblingRows = siblingChannels.filter((channel) => channel.session_id === siblingA || channel.session_id === siblingB);
-  check('shared opencode MCP registers both sibling channel rows', siblingRows.length === 2 && siblingRows[0].port === siblingRows[1].port, JSON.stringify(siblingRows));
+  check('shared MCP registers both sibling channel rows', siblingRows.length === 2 && siblingRows[0].port === siblingRows[1].port, JSON.stringify(siblingRows));
   fs.writeFileSync(path.join(tmpGolemHome, 'sessions.json'), JSON.stringify({ sessions: [
     { session_id: siblingA, project_id: PROJECT_ID, harness: 'opencode', status: 'idle', updated_at: now },
     { session_id: siblingB, project_id: PROJECT_ID, harness: 'opencode', status: 'idle', updated_at: now },

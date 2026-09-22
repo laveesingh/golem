@@ -101,9 +101,7 @@ export async function readChannels() {
           url: `http://${lease.host}:${lease.port}`,
           endpoint_health: 'healthy',
           // The authenticated health response is newer than the persisted
-          // heartbeat lease. Use its live gate for managed Codex and require
           // explicit consumer readiness for CC; old unknown CC rows fail
-          // closed until their channel process restarts. OpenCode's prompt
           // bridge retains its independent readiness contract.
           consumer_ready: body.consumer_ready ?? lease.consumer_ready ?? null,
           consumer_reason: body.consumer_reason ?? lease.consumer_reason ?? null,
@@ -111,7 +109,7 @@ export async function readChannels() {
           typed_worker: typedWorker,
           delivery_ready: typedWorker
             ? body.delivery_ready === true
-            : (lease.harness === 'opencode' || lease.kind === 'opencode-bridge')
+            : null
               ? body.delivery_ready !== false
               : body.consumer_ready === true && body.delivery_ready === true,
         }, owner_token);
@@ -126,7 +124,7 @@ export async function readChannels() {
       ...c,
       url: `http://${c.host}:${c.port}`,
       endpoint_health: 'legacy-pid-only',
-      delivery_ready: c.harness === 'opencode'
+      delivery_ready: false
         ? c.delivery_ready !== false
         : c.consumer_ready === true && c.delivery_ready === true,
     }));

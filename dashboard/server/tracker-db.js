@@ -2558,7 +2558,7 @@ WHERE state_changed_at IS NULL`).run();
     communicationHealth,
 
     // Non-ticket control messages use the same immutable envelope identity as a
-    // dispatch. This is especially important for managed Codex: its typed
+    // This is especially important for managed workers: their typed
     // adapter accepts only an envelope and never a free-form channel route.
     // Keep the allowed vocabulary narrow so this table does not become a
     // generic, unaudited message bus.
