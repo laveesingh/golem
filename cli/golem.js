@@ -1679,6 +1679,204 @@ async function cmdClaude(args) {
 }
 
 
+function piLauncherHelp() {
+  log(`Usage: golem pi [--role <role>] [--profile <name>] [--provider <id> --model <id>] [--resume <session-id>] [-- <pi args...>]
+
+Open native Pi with Golem's canonical rendered bridge extension. Pi retains its
+own profile, authentication, models, providers, extensions, and sessions. Tested
+on Pi ${SUPPORTED_PI_VERSION} with Node.js >=${MIN_PI_NODE.major}.${MIN_PI_NODE.minor}.
+
+Wrapper options:
+  --role <role>         Apply the role's validated Pi execution preset.
+  --profile <name>      Model profile override: its provider/model/thinking are
+                        applied (role defaults come from profiles.json). Raw
+                        --provider/--model still win over the profile.
+  --provider <id>       Explicit native Pi provider. With --role, overrides its preset.
+  --model <id>          Explicit provider-local model id. With --role, overrides its preset.
+  --thinking <level>    With --role, overrides its preset thinking level.
+  --name <name>         With --role, overrides its preset session name.
+  --resume <session-id> Resume a native Pi session id through --session.
+
+Arguments after -- are passed to Pi unchanged. Pi's own extension discovery and
+configuration remain active; the shipped Golem extension is appended explicitly.
+
+  golem pi --role explorer
+  golem pi --role explorer --thinking max
+  golem pi --role reviewer --profile grok-4.6-high
+  golem pi --resume <pi-session-id> -- --thinking high`);
+}
+
+function hasPiRoleOption(args) {
+  let separatorSeen = false;
+  for (const arg of args) {
+    if (arg === '--') {
+      separatorSeen = true;
+      continue;
+    }
+    if (!separatorSeen && (arg === '--role' || arg.startsWith('--role='))) return true;
+  }
+  return false;
+}
+
+async function cmdPi(args) {
+  if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
+    piLauncherHelp();
+    return;
+  }
+  if (!piNodeSupported()) {
+    fatal(1, `golem pi requires Node.js >=${MIN_PI_NODE.major}.${MIN_PI_NODE.minor}; running ${process.versions.node}`);
+  }
+
+  let role = null;
+  let provider = null;
+  let model = null;
+  let thinking;
+  let name;
+  let profile = null;
+  let resume = null;
+  let separatorSeen = false;
+  const roleMode = hasPiRoleOption(args);
+  const passthrough = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!separatorSeen && arg === '--') { separatorSeen = true; continue; }
+    if (!separatorSeen && ['--role', '--provider', '--model', '--profile', '--resume'].includes(arg)) {
+      const value = args[++index];
+      if (!value || value.startsWith('-')) fatal(2, `golem pi requires a value for ${arg}`);
+      if (arg === '--role') role = value;
+      else if (arg === '--provider') provider = value;
+      else if (arg === '--model') model = value;
+      else if (arg === '--profile') profile = value;
+      else resume = value;
+      continue;
+    }
+    if (roleMode && !separatorSeen && ['--thinking', '--name', '-n'].includes(arg)) {
+      const value = args[++index];
+      if (!value || value.startsWith('-')) fatal(2, `golem pi requires a value for ${arg}`);
+      if (arg === '--thinking') thinking = value;
+      else name = value;
+      continue;
+    }
+    if (!separatorSeen && arg.startsWith('--role=')) role = arg.slice('--role='.length);
+    else if (!separatorSeen && arg.startsWith('--provider=')) provider = arg.slice('--provider='.length);
+    else if (!separatorSeen && arg.startsWith('--model=')) model = arg.slice('--model='.length);
+    else if (!separatorSeen && arg.startsWith('--profile=')) profile = arg.slice('--profile='.length);
+    else if (!separatorSeen && arg.startsWith('--resume=')) resume = arg.slice('--resume='.length);
+    else if (roleMode && !separatorSeen && arg.startsWith('--thinking=')) thinking = arg.slice('--thinking='.length);
+    else if (roleMode && !separatorSeen && arg.startsWith('--name=')) name = arg.slice('--name='.length);
+    else passthrough.push(arg);
+  }
+  if (roleMode && !role) fatal(2, 'golem pi requires a non-empty --role');
+  if (profile != null && !profile.trim()) fatal(2, 'golem pi requires a non-empty --profile');
+  let profileExec = null;
+  if (profile != null) {
+    profileExec = getProfile(profile);
+    if (!profileExec) {
+      fatal(2, `golem pi: unknown model profile "${profile}"; expected one of: ${listProfileNames().join(', ') || '(none)'}`);
+    }
+  }
+  const effectiveProvider = provider ?? profileExec?.provider ?? null;
+  const effectiveModel = model ?? profileExec?.model ?? null;
+  if (!roleMode && (effectiveProvider == null) !== (effectiveModel == null)) fatal(2, 'golem pi requires --provider and --model together');
+  if (provider != null && !provider.trim()) fatal(2, 'golem pi requires a non-empty --provider');
+  if (model != null && !model.trim()) fatal(2, 'golem pi requires a non-empty --model');
+  if (thinking != null && !thinking.trim()) fatal(2, 'golem pi requires a non-empty --thinking');
+  if (name != null && !name.trim()) fatal(2, 'golem pi requires a non-empty --name');
+  if (resume != null && !resume.trim()) fatal(2, 'golem pi requires a non-empty --resume');
+
+  let presetArgs = [];
+  if (roleMode) {
+    const overrides = {};
+    if (profile != null) overrides.profile = profile;
+    if (provider != null) overrides.provider = provider;
+    if (model != null) overrides.model = model;
+    if (thinking != null) overrides.thinking = thinking;
+    if (name != null) overrides.name = name;
+    try {
+      presetArgs = resolveRolePreset(role, overrides);
+    } catch (error) {
+      fatal(2, `golem pi: ${error.message}`);
+    }
+  } else if (effectiveProvider != null) {
+    // Bare mode with a resolved profile: decompose the profile into the
+    // provider/model/thinking flags Pi consumes. Raw --provider/--model already
+    // won per-field above (D3); the profile's thinking remains in force unless
+    // the caller passes a native override after `--`.
+    presetArgs = [
+      '--provider', effectiveProvider.trim(), '--model', effectiveModel.trim(),
+      ...(profileExec?.thinking ? ['--thinking', profileExec.thinking] : []),
+    ];
+  }
+
+  const childEnv = { ...process.env };
+  const versionProbe = spawnSync('pi', ['--version'], { env: childEnv, encoding: 'utf8' });
+  if (versionProbe.error?.code === 'ENOENT') fatal(1, "golem pi could not find the 'pi' executable on PATH; install @earendil-works/pi-coding-agent");
+  if (versionProbe.status !== 0) fatal(1, `golem pi could not inspect Pi: ${(versionProbe.stderr || versionProbe.error?.message || 'unknown error').trim()}`);
+  const piVersion = versionProbe.stdout.trim();
+  if (piVersion !== SUPPORTED_PI_VERSION) {
+    err(`WARN: Golem tested on Pi ${SUPPORTED_PI_VERSION}; you have ${piVersion || '(no version)'} — continuing`);
+  }
+
+  const extension = join(renderDirFor('pi'), 'golem.ts');
+  if (!existsSync(extension)) fatal(1, `golem pi render is missing ${extension}; run golem sync --target pi`);
+
+  const dashboard = await probeDashboard();
+  if (!dashboard.ok) err(`golem pi: dashboard unavailable (${dashboard.error}); starting in degraded mode and tracker tools will fail until it returns`);
+
+  Object.assign(childEnv, {
+    GOLEM_PI_LAUNCH_NONCE: randomUUID(),
+    GOLEM_PI_VERSION: piVersion,
+    GOLEM_PI_EXTENSION_VERSION: readPackageVersion(),
+    // Skip Pi's boot-time pi.dev catalog refresh: it hangs ~15s when pi.dev is
+    // unreachable (the refresh aborts only at its 15s timeout). Catalogs come
+    // from the stored models-store.json; refresh on demand by running
+    // `pi --list-models` outside golem when pi.dev is reachable.
+    PI_OFFLINE: '1',
+  });
+  const launchArgs = [
+    '--extension', extension,
+    ...presetArgs,
+    ...(resume ? ['--session', resume.trim()] : []),
+    ...passthrough,
+  ];
+  const child = spawn('pi', launchArgs, { cwd: process.cwd(), env: childEnv, stdio: 'inherit' });
+  const onSigint = () => { /* native Pi owns terminal Ctrl-C turn semantics */ };
+  const forward = (signal) => { if (child.exitCode === null && child.signalCode === null) child.kill(signal); };
+  const onSigterm = () => forward('SIGTERM');
+  const onSighup = () => forward('SIGHUP');
+  process.on('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
+  process.once('SIGHUP', onSighup);
+  let exitSignal = null;
+  try {
+    const outcome = await new Promise((resolveOutcome) => {
+      let settled = false;
+      const finish = (value) => { if (!settled) { settled = true; resolveOutcome(value); } };
+      child.once('error', (error) => finish({ error }));
+      child.once('exit', (code, signal) => finish({ code, signal }));
+    });
+    if (outcome.error) {
+      err(`golem pi could not start Pi: ${outcome.error.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (Number.isInteger(outcome.code)) {
+      if (outcome.code) process.exitCode = outcome.code;
+      return;
+    }
+    exitSignal = outcome.signal;
+  } finally {
+    process.off('SIGINT', onSigint);
+    process.off('SIGTERM', onSigterm);
+    process.off('SIGHUP', onSighup);
+  }
+  if (exitSignal) process.kill(process.pid, exitSignal);
+  else {
+    err('golem pi: Pi exited without a status or signal');
+    process.exitCode = 1;
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0] ?? 'help';
