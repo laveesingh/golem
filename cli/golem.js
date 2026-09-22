@@ -183,6 +183,130 @@ function isReservedCodexTuiArgument(arg) {
     || arg === '-C' || arg.startsWith('-C=') || (arg.startsWith('-C') && arg.length > 2);
 }
 
+function readSessionsRegistry() {
+  try {
+    const parsed = JSON.parse(readFileSync(sessionsJsonPath(), 'utf8'));
+    return Array.isArray(parsed?.sessions) ? parsed.sessions : [];
+  } catch {
+    return [];
+  }
+}
+
+function readSessionsRegistryObject(file = sessionsJsonPath()) {
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    return parsed && typeof parsed === 'object' && Array.isArray(parsed.sessions) ? parsed : { version: 1, sessions: [] };
+  } catch {
+    return { version: 1, sessions: [] };
+  }
+}
+
+function writeSessionsRegistryObject(file, reg) {
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.tmp.${process.pid}`;
+  writeFileSync(tmp, JSON.stringify(reg, null, 2));
+  renameSync(tmp, file);
+}
+
+function withFileLock(lockPath, fn) {
+  try { mkdirSync(dirname(lockPath), { recursive: true }); } catch { /* ignore */ }
+  for (let i = 0; i < 50; i++) {
+    try {
+      mkdirSync(lockPath);
+      try { return fn(); }
+      finally { try { rmdirSync(lockPath); } catch { /* ignore */ } }
+    } catch (e) {
+      if (e?.code === 'EEXIST') {
+        try {
+          const st = statSync(lockPath);
+          if (Date.now() - st.mtimeMs > 5000) rmdirSync(lockPath);
+        } catch { /* ignore */ }
+        const wait = Date.now() + 20;
+        while (Date.now() < wait) { /* brief spin */ }
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error(`failed to acquire ${lockPath}`);
+}
+
+function rowTime(row, keys) {
+  for (const key of keys) {
+    const t = Date.parse(row?.[key] || '');
+    if (Number.isFinite(t)) return t;
+  }
+  return 0;
+}
+
+function isLiveSessionRow(row) {
+  return !row?.ended_at;
+}
+
+function rowFreshness(row, alive) {
+  return alive
+    ? rowTime(row, ['updated_at', 'last_seen_at', 'boot_time', 'started_at'])
+    : rowTime(row, ['ended_at', 'updated_at', 'last_seen_at', 'boot_time', 'started_at']);
+}
+
+function sessionLabel(row) {
+  return `${row.session_id || '(no session_id)'}${row.model ? ` (model=${row.model})` : ''}`;
+}
+
+function keptSessionLabel(row, reason) {
+  return `${row.session_id || '(no session_id)'} (${reason}${row.model ? `, model=${row.model}` : ''})`;
+}
+
+function sessionProjectScope(row) {
+  return row?.project_path || row?.project_id || row?.cwd || '';
+}
+
+
+function sessionsDedupPlan(sessions) {
+  // Scope by project so same role name in different projects never collapses.
+  const groups = new Map();
+  sessions.forEach((row, index) => {
+    const name = typeof row?.name === 'string' ? row.name.trim() : '';
+    if (!name) return;
+    const key = `${sessionProjectScope(row)}\0${name}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ row, index });
+  });
+
+  const plans = [];
+  for (const [key, rows] of groups) {
+    if (rows.length < 2) continue;
+    const name = key.split('\0').slice(1).join('\0') || key;
+    const live = rows.filter(({ row }) => isLiveSessionRow(row));
+    const candidates = live.length ? live : rows;
+    const keep = candidates
+      .slice()
+      .sort((a, b) => rowFreshness(b.row, live.length > 0) - rowFreshness(a.row, live.length > 0))[0];
+    const mark = rows.filter((entry) => entry.index !== keep.index && !entry.row.ended_at);
+    plans.push({ kind: 'named', name, keep, mark, liveKept: live.length > 0 });
+  }
+  return plans;
+}
+
+function printSessionsDedupPlan(plans, apply) {
+  if (!plans.length) {
+    log(`golem sessions dedup: no project-scoped named duplicates or Codex twins/stale rows found (${apply ? 'applied' : 'dry-run'})`);
+    return;
+  }
+  log(`golem sessions dedup ${apply ? '--apply' : '(dry-run; pass --apply to write)'}`);
+  for (const plan of plans) {
+    const reason = plan.liveKept ? 'freshest live' : 'freshest ended';
+    const scope = sessionProjectScope(plan.keep.row) || '(no project)';
+    log(`name ${plan.name} @ ${scope}: would keep ${keptSessionLabel(plan.keep.row, reason)}`);
+    if (plan.mark.length) {
+      log(`name ${plan.name} @ ${scope}: would mark ended: ${plan.mark.map(({ row }) => sessionLabel(row)).join(', ')}`);
+    } else {
+      log(`name ${plan.name} @ ${scope}: no un-ended duplicates to mark`);
+    }
+  }
+}
+
+
 async function cmdSessions(args) {
   const sub = args[0];
   if (!sub || sub === '-h' || sub === '--help') {
@@ -214,7 +338,7 @@ twins and stale/terminal unnamed Codex rows.`);
   const file = sessionsJsonPath();
   const run = () => {
     const reg = readSessionsRegistryObject(file);
-    const plans = [...sessionsDedupPlan(reg.sessions), ...sessionsStaleCodexPlan(reg.sessions)];
+    const plans = [...sessionsDedupPlan(reg.sessions)];
     printSessionsDedupPlan(plans, apply);
     if (!apply) return;
     const now = new Date().toISOString();
