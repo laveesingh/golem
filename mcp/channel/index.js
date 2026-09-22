@@ -29,7 +29,10 @@ import {
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import * as tracker from './tracker-client.js';
+import { GOLEM_TOOL_CONTRACTS } from '../../lib/golem-tool-contracts.js';
 
+// GOL-365: the full shared contract list is the only tool surface.
+const GOLEM_TOOL_LIST = GOLEM_TOOL_CONTRACTS.map((c) => ({ name: c.name, description: c.description, inputSchema: c.inputSchema }));
 import { resolveCallerSessionId, resolveProjectCwd, sessionsForParent } from './identity.js';
 import { readClaudeSessionRecord } from '../../lib/claude-session-context.js';
 import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../../lib/session-role.js';
@@ -57,6 +60,10 @@ const ALLOWED_SENDERS = new Set(
     .map((s) => s.trim())
     .filter(Boolean),
 );
+// A Golem-owned Codex App Server uses this process only as a stdio MCP server.
+// Its supervisor is the sole addressed-delivery endpoint; binding an ordinary
+// channel HTTP port here would create a second, unauthenticated route and make
+// the dashboard falsely believe generic Claude notification delivery works.
 
 
 // Identity for chat-routing and dispatch.
@@ -80,6 +87,281 @@ function readParentSessionFile() {
   return null;
 }
 function deriveSessionId() {
+  // Explicit launcher override wins; else the logical id from the parent session
+  // file; else the per-run CLAUDE_CODE_SESSION_ID (last resort — diverges on resume).
+  if (process.env.GOLEM_CEO_SESSION_ID) return process.env.GOLEM_CEO_SESSION_ID;
+  const j = readParentSessionFile();
+  if (j && typeof j.sessionId === 'string' && j.sessionId) return j.sessionId;
+  return resolveCallerSessionId({ home: tracker.golemHome() }).sessionId || process.env.CLAUDE_CODE_SESSION_ID || '';
+}
+function deriveSessionName() {
+  const j = readParentSessionFile();
+  if (j && typeof j.name === 'string' && j.name) return j.name;
+  return null;
+}
+
+function launcherBoundSessionId() {
+  const envId = typeof process.env.GOLEM_CEO_SESSION_ID === 'string'
+    ? process.env.GOLEM_CEO_SESSION_ID.trim()
+    : '';
+  if (envId) return envId;
+  const parent = readParentSessionFile();
+  if (typeof parent?.sessionId === 'string' && parent.sessionId.trim()) return parent.sessionId.trim();
+  const runId = typeof process.env.CLAUDE_CODE_SESSION_ID === 'string'
+    ? process.env.CLAUDE_CODE_SESSION_ID.trim()
+    : '';
+  return runId || null;
+}
+// golem-home resolution (TKT-0573, ADR-4) lives in tracker-client.js's
+// golemHome() — reused here so this file doesn't carry a second hand-rolled
+// mirror of lib/golem-home.js within the same package.
+const CHANNELS_REGISTRY = path.join(tracker.golemHome(), 'channels.json');
+const CHANNELS_LOCK = `${CHANNELS_REGISTRY}.lock`;
+
+// A live HTTP child is only an endpoint, not proof that its host can consume
+// Claude channel notifications. Claude Code may initialize ordinary MCP tools
+// even when its model-provider configuration is ineligible for Channels. Keep
+// the signal deliberately narrow: completed MCP initialization plus the
+// absence of a provider mode Anthropic documents as unsupported. OpenCode does
+let MCP_INITIALIZED = false;
+let BOUND_PORT = null;
+
+function nonDefaultAnthropicBaseUrl(value) {
+  const normalized = String(value || '').trim().replace(/\/+$/, '').toLowerCase();
+  return !!normalized && normalized !== 'https://api.anthropic.com';
+}
+
+function enabledProviderFlag(value) {
+  return String(value || '').trim() === '1';
+}
+
+function claudeChannelProviderStatus(env = process.env) {
+  if (enabledProviderFlag(env.CLAUDE_CODE_USE_BEDROCK)) {
+    return { supported: false, reason: 'unsupported_bedrock_provider' };
+  }
+  if (enabledProviderFlag(env.CLAUDE_CODE_USE_VERTEX)) {
+    return { supported: false, reason: 'unsupported_vertex_provider' };
+  }
+  if (enabledProviderFlag(env.CLAUDE_CODE_USE_FOUNDRY)) {
+    return { supported: false, reason: 'unsupported_foundry_provider' };
+  }
+  if (nonDefaultAnthropicBaseUrl(env.ANTHROPIC_BASE_URL)) {
+    return { supported: false, reason: 'unsupported_custom_base_url' };
+  }
+  return { supported: true, reason: null };
+}
+
+function channelConsumerStatus(harness) {
+  const provider = claudeChannelProviderStatus();
+  if (!provider.supported) {
+    return { ready: false, reason: provider.reason, transport: 'claude-channel' };
+  }
+  if (!MCP_INITIALIZED) {
+    return { ready: false, reason: 'mcp_not_initialized', transport: 'claude-channel' };
+  }
+  return { ready: true, reason: null, transport: 'claude-channel' };
+}
+
+function channelReadinessError(reason) {
+  if (String(reason || '').startsWith('unsupported_')) {
+    return 'Claude Code channel is ineligible under this provider configuration. Claude Channels require Anthropic authentication through claude.ai or a Console API key; unset Bedrock/Vertex/Foundry or non-default ANTHROPIC_BASE_URL configuration, then restart with --dangerously-load-development-channels plugin:golem@golem-workspace.';
+  }
+  if (reason === 'mcp_not_initialized') {
+    return 'Claude Code channel is not ready because MCP initialization has not completed. Wait for plugin startup, or restart with --dangerously-load-development-channels plugin:golem@golem-workspace.';
+  }
+  return 'Claude Code channel consumer readiness is unknown. Restart the session with an Anthropic-authenticated Claude Code channel configuration and --dangerously-load-development-channels plugin:golem@golem-workspace.';
+}
+
+
+// Mutable: re-derived on each (re)register so a session file that wasn't written
+// yet at module load, or a later /rename, is picked up within one heartbeat.
+let SESSION_ID = deriveSessionId();
+let SESSION_NAME = deriveSessionName();
+
+// --- Outbound: SSE listeners on /events ------------------------------------
+/** @type {Set<(chunk: string) => void>} */
+const listeners = new Set();
+
+function broadcast(eventName, payload) {
+  // and a cached formerly-unique id must not be stamped onto its events.
+  const sessionId = deriveSessionId();
+  const enriched = sessionId ? { session_id: sessionId, ...payload } : { ...payload };
+  const data = JSON.stringify(enriched);
+  const chunk = `event: ${eventName}\ndata: ${data}\n\n`;
+  for (const emit of listeners) {
+    try {
+      emit(chunk);
+    } catch {
+      // listener already gone; will be reaped on next request abort
+    }
+  }
+}
+
+// --- Channel registry ------------------------------------------------------
+// Atomic mkdir-based mutex; matches the convention used by the golem CLI for
+// projects.json / sessions.json. Holds the lock just long enough to
+// read-modify-write the JSON file.
+function withChannelLock(fn) {
+  const dir = path.dirname(CHANNELS_REGISTRY);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+  const tries = 50;
+  for (let i = 0; i < tries; i++) {
+    try {
+      fs.mkdirSync(CHANNELS_LOCK);
+      try { return fn(); }
+      finally { try { fs.rmdirSync(CHANNELS_LOCK); } catch { /* ignore */ } }
+    } catch (err) {
+      if (err && err.code === 'EEXIST') {
+        // stale lock? if mtime > 5s drop it.
+        try {
+          const st = fs.statSync(CHANNELS_LOCK);
+          if (Date.now() - st.mtimeMs > 5000) {
+            try { fs.rmdirSync(CHANNELS_LOCK); } catch { /* ignore */ }
+          }
+        } catch { /* ignore */ }
+        // Tight retry; we're in a node single-process child so the busy
+        // window is microseconds.
+        const wait = Date.now() + 20;
+        while (Date.now() < wait) { /* spin briefly */ }
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`failed to acquire ${CHANNELS_LOCK} after ${tries} tries`);
+}
+
+function readChannelsRegistry() {
+  try {
+    const raw = fs.readFileSync(CHANNELS_REGISTRY, 'utf8');
+    const json = JSON.parse(raw);
+    if (json && Array.isArray(json.channels)) return json;
+  } catch { /* ignore */ }
+  return { version: 1, channels: [] };
+}
+
+function writeChannelsRegistry(reg) {
+  const tmp = `${CHANNELS_REGISTRY}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(reg, null, 2));
+  fs.renameSync(tmp, CHANNELS_REGISTRY);
+}
+
+// Captured once at module load so the periodic re-register heartbeat keeps a
+// stable started_at instead of advancing it every tick.
+const STARTED_AT = new Date().toISOString();
+const LEASE_OWNER = crypto.randomBytes(32).toString('base64url');
+
+function registerChannel(port, { logMissing = true } = {}) {
+  // Re-derive each call: the parent session file may not have existed at module
+  // load, and the name changes on /rename. Correcting SESSION_ID here also
+  // self-heals a channel that first registered under a fallback run-id.
+  SESSION_ID = deriveSessionId();
+  SESSION_NAME = deriveSessionName();
+  const siblings = sessionsForParent({ home: tracker.golemHome() });
+  const harness = 'claudecode';
+  const consumer = channelConsumerStatus(harness);
+  if (!SESSION_ID && siblings.length === 0) {
+    if (logMissing) process.stderr.write('[golem-channel] no unambiguous session id; channel will not register\n');
+    return false;
+  }
+  withChannelLock(() => {
+    const reg = readChannelsRegistry();
+    // Drop any prior row for THIS process (covers an id corrected from a run-id
+    // to the logical id between heartbeats) and any stale row under our id.
+    const sessionIds = new Set(siblings.map((row) => row.session_id));
+    reg.channels = reg.channels.filter((c) => c.pid !== process.pid && !sessionIds.has(c.session_id));
+    const rows = siblings.length ? siblings : [{ session_id: SESSION_ID, name: SESSION_NAME }];
+    for (const row of rows) {
+      reg.channels.push({
+        session_id: row.session_id,
+        name: row.name || null,
+        pid: process.pid,
+        host: HOST,
+        port,
+        version: VERSION,
+        harness,
+        consumer_ready: consumer.ready,
+        consumer_reason: consumer.reason,
+        consumer_transport: consumer.transport,
+        delivery_ready: consumer.ready,
+        started_at: STARTED_AT,
+      });
+      // reassert: a periodic re-register proves the endpoint process is alive
+      // (the lease covers that); it is NOT session activity, so an unchanged
+      // row must not re-stamp observed_at — that forged "seen Ns ago" on idle
+      // sessions and made agent cards resort every heartbeat (GOL-109). name
+      // and status are omitted when this process has nothing to say, so they
+      // inherit the stored fact instead of clobbering a hook-written value
+      // back to null (which would count as a material change every tick).
+      upsertSessionFact({
+        canonical_id: row.session_id,
+        harness,
+        locator: { raw_session_id: process.env.CLAUDE_CODE_SESSION_ID || row.session_id },
+        continuation_key: row.session_id,
+        ...(row.name ? { name: row.name } : {}),
+        ...(row.status ? { status: row.status } : {}),
+        observed_at: new Date().toISOString(),
+      }, { reassert: true });
+      renewEndpointLease({
+        canonical_id: row.session_id,
+        owner_token: LEASE_OWNER,
+        host: HOST,
+        port,
+        pid: process.pid,
+        harness,
+        kind: 'claude-channel',
+        consumer_ready: consumer.ready,
+        consumer_reason: consumer.reason,
+        consumer_transport: consumer.transport,
+        delivery_ready: consumer.ready,
+      });
+    }
+    writeChannelsRegistry(reg);
+  });
+  return true;
+}
+
+// --- MCP server ------------------------------------------------------------
+// Outbound return instructions are surface-selected: a compatibility boot names
+// its advertised tools; a CLI-first boot names the CLI and golem:team-ops.
+// Provenance headers and receiving event kinds are shared and unchanged.
+const MCP_RETURN_GUIDANCE = {
+  delegatedReturns: '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies notify the authenticated exact session_id with `golem session notify` from the CLI (discovery: `golem session list`); see golem:team-ops.',
+  peerHelp: 'Peer help travels as a direct CLI notification to the exact captured session_id (`golem session notify`; discovery `golem session list`); see golem:team-ops — there are no consult wrapper tools or passive subscriptions.',
+};
+const mcp = new Server(
+  { name: 'golem', version: VERSION },
+  {
+    capabilities: {
+      experimental: { 'claude/channel': {} },
+      tools: {},
+    },
+    instructions: [
+      'Events from this channel arrive as <channel source="golem" kind="..."> tags.',
+      'Recognised kinds:',
+      '  - brief: a new request from the human. Route it per Global Rules § How work arrives (answer a question, build directly, or run the spec sequence you are authorized to coordinate).',
+      '  - role_assign: session role identity only (dashboard/CLI role picker). NOT a task. ack once, then STOP and wait. Do not ticket_list, explore, plan, build, or invent work. Work starts only on an explicit brief or ticket_dispatch.',
+      '  - interrupt: a course-correction to fold into in-flight work without restarting. Read, integrate, continue.',
+      '  - halt: a request to gracefully halt the current work, write a closing memo, and yield. Do not start new work.',
+      '  - gate_approve: the human approved a pending approval/question request (legacy event name; the gate_id meta identifies the request). Resume the blocked work.',
+      '  - gate_deny: the human denied it — hard stop for that thread.',
+      '  - gate_cancel: the human cancelled it — drop that thread without resuming.',
+      '  - session_notify brief: an active peer message. Delegated returns and consultations arrive as ordinary briefs with explicit headers and an authenticated sender session_id; read the durable report or context before acting.',
+      'You have ONE reply tool that fires over the SSE channel and surfaces in the dashboard chat:',
+      '  • `ack` — fires IMMEDIATELY on receipt of every inbound event, no exceptions. One short sentence describing what this session understood and is about to do. Pass the same kind; include gate_id for gate_* events. For role_assign, ack is the entire job.',
+      MCP_RETURN_GUIDANCE.delegatedReturns,
+      'Order of operations for any inbound channel event: 1) call ack on receipt, 2) do the work (role_assign: none), 3) reply in chat if a user-facing answer is needed, 4) yield.',
+      MCP_RETURN_GUIDANCE.peerHelp,
+    ].join(' '),
+  },
+);
+
+// --- Reply tool: `ack` -----------------------------------------------
+mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: GOLEM_TOOL_LIST,
+}));
+
+function resolveToolCaller(injectedSessionId) {
   const bound = launcherBoundSessionId();
   if (bound) {
     if (typeof injectedSessionId === 'string' && injectedSessionId.trim() && injectedSessionId.trim() !== bound) {
@@ -88,6 +370,17 @@ function deriveSessionId() {
     return { sessionId: bound, source: 'launcher_binding' };
   }
 
+  // Without a CC launcher/parent binding, only a live OpenCode bridge can
+  // authorize the per-call id written by its local shim. A model-supplied id
+  // with no matching bridge is never accepted as an actor.
+  const bridges = sessionsForParent({ home: tracker.golemHome() });
+  if (typeof injectedSessionId === 'string' && injectedSessionId.trim()) {
+    const injected = injectedSessionId.trim();
+    if (bridges.some((bridge) => bridge.session_id === injected)) {
+      return { sessionId: injected, source: 'opencode_shim' };
+    }
+    return { sessionId: null, error: 'golem: injected caller identity is not backed by a live OpenCode bridge; refusing the tool call.', reject: true };
+  }
   const resolved = resolveCallerSessionId({ home: tracker.golemHome() });
   return { ...resolved, sessionId: resolved.sessionId || null };
 }
@@ -102,7 +395,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   if (caller.reject) {
     return { isError: true, content: [{ type: 'text', text: caller.error || 'golem: caller identity is invalid; refusing the tool call.' }] };
   }
-
 
   if (name === 'ack') {
     const payload = {
@@ -168,7 +460,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         encoding: 'utf8',
         input: JSON.stringify({ session_id: SESSION_ID || '', cwd: projectCwd }),
         stdio: ['pipe', 'pipe', 'ignore'],
-        timeout: 3000, // a hung script must not block stdio
+        timeout: 3000, // matches shims/opencode/index.js; a hung script must not block stdio
       });
       const ctx = JSON.parse(out)?.hookSpecificOutput?.additionalContext || '';
       return { content: [{ type: 'text', text: ctx.trim() || '(no project context available)' }] };
@@ -424,6 +716,27 @@ function renderTrustedIdentity(content, metadata = {}) {
   ].join('\n');
 }
 
+function unregisterChannel() {
+  try {
+    releaseEndpointLeases(LEASE_OWNER);
+    withChannelLock(() => {
+      const reg = readChannelsRegistry();
+      const before = reg.channels.length;
+      // Filter by PID, not session_id. When Claude Code recycles this MCP
+      // child, the successor process boots and registerChannel's *before*
+      // this old process's exit handler runs. Both share SESSION_ID, so a
+      // session_id-based filter here would delete the successor's fresh
+      // entry — wiping the session from the registry. Removing only our own
+      // pid leaves the successor intact.
+      reg.channels = reg.channels.filter((c) => c.pid !== process.pid);
+      if (reg.channels.length !== before) writeChannelsRegistry(reg);
+    });
+  } catch (err) {
+    process.stderr.write(`[golem-channel] failed to unregister: ${err.message}\n`);
+  }
+}
+
+
 async function pushEvent(kind, content, extraMeta = {}, targetSessionId = null) {
   // meta keys must be identifiers (letters/digits/underscore) — hyphens
   // are silently dropped by Claude Code. snake_case only.
@@ -463,7 +776,8 @@ const server = http.createServer(async (req, res) => {
       if (!canonicalId || ownerToken !== LEASE_OWNER || !ownedIds.has(canonicalId)) {
         return sendJson(res, 403, { ok: false, error: 'lease identity mismatch' });
       }
-      const consumer = channelConsumerStatus('claudecode');
+      const harness = 'claudecode';
+      const consumer = channelConsumerStatus(harness);
       return sendJson(res, 200, {
         ok: true,
         version: VERSION,
@@ -642,19 +956,15 @@ server.listen(PORT, HOST, () => {
 // primary cleanup path.
 function shutdown(code = 0, why = 'signal') {
   try { process.stderr.write(`[golem-channel] shutdown (${why})\n`); } catch { /* stderr gone */ }
-  {
-    unregisterChannel();
-    try { server.close(); } catch { /* ignore */ }
-  }
+  unregisterChannel();
+  try { server.close(); } catch { /* ignore */ }
   process.exit(code);
 }
 process.on('SIGINT',  () => shutdown(0, 'SIGINT'));
 process.on('SIGTERM', () => shutdown(0, 'SIGTERM'));
 process.on('SIGHUP',  () => shutdown(0, 'SIGHUP'));
 process.on('beforeExit', () => {
-  {
-    unregisterChannel();
-  }
+  unregisterChannel();
 });
 // TKT-0369: the channel died mid-session with zero trace (no stderr, no crash
 // report) — every abnormal exit must say why, or the next death is

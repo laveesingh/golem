@@ -4,65 +4,50 @@ import os from 'node:os';
 
 /**
  * Caller identity resolution for one MCP child per Golem session.
- * invocation boundary carrying a per-call id. Its process environment is the
- * binding. Keep the marker separate from GOLEM_CEO_SESSION_ID: ordinary CC
- * launchers also set that variable and must retain their existing behaviour.
+ * GOL-365: Pi and Claude are the only harnesses. A Claude Code MCP child is
+ * bound to exactly one session — its launcher export or parent session file is
+ * the binding (see index.js deriveSessionId). There are no sibling bridges, so
+ * sessionsForParent() is empty by construction and injected ids are accepted
+ * only for callers that carry the launcher binding.
  */
-function pidAlive(pid) {
-  if (!pid || Number(pid) <= 0) return false;
-  try {
-    process.kill(Number(pid), 0);
-    return true;
-  } catch (err) {
-    return err?.code === 'EPERM';
-  }
-}
-
-function liveBridgesForParent({ home, parentPid = process.ppid }) {
-  try {
-        const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const bridges = Array.isArray(json?.bridges) ? json.bridges : [];
-    return bridges.filter((bridge) => (
-      bridge && bridge.session_id &&
-      (!bridge.pid || pidAlive(bridge.pid))
-    ));
-  } catch {
-    return [];
-  }
-}
-
-export function sessionsForParent({ home, parentPid } = {}) {
-  return liveBridgesForParent({ home, parentPid });
-}
 
 /**
- * infer which sibling called, so ambiguity is an error, never a newest-row
- * guess. Injected ids share the shim's local-plugin trust boundary.
+ * Resolve the caller's session id for a tracker write.
+ *
+ * An injected id is trusted only inside the MCP request boundary (index.js
+ * strips `__golem_session_id` before dispatch and passes it here explicitly);
+ * a CLI shell has no such channel, so it stays unbound unless the launcher
+ * exported the session id.
+ *
+ * @returns {{ sessionId: string|null, source?: string, error?: string }}
  */
 export function resolveCallerSessionId({ injectedId, home, parentPid } = {}) {
   if (typeof injectedId === 'string' && injectedId.trim()) {
     return { sessionId: injectedId.trim(), source: 'injected' };
   }
-  const candidates = liveBridgesForParent({ home, parentPid });
-  if (candidates.length === 1) {
-    return { sessionId: candidates[0].session_id, source: 'single_bridge' };
+  if (process.env.GOLEM_CEO_SESSION_ID) {
+    return { sessionId: process.env.GOLEM_CEO_SESSION_ID, source: 'launcher_binding' };
   }
-  if (candidates.length > 1) {
-    return {
-      sessionId: null,
-      error: `golem: cannot determine which session is calling (${candidates.length} multiple sibling sessions share this channel server, no caller id injected); refusing to write. Restart the session, or upgrade the golem plugin.`,
-    };
-  }
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(home, 'sessions.json'), 'utf8'));
+    const row = (j?.sessions || []).find((s) => s && s.pid === process.ppid);
+    if (row?.session_id) return { sessionId: row.session_id, source: 'parent_session_row' };
+  } catch { /* no registry — fall through */ }
   return {
     sessionId: null,
-    error: 'golem: cannot determine which session is calling (no live channel row, no caller id injected); refusing to write. Restart the session, or upgrade the golem plugin.',
+    error: 'golem: cannot determine which session is calling (no launcher binding, no caller id injected); refusing to write. Restart the session, or upgrade the golem plugin.',
   };
 }
 
 /**
- * Sibling bridge rows share one endpoint, so newest is valid only for endpoint
- * delivery. It must never be used to choose a caller identity.
+ * GOL-365: sibling rows were an opencode-bridge concept. One MCP child per
+ * session means there are no siblings; the empty result keeps the callers'
+ * loops simple.
  */
+export function sessionsForParent({ home, parentPid } = {}) {
+  return [];
+}
+
 /**
  * Which directory should ambient project context be rendered for?
  *
