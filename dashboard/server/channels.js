@@ -10,32 +10,26 @@ import { TYPED_WORKER_PROTOCOL_VERSION } from '../../lib/typed-worker-endpoint.j
 
 const CHANNELS_REGISTRY = channelsJsonPath();
 
-// A typed worker has an authenticated, lease-backed /brief endpoint and owns
-// its own native-turn readiness gate. `codex-supervisor` remains a concrete
-// adapter kind during the migration; future adapters register `typed-worker`
-// rather than requiring another dashboard special case.
+// GOL-365: Pi and Claude are the only harnesses. A typed worker has an
+// authenticated, lease-backed /brief endpoint and owns its own native-turn
+// readiness gate; Claude Code must publish an initialized/eligible
+// channel-consumer signal. Unknown harness kinds are treated generically and
+// stay non-deliverable (historical rows may still carry retired kinds).
 export function isTypedWorkerChannel(channel) {
-  return channel?.kind === 'codex-supervisor'
-    || channel?.kind === 'typed-worker'
-    || channel?.typed_worker === true;
+  return channel?.kind === 'typed-worker' || channel?.typed_worker === true;
 }
 
 // Reachability means the endpoint's target transport is currently eligible,
-// not merely that its PID/HTTP listener exists. Managed Codex owns its typed
-// adapter gate; OpenCode owns a promptAsync bridge; Claude Code must publish an
-// explicit initialized/eligible channel-consumer signal. Unknown old CC rows
-// stay non-deliverable until their plugin process restarts and republishes.
+// not merely that its PID/HTTP listener exists. Pi owns the typed-worker
+// transport; Claude Code must publish an explicit initialized/eligible
+// channel-consumer signal.
 export function isChannelDeliveryReady(channel) {
   if (!channel) return false;
   if (isTypedWorkerChannel(channel)) return channel.delivery_ready === true;
-  if (channel.harness === 'opencode' || channel.kind === 'opencode-bridge') {
-    return channel.delivery_ready !== false;
-  }
   return channel.consumer_ready === true && channel.delivery_ready === true;
 }
 
 export function channelDeliveryError(channel) {
-  if (channel?.kind === 'codex-supervisor') return 'managed Codex target is not delivery-ready';
   if (isTypedWorkerChannel(channel)) return 'typed worker target is not delivery-ready';
   if (String(channel?.consumer_reason || '').startsWith('unsupported_')) {
     return 'Claude Code channel is ineligible under this provider configuration. Claude Channels require Anthropic authentication through claude.ai or a Console API key; unset Bedrock/Vertex/Foundry or non-default ANTHROPIC_BASE_URL configuration, then restart with --dangerously-load-development-channels plugin:golem@golem-workspace.';

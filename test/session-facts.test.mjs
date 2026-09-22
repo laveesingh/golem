@@ -35,10 +35,10 @@ for (const file of ['session-facts.json', 'endpoint-leases.json']) {
 const corruptFacts = path.join(process.env.GOLEM_HOME, 'corrupt-facts.json');
 fs.writeFileSync(corruptFacts, '{"version":1,"facts":[');
 const corruptBytes = fs.readFileSync(corruptFacts);
-assert.throws(() => upsertSessionFact({ canonical_id: 'must-not-write', harness: 'opencode', locator: { raw_session_id: 'raw' } }, { file: corruptFacts }), /cannot read facts registry/);
+assert.throws(() => upsertSessionFact({ canonical_id: 'must-not-write', harness: 'pi', locator: { raw_session_id: 'raw' } }, { file: corruptFacts }), /cannot read facts registry/);
 assert.deepEqual(fs.readFileSync(corruptFacts), corruptBytes, 'malformed registry is preserved byte-for-byte');
 
-const projected = upsertSessionFact({ canonical_id: 'unprobed', harness: 'opencode', locator: { raw_session_id: 'unprobed' }, project_path: process.cwd(), status: 'idle' });
+const projected = upsertSessionFact({ canonical_id: 'unprobed', harness: 'pi', locator: { raw_session_id: 'unprobed' }, project_path: process.cwd(), status: 'idle' });
 renewEndpointLease({ canonical_id: projected.canonical_id, owner_token: 'unprobed-owner', host: '127.0.0.1', port: 9 });
 const { readNativeSessions } = await import('../dashboard/server/native-sessions.js');
 const backgroundProjection = (await readNativeSessions(() => true, [], { cliRaw: [{
@@ -82,25 +82,25 @@ const staleFactAt = recencyNow - 20 * 60_000;
 const freshRegistryAt = recencyNow - 60_000;
 const freshFactAt = recencyNow - 2 * 60_000;
 const staleRegistryAt = recencyNow - 25 * 60_000;
-upsertSessionFact({ canonical_id: 'oc-recency', harness: 'opencode', locator: { raw_session_id: 'oc-recency' }, continuation_key: 'oc-recency', project_path: process.cwd(), name: 'oc-recency', status: 'idle', observed_at: new Date(staleFactAt).toISOString() });
-upsertSessionFact({ canonical_id: 'oc-recency2', harness: 'opencode', locator: { raw_session_id: 'oc-recency2' }, continuation_key: 'oc-recency2', project_path: process.cwd(), name: 'oc-recency2', status: 'idle', observed_at: new Date(freshFactAt).toISOString() });
+upsertSessionFact({ canonical_id: 'pi-recency', harness: 'pi', locator: { raw_session_id: 'pi-recency' }, continuation_key: 'pi-recency', project_path: process.cwd(), name: 'pi-recency', status: 'idle', observed_at: new Date(staleFactAt).toISOString() });
+upsertSessionFact({ canonical_id: 'pi-recency2', harness: 'pi', locator: { raw_session_id: 'pi-recency2' }, continuation_key: 'pi-recency2', project_path: process.cwd(), name: 'pi-recency2', status: 'idle', observed_at: new Date(freshFactAt).toISOString() });
 // Wholesale write of the shared registry fixture — keep every row this block
 // needs in this single write; the earlier scenarios above do not read it.
 fs.writeFileSync(path.join(process.env.GOLEM_HOME, 'sessions.json'), JSON.stringify({
   sessions: [
-    { session_id: 'oc-recency', harness: 'opencode', project_path: process.cwd(), name: 'oc-recency', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(freshRegistryAt).toISOString() },
-    { session_id: 'oc-recency2', harness: 'opencode', project_path: process.cwd(), name: 'oc-recency2', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(staleRegistryAt).toISOString() },
+    { session_id: 'pi-recency', harness: 'pi', project_path: process.cwd(), name: 'pi-recency', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(freshRegistryAt).toISOString() },
+    { session_id: 'pi-recency2', harness: 'pi', project_path: process.cwd(), name: 'pi-recency2', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(staleRegistryAt).toISOString() },
   ],
 }, null, 2));
 const recencyRows = await readNativeSessions(() => true, [
-  { session_id: 'oc-recency', endpoint_health: 'healthy' },
-  { session_id: 'oc-recency2', endpoint_health: 'healthy' },
+  { session_id: 'pi-recency', endpoint_health: 'healthy', kind: 'typed-worker', delivery_ready: true },
+  { session_id: 'pi-recency2', endpoint_health: 'healthy', kind: 'typed-worker', delivery_ready: true },
 ]);
-const ocRow = recencyRows.find((row) => row.session_id === 'oc-recency');
-assert.equal(ocRow?.alive, true, 'verified healthy endpoint keeps an idle opencode session alive past the fact recency window');
-assert.equal(ocRow?.updated_at, freshRegistryAt, 'registry recency wins when the fact is older');
-const ocRow2 = recencyRows.find((row) => row.session_id === 'oc-recency2');
-assert.equal(ocRow2?.updated_at, freshFactAt, 'fact recency wins when the registry is older');
+const piRow = recencyRows.find((row) => row.session_id === 'pi-recency');
+assert.equal(piRow?.alive, true, 'verified healthy endpoint keeps an idle session alive past the fact recency window');
+assert.equal(piRow?.updated_at, freshRegistryAt, 'registry recency wins when the fact is older');
+const piRow2 = recencyRows.find((row) => row.session_id === 'pi-recency2');
+assert.equal(piRow2?.updated_at, freshFactAt, 'fact recency wins when the registry is older');
 
 // GOL-129: a verified typed-worker lease is endpoint liveness, not activity.
 // It keeps a quiet Pi visible without forging a newer observed_at, while the
