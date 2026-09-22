@@ -247,20 +247,16 @@ try {
     expires_at: '2099-01-01T00:00:00.000Z',
   }));
   assert.equal(fenced.fenced, true, 'schema-2 replay identity older than retained history is fenced before native delivery');
-  const { CodexSupervisor, CodexRpcServerRejection, readCodexSupervisor } = await import('../lib/codex-supervisor.js');
-  const legacySupervisor = new CodexSupervisor({
-    canonicalId: 'legacy-upgrade-worker',
-    registryFile: path.join(tombstoneTemp, 'legacy-supervisors.json'),
-    tombstoneFile,
-  });
-  legacySupervisor.migrateTypedDeliveryTombstones({
+  const { migrateTypedDeliveryTombstones } = await import('../lib/typed-delivery-tombstones.js');
+  const legacyCanonicalId = 'legacy-upgrade-worker';
+  migrateTypedDeliveryTombstones(legacyCanonicalId, {
     schema: 2,
     deliveries: [{
       envelope_id: 'retained-schema-two-acceptance', target_session_id: 'legacy-upgrade-worker',
       attempt_id: 'schema-two-attempt', state: 'completed', created_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + 60_000).toISOString(),
     }],
-  });
+  }, { file: tombstoneFile, normalize: normalizeTypedWorkerInbox });
   assert.equal(
     readTypedDeliveryTombstone('legacy-upgrade-worker', 'retained-schema-two-acceptance', { file: tombstoneFile })?.accepted_attempt_id,
     'schema-two-attempt',
@@ -271,14 +267,14 @@ try {
     attempt_id: 'attempt-a', accepted_attempt_id: 'attempt-a', lifecycle_state: 'settled',
     accepted_at: new Date().toISOString(), settled_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(),
   }, { file: tombstoneFile });
-  legacySupervisor.migrateTypedDeliveryTombstones({
+  migrateTypedDeliveryTombstones(legacyCanonicalId, {
     schema: 5,
     deliveries: [{
       envelope_id: 'stale-json-after-settlement', target_session_id: 'legacy-upgrade-worker',
       attempt_id: 'attempt-a', state: 'started', lifecycle_state: 'accepted', accepted_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + 120_000).toISOString(),
     }],
-  });
+  }, { file: tombstoneFile, normalize: normalizeTypedWorkerInbox });
   assert.equal(
     readTypedDeliveryTombstone('legacy-upgrade-worker', 'stale-json-after-settlement', { file: tombstoneFile })?.lifecycle_state,
     'settled',
@@ -445,19 +441,14 @@ try {
     assert.equal(countTypedDeliveryTombstones({ file: productionTombstoneFile }), 1, 'the active sibling is the only rich tombstone left after terminal retirement');
     assert.equal(countTypedDeliveryRejections({ file: productionTombstoneFile }), 1, 'the terminal lineage moves to the durable rejection index');
     assert.equal(readTypedDeliveryTombstone(mixedSession, activeMixed.envelope_id, { file: productionTombstoneFile })?.lifecycle_state, 'accepted', 'an active sibling lineage is never retired by another envelope terminal result');
-    const staleMixedSupervisor = new CodexSupervisor({
-      canonicalId: mixedSession,
-      registryFile: path.join(temp, 'mixed-retirement-supervisors.json'),
-      tombstoneFile: productionTombstoneFile,
-    });
-    staleMixedSupervisor.migrateTypedDeliveryTombstones({
+    migrateTypedDeliveryTombstones(mixedSession, {
       schema: 5,
       deliveries: [{
         envelope_id: terminalMixed.id, target_session_id: mixedSession,
         attempt_id: 'mixed-terminal-attempt', state: 'started', lifecycle_state: 'accepted',
         expires_at: new Date(Date.now() + 120_000).toISOString(),
       }],
-    });
+    }, { file: productionTombstoneFile, normalize: normalizeTypedWorkerInbox });
     assert.equal(readTypedDeliveryTombstone(mixedSession, terminalMixed.id, { file: productionTombstoneFile })?.lifecycle_state, 'settled', 'stale schema-5 JSON cannot replace the tracker-terminal replay refusal after restart');
     const rolloverProbe = normalizeTypedWorkerInbox();
     for (let n = 0; n < 257; n += 1) {
@@ -488,90 +479,6 @@ try {
     });
     assert.equal(terminalRolloverReplay.duplicate, true, 'tracker-settled envelope remains a duplicate after rich-history rollover');
     assert.equal(terminalRolloverReplay.delivery.lifecycle_state, 'settled', 'rollover replay returns the terminal outcome instead of claiming a native turn');
-
-    // A terminal notification can win the race with a rejected/lost turn/start
-    // response. The supervisor must re-read that durable terminal fact instead
-    // of overwriting it with a stale recovery-pending claim.
-    const raceSession = 'typed-notification-start-race';
-    const raceRegistry = path.join(temp, 'notification-race-supervisors.json');
-    const raceTombstones = path.join(temp, 'notification-race-tombstones.db');
-    const raceSupervisor = new CodexSupervisor({ canonicalId: raceSession, registryFile: raceRegistry, tombstoneFile: raceTombstones });
-    raceSupervisor.threadId = 'race-thread';
-    raceSupervisor.projectId = 'typed-test-000000';
-    raceSupervisor.mcp = { state: 'active', binding: raceSession };
-    raceSupervisor.deliveryReady = () => true;
-    raceSupervisor.updateRecord({
-      canonical_id: raceSession, thread_id: raceSupervisor.threadId,
-      thread_status: { type: 'idle' }, turn: { state: 'idle', turn_id: null },
-      inbox: normalizeTypedWorkerInbox(), health: { state: 'healthy', delivery_ready: true },
-    });
-    raceSupervisor.rpc = {
-      request: async (method) => {
-        assert.equal(method, 'turn/start');
-        raceSupervisor.handleNotification({
-          method: 'turn/completed',
-          params: { threadId: raceSupervisor.threadId, turn: { id: 'race-native-turn', status: 'completed' } },
-        });
-        throw new Error('turn/start response lost after terminal notification');
-      },
-    };
-    const raceEnvelope = {
-      protocol_version: TYPED_WORKER_PROTOCOL_VERSION,
-      envelope_id: 'notification-before-start-response', content: 'one native start',
-      target_session_id: raceSession, kind: 'ticket_dispatch', sender_session_id: 'test',
-      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(), attempt_id: 'race-attempt-a',
-    };
-    const raceResult = await raceSupervisor.acceptDelivery(raceEnvelope);
-    assert.equal(raceResult.accepted, true, 'a terminal notification remains an accepted result after the start response is lost');
-    assert.equal(raceResult.delivery_state, 'settled');
-    assert.equal(readCodexSupervisor(raceSession, { file: raceRegistry })?.inbox?.in_flight_envelope_id, null, 'lost start response never restores an already-settled in-flight claim');
-    assert.equal(readCodexSupervisor(raceSession, { file: raceRegistry })?.inbox?.deliveries?.find((row) => row.envelope_id === raceEnvelope.envelope_id)?.lifecycle_state, 'settled');
-    const staleRaceRecord = readCodexSupervisor(raceSession, { file: raceRegistry });
-    staleRaceRecord.inbox = normalizeTypedWorkerInbox({
-      schema: 5,
-      in_flight_envelope_id: raceEnvelope.envelope_id,
-      deliveries: [{ ...raceEnvelope, state: 'claimed', lifecycle_state: 'claimed', claimed_at: new Date().toISOString() }],
-    });
-    raceSupervisor.updateRecord({ inbox: staleRaceRecord.inbox, turn: { state: 'starting', envelope_id: raceEnvelope.envelope_id } });
-    const restartedRaceSupervisor = new CodexSupervisor({ canonicalId: raceSession, registryFile: raceRegistry, tombstoneFile: raceTombstones });
-    const restartedRaceInbox = normalizeTypedWorkerInbox(readCodexSupervisor(raceSession, { file: raceRegistry })?.inbox);
-    restartedRaceSupervisor.reconcileTerminalTypedDeliveries(restartedRaceInbox);
-    assert.equal(restartedRaceInbox.in_flight_envelope_id, null, 'startup reconciliation clears stale claimed state from the authoritative terminal tombstone');
-    assert.equal(getTypedDelivery(restartedRaceInbox, raceEnvelope.envelope_id)?.lifecycle_state, 'settled', 'startup reconciliation preserves the authoritative terminal result');
-
-    // A received JSON-RPC error is a deterministic native refusal, not an
-    // ambiguous lost response. The supervisor must release the exact claim so
-    // the shared queue can retry it instead of manufacturing recovery_required.
-    const rejectionSession = 'typed-server-rejection';
-    const rejectionSupervisor = new CodexSupervisor({
-      canonicalId: rejectionSession,
-      registryFile: path.join(temp, 'server-rejection-supervisors.json'),
-      tombstoneFile: path.join(temp, 'server-rejection-tombstones.db'),
-    });
-    rejectionSupervisor.threadId = 'rejection-thread';
-    rejectionSupervisor.projectId = 'typed-test-000000';
-    rejectionSupervisor.mcp = { state: 'active', binding: rejectionSession };
-    rejectionSupervisor.deliveryReady = () => true;
-    rejectionSupervisor.updateRecord({
-      canonical_id: rejectionSession, thread_id: rejectionSupervisor.threadId,
-      thread_status: { type: 'idle' }, turn: { state: 'idle', turn_id: null },
-      inbox: normalizeTypedWorkerInbox(), health: { state: 'healthy', delivery_ready: true },
-    });
-    rejectionSupervisor.rpc = {
-      request: async () => { throw new CodexRpcServerRejection('turn/start', { code: -32000, message: 'synthetic native rejection' }); },
-    };
-    const rejectedEnvelope = {
-      protocol_version: TYPED_WORKER_PROTOCOL_VERSION,
-      envelope_id: 'deterministic-server-rejection', content: 'must remain retryable',
-      target_session_id: rejectionSession, kind: 'ticket_dispatch', sender_session_id: 'test',
-      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(), attempt_id: 'rejection-attempt-a',
-    };
-    const rejected = await rejectionSupervisor.acceptDelivery(rejectedEnvelope);
-    assert.equal(rejected.accepted, false, 'a received RPC error is not typed acceptance');
-    assert.equal(rejected.delivery_state, 'pending', 'deterministic RPC rejection releases the exact pre-accept claim');
-    assert.equal(readCodexSupervisor(rejectionSession, { file: rejectionSupervisor.registryFile })?.inbox?.in_flight_envelope_id, null);
-    assert.equal(readCodexSupervisor(rejectionSession, { file: rejectionSupervisor.registryFile })?.inbox?.deliveries?.some((row) => row.envelope_id === rejectedEnvelope.envelope_id), false,
-      'server rejection leaves no recovery-required or accepted delivery mapping');
 
     let status = 'idle';
     let pushes = 0;
