@@ -26,7 +26,7 @@ writeFileSync(path.join(home, 'projects.json'), JSON.stringify({ projects: [
 const worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
 const now = new Date().toISOString();
 writeFileSync(path.join(home, 'sessions.json'), JSON.stringify({ sessions: [
-  { session_id: 'loam-agent', project_id: projectId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'idle', name: 'Loam Agent', harness: 'opencode', model: 'gpt-5.6-fixture', updated_at: now, last_seen_at: now },
+  { session_id: 'loam-agent', project_id: projectId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'idle', name: 'Loam Agent', harness: 'pi', model: 'gpt-5.6-fixture', updated_at: now, last_seen_at: now },
 ] }));
 
 const socket = net.createServer();

@@ -387,7 +387,7 @@ try {
   assert.equal(endpointRequests, requestsBeforeLeaseGap, 'no endpoint request is attempted through the lease gap');
   renewEndpointLease({
     canonical_id: canonicalId, owner_token: ownerToken, host: endpoint.host, port: endpoint.port,
-    kind: 'typed-worker', harness: 'codex',
+    kind: 'typed-worker', harness: 'pi',
   });
   await waitForRetry(leaseGap.json.envelope_id, `lease-gap typed retry (${dashboard.stderr()})`);
   assert.equal(nativeStarts, startsBeforeLeaseGap + 1, 'rebound typed lease accepts the original non-ticket envelope once');
@@ -470,7 +470,7 @@ try {
   hangNextResponse = true;
   renewEndpointLease({
     canonical_id: canonicalId, owner_token: ownerToken, host: endpoint.host, port: endpoint.port,
-    kind: 'typed-worker', harness: 'codex',
+    kind: 'typed-worker', harness: 'pi',
   });
   await waitFor(() => hangingResponse && nativeStarts === startsBeforeQueuedCrash + 1,
     'queued ticket native acceptance before dashboard crash');

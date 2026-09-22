@@ -176,13 +176,6 @@ function publicSupervisorRecord(record) {
   return { ...record, health };
 }
 
-function isReservedCodexTuiArgument(arg) {
-  return arg === '--remote' || arg.startsWith('--remote=')
-    || arg === '--remote-auth-token-env' || arg.startsWith('--remote-auth-token-env=')
-    || arg === '--cd' || arg.startsWith('--cd=')
-    || arg === '-C' || arg.startsWith('-C=') || (arg.startsWith('-C') && arg.length > 2);
-}
-
 function readSessionsRegistry() {
   try {
     const parsed = JSON.parse(readFileSync(sessionsJsonPath(), 'utf8'));
@@ -290,7 +283,7 @@ function sessionsDedupPlan(sessions) {
 
 function printSessionsDedupPlan(plans, apply) {
   if (!plans.length) {
-    log(`golem sessions dedup: no project-scoped named duplicates or Codex twins/stale rows found (${apply ? 'applied' : 'dry-run'})`);
+    log(`golem sessions dedup: no project-scoped named duplicates found (${apply ? 'applied' : 'dry-run'})`);
     return;
   }
   log(`golem sessions dedup ${apply ? '--apply' : '(dry-run; pass --apply to write)'}`);
@@ -327,8 +320,7 @@ Options:
 
 Dry-run by default. Groups rows in ~/.golem/sessions.json by non-empty name
 within the same project path, keeps the freshest live row, and with --apply
-marks other un-ended rows ended_at=<now>. Also marks Codex managed raw-thread
-twins and stale/terminal unnamed Codex rows.`);
+marks other un-ended rows ended_at=<now>. Also marks stale/terminal unnamed rows.`);
     return;
   }
   const unknown = rest.filter((a) => a !== '--apply');
@@ -1037,7 +1029,7 @@ function planForTarget(target) {
 }
 
 // Targets whose adapter renders a golem-owned block into a global instructions
-// file the human also owns (~/.claude/CLAUDE.md, $CODEX_HOME/AGENTS.md). This
+// file the human also owns (~/.claude/CLAUDE.md). This
 const INSTRUCTION_ADAPTERS = { cc: ccAdapter };
 
 /** Instruction render plan for a target, or an empty plan when it has none.

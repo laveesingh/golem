@@ -297,7 +297,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
       const status = liveStatus.get(s.session_id) ?? s.status ?? null;
       const deliveryReady = s.delivery_ready ?? s.reachable !== false;
       const deliveryReason = s.delivery_reason ?? null;
-      // A healthy managed Codex target may be busy/waiting with its direct
+      // A healthy typed-worker target may be busy/waiting with its direct
       // typed delivery gate closed. Keep its live status visible and make the
       // safe when-idle queue explicit; only actual channel loss is unreachable.
       if (!deliveryReady && (deliveryReason === 'busy' || deliveryReason === 'waiting')) {

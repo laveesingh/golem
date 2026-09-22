@@ -176,8 +176,8 @@ try {
     assert.match(renderedTracker, /golem ticket --help/, 'tracker is the canonical ticket CLI reference');
     assert.match(renderedTracker, /--body-format html/, 'html format creation is documented');
     assert.match(renderedTracker, /spec-only/, 'html format is spec-only in guidance');
-    assert.match(renderedTracker, /revision-gated full replacement/,
-      'Codex/OpenCode compatibility limits preserved in the tools intro');
+    assert.match(renderedTracker, /full-body path/,
+      'the compatibility limit (markdown full-body vs html expected_revision) is preserved in the tools intro');
     assert.match(renderedTracker, /golem:spec-writing` § HTML spec bodies/,
       'the html editing workflow lives in spec-writing; tracker points instead of duplicating it');
     // GOL-347 correction: no generic whole-body/MCP contradictions remain.
@@ -185,8 +185,8 @@ try {
       'the old whole-body rule must be scoped away');
     assert.doesNotMatch(renderedTracker, /read first and rewrite in full/,
       'the compatibility ticket_update row must not prescribe whole-body rewrites unconditionally');
-    assert.match(renderedTracker, /Codex\/OpenCode compatibility surface/,
-      'the MCP tools table is explicitly the compatibility surface');
+    assert.match(renderedTracker, /shared read surface/,
+      'the MCP tools table is explicitly the shared read surface');
     assert.match(renderedTracker, /Pi and Claude\s+author through `golem ticket`/,
       'Pi/Claude are pointed at the canonical CLI');
     assert.doesNotMatch(read(path.join(render, 'skills/tracker/SKILL.md')), /sessions_dispatchable/,

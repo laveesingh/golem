@@ -16,7 +16,7 @@ No data migration: existing tickets default to `markdown`, nothing is rewritten.
 
 - **Ticket CLI is canonical** (`golem ticket list/get/create/update/replace-body/get-outline/get-block/patch-blocks/add-comment/reply-comment/update-comment`). JSON-only stdout, file/stdin payloads, exits non-zero with machine-readable errors.
 - **HTML spec bodies (specs only).** Sanitized fragments, stable per-block ids, `body_format`/`body_revision`, outline + block-patch routes. Dashboard has a format selector, block editor, and format-aware image paste.
-- **MCP tools are now the compatibility surface** (Codex/OpenCode): reads + revision-gated full replacement only. Pi/Claude do ticket writes via the CLI.
+- **MCP tools are the single shared surface**: reads + revision-gated full replacement. Pi/Claude also do ticket writes via the CLI.
 - **Decision-led + collaboration cleanup:** CLI-first tool surface (`golem session notify/list` instead of `session_notify`), neutral return receipts, reusable SDD method, reminders live in `team-ops`.
 - **Reliability fixes:** comment dispatch refuses implicit offline recipients (400), Pi reload keeps binding, dashboard block-editor/comment-anchor layout fixes.
 

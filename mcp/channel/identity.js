@@ -40,7 +40,7 @@ export function resolveCallerSessionId({ injectedId, home, parentPid } = {}) {
 }
 
 /**
- * GOL-365: sibling rows were an opencode-bridge concept. One MCP child per
+ * GOL-365: sibling rows were the old shared-bridge concept. One MCP child per
  * session means there are no siblings; the empty result keeps the callers'
  * loops simple.
  */

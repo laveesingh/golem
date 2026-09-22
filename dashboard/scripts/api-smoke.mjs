@@ -173,33 +173,18 @@ async function run() {
 
   // --- substrate settings/status/sync ----------------------------------
   const subCfg = await jget('/api/substrate/config');
-  check('GET /api/substrate/config: harness config', subCfg.status === 200 && subCfg.body?.harnesses?.claudecode && subCfg.body?.harnesses?.opencode, `status ${subCfg.status}`);
-
-  const subPut = await jsend('PUT', '/api/substrate/config', { harnesses: { opencode: { enabled: false } } });
-  check('PUT /api/substrate/config: toggle opencode off', subPut.status === 200 && subPut.body?.harnesses?.opencode?.enabled === false, `status ${subPut.status}`);
+  check('GET /api/substrate/config: harness config', subCfg.status === 200 && subCfg.body?.harnesses?.claudecode, `status ${subCfg.status}`);
 
   const subStatus = await jget('/api/substrate/status');
   const statusCells = subStatus.body?.global || [];
   const hasCc = statusCells.some((c) => c.harness === 'claudecode' && ['in_sync', 'drifted'].includes(c.status));
-  const hasOcDisabled = statusCells.some((c) => c.harness === 'opencode' && c.status === 'disabled');
-  check('GET /api/substrate/status: cc active + opencode disabled cells', subStatus.status === 200 && hasCc && hasOcDisabled, `status ${subStatus.status}`);
-
-  const subPutEnabled = await jsend('PUT', '/api/substrate/config', { harnesses: { opencode: { enabled: true } } });
-  check('PUT /api/substrate/config: toggle opencode on', subPutEnabled.status === 200 && subPutEnabled.body?.harnesses?.opencode?.enabled === true, `status ${subPutEnabled.status}`);
+  check('GET /api/substrate/status: cc active cells', subStatus.status === 200 && hasCc, `status ${subStatus.status}`);
 
   const subStatusEnabled = await jget('/api/substrate/status');
   const enabledCells = subStatusEnabled.body?.global || [];
   const commandCells = enabledCells.filter((c) => c.artifact === 'commands');
   const commandsNeutral = commandCells.length === 2 && commandCells.every((c) => ['empty', 'disabled'].includes(c.status));
-  const ocHooksManaged = enabledCells.some((c) => c.harness === 'opencode' && c.artifact === 'hooks' && c.status === 'managed' && c.label === 'runtime shim');
-  const ocMcpManaged = enabledCells.some((c) => c.harness === 'opencode' && c.artifact === 'mcp' && c.status === 'managed' && c.label === 'config merge');
-  check('GET /api/substrate/status: neutral unsupported/empty cells', subStatusEnabled.status === 200 && commandsNeutral && ocHooksManaged && ocMcpManaged, `status ${subStatusEnabled.status}`);
-
-  const subPutDisabledAgain = await jsend('PUT', '/api/substrate/config', { harnesses: { opencode: { enabled: false } } });
-  check('PUT /api/substrate/config: toggle opencode off again', subPutDisabledAgain.status === 200 && subPutDisabledAgain.body?.harnesses?.opencode?.enabled === false, `status ${subPutDisabledAgain.status}`);
-
-  const syncDisabled = await jsend('POST', '/api/substrate/sync', { target: 'opencode' });
-  check('POST /api/substrate/sync: disabled opencode skips', syncDisabled.status === 200 && syncDisabled.body?.results?.[0]?.status === 'disabled', `status ${syncDisabled.status}`);
+  check('GET /api/substrate/status: neutral unsupported/empty cells', subStatusEnabled.status === 200 && commandsNeutral, `status ${subStatusEnabled.status}`);
 
   const syncCc = await jsend('POST', '/api/substrate/sync', { target: 'claudecode' });
   check('POST /api/substrate/sync: claudecode runs', syncCc.status === 200 && syncCc.body?.results?.[0]?.status === 'ok', `status ${syncCc.status}`);

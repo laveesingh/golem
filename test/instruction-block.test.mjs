@@ -61,11 +61,11 @@ check('creates the file with just the block when the destination is absent', () 
 
 check('adopting a human-authored file APPENDS and never truncates it', () => {
   const out = freshOut('adopt');
-  const human = '# My own Codex rules\nAlways use tabs.\n';
+  const human = '# My own rules\nAlways use tabs.\n';
   fs.writeFileSync(path.join(out, 'AGENTS.md'), human);
   const result = render(out, 'RULES v1');
   const text = fs.readFileSync(path.join(out, 'AGENTS.md'), 'utf8');
-  assert.ok(text.includes('# My own Codex rules'), 'human heading was destroyed');
+  assert.ok(text.includes('# My own rules'), 'human heading was destroyed');
   assert.ok(text.includes('Always use tabs.'), 'human rule was destroyed');
   assert.ok(text.includes('RULES v1'), 'golem block missing');
   assert.equal(result.tampered.length, 0, 'adoption must not report tamper');

@@ -73,7 +73,7 @@ const hbStatusFlip = upsertSessionFact({ ...hbInput(new Date(210_000).toISOStrin
 assert.equal(hbStatusFlip.status, 'busy', 'a real status flip under reassert still writes');
 assert.equal(hbStatusFlip.observed_at, new Date(210_000).toISOString(), 'a real status flip refreshes observed_at');
 
-// GOL-109 reader side: with heartbeat re-stamps gone, a live opencode session's
+// GOL-109 reader side: with heartbeat re-stamps gone, a live shim-backed session's
 // fact legitimately ages past the recency window. A verified authenticated
 // endpoint alone keeps it alive, and projection recency is the max of fact
 // activity and hook-driven registry recency — in BOTH directions.
@@ -171,7 +171,7 @@ assert.equal(mergedCc?.updated_at, freshRegistryAt, 'CLI overlay must not regres
 // Harnesses whose shim/supervisor maintains fact.status stay fact-first.
 assert.equal(factPresentationField('claudecode', 'idle', 'busy'), 'busy', 'live CC status wins over a frozen fact status');
 assert.equal(factPresentationField('claudecode', 'idle', null), 'idle', 'CC fact status fills only when no live source exists');
-assert.equal(factPresentationField('opencode', 'busy', 'idle'), 'busy', 'opencode fact status leads');
-assert.equal(factPresentationField('codex', 'active', null), 'active', 'codex fact status leads');
+assert.equal(factPresentationField('pi', 'busy', 'idle'), 'busy', 'pi fact status leads');
+assert.equal(factPresentationField('unknown-harness', 'active', null), 'active', 'an unknown harness fact status leads');
 
 console.log('canonical session facts + endpoint leases journey passed (36 assertions)');

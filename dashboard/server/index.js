@@ -1599,7 +1599,7 @@ async function main() {
 
   async function deliverCommentDispatch(ticket, comments, sessionId, { batchId = null, dispatches = [] } = {}) {
     const brief = commentBrief(ticket, comments, { batchId });
-    // GOL-101: a managed Codex supervisor is a typed adapter, not a generic
+    // GOL-101: a typed worker is a typed adapter, not a generic
     // channel — brief.js rejects any push without a durable envelope id, so a
 
     // envelope ticket dispatch uses.

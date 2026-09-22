@@ -1059,7 +1059,6 @@
   object-fit: contain;
 }
 .agent-harness-icon.claudecode { color: var(--status-review); }
-.agent-harness-icon.opencode { color: var(--status-active); }
 .agent-card-chips {
   display: flex;
   align-items: center;
@@ -5548,8 +5547,6 @@ mark.anno.anno-tail::after {
   pointer-events: none;
 }
 .agent-harness-icon.harness-claudecode { color: var(--status-review); }
-.agent-harness-icon.harness-opencode { color: var(--status-active); }
-.agent-harness-icon.harness-codex { color: var(--accent); }
 .agent-harness-icon.harness-pi { color: var(--text-1); }
 .agent-card.state-busy .agent-card-orb {
   box-shadow: inset -10px -12px 23px rgba(0, 0, 0, .35), 0 0 25px var(--agent-card-signal-soft);

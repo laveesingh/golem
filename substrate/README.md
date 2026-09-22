@@ -1,7 +1,7 @@
 # Golem harness substrate
 
 This directory is the canonical source for Golem's harness artifacts. The
-compiler renders it into Claude Code, Codex, OpenCode, and Pi surfaces. Edit
+compiler renders it into Claude Code and Pi surfaces. Edit
 `substrate/`; do not hand-edit the generated `plugin/` tree.
 
 For the complete source-checkout install, start with the root
@@ -22,10 +22,6 @@ dependencies. Keep the dashboard running before using tracker tools or dispatch.
 - **Claude Code** — `golem claude` launches native Claude Code with the
   development channel. A plain `claude` session can pull tracker work but does
   not receive channel pushes.
-- **Codex** — `golem sync --target codex` renders the ordinary pull-only
-  plugin. `golem codex` launches the version-gated managed private bridge.
-- **OpenCode** — opt-in through `~/.golem/config.json`; its MCP server and
-  runtime shim point to this checkout by absolute path.
 - **Pi** — `golem sync --target pi` renders the native extension. `golem pi`
   provides typed-worker delivery and requires Pi 0.85.1 with Node.js 22.19+
   or newer.
@@ -99,19 +95,6 @@ Coordination is durable tracker work plus exact-session notifications. The
 retired stream and subscription surfaces are not part of the current MCP
 contract.
 
-## OpenCode checkout binding
-
-OpenCode is not a portable copy of this plugin. When enabled,
-`golem sync --target opencode` renders skills and merges these checkout-backed
-entries into `~/.config/opencode/opencode.jsonc`:
-
-- `mcp.golem` runs `mcp/channel/index.js` from this checkout.
-- `plugin[]` loads `shims/opencode/index.js` through an absolute `file://` URL.
-- `skills.paths` points at the Golem render under `~/.golem/renders/opencode/`.
-
-Keep this checkout in place. If it moves, run the sync command again to refresh
-the absolute paths. See [`docs/opencode.md`](../docs/opencode.md) for the
-runtime bridge and project-scoped render contract.
 
 ## File map
 
@@ -126,8 +109,6 @@ substrate/
   README.md              # this source/render document
 
 mcp/channel/              # tracker MCP server and HTTP client source
-shims/opencode/           # OpenCode lifecycle and delivery bridge
-shims/codex/              # Codex lifecycle hook
 shims/pi/                 # Pi extension source
 ```
 

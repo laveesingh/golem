@@ -60,7 +60,7 @@ const ALLOWED_SENDERS = new Set(
     .map((s) => s.trim())
     .filter(Boolean),
 );
-// A Golem-owned Codex App Server uses this process only as a stdio MCP server.
+// Golem sessions consume this process as a stdio MCP server.
 // Its supervisor is the sole addressed-delivery endpoint; binding an ordinary
 // channel HTTP port here would create a second, unauthenticated route and make
 // the dashboard falsely believe generic Claude notification delivery works.
@@ -122,7 +122,6 @@ const CHANNELS_LOCK = `${CHANNELS_REGISTRY}.lock`;
 // Claude channel notifications. Claude Code may initialize ordinary MCP tools
 // even when its model-provider configuration is ineligible for Channels. Keep
 // the signal deliberately narrow: completed MCP initialization plus the
-// absence of a provider mode Anthropic documents as unsupported. OpenCode does
 let MCP_INITIALIZED = false;
 let BOUND_PORT = null;
 
@@ -370,17 +369,6 @@ function resolveToolCaller(injectedSessionId) {
     return { sessionId: bound, source: 'launcher_binding' };
   }
 
-  // Without a CC launcher/parent binding, only a live OpenCode bridge can
-  // authorize the per-call id written by its local shim. A model-supplied id
-  // with no matching bridge is never accepted as an actor.
-  const bridges = sessionsForParent({ home: tracker.golemHome() });
-  if (typeof injectedSessionId === 'string' && injectedSessionId.trim()) {
-    const injected = injectedSessionId.trim();
-    if (bridges.some((bridge) => bridge.session_id === injected)) {
-      return { sessionId: injected, source: 'opencode_shim' };
-    }
-    return { sessionId: null, error: 'golem: injected caller identity is not backed by a live OpenCode bridge; refusing the tool call.', reject: true };
-  }
   const resolved = resolveCallerSessionId({ home: tracker.golemHome() });
   return { ...resolved, sessionId: resolved.sessionId || null };
 }
@@ -460,7 +448,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         encoding: 'utf8',
         input: JSON.stringify({ session_id: SESSION_ID || '', cwd: projectCwd }),
         stdio: ['pipe', 'pipe', 'ignore'],
-        timeout: 3000, // matches shims/opencode/index.js; a hung script must not block stdio
+        timeout: 3000, // a hung script must not block stdio
       });
       const ctx = JSON.parse(out)?.hookSpecificOutput?.additionalContext || '';
       return { content: [{ type: 'text', text: ctx.trim() || '(no project context available)' }] };

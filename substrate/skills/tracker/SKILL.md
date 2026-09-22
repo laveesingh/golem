@@ -6,10 +6,10 @@ description: The tracker tools and model — spec, task, doc; one state lifecycl
 # Tracker
 
 The dashboard owns work records; never direct database writes. These MCP tools are the
-Codex/OpenCode compatibility surface (reads, revision-gated full replacement); Pi and Claude
+shared read surface; Pi and Claude
 author through `golem ticket` (§ Ticket CLI).
 
-## Compatibility tools
+## Tools
 
 | Tool | Use |
 |---|---|

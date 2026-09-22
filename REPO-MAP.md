@@ -9,7 +9,7 @@
 - `plugin/` — generated CC rollback copy; never hand-edit.
 - `dashboard/` — Fastify tracker/API, web source, and built UI.
 - `mcp/channel/` — tracker MCP server and REST client.
-- `shims/` — Codex hook, OpenCode bridge, and Pi extension.
+- `shims/` — Pi extension.
 
 ## Key modules & entry points
 
@@ -37,7 +37,7 @@ and ticket CLI guidance; `team-ops/` owns team operations and reminders.
 ### Compiler and delivery
 
 `lib/compiler/` renders substrate with drift/tamper checks and orphan pruning.
-`lib/typed-worker-endpoint.js` owns the authenticated Codex/Pi envelope protocol.
+`lib/typed-worker-endpoint.js` owns the authenticated Pi envelope protocol.
 
 ## Data flow
 
@@ -48,8 +48,6 @@ registries, owns tracker writes, and dispatches to native channels or typed endp
 
 - Project rules come from `AGENTS.md`; shared rules come from `substrate/`, never renders.
 - Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
-- OpenCode remains checkout-bound through absolute shim/MCP paths.
-- Standalone Codex is pull-only; managed `golem codex` is version-gated.
 - Supported Pi worker version is 0.85.1 with Node.js 22.19+.
 - Runtime state, credentials, and journals stay outside the repository.
 

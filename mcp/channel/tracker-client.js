@@ -77,8 +77,11 @@ export function dashboardBaseUrl() {
  * @returns {string|null}
  */
 export function currentSessionId(injectedId) {
+  // A launcher override or parent session file is process-owned. Keep this in
+  // lockstep with index.js deriveSessionId() so ticket actor ids match the
+  // channel registry and the dashboard.
+  if (process.env.GOLEM_CEO_SESSION_ID) return process.env.GOLEM_CEO_SESSION_ID;
   return resolveCallerSessionId({ home: golemHome() }).sessionId;
-  return null;
 }
 
 /**

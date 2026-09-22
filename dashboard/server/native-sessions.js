@@ -443,7 +443,7 @@ export async function readNativeSessions(registeredIdLookup, verifiedChannels = 
     const rowEnded = !!s.ended_at || factTerminal;
     const verifiedEndpoint = verifiedBySession.get(s.session_id);
     const typedWorkerHealthy = isTypedWorkerChannel(verifiedEndpoint);
-    // GOL-365 R8: unknown harness values (e.g. historical codex/opencode rows
+    // GOL-365 R8: unknown harness values (e.g. historical rows
     // until the scrub) are treated generically — recency-based liveness,
     // never a crash or a mis-route. A typed-worker endpoint is sufficient
     // liveness evidence on its own; the recency fallback arm only applies to
