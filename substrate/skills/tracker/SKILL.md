@@ -16,7 +16,7 @@ author through `golem ticket` (§ Ticket CLI).
 | `ticket_list({mine:true})` | work assigned to you; filters: state, kind, assignee, project |
 | `ticket_get({id})` | body, comments, children, events |
 | `ticket_create({title, kind, body, parent_id?})` | new ticket; kind defaults to `task`; fill the kind's template |
-| `ticket_update({id, ...})` | metadata and state; `body` is the Markdown/compatibility full-body path — html needs expected_revision via `golem ticket` |
+| `ticket_update({id, ...})` | metadata and state; `body` is the Markdown full-body path — html needs expected_revision via `golem ticket` |
 | `ticket_comment({id, body, ...})` | progress and evidence; anchor with a quote, prefix and suffix, or a section |
 | `ticket_comment_reply`, `ticket_comment_update` | thread a reply; resolve, reopen, or edit |
 | `ticket_dispatch` | team transport — discovery, recipients and returns per `golem:team-ops` |
