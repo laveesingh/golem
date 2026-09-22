@@ -27,10 +27,6 @@ import metaIdle from './assets/agent-icons/providers/meta-idle.svg?url';
 import metaActive from './assets/agent-icons/providers/meta-active.svg?url';
 import claudeCodeIdle from './assets/agent-icons/harnesses/claudecode-idle.svg?url';
 import claudeCodeActive from './assets/agent-icons/harnesses/claudecode-active.svg?url';
-import openCodeIdle from './assets/agent-icons/harnesses/opencode-idle.svg?url';
-import openCodeActive from './assets/agent-icons/harnesses/opencode-active.svg?url';
-import codexIdle from './assets/agent-icons/harnesses/codex-idle.svg?url';
-import codexActive from './assets/agent-icons/harnesses/codex-active.svg?url';
 import piIdle from './assets/agent-icons/harnesses/pi-idle.svg?url';
 import piActive from './assets/agent-icons/harnesses/pi-active.svg?url';
 import tencentIcon from '@lobehub/icons-static-svg/icons/tencent-color.svg?url';
@@ -96,8 +92,6 @@ import {
   const fallback = { ...FALLBACK, iconSrc: null, iconIdleSrc: null, iconActiveSrc: null };
   const harnesses = {
     claudecode: { id: 'claudecode', label: 'Claude Code', iconIdleSrc: claudeCodeIdle, iconActiveSrc: claudeCodeActive, iconSrc: claudeCodeIdle },
-    opencode: { id: 'opencode', label: 'OpenCode', iconIdleSrc: openCodeIdle, iconActiveSrc: openCodeActive, iconSrc: openCodeIdle },
-    codex: { id: 'codex', label: 'Codex', iconIdleSrc: codexIdle, iconActiveSrc: codexActive, iconSrc: codexIdle },
     pi: { id: 'pi', label: 'Pi', iconIdleSrc: piIdle, iconActiveSrc: piActive, iconSrc: piIdle },
   };
 
