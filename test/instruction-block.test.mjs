@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-// Block RenderItem semantics for the global instruction files
-// (~/.claude/CLAUDE.md, $CODEX_HOME/AGENTS.md).
-//
-// These destinations are shared with the human: golem owns the marked region,
-// they own everything else. The engine previously replaced the WHOLE file when
-// no managed region was found (`force ? block : block` — both branches equal),
-// which silently deleted a pre-existing Codex AGENTS.md on first adoption.
-// Nothing covered it. These tests exist so that cannot come back.
+// Block RenderItem semantics for the global instruction file
+// (~/.claude/CLAUDE.md). This destination is shared with the human: golem owns
+// the marked region, they own everything else. The engine previously replaced
+// the WHOLE file when no managed region was found, which silently deleted
+// pre-existing human content on first adoption. These tests exist so that
+// cannot come back.
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,7 +16,6 @@ process.env.GOLEM_HOME = path.join(tmpHome, 'golem');
 fs.mkdirSync(process.env.GOLEM_HOME, { recursive: true });
 
 const compiler = await import('../lib/compiler/engine.js');
-const codexAdapter = await import('../lib/compiler/adapters/codex.js');
 
 const BEGIN = '<!-- golem:instructions:begin -->';
 const END = '<!-- golem:instructions:end -->';
@@ -48,7 +45,7 @@ function freshOut(name) {
   return dir;
 }
 
-function render(outDir, inner, { force = false, target = 'codex-instructions' } = {}) {
+function render(outDir, inner, { force = false, target = 'cc-instructions' } = {}) {
   return compiler.render({ target, outDir, items: [item(inner)], packageVersion: '0.0.0', force });
 }
 
@@ -115,36 +112,7 @@ check('--force on a damaged file still preserves the existing content', () => {
 });
 
 console.log('');
-console.log('codex adapter instruction plan');
 
-check('codex adapter renders AGENTS.md into CODEX_HOME', () => {
-  const prior = process.env.CODEX_HOME;
-  process.env.CODEX_HOME = '/tmp/fake-codex-home';
-  try {
-    assert.equal(codexAdapter.instructionOutDir(), '/tmp/fake-codex-home');
-  } finally {
-    if (prior === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prior;
-  }
-});
-
-check('codex instruction plan is a marked block over substrate AGENTS.md', () => {
-  const plan = codexAdapter.buildInstructionPlan({ substrateRoot: path.resolve('substrate') });
-  assert.equal(plan.length, 1, 'expected exactly one instruction item');
-  assert.equal(plan[0].outputRelPath, 'AGENTS.md');
-  assert.equal(plan[0].type, 'block');
-  assert.equal(plan[0].beginMarker, BEGIN);
-  assert.ok(String(plan[0].build()).includes('# Global Rules'));
-});
-
-check('codex and cc use the same marker pair', async () => {
-  const cc = await import('../lib/compiler/adapters/cc.js');
-  const ccPlan = cc.buildInstructionPlan({ substrateRoot: path.resolve('substrate') });
-  const codexPlan = codexAdapter.buildInstructionPlan({ substrateRoot: path.resolve('substrate') });
-  assert.equal(ccPlan[0].beginMarker, codexPlan[0].beginMarker);
-  assert.equal(ccPlan[0].endMarker, codexPlan[0].endMarker);
-});
-
-fs.rmSync(tmpHome, { recursive: true, force: true });
 console.log('');
 console.log(failed ? `FAILED (${failed} of ${passed + failed})` : `ALL PASS (${passed} checks)`);
 process.exit(failed ? 1 : 0);
