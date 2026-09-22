@@ -70,11 +70,11 @@ schedule inspect` and `cancel`; cancellation stops future work but cannot recall
 a publication already in flight.
 
 `npm run test:collaboration` covers the delivery and scheduling journeys. Its native matrix
-requires the Codex schema recorded in `lib/codex-app-server-contract.js`. To test
+requires the Pi schema recorded in `lib/Pi-app-server-contract.js`. To test
 with that recorded binary without changing the installed CLI:
 
 ```bash
-npm exec --yes --package=@openai/codex@0.146.0 -- npm test
+npm exec --yes --package=@openai/Pi@0.146.0 -- npm test
 ```
 
 ## Configuration

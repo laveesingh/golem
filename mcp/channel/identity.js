@@ -50,12 +50,12 @@ export function resolveCallerSessionId({ injectedId, home, parentPid } = {}) {
   if (candidates.length > 1) {
     return {
       sessionId: null,
-      error: `golem: cannot determine which session is calling (${candidates.length} sibling sessions share this opencode server, no caller id injected); refusing to write. Restart this opencode session, or upgrade the golem plugin.`,
+      error: `golem: cannot determine which session is calling (${candidates.length} multiple sibling sessions share this channel server, no caller id injected); refusing to write. Restart the session, or upgrade the golem plugin.`,
     };
   }
   return {
     sessionId: null,
-    error: 'golem: cannot determine which session is calling (no live opencode bridge row, no caller id injected); refusing to write. Restart this opencode session, or upgrade the golem plugin.',
+    error: 'golem: cannot determine which session is calling (no live channel row, no caller id injected); refusing to write. Restart the session, or upgrade the golem plugin.',
   };
 }
 

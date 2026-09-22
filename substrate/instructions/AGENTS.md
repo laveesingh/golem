@@ -75,7 +75,6 @@ ticket comment. When it names a ticket, read it and its parent spec first.
 
 - Use supported Golem CLI verbs; MCP for remaining operations. Never invent tools.
 - Pi/Claude collaboration: `golem session --help`; reminders: `golem schedule --help`.
-  Other harnesses retain their advertised compatibility tools.
 - Tracker: `golem:tracker`. Git: `golem:git-conventions`. Browser: `golem:browsing`.
 
 ## Project layer

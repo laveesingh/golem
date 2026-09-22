@@ -256,7 +256,7 @@ export function notifySession({ session_id, text, sender_id, project_id } = {}) 
 }
 
 // Durable non-ticket control handoff. The dashboard selects the typed
-// envelope adapter for a managed Codex target and preserves the legacy route
+// envelope adapter and preserves the legacy route
 // for CC/OC. The MCP client never manufactures an envelope id locally.
 export function deliverControlMessage({ session_id, sender_id, project_id, kind, content, metadata, legacy } = {}) {
   return request('POST', '/api/messages/control', {
