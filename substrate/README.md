@@ -90,7 +90,7 @@ CLI-first surface — `ack`, tracker tools, `ticket_dispatch`, `session_role`, a
 `project_context`; returns and recipient discovery go through `golem session
 notify` / `golem session list` (`golem:team-ops`), and direct calls to the
 omitted outbound tools reject with that guidance. A boot without that selection
-keeps the compatibility list including `session_notify` and
+serves the
 `sessions_dispatchable`. The dashboard remains the tracker database's single
 writer. Ticket lifecycle is the `state` field: `todo`, `in_progress`,
 `blocked`, `review`, `done`, or `archived`.

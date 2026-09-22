@@ -57,11 +57,6 @@ const ALLOWED_SENDERS = new Set(
     .map((s) => s.trim())
     .filter(Boolean),
 );
-// A Golem-owned Codex App Server uses this process only as a stdio MCP server.
-// Its supervisor is the sole addressed-delivery endpoint; binding an ordinary
-// channel HTTP port here would create a second, unauthenticated route and make
-// the dashboard falsely believe generic Claude notification delivery works.
-const MANAGED_CODEX_MCP_ONLY = process.env.GOLEM_MANAGED_CODEX_MCP_ONLY === '1';
 
 
 // Identity for chat-routing and dispatch.
@@ -434,11 +429,6 @@ async function pushEvent(kind, content, extraMeta = {}, targetSessionId = null) 
   // are silently dropped by Claude Code. snake_case only.
   const meta = { kind, ...extraMeta };
   const renderedContent = renderTrustedIdentity(content, extraMeta);
-  const bridge = bridgeEndpointForParent({ home: tracker.golemHome() });
-  if (bridge) {
-    await postToOpencodeBridge(bridge, { session_id: targetSessionId || deriveSessionId(), kind, content: renderedContent, meta });
-    return;
-  }
   const consumer = channelConsumerStatus('claudecode');
   if (!consumer.ready) {
     const error = new Error(channelReadinessError(consumer.reason));
@@ -618,12 +608,12 @@ function extractMetadata(raw) {
 // --- Boot ------------------------------------------------------------------
 mcp.oninitialized = () => {
   MCP_INITIALIZED = true;
-  if (!MANAGED_CODEX_MCP_ONLY && BOUND_PORT != null) {
+  if (BOUND_PORT != null) {
     try { registerChannel(BOUND_PORT, { logMissing: false }); } catch { /* heartbeat retries */ }
   }
 };
 
-if (!MANAGED_CODEX_MCP_ONLY) server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, () => {
   const addr = server.address();
   const boundPort = typeof addr === 'object' && addr ? addr.port : PORT;
   BOUND_PORT = boundPort;
@@ -652,7 +642,7 @@ if (!MANAGED_CODEX_MCP_ONLY) server.listen(PORT, HOST, () => {
 // primary cleanup path.
 function shutdown(code = 0, why = 'signal') {
   try { process.stderr.write(`[golem-channel] shutdown (${why})\n`); } catch { /* stderr gone */ }
-  if (!MANAGED_CODEX_MCP_ONLY) {
+  {
     unregisterChannel();
     try { server.close(); } catch { /* ignore */ }
   }
@@ -662,7 +652,7 @@ process.on('SIGINT',  () => shutdown(0, 'SIGINT'));
 process.on('SIGTERM', () => shutdown(0, 'SIGTERM'));
 process.on('SIGHUP',  () => shutdown(0, 'SIGHUP'));
 process.on('beforeExit', () => {
-  if (!MANAGED_CODEX_MCP_ONLY) {
+  {
     unregisterChannel();
   }
 });
