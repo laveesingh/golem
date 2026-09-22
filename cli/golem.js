@@ -1541,6 +1541,144 @@ function cmdRemoved(name) {
   fatal(2, `Error: \`${name}\` is a v3 subcommand that has been removed in golem v4.\n\nRun \`golem help\` for the surviving commands.`);
 }
 
+const CLAUDE_CHANNEL_FLAG = '--dangerously-load-development-channels';
+const GOLEM_CLAUDE_CHANNEL = 'plugin:golem@golem-workspace';
+
+function claudeLauncherHelp() {
+  log(`Usage: golem claude [--backend native|ollama] [--model <id>] [-- <claude args...>]
+       golem cc [--backend native|ollama] [--model <id>] [-- <claude args...>]
+
+Open Claude Code in the current directory as a push-capable Golem
+channel consumer. The default backend is native. With --backend ollama, Golem
+runs \`ollama launch claude\`, preserving the old golemx launch contract.
+
+Golem injects:
+
+  ${CLAUDE_CHANNEL_FLAG} ${GOLEM_CLAUDE_CHANNEL}
+
+--model selects the native Claude Code model or the Ollama launch model,
+depending on the backend. All arguments after -- are passed to Claude Code
+unchanged. Other unrecognised arguments remain native Claude Code passthrough
+for backwards compatibility. Use
+\`golem claude -- --help\` for native Claude Code help. The development-channel
+flag is reserved because this wrapper owns the Golem channel identity.`);
+}
+
+function isReservedClaudeArgument(arg) {
+  return arg === CLAUDE_CHANNEL_FLAG || arg.startsWith(`${CLAUDE_CHANNEL_FLAG}=`);
+}
+
+async function cmdClaude(args) {
+  if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
+    claudeLauncherHelp();
+    return;
+  }
+
+  const passthrough = [];
+  let backend = 'native';
+  let model = null;
+  let separatorSeen = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!separatorSeen && arg === '--') {
+      separatorSeen = true;
+      continue;
+    }
+    if (!separatorSeen && (arg === '--backend' || arg === '--model')) {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) fatal(2, `golem claude requires a value for ${arg}`);
+      if (arg === '--backend') backend = value;
+      else model = value;
+      index += 1;
+      continue;
+    }
+    if (!separatorSeen && arg.startsWith('--backend=')) {
+      backend = arg.slice('--backend='.length);
+      continue;
+    }
+    if (!separatorSeen && arg.startsWith('--model=')) {
+      model = arg.slice('--model='.length);
+      continue;
+    }
+    if (isReservedClaudeArgument(arg)) {
+      fatal(2, `golem claude owns ${CLAUDE_CHANNEL_FLAG}; remove it and let Golem select ${GOLEM_CLAUDE_CHANNEL}`);
+    }
+    passthrough.push(arg);
+  }
+
+  if (!['native', 'ollama'].includes(backend)) {
+    fatal(2, `golem claude: unknown backend '${backend}' (known: native, ollama)`);
+  }
+  if (model === '') fatal(2, 'golem claude requires a non-empty --model value');
+
+  const executable = backend === 'ollama' ? 'ollama' : 'claude';
+  const launchArgs = backend === 'ollama'
+    ? ['launch', 'claude', ...(model ? ['--model', model] : []), '--', CLAUDE_CHANNEL_FLAG, GOLEM_CLAUDE_CHANNEL, ...passthrough]
+    : [CLAUDE_CHANNEL_FLAG, GOLEM_CLAUDE_CHANNEL, ...(model ? ['--model', model] : []), ...passthrough];
+
+  const child = spawn(executable, launchArgs, {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: 'inherit',
+  });
+
+  const onSigint = () => {
+    // Claude Code receives terminal SIGINT directly and owns its turn-level
+    // interrupt behavior. Keep the wrapper alive until the native child exits.
+  };
+  const forwardTermination = (signal) => {
+    if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+  };
+  const onSigterm = () => forwardTermination('SIGTERM');
+  const onSighup = () => forwardTermination('SIGHUP');
+  process.on('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
+  process.once('SIGHUP', onSighup);
+
+  let exitSignal = null;
+  try {
+    const outcome = await new Promise((resolveOutcome) => {
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        resolveOutcome(result);
+      };
+      child.once('error', (error) => finish({ error }));
+      child.once('exit', (code, signal) => finish({ code, signal }));
+    });
+
+    if (outcome.error) {
+      const detail = outcome.error.code === 'ENOENT'
+        ? `the '${executable}' executable was not found on PATH`
+        : outcome.error.message;
+      err(`golem claude could not start Claude Code: ${detail}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    if (Number.isInteger(outcome.code)) {
+      if (outcome.code) process.exitCode = outcome.code;
+      return;
+    }
+
+    exitSignal = outcome.signal;
+  } finally {
+    process.off('SIGINT', onSigint);
+    process.off('SIGTERM', onSigterm);
+    process.off('SIGHUP', onSighup);
+  }
+
+  if (exitSignal) {
+    process.kill(process.pid, exitSignal);
+    return;
+  }
+
+  err('golem claude: Claude Code exited without a status or signal');
+  process.exitCode = 1;
+}
+
+
 async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0] ?? 'help';
