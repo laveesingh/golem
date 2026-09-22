@@ -9,9 +9,6 @@
 //   dashboard    Start the admin dashboard (node dashboard/server/index.js).
 //   dashboard:restart
 //                Stop and restart the admin dashboard detached.
-//   codex-supervisor
-//                Run one managed, headless Codex App Server lifecycle process.
-//   codex        Open one managed interactive Codex TUI.
 //   claude / cc  Open Claude Code as a Golem channel consumer, optionally via Ollama.
 //   pi           Open native Pi with Golem's rendered bridge extension.
 //   spawn/list/attach/peek/kill
@@ -34,11 +31,8 @@ import { updateProjectLsp } from '../lib/lsp.js';
 import * as compiler from '../lib/compiler/engine.js';
 import { lintSubstrate } from '../lib/compiler/lint.js';
 import * as ccAdapter from '../lib/compiler/adapters/cc.js';
-import * as ocAdapter from '../lib/compiler/adapters/opencode.js';
-import * as codexAdapter from '../lib/compiler/adapters/codex.js';
 import * as piAdapter from '../lib/compiler/adapters/pi.js';
 import { isHarnessEnabled, loadConfig, saveConfig } from '../lib/golem-config.js';
-import { CodexSupervisor, readCodexSupervisor } from '../lib/codex-supervisor.js';
 import { MIN_PI_NODE, SUPPORTED_PI_VERSION, piNodeSupported } from '../lib/pi-compatibility.js';
 import { resolveRolePreset } from '../lib/role-preset.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
@@ -182,797 +176,11 @@ function publicSupervisorRecord(record) {
   return { ...record, health };
 }
 
-async function cmdCodexSupervisor(args) {
-  const [subcommand = 'help', ...rest] = args;
-  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
-    log(`Usage: golem codex-supervisor run --session <canonical-id> [--cwd <dir>]
-       golem codex-supervisor approvals --session <canonical-id> [--id <approval-id>] [--decision approve|decline|cancel]
-
-Runs a Golem-owned, headless Codex App Server supervisor in the foreground.
-It is version/schema-gated and exposes typed tracker delivery when its bound
-MCP is active and the thread is idle. The approvals command is local-only:
-list pending redacted requests, inspect one live request with --id, then make
-an explicit one-off decision. Stop a running supervisor with Ctrl-C.`);
-    return;
-  }
-  if (subcommand === 'approvals') {
-    let canonicalId = null;
-    let approvalId = null;
-    let decision = null;
-    for (let index = 0; index < rest.length; index += 1) {
-      const arg = rest[index];
-      if (arg === '--session') canonicalId = rest[++index] ?? null;
-      else if (arg.startsWith('--session=')) canonicalId = arg.slice('--session='.length);
-      else if (arg === '--id') approvalId = rest[++index] ?? null;
-      else if (arg.startsWith('--id=')) approvalId = arg.slice('--id='.length);
-      else if (arg === '--decision') decision = rest[++index] ?? null;
-      else if (arg.startsWith('--decision=')) decision = arg.slice('--decision='.length);
-      else fatal(2, `unknown codex-supervisor approvals option: ${arg}`);
-    }
-    if (!canonicalId) fatal(2, 'codex-supervisor approvals requires --session <canonical-id>');
-    if (decision && !approvalId) fatal(2, 'codex-supervisor approvals --decision requires --id <approval-id>');
-    if (decision && !['approve', 'decline', 'cancel'].includes(decision)) fatal(2, 'approval decision must be approve, decline, or cancel');
-    const record = readCodexSupervisor(canonicalId);
-    if (!record?.health?.owner_token || !record.health.host || !record.health.port) {
-      fatal(1, `managed Codex supervisor ${canonicalId} has no live owner-authenticated loopback endpoint`);
-    }
-    if (!['127.0.0.1', '::1', 'localhost'].includes(record.health.host)) {
-      fatal(1, 'refusing approval operation: supervisor endpoint is not loopback');
-    }
-    const suffix = approvalId
-      ? `/approvals/${encodeURIComponent(approvalId)}${decision ? '/decision' : ''}`
-      : '/approvals';
-    const response = await fetch(`http://${record.health.host}:${record.health.port}${suffix}`, {
-      method: decision ? 'POST' : 'GET',
-      headers: {
-        'content-type': 'application/json',
-        'x-golem-target-session': canonicalId,
-        'x-golem-endpoint-owner': record.health.owner_token,
-      },
-      body: decision ? JSON.stringify({ decision }) : undefined,
-    });
-    const text = await response.text();
-    if (!response.ok) fatal(1, `approval operation failed (${response.status}): ${text}`);
-    log(text || '{}');
-    return;
-  }
-  if (subcommand !== 'run') fatal(2, `Unknown codex-supervisor command: ${subcommand}`);
-  let canonicalId = null;
-  let cwd = process.cwd();
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index];
-    if (arg === '--session') canonicalId = rest[++index] ?? null;
-    else if (arg.startsWith('--session=')) canonicalId = arg.slice('--session='.length);
-    else if (arg === '--cwd') cwd = rest[++index] ?? null;
-    else if (arg.startsWith('--cwd=')) cwd = arg.slice('--cwd='.length);
-    else fatal(2, `unknown codex-supervisor option: ${arg}`);
-  }
-  if (!canonicalId) fatal(2, 'codex-supervisor run requires --session <canonical-id>');
-  if (!cwd) fatal(2, 'codex-supervisor run requires a non-empty --cwd');
-  const supervisor = new CodexSupervisor({ canonicalId, cwd });
-  const record = await supervisor.start();
-  log(JSON.stringify({ ok: true, supervisor: publicSupervisorRecord(record) }, null, 2));
-  let unexpectedExit = null;
-  await new Promise((resolve) => {
-    const stop = () => resolve();
-    supervisor.once('dead', ({ error }) => { unexpectedExit = error; resolve(); });
-    process.once('SIGINT', stop);
-    process.once('SIGTERM', stop);
-  });
-  await supervisor.stop();
-  if (unexpectedExit) throw unexpectedExit;
-}
-
-function codexTuiHelp() {
-  log(`Usage: golem codex [--session <canonical-id>] [--thread <codex-thread-id>]
-                   [--cwd <dir>] [-- <codex args...>]
-
-Open a normal interactive Codex TUI backed by one Golem-owned, private App
-Server. With no flags it uses the current directory and creates one canonical
-tracker session. The TUI owns normal Codex model, sandbox, and approval options.
-
-Wrapper options:
-  --session <canonical-id>  Reuse a chosen tracker canonical id, resuming the
-                            Codex thread stored against it.
-  --thread <thread-id>      Resume this Codex thread by its native id. Wins over
-                            any thread stored against --session. Use this to
-                            resume a session Golem did not launch.
-  --cwd <dir>               Run the App Server and TUI in this directory.
-
-All other Codex arguments are passed through. --remote and -C/--cd are
-reserved: Golem owns the private Unix socket and canonical project directory.
-Golem launches native \`codex resume <thread-id>\` through that same private
-bridge; a thread that cannot be resumed is an error, never a silent new session.
-
-Note: /resume inside the TUI cannot work under golem codex. The picker opens a
-second connection and the bridge is deliberately single-client, so it reports
-"failed to connect to remote app server". Name the thread at launch instead.
-
-  golem codex --thread 019f...  # resume a specific thread
-  golem codex -- resume --last  # let Codex pick the most recent one`);
-}
-
 function isReservedCodexTuiArgument(arg) {
   return arg === '--remote' || arg.startsWith('--remote=')
     || arg === '--remote-auth-token-env' || arg.startsWith('--remote-auth-token-env=')
     || arg === '--cd' || arg.startsWith('--cd=')
     || arg === '-C' || arg.startsWith('-C=') || (arg.startsWith('-C') && arg.length > 2);
-}
-
-function reservedCodexTuiArgumentMessage(arg) {
-  if (arg === '--remote' || arg.startsWith('--remote=')) {
-    return 'golem codex owns --remote; remove it and let Golem create the private Unix socket';
-  }
-  if (arg === '--remote-auth-token-env' || arg.startsWith('--remote-auth-token-env=')) {
-    return 'golem codex uses a private Unix socket and does not accept remote authentication options';
-  }
-  return 'golem codex owns the working directory; use wrapper --cwd before -- and do not pass -C/--cd';
-}
-
-// Codex stores one rollout per resumable thread at
-// <sessions>/YYYY/MM/DD/rollout-<timestamp>-<thread-id>.jsonl. Golem's own
-// mapping can outlive that file, so a stored thread id is a hint, not proof.
-// An unreadable or absent store cannot disprove the thread — say so by
-// returning true and let the Codex CLI issue the authoritative error.
-function codexThreadIsResumable(threadId, { sessionsDir = join(homedir(), '.codex', 'sessions') } = {}) {
-  if (!existsSync(sessionsDir)) return true;
-  const suffix = `-${threadId}.jsonl`;
-  const walk = (dir, depth) => {
-    let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return false; }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (depth > 0 && walk(join(dir, entry.name), depth - 1)) return true;
-      } else if (entry.name.endsWith(suffix)) return true;
-    }
-    return false;
-  };
-  return walk(sessionsDir, 4);
-}
-
-// Decide which native Codex thread `golem codex` should resume, if any.
-// An explicit --thread wins over the thread stored against --session, because
-// the caller naming an id is stronger evidence than Golem's own recovery hint.
-// Returns null only when the caller asked for a fresh session.
-function resolveCodexResumeThread({ canonicalId, threadId, isResumable = codexThreadIsResumable }) {
-  let requested = threadId;
-  let origin = '--thread';
-  if (!requested && canonicalId) {
-    const stored = readCodexSupervisor(canonicalId);
-    if (!stored) {
-      fatal(2, `golem codex: no Golem-launched session recorded as ${canonicalId}.\n`
-        + '  --session takes a Golem canonical id (codex-<uuid>), not a Codex thread id.\n'
-        + '  To resume a Codex thread by its native id, use --thread <thread-id>.\n'
-        + '  Run `golem sessions` to list recorded sessions.');
-    }
-    if (!stored.thread_id) {
-      fatal(2, `golem codex: session ${canonicalId} has no recorded Codex thread to resume.\n`
-        + '  Drop --session to start a fresh thread, or name one with --thread <thread-id>.');
-    }
-    requested = stored.thread_id;
-    origin = `--session ${canonicalId}`;
-  }
-  if (!requested) return null;
-  if (!isResumable(requested)) {
-    const cause = origin === '--thread'
-      ? '  Codex has no rollout for that id — check it, or list what Codex still has.'
-      : '  Golem\'s mapping outlived the Codex rollout, so this thread cannot be resumed.';
-    fatal(2, `golem codex: Codex has no saved session ${requested} (from ${origin}).\n${cause}\n`
-      + '  Run `codex resume --all` to see resumable threads, then pass --thread <thread-id>.');
-  }
-  return requested;
-}
-
-async function cmdCodex(args) {
-  if (args.includes('--help') || args.includes('-h')) {
-    codexTuiHelp();
-    return;
-  }
-  let canonicalId = null;
-  let threadId = null;
-  let cwd = process.cwd();
-  const passthrough = [];
-  let passthroughOnly = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--') {
-      passthroughOnly = true;
-      continue;
-    }
-    if (isReservedCodexTuiArgument(arg)) fatal(2, reservedCodexTuiArgumentMessage(arg));
-    if (passthroughOnly) {
-      passthrough.push(arg);
-      continue;
-    }
-    if (arg === '--session') canonicalId = args[++index] ?? null;
-    else if (arg.startsWith('--session=')) canonicalId = arg.slice('--session='.length);
-    else if (arg === '--thread') threadId = args[++index] ?? null;
-    else if (arg.startsWith('--thread=')) threadId = arg.slice('--thread='.length);
-    else if (arg === '--cwd') cwd = args[++index] ?? null;
-    else if (arg.startsWith('--cwd=')) cwd = arg.slice('--cwd='.length);
-    else passthrough.push(arg);
-  }
-  if (!cwd) fatal(2, 'golem codex requires a non-empty --cwd');
-  if (canonicalId != null && !canonicalId.trim()) fatal(2, 'golem codex requires a non-empty --session');
-  if (threadId != null && !threadId.trim()) fatal(2, 'golem codex requires a non-empty --thread');
-
-  // Resolve what to resume before paying for an App Server. In TUI mode the
-  // supervisor never resumes a thread itself — the TUI does, over the bridge —
-  // so an unresumable request has to fail here. Silently opening a fresh thread
-  // is indistinguishable from a successful resume and loses the session.
-  const resumeThreadId = resolveCodexResumeThread({
-    canonicalId: canonicalId?.trim() ?? null,
-    threadId: threadId?.trim() ?? null,
-  });
-
-  const supervisor = new CodexSupervisor({
-    ...(canonicalId ? { canonicalId: canonicalId.trim() } : {}),
-    cwd,
-    mode: 'tui',
-  });
-  await supervisor.start();
-  const remote = supervisor.tuiBridge?.remoteUrl;
-  if (!remote) {
-    await supervisor.stop().catch(() => {});
-    throw new Error('managed Codex TUI bridge did not expose a private Unix socket');
-  }
-
-  // OpenAI documents remote mode for `codex resume`. Use that native lifecycle
-  // rather than starting a fresh thread and silently overwriting the durable
-  // mapping. resumeThreadId was resolved and validated before start().
-  const launchArgs = ['--remote', remote];
-  if (resumeThreadId) launchArgs.push('resume', resumeThreadId);
-  launchArgs.push(...passthrough);
-  const tui = spawn('codex', launchArgs, {
-    cwd: supervisor.cwd,
-    env: process.env,
-    stdio: 'inherit',
-  });
-  let stopped = false;
-  const stop = async () => {
-    if (stopped) return;
-    stopped = true;
-    await supervisor.stop().catch((error) => err(`golem codex cleanup failed: ${error.message}`));
-  };
-  const onSigint = () => {
-    // SIGINT is intentionally for the foreground TUI's active turn. Terminal
-    // delivery reaches that child too; do not stop the bridge merely because a
-    // human interrupted generation. TUI exit remains the cleanup boundary.
-  };
-  const onSigterm = () => {
-    if (tui.exitCode === null) tui.kill('SIGTERM');
-    void stop();
-  };
-  process.on('SIGINT', onSigint);
-  process.once('SIGTERM', onSigterm);
-  let exitCode = 0;
-  try {
-    await new Promise((resolve) => {
-      tui.once('error', (error) => {
-        err(`golem codex could not start the TUI: ${error.message}`);
-        exitCode = 1;
-        resolve();
-      });
-      tui.once('exit', (code) => {
-        exitCode = Number.isInteger(code) ? code : 1;
-        resolve();
-      });
-      supervisor.once('dead', () => {
-        if (tui.exitCode === null) tui.kill('SIGTERM');
-        exitCode = exitCode || 1;
-        resolve();
-      });
-    });
-  } finally {
-    process.off('SIGINT', onSigint);
-    process.off('SIGTERM', onSigterm);
-    await stop();
-  }
-  if (exitCode) process.exitCode = exitCode;
-}
-
-const CLAUDE_CHANNEL_FLAG = '--dangerously-load-development-channels';
-const GOLEM_CLAUDE_CHANNEL = 'plugin:golem@golem-workspace';
-
-function claudeLauncherHelp() {
-  log(`Usage: golem claude [--backend native|ollama] [--model <id>] [-- <claude args...>]
-       golem cc [--backend native|ollama] [--model <id>] [-- <claude args...>]
-
-Open Claude Code in the current directory as a push-capable Golem
-channel consumer. The default backend is native. With --backend ollama, Golem
-runs \`ollama launch claude\`, preserving the old golemx launch contract.
-
-Golem injects:
-
-  ${CLAUDE_CHANNEL_FLAG} ${GOLEM_CLAUDE_CHANNEL}
-
---model selects the native Claude Code model or the Ollama launch model,
-depending on the backend. All arguments after -- are passed to Claude Code
-unchanged. Other unrecognised arguments remain native Claude Code passthrough
-for backwards compatibility. Use
-\`golem claude -- --help\` for native Claude Code help. The development-channel
-flag is reserved because this wrapper owns the Golem channel identity.`);
-}
-
-function isReservedClaudeArgument(arg) {
-  return arg === CLAUDE_CHANNEL_FLAG || arg.startsWith(`${CLAUDE_CHANNEL_FLAG}=`);
-}
-
-async function cmdClaude(args) {
-  if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
-    claudeLauncherHelp();
-    return;
-  }
-
-  const passthrough = [];
-  let backend = 'native';
-  let model = null;
-  let separatorSeen = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (!separatorSeen && arg === '--') {
-      separatorSeen = true;
-      continue;
-    }
-    if (!separatorSeen && (arg === '--backend' || arg === '--model')) {
-      const value = args[index + 1];
-      if (!value || value.startsWith('-')) fatal(2, `golem claude requires a value for ${arg}`);
-      if (arg === '--backend') backend = value;
-      else model = value;
-      index += 1;
-      continue;
-    }
-    if (!separatorSeen && arg.startsWith('--backend=')) {
-      backend = arg.slice('--backend='.length);
-      continue;
-    }
-    if (!separatorSeen && arg.startsWith('--model=')) {
-      model = arg.slice('--model='.length);
-      continue;
-    }
-    if (isReservedClaudeArgument(arg)) {
-      fatal(2, `golem claude owns ${CLAUDE_CHANNEL_FLAG}; remove it and let Golem select ${GOLEM_CLAUDE_CHANNEL}`);
-    }
-    passthrough.push(arg);
-  }
-
-  if (!['native', 'ollama'].includes(backend)) {
-    fatal(2, `golem claude: unknown backend '${backend}' (known: native, ollama)`);
-  }
-  if (model === '') fatal(2, 'golem claude requires a non-empty --model value');
-
-  const executable = backend === 'ollama' ? 'ollama' : 'claude';
-  const launchArgs = backend === 'ollama'
-    ? ['launch', 'claude', ...(model ? ['--model', model] : []), '--', CLAUDE_CHANNEL_FLAG, GOLEM_CLAUDE_CHANNEL, ...passthrough]
-    : [CLAUDE_CHANNEL_FLAG, GOLEM_CLAUDE_CHANNEL, ...(model ? ['--model', model] : []), ...passthrough];
-
-  const child = spawn(executable, launchArgs, {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: 'inherit',
-  });
-
-  const onSigint = () => {
-    // Claude Code receives terminal SIGINT directly and owns its turn-level
-    // interrupt behavior. Keep the wrapper alive until the native child exits.
-  };
-  const forwardTermination = (signal) => {
-    if (child.exitCode === null && child.signalCode === null) child.kill(signal);
-  };
-  const onSigterm = () => forwardTermination('SIGTERM');
-  const onSighup = () => forwardTermination('SIGHUP');
-  process.on('SIGINT', onSigint);
-  process.once('SIGTERM', onSigterm);
-  process.once('SIGHUP', onSighup);
-
-  let exitSignal = null;
-  try {
-    const outcome = await new Promise((resolveOutcome) => {
-      let settled = false;
-      const finish = (result) => {
-        if (settled) return;
-        settled = true;
-        resolveOutcome(result);
-      };
-      child.once('error', (error) => finish({ error }));
-      child.once('exit', (code, signal) => finish({ code, signal }));
-    });
-
-    if (outcome.error) {
-      const detail = outcome.error.code === 'ENOENT'
-        ? `the '${executable}' executable was not found on PATH`
-        : outcome.error.message;
-      err(`golem claude could not start Claude Code: ${detail}`);
-      process.exitCode = 1;
-      return;
-    }
-
-    if (Number.isInteger(outcome.code)) {
-      if (outcome.code) process.exitCode = outcome.code;
-      return;
-    }
-
-    exitSignal = outcome.signal;
-  } finally {
-    process.off('SIGINT', onSigint);
-    process.off('SIGTERM', onSigterm);
-    process.off('SIGHUP', onSighup);
-  }
-
-  if (exitSignal) {
-    process.kill(process.pid, exitSignal);
-    return;
-  }
-
-  err('golem claude: Claude Code exited without a status or signal');
-  process.exitCode = 1;
-}
-
-function piLauncherHelp() {
-  log(`Usage: golem pi [--role <role>] [--profile <name>] [--provider <id> --model <id>] [--resume <session-id>] [-- <pi args...>]
-
-Open native Pi with Golem's canonical rendered bridge extension. Pi retains its
-own profile, authentication, models, providers, extensions, and sessions. Tested
-on Pi ${SUPPORTED_PI_VERSION} with Node.js >=${MIN_PI_NODE.major}.${MIN_PI_NODE.minor}.
-
-Wrapper options:
-  --role <role>         Apply the role's validated Pi execution preset.
-  --profile <name>      Model profile override: its provider/model/thinking are
-                        applied (role defaults come from profiles.json). Raw
-                        --provider/--model still win over the profile.
-  --provider <id>       Explicit native Pi provider. With --role, overrides its preset.
-  --model <id>          Explicit provider-local model id. With --role, overrides its preset.
-  --thinking <level>    With --role, overrides its preset thinking level.
-  --name <name>         With --role, overrides its preset session name.
-  --resume <session-id> Resume a native Pi session id through --session.
-
-Arguments after -- are passed to Pi unchanged. Pi's own extension discovery and
-configuration remain active; the shipped Golem extension is appended explicitly.
-
-  golem pi --role explorer
-  golem pi --role explorer --thinking max
-  golem pi --role reviewer --profile grok-4.6-high
-  golem pi --resume <pi-session-id> -- --thinking high`);
-}
-
-function hasPiRoleOption(args) {
-  let separatorSeen = false;
-  for (const arg of args) {
-    if (arg === '--') {
-      separatorSeen = true;
-      continue;
-    }
-    if (!separatorSeen && (arg === '--role' || arg.startsWith('--role='))) return true;
-  }
-  return false;
-}
-
-async function cmdPi(args) {
-  if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
-    piLauncherHelp();
-    return;
-  }
-  if (!piNodeSupported()) {
-    fatal(1, `golem pi requires Node.js >=${MIN_PI_NODE.major}.${MIN_PI_NODE.minor}; running ${process.versions.node}`);
-  }
-
-  let role = null;
-  let provider = null;
-  let model = null;
-  let thinking;
-  let name;
-  let profile = null;
-  let resume = null;
-  let separatorSeen = false;
-  const roleMode = hasPiRoleOption(args);
-  const passthrough = [];
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (!separatorSeen && arg === '--') { separatorSeen = true; continue; }
-    if (!separatorSeen && ['--role', '--provider', '--model', '--profile', '--resume'].includes(arg)) {
-      const value = args[++index];
-      if (!value || value.startsWith('-')) fatal(2, `golem pi requires a value for ${arg}`);
-      if (arg === '--role') role = value;
-      else if (arg === '--provider') provider = value;
-      else if (arg === '--model') model = value;
-      else if (arg === '--profile') profile = value;
-      else resume = value;
-      continue;
-    }
-    if (roleMode && !separatorSeen && ['--thinking', '--name', '-n'].includes(arg)) {
-      const value = args[++index];
-      if (!value || value.startsWith('-')) fatal(2, `golem pi requires a value for ${arg}`);
-      if (arg === '--thinking') thinking = value;
-      else name = value;
-      continue;
-    }
-    if (!separatorSeen && arg.startsWith('--role=')) role = arg.slice('--role='.length);
-    else if (!separatorSeen && arg.startsWith('--provider=')) provider = arg.slice('--provider='.length);
-    else if (!separatorSeen && arg.startsWith('--model=')) model = arg.slice('--model='.length);
-    else if (!separatorSeen && arg.startsWith('--profile=')) profile = arg.slice('--profile='.length);
-    else if (!separatorSeen && arg.startsWith('--resume=')) resume = arg.slice('--resume='.length);
-    else if (roleMode && !separatorSeen && arg.startsWith('--thinking=')) thinking = arg.slice('--thinking='.length);
-    else if (roleMode && !separatorSeen && arg.startsWith('--name=')) name = arg.slice('--name='.length);
-    else passthrough.push(arg);
-  }
-  if (roleMode && !role) fatal(2, 'golem pi requires a non-empty --role');
-  if (profile != null && !profile.trim()) fatal(2, 'golem pi requires a non-empty --profile');
-  let profileExec = null;
-  if (profile != null) {
-    profileExec = getProfile(profile);
-    if (!profileExec) {
-      fatal(2, `golem pi: unknown model profile "${profile}"; expected one of: ${listProfileNames().join(', ') || '(none)'}`);
-    }
-  }
-  const effectiveProvider = provider ?? profileExec?.provider ?? null;
-  const effectiveModel = model ?? profileExec?.model ?? null;
-  if (!roleMode && (effectiveProvider == null) !== (effectiveModel == null)) fatal(2, 'golem pi requires --provider and --model together');
-  if (provider != null && !provider.trim()) fatal(2, 'golem pi requires a non-empty --provider');
-  if (model != null && !model.trim()) fatal(2, 'golem pi requires a non-empty --model');
-  if (thinking != null && !thinking.trim()) fatal(2, 'golem pi requires a non-empty --thinking');
-  if (name != null && !name.trim()) fatal(2, 'golem pi requires a non-empty --name');
-  if (resume != null && !resume.trim()) fatal(2, 'golem pi requires a non-empty --resume');
-
-  let presetArgs = [];
-  if (roleMode) {
-    const overrides = {};
-    if (profile != null) overrides.profile = profile;
-    if (provider != null) overrides.provider = provider;
-    if (model != null) overrides.model = model;
-    if (thinking != null) overrides.thinking = thinking;
-    if (name != null) overrides.name = name;
-    try {
-      presetArgs = resolveRolePreset(role, overrides);
-    } catch (error) {
-      fatal(2, `golem pi: ${error.message}`);
-    }
-  } else if (effectiveProvider != null) {
-    // Bare mode with a resolved profile: decompose the profile into the
-    // provider/model/thinking flags Pi consumes. Raw --provider/--model already
-    // won per-field above (D3); the profile's thinking remains in force unless
-    // the caller passes a native override after `--`.
-    presetArgs = [
-      '--provider', effectiveProvider.trim(), '--model', effectiveModel.trim(),
-      ...(profileExec?.thinking ? ['--thinking', profileExec.thinking] : []),
-    ];
-  }
-
-  const childEnv = { ...process.env };
-  const versionProbe = spawnSync('pi', ['--version'], { env: childEnv, encoding: 'utf8' });
-  if (versionProbe.error?.code === 'ENOENT') fatal(1, "golem pi could not find the 'pi' executable on PATH; install @earendil-works/pi-coding-agent");
-  if (versionProbe.status !== 0) fatal(1, `golem pi could not inspect Pi: ${(versionProbe.stderr || versionProbe.error?.message || 'unknown error').trim()}`);
-  const piVersion = versionProbe.stdout.trim();
-  if (piVersion !== SUPPORTED_PI_VERSION) {
-    err(`WARN: Golem tested on Pi ${SUPPORTED_PI_VERSION}; you have ${piVersion || '(no version)'} — continuing`);
-  }
-
-  const extension = join(renderDirFor('pi'), 'golem.ts');
-  if (!existsSync(extension)) fatal(1, `golem pi render is missing ${extension}; run golem sync --target pi`);
-
-  const dashboard = await probeDashboard();
-  if (!dashboard.ok) err(`golem pi: dashboard unavailable (${dashboard.error}); starting in degraded mode and tracker tools will fail until it returns`);
-
-  Object.assign(childEnv, {
-    GOLEM_PI_LAUNCH_NONCE: randomUUID(),
-    GOLEM_PI_VERSION: piVersion,
-    GOLEM_PI_EXTENSION_VERSION: readPackageVersion(),
-    // Skip Pi's boot-time pi.dev catalog refresh: it hangs ~15s when pi.dev is
-    // unreachable (the refresh aborts only at its 15s timeout). Catalogs come
-    // from the stored models-store.json; refresh on demand by running
-    // `pi --list-models` outside golem when pi.dev is reachable.
-    PI_OFFLINE: '1',
-  });
-  const launchArgs = [
-    '--extension', extension,
-    ...presetArgs,
-    ...(resume ? ['--session', resume.trim()] : []),
-    ...passthrough,
-  ];
-  const child = spawn('pi', launchArgs, { cwd: process.cwd(), env: childEnv, stdio: 'inherit' });
-  const onSigint = () => { /* native Pi owns terminal Ctrl-C turn semantics */ };
-  const forward = (signal) => { if (child.exitCode === null && child.signalCode === null) child.kill(signal); };
-  const onSigterm = () => forward('SIGTERM');
-  const onSighup = () => forward('SIGHUP');
-  process.on('SIGINT', onSigint);
-  process.once('SIGTERM', onSigterm);
-  process.once('SIGHUP', onSighup);
-  let exitSignal = null;
-  try {
-    const outcome = await new Promise((resolveOutcome) => {
-      let settled = false;
-      const finish = (value) => { if (!settled) { settled = true; resolveOutcome(value); } };
-      child.once('error', (error) => finish({ error }));
-      child.once('exit', (code, signal) => finish({ code, signal }));
-    });
-    if (outcome.error) {
-      err(`golem pi could not start Pi: ${outcome.error.message}`);
-      process.exitCode = 1;
-      return;
-    }
-    if (Number.isInteger(outcome.code)) {
-      if (outcome.code) process.exitCode = outcome.code;
-      return;
-    }
-    exitSignal = outcome.signal;
-  } finally {
-    process.off('SIGINT', onSigint);
-    process.off('SIGTERM', onSigterm);
-    process.off('SIGHUP', onSighup);
-  }
-  if (exitSignal) process.kill(process.pid, exitSignal);
-  else {
-    err('golem pi: Pi exited without a status or signal');
-    process.exitCode = 1;
-  }
-}
-
-function readSessionsRegistry() {
-  try {
-    const parsed = JSON.parse(readFileSync(sessionsJsonPath(), 'utf8'));
-    return Array.isArray(parsed?.sessions) ? parsed.sessions : [];
-  } catch {
-    return [];
-  }
-}
-
-function readSessionsRegistryObject(file = sessionsJsonPath()) {
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8'));
-    return parsed && typeof parsed === 'object' && Array.isArray(parsed.sessions) ? parsed : { version: 1, sessions: [] };
-  } catch {
-    return { version: 1, sessions: [] };
-  }
-}
-
-function writeSessionsRegistryObject(file, reg) {
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.tmp.${process.pid}`;
-  writeFileSync(tmp, JSON.stringify(reg, null, 2));
-  renameSync(tmp, file);
-}
-
-function withFileLock(lockPath, fn) {
-  try { mkdirSync(dirname(lockPath), { recursive: true }); } catch { /* ignore */ }
-  for (let i = 0; i < 50; i++) {
-    try {
-      mkdirSync(lockPath);
-      try { return fn(); }
-      finally { try { rmdirSync(lockPath); } catch { /* ignore */ } }
-    } catch (e) {
-      if (e?.code === 'EEXIST') {
-        try {
-          const st = statSync(lockPath);
-          if (Date.now() - st.mtimeMs > 5000) rmdirSync(lockPath);
-        } catch { /* ignore */ }
-        const wait = Date.now() + 20;
-        while (Date.now() < wait) { /* brief spin */ }
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw new Error(`failed to acquire ${lockPath}`);
-}
-
-function rowTime(row, keys) {
-  for (const key of keys) {
-    const t = Date.parse(row?.[key] || '');
-    if (Number.isFinite(t)) return t;
-  }
-  return 0;
-}
-
-function isLiveSessionRow(row) {
-  return !row?.ended_at;
-}
-
-function rowFreshness(row, alive) {
-  return alive
-    ? rowTime(row, ['updated_at', 'last_seen_at', 'boot_time', 'started_at'])
-    : rowTime(row, ['ended_at', 'updated_at', 'last_seen_at', 'boot_time', 'started_at']);
-}
-
-function sessionLabel(row) {
-  return `${row.session_id || '(no session_id)'}${row.model ? ` (model=${row.model})` : ''}`;
-}
-
-function keptSessionLabel(row, reason) {
-  return `${row.session_id || '(no session_id)'} (${reason}${row.model ? `, model=${row.model}` : ''})`;
-}
-
-function sessionProjectScope(row) {
-  return row?.project_path || row?.project_id || row?.cwd || '';
-}
-
-function sessionsDedupPlan(sessions) {
-  // Scope by project so same role name in different projects never collapses.
-  const groups = new Map();
-  sessions.forEach((row, index) => {
-    const name = typeof row?.name === 'string' ? row.name.trim() : '';
-    if (!name) return;
-    const key = `${sessionProjectScope(row)}\0${name}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({ row, index });
-  });
-
-  const plans = [];
-  for (const [key, rows] of groups) {
-    if (rows.length < 2) continue;
-    const name = key.split('\0').slice(1).join('\0') || key;
-    const live = rows.filter(({ row }) => isLiveSessionRow(row));
-    const candidates = live.length ? live : rows;
-    const keep = candidates
-      .slice()
-      .sort((a, b) => rowFreshness(b.row, live.length > 0) - rowFreshness(a.row, live.length > 0))[0];
-    const mark = rows.filter((entry) => entry.index !== keep.index && !entry.row.ended_at);
-    plans.push({ kind: 'named', name, keep, mark, liveKept: live.length > 0 });
-  }
-  return plans;
-}
-
-function readManagedRawThreadIds() {
-  try {
-    const file = join(golemHome(), 'codex-supervisors.json');
-    const parsed = JSON.parse(readFileSync(file, 'utf8'));
-    const ids = new Set();
-    for (const row of Array.isArray(parsed?.supervisors) ? parsed.supervisors : []) {
-      if (row?.thread_id) ids.add(row.thread_id);
-    }
-    return ids;
-  } catch {
-    return new Set();
-  }
-}
-
-/**
- * Codex twin / zombie cleanup:
- *  - raw thread ids owned by any managed supervisor (dual-id twins)
- *  - unnamed codex rows outside recency
- *  - codex rows with status superseded/dead still missing ended_at
- */
-function sessionsStaleCodexPlan(sessions, { staleMs = 15 * 60 * 1000, now = Date.now() } = {}) {
-  const managedRaw = readManagedRawThreadIds();
-  const mark = [];
-  const seen = new Set();
-  sessions.forEach((row, index) => {
-    if (row?.harness !== 'codex') return;
-    if (row.ended_at) return;
-    const id = row.session_id;
-    let reason = null;
-    if (id && managedRaw.has(id)) reason = 'managed-raw-twin';
-    else if (['superseded', 'dead', 'stopped', 'failed'].includes(String(row.status || '').toLowerCase())) reason = 'terminal-status';
-    else if (!(typeof row?.name === 'string' && row.name.trim())) {
-      const fresh = rowFreshness(row, true);
-      if (!fresh || now - fresh >= staleMs) reason = 'stale-unnamed';
-    }
-    if (!reason || seen.has(index)) return;
-    seen.add(index);
-    mark.push({ row, index, reason });
-  });
-  if (!mark.length) return [];
-  return [{ kind: 'stale-codex', name: '(codex twins/stale)', keep: null, mark, liveKept: false }];
-}
-
-function printSessionsDedupPlan(plans, apply) {
-  if (!plans.length) {
-    log(`golem sessions dedup: no project-scoped named duplicates or Codex twins/stale rows found (${apply ? 'applied' : 'dry-run'})`);
-    return;
-  }
-  log(`golem sessions dedup ${apply ? '--apply' : '(dry-run; pass --apply to write)'}`);
-  for (const plan of plans) {
-    if (plan.kind === 'stale-codex') {
-      log(`codex twins/stale: would mark ended: ${plan.mark.map(({ row, reason }) => `${sessionLabel(row)}${reason ? ` [${reason}]` : ''}`).join(', ')}`);
-      continue;
-    }
-    const reason = plan.liveKept ? 'freshest live' : 'freshest ended';
-    const scope = sessionProjectScope(plan.keep.row) || '(no project)';
-    log(`name ${plan.name} @ ${scope}: would keep ${keptSessionLabel(plan.keep.row, reason)}`);
-    if (plan.mark.length) {
-      log(`name ${plan.name} @ ${scope}: would mark ended: ${plan.mark.map(({ row }) => sessionLabel(row)).join(', ')}`);
-    } else {
-      log(`name ${plan.name} @ ${scope}: no un-ended duplicates to mark`);
-    }
-  }
 }
 
 async function cmdSessions(args) {
@@ -1671,34 +879,9 @@ async function cmdMigrateHome(args) {
   log(`  (or restore from backup: tar -xzf ${backupPath} -C ${home})`);
 }
 
-const ADAPTERS = { cc: ccAdapter, codex: codexAdapter, pi: piAdapter };
-const KNOWN_TARGETS = ['cc', 'cc-marketplace', 'opencode', 'codex', 'pi'];
+const ADAPTERS = { cc: ccAdapter, pi: piAdapter };
+const KNOWN_TARGETS = ['cc', 'cc-marketplace', 'pi'];
 
-/** Resolve the opencode binary: PATH first, then the default install location. */
-function resolveOpencodeBin() {
-  const probe = spawnSync('sh', ['-c', 'command -v opencode'], { encoding: 'utf8' });
-  if (probe.status === 0 && probe.stdout.trim()) return probe.stdout.trim();
-  const fallback = join(homedir(), '.opencode', 'bin', 'opencode');
-  return existsSync(fallback) ? fallback : null;
-}
-
-/** `opencode --version` output, or null if the binary can't be found/run. */
-function opencodeVersion(bin) {
-  if (!bin) return null;
-  const res = spawnSync(bin, ['--version'], { encoding: 'utf8' });
-  return res.status === 0 ? res.stdout.trim() : null;
-}
-
-/** A validator that runs `opencode debug config` (the real tool, not the schema). */
-function makeOpencodeValidator(bin) {
-  if (!bin) return null;
-  return () => {
-    const res = spawnSync(bin, ['debug', 'config'], { encoding: 'utf8' });
-    if (res.status === 0) return { ok: true };
-    const msg = (res.stderr || res.stdout || `exit ${res.status}`).trim().split('\n').slice(0, 6).join('\n');
-    return { ok: false, error: msg };
-  };
-}
 
 function readPackageVersion() {
   return JSON.parse(readFileSync(resolve(GOLEM_ROOT, 'package.json'), 'utf8')).version;
@@ -1731,9 +914,7 @@ function planForTarget(target) {
 
 // Targets whose adapter renders a golem-owned block into a global instructions
 // file the human also owns (~/.claude/CLAUDE.md, $CODEX_HOME/AGENTS.md). This
-// used to be hardcoded to cc, which is why codex silently received no root
-// rules at all. opencode has its own sync path and resolves its own adapter.
-const INSTRUCTION_ADAPTERS = { cc: ccAdapter, codex: codexAdapter };
+const INSTRUCTION_ADAPTERS = { cc: ccAdapter };
 
 /** Instruction render plan for a target, or an empty plan when it has none.
  * The lock target is namespaced per harness because instructions land outside
@@ -1829,10 +1010,6 @@ async function cmdSync(args) {
     return cmdSyncProject({ target, projectRoot: resolve(projectArg), checkOnly, force });
   }
 
-  if (target === 'opencode') {
-    return cmdSyncOpencode({ checkOnly, force });
-  }
-
   const customOut = optionValue(args, '--out');
   const outDir = customOut ? resolve(customOut) : renderDirFor(target);
 
@@ -1871,9 +1048,6 @@ async function cmdSync(args) {
   if (target === 'cc') {
     ccAdapter.syncMcpChannelDeps({ repoRoot: GOLEM_ROOT, outDir });
   }
-  if (target === 'codex') {
-    ccAdapter.syncMcpChannelDeps({ repoRoot: GOLEM_ROOT, outDir: join(outDir, 'plugins', 'golem') });
-  }
   if (target === 'cc-marketplace') {
     ccAdapter.ensureMarketplacePluginLink({ ccPluginDir: renderDirFor('cc'), marketplaceOutDir: outDir });
   }
@@ -1905,43 +1079,6 @@ async function cmdSyncProject({ target, projectRoot, checkOnly, force }) {
   log('');
   log(`golem sync --target ${target}${checkOnly ? ' --check' : ''} --project ${projectRoot}`);
   log(`  project_id: ${projectId}`);
-
-  if (target === 'opencode') {
-    if (!isHarnessEnabled('opencode')) {
-      log('  · opencode harness is disabled in ~/.golem/config.json — skipping (not drift).');
-      return;
-    }
-    const agentItems = ocAdapter.buildProjectAgentPlan({ substrateRoot: root });
-    const skillItems = ocAdapter.buildProjectSkillPlan({ substrateRoot: root });
-    const agentDir = ocAdapter.projectAgentOutDir(projectRoot);
-    const skillsDir = ocAdapter.projectSkillsOutDir(projectRoot);
-    if (checkOnly) {
-      const a = compiler.checkDrift({ target: 'opencode', outDir: agentDir, items: agentItems, projectId });
-      const s = compiler.checkDrift({ target: 'opencode', outDir: skillsDir, items: skillItems, projectId });
-      log(`  agents out: ${agentDir}`);
-      log(`  skills out: ${skillsDir}`);
-      const clean = a.clean && s.clean;
-      printDrift({ clean, drifted: [...a.drifted, ...s.drifted], orphaned: [...a.orphaned, ...s.orphaned] });
-      if (!clean) process.exit(1);
-      return;
-    }
-    const ra = compiler.render({ target: 'opencode', outDir: agentDir, items: agentItems, packageVersion, force, projectId });
-    const rs = compiler.render({ target: 'opencode', outDir: skillsDir, items: skillItems, packageVersion, force, projectId });
-    log(`  agents out: ${agentDir}`);
-    log(`    written: ${ra.written.length}, unchanged: ${ra.unchanged.length}, pruned: ${ra.pruned.length}, tampered: ${ra.tampered.length}`);
-    log(`  skills out: ${skillsDir}`);
-    log(`    written: ${rs.written.length}, unchanged: ${rs.unchanged.length}, pruned: ${rs.pruned.length}, tampered: ${rs.tampered.length}`);
-    warnVisibleGeneratedFiles({ projectRoot, outDir: agentDir, items: agentItems, result: ra });
-    warnVisibleGeneratedFiles({ projectRoot, outDir: skillsDir, items: skillItems, result: rs });
-    const tampered = [...ra.tampered, ...rs.tampered];
-    if (tampered.length) {
-      log('');
-      err('  TAMPER — refused to overwrite (hand-edited outside sync); re-run with --force:');
-      for (const t of tampered) err(`    ${t.outputRelPath}`);
-      process.exit(1);
-    }
-    return;
-  }
 
   const outDir = projectRoot;
   const items = ccAdapter.buildProjectPlan({ substrateRoot: root, repoRoot: GOLEM_ROOT, packageVersion });
@@ -1998,39 +1135,12 @@ async function cmdSyncCheckAll({ quiet = false } = {}) {
   if (!quiet) printDrift(marketplace);
   drift = drift || !marketplace.clean;
 
-  const codexOut = renderDirFor('codex');
-  const codex = compiler.checkDrift({ target: 'codex', outDir: codexOut, items: planForTarget('codex') });
-  const codexInstrPlan = instructionPlanFor('codex');
-  const codexInstr = compiler.checkDrift({ target: codexInstrPlan.lockTarget, outDir: codexInstrPlan.outDir, items: codexInstrPlan.items });
-  if (!quiet) log('');
-  say(`global codex: ${codexOut}`);
-  say(`  instructions out: ${codexInstrPlan.outDir}`);
-  if (!quiet) printDrift({ clean: codex.clean && codexInstr.clean, drifted: [...codex.drifted, ...codexInstr.drifted], orphaned: [...codex.orphaned, ...codexInstr.orphaned] });
-  drift = drift || !codex.clean || !codexInstr.clean;
-
   const piOut = renderDirFor('pi');
   const pi = compiler.checkDrift({ target: 'pi', outDir: piOut, items: planForTarget('pi') });
   if (!quiet) log('');
   say(`global pi: ${piOut}`);
   if (!quiet) printDrift(pi);
   drift = drift || !pi.clean;
-
-  if (isHarnessEnabled('opencode')) {
-    const root = substrateRoot();
-    const a = compiler.checkDrift({ target: 'opencode', outDir: ocAdapter.agentOutDir(), items: ocAdapter.buildAgentPlan({ substrateRoot: root }) });
-    const s = compiler.checkDrift({ target: 'opencode', outDir: ocAdapter.skillsOutDir(), items: ocAdapter.buildSkillPlan({ substrateRoot: root }) });
-    const r = compiler.checkDrift({ target: 'opencode', outDir: ocAdapter.rolesOutDir(), items: ocAdapter.buildRolePlan({ substrateRoot: root }) });
-    const i = compiler.checkDrift({ target: 'opencode-instructions', outDir: ocAdapter.instructionOutDir(), items: ocAdapter.buildInstructionPlan({ substrateRoot: root }) });
-    const clean = a.clean && s.clean && r.clean && i.clean;
-    if (!quiet) log('');
-    say('global opencode:');
-    say(`  agents out: ${ocAdapter.agentOutDir()}`);
-    say(`  skills out: ${ocAdapter.skillsOutDir()}`);
-    say(`  roles out: ${ocAdapter.rolesOutDir()}`);
-    say(`  instructions out: ${ocAdapter.instructionOutDir()}`);
-    if (!quiet) printDrift({ clean, drifted: [...a.drifted, ...s.drifted, ...r.drifted, ...i.drifted], orphaned: [...a.orphaned, ...s.orphaned, ...r.orphaned, ...i.orphaned] });
-    drift = drift || !clean;
-  }
 
   for (const p of knownProjects()) {
     const projectId = p.id || projectIdFor(p.path);
@@ -2039,128 +1149,13 @@ async function cmdSyncCheckAll({ quiet = false } = {}) {
     say(`project cc ${projectId}: ${p.path}`);
     if (!quiet) printDrift(ccProj);
     drift = drift || !ccProj.clean;
-    if (isHarnessEnabled('opencode')) {
-      const root = substrateRoot();
-      const a = compiler.checkDrift({ target: 'opencode', outDir: ocAdapter.projectAgentOutDir(p.path), items: ocAdapter.buildProjectAgentPlan({ substrateRoot: root }), projectId });
-      const s = compiler.checkDrift({ target: 'opencode', outDir: ocAdapter.projectSkillsOutDir(p.path), items: ocAdapter.buildProjectSkillPlan({ substrateRoot: root }), projectId });
-      const clean = a.clean && s.clean;
-      say(`project opencode ${projectId}: ${p.path}`);
-      if (!quiet) printDrift({ clean, drifted: [...a.drifted, ...s.drifted], orphaned: [...a.orphaned, ...s.orphaned] });
-      drift = drift || !clean;
-    }
   }
 
   if (drift && !quiet) process.exit(1);
   return !drift;
 }
 
-/**
- * opencode sync (TKT-0576, P4). Unlike cc, opencode reads from TWO dirs — the
- * fixed global agent dir and a skills dir registered via skills.paths — plus a
- * managed opencode.jsonc merge, so it can't ride the single-outDir cmdSync
- * path. Honors the harness toggle: a disabled opencode harness is reported as
- * "disabled" and skipped (exit 0), never as drift (ADR-8).
- */
-async function cmdSyncOpencode({ checkOnly, force }) {
-  log('');
-  log(`golem sync --target opencode${checkOnly ? ' --check' : ''}`);
 
-  if (!isHarnessEnabled('opencode')) {
-    log('  · opencode harness is disabled in ~/.golem/config.json — skipping (not drift).');
-    log('    enable it there (harnesses.opencode.enabled = true) to render.');
-    return;
-  }
-
-  const root = substrateRoot();
-  const packageVersion = readPackageVersion();
-  const agentItems = ocAdapter.buildAgentPlan({ substrateRoot: root });
-  const skillItems = ocAdapter.buildSkillPlan({ substrateRoot: root });
-  const roleItems = ocAdapter.buildRolePlan({ substrateRoot: root });
-  const instructionItems = ocAdapter.buildInstructionPlan({ substrateRoot: root });
-  const agentDir = ocAdapter.agentOutDir();
-  const skillsDir = ocAdapter.skillsOutDir();
-  const rolesDir = ocAdapter.rolesOutDir();
-  const instructionDir = ocAdapter.instructionOutDir();
-
-  if (checkOnly) {
-    const a = compiler.checkDrift({ target: 'opencode', outDir: agentDir, items: agentItems });
-    const s = compiler.checkDrift({ target: 'opencode', outDir: skillsDir, items: skillItems });
-    const r = compiler.checkDrift({ target: 'opencode', outDir: rolesDir, items: roleItems });
-    const i = compiler.checkDrift({ target: 'opencode-instructions', outDir: instructionDir, items: instructionItems });
-    log(`  agents out: ${agentDir}`);
-    log(`  skills out: ${skillsDir}`);
-    log(`  roles out: ${rolesDir}`);
-    log(`  instructions out: ${instructionDir}`);
-    const drifted = [...a.drifted, ...s.drifted, ...r.drifted, ...i.drifted];
-    const orphaned = [...a.orphaned, ...s.orphaned, ...r.orphaned, ...i.orphaned];
-    if (a.clean && s.clean && r.clean && i.clean) {
-      log('  OK clean — no drift');
-      return;
-    }
-    if (drifted.length) {
-      log('');
-      log('  drifted:');
-      for (const d of drifted) log(`    ${d.reason.padEnd(9)} ${d.key}`);
-    }
-    if (orphaned.length) {
-      log('');
-      log('  orphaned (source removed, output would be pruned):');
-      for (const o of orphaned) log(`    orphan    ${o.key}`);
-    }
-    process.exit(1);
-  }
-
-  const ra = compiler.render({ target: 'opencode', outDir: agentDir, items: agentItems, packageVersion, force });
-  const rs = compiler.render({ target: 'opencode', outDir: skillsDir, items: skillItems, packageVersion, force });
-  const rr = compiler.render({ target: 'opencode', outDir: rolesDir, items: roleItems, packageVersion, force });
-  const ri = compiler.render({ target: 'opencode-instructions', outDir: instructionDir, items: instructionItems, packageVersion, force });
-  log(`  agents out: ${agentDir}`);
-  log(`    written: ${ra.written.length}, unchanged: ${ra.unchanged.length}, pruned: ${ra.pruned.length}, tampered: ${ra.tampered.length}`);
-  log(`  skills out: ${skillsDir}`);
-  log(`    written: ${rs.written.length}, unchanged: ${rs.unchanged.length}, pruned: ${rs.pruned.length}, tampered: ${rs.tampered.length}`);
-  log(`  roles out: ${rolesDir}`);
-  log(`    written: ${rr.written.length}, unchanged: ${rr.unchanged.length}, pruned: ${rr.pruned.length}, tampered: ${rr.tampered.length}`);
-  log(`  instructions out: ${instructionDir}`);
-  log(`    written: ${ri.written.length}, unchanged: ${ri.unchanged.length}, pruned: ${ri.pruned.length}, tampered: ${ri.tampered.length}`);
-
-  const tampered = [...ra.tampered, ...rs.tampered, ...rr.tampered, ...ri.tampered];
-  if (tampered.length) {
-    printTamper({ tampered });
-    process.exit(1);
-  }
-
-  // Managed opencode.jsonc merge (mcp.golem + skills.paths), guarded by a real
-  // `opencode debug config` validation with backup/restore on failure.
-  const bin = resolveOpencodeBin();
-  const validate = makeOpencodeValidator(bin);
-  const merge = ocAdapter.buildConfigMerge({ repoRoot: GOLEM_ROOT });
-  const configPath = ocAdapter.opencodeConfigPath();
-  const res = ocAdapter.applyConfigMerge({ configPath, merge, validate });
-  log('');
-  log(`  config: ${configPath}`);
-  if (!bin) {
-    log('    · opencode binary not found — merged config written but NOT validated (install opencode to validate).');
-  }
-  if (res.restored) {
-    err('    FAIL merged config failed `opencode debug config` — restored the previous file:');
-    err(indent(res.error, '      '));
-    process.exit(1);
-  }
-  log(res.changed ? '    OK merged mcp.golem + skills.paths + plugin (managed keys only)' : '    OK already up to date (no change)');
-
-  // Pin the opencode version this render was validated against (doctor warns on
-  // skew). Only after a clean validated sync.
-  if (bin && validate) {
-    const ver = opencodeVersion(bin);
-    if (ver) {
-      const cfg = loadConfig();
-      cfg.harnesses = cfg.harnesses ?? {};
-      cfg.harnesses.opencode = { ...cfg.harnesses.opencode, testedVersion: ver };
-      saveConfig(cfg);
-      log(`    pinned harnesses.opencode.testedVersion = ${ver}`);
-    }
-  }
-}
 
 function indent(text, pad) {
   return String(text || '').split('\n').map((l) => pad + l).join('\n');
@@ -2233,37 +1228,6 @@ async function cmdDoctor() {
     fail(`could not run sync --check --all — ${e.message}`);
   }
 
-  log('');
-  log('opencode harness');
-  if (!isHarnessEnabled('opencode')) {
-    skip('disabled in ~/.golem/config.json (harnesses.opencode.enabled = false) — not rendered');
-  } else {
-    try {
-      const substrateRoot = resolve(GOLEM_ROOT, 'substrate');
-      const a = compiler.checkDrift({ target: 'opencode', outDir: ocAdapter.agentOutDir(), items: ocAdapter.buildAgentPlan({ substrateRoot }) });
-      const s = compiler.checkDrift({ target: 'opencode', outDir: ocAdapter.skillsOutDir(), items: ocAdapter.buildSkillPlan({ substrateRoot }) });
-      const r = compiler.checkDrift({ target: 'opencode', outDir: ocAdapter.rolesOutDir(), items: ocAdapter.buildRolePlan({ substrateRoot }) });
-      (a.clean && s.clean && r.clean)
-        ? ok('opencode render clean (agents + skills + roles)')
-        : skip(`opencode render drifted (${a.drifted.length + s.drifted.length + r.drifted.length} changed, ${a.orphaned.length + s.orphaned.length + r.orphaned.length} orphaned) — run \`golem sync --target opencode\``);
-    } catch (e) {
-      skip(`could not check opencode drift — ${e.message}`);
-    }
-    // Runtime shim (P5): the file opencode's plugin[] entry points at must exist.
-    const shimPath = resolve(GOLEM_ROOT, 'shims', 'opencode', 'index.js');
-    existsSync(shimPath) ? ok(`opencode runtime shim present (${shimPath})`) : fail(`opencode runtime shim missing at ${shimPath} — plugin[] would fail to load`);
-
-    const bin = resolveOpencodeBin();
-    const actual = opencodeVersion(bin);
-    const pinned = loadConfig().harnesses?.opencode?.testedVersion ?? null;
-    if (!bin) {
-      skip('opencode binary not found on PATH or ~/.opencode/bin — cannot check version skew');
-    } else if (pinned && actual && pinned !== actual) {
-      skip(`opencode version skew: rendered against ${pinned}, installed is ${actual} — re-run \`golem sync --target opencode\``);
-    } else if (actual) {
-      ok(`opencode ${actual}${pinned ? ' (matches pinned render)' : ' (no pinned version yet)'}`);
-    }
-  }
 
   log('');
   log('LSP capability');
@@ -2372,14 +1336,6 @@ Run:
                        0.0.0.0 (LAN-reachable, no auth).
   dashboard:restart [--public] [--port P] [npm-start-args…]
                        Stop every matching dashboard process and restart detached.
-  codex-supervisor run --session <canonical-id> [--cwd <dir>]
-                       Run a version-gated, headless Codex App Server lifecycle
-                       supervisor with typed delivery while idle and MCP-bound.
-  codex [--session <canonical-id>] [--thread <codex-thread-id>] [--cwd <dir>]
-        [-- <codex args...>]
-                       Open a normal interactive Codex TUI through Golem's
-                       private App Server bridge; no flags are required.
-                       --thread resumes a Codex thread by its native id.
   claude|cc [--backend native|ollama] [--model <id>] [-- <claude args...>]
                        Open Claude Code with Golem's development channel loaded;
                        optionally launch through Ollama with an explicit model.
@@ -2405,8 +1361,7 @@ Run:
                        get-block, patch-blocks, add-comment, reply-comment,
                        update-comment. Mutations bind the trusted Pi/Claude CLI
                        session context (--human for unbound human shells);
-                       Codex/OpenCode receive a stable unsupported-caller
-                       result. --json is the stable contract: stdout carries
+                       --json is the stable contract: stdout carries
                        only result JSON, diagnostics go to stderr. See
                        golem ticket --help.
   session list|notify [--help]
@@ -2423,8 +1378,8 @@ Run:
                        the old path to the new one, restarts. Explicit only —
                        never runs automatically. Rollback is one command
                        (printed on completion).
-  sync [--check] [--all] [--target cc|cc-marketplace|opencode|codex|pi] [--out <dir>]
-       [--force] [--project <root>] [--harness cc|claudecode|opencode]
+  sync [--check] [--all] [--target cc|cc-marketplace|pi] [--out <dir>]
+       [--force] [--project <root>]
                         Render substrate/ sources into a harness bundle
                         (default target: cc, default out: ~/.golem/renders/
                         cc-plugin/). --check reports drift without writing
@@ -2436,16 +1391,10 @@ Run:
                         recording the lockfile under projects.<project_id>.
                          With --check --all, or only --check and no target/project args, reports
                         global renders plus all known project render sections.
-                       target opencode renders agents into
-                       ~/.config/opencode/agent/ + skills into
-                       ~/.golem/renders/opencode/skills/ and merges managed
-                       keys into opencode.jsonc — only when the opencode
-                       harness is enabled in ~/.golem/config.json.
-                       Root instructions render as a marked block into the
-                       harness's own global file — ~/.claude/CLAUDE.md for cc,
-                       $CODEX_HOME/AGENTS.md for codex. Text outside the
-                       markers is yours and is never rewritten. Skipped when
-                       --out is given, since the bundle is going elsewhere.
+                       Root instructions render as a marked block into
+                       ~/.claude/CLAUDE.md. Text outside the markers is yours
+                       and is never rewritten. Skipped when --out is given,
+                       since the bundle is going elsewhere.
 
 Inspect:
   doctor               Sanity-check the environment.
@@ -2492,12 +1441,6 @@ async function main() {
       break;
     case 'dashboard:restart':
       await cmdDashboardRestart(rest);
-      break;
-    case 'codex-supervisor':
-      await cmdCodexSupervisor(rest);
-      break;
-    case 'codex':
-      await cmdCodex(rest);
       break;
     case 'claude':
     case 'cc':
