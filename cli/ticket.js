@@ -7,7 +7,6 @@
 // bodies never belong in shell arguments.
 //
 // Caller binding: mutations resolve the same trusted CLI session context as
-// `golem session notify`. Codex/OpenCode ancestry gets a stable
 // unsupported-caller result naming their compatibility limits; model-supplied
 // author/actor ids are never accepted. Unbound human shells must pass --human.
 //
@@ -269,7 +268,7 @@ export async function runTicket(args, {
     try {
       context = resolveContext();
     } catch (cause) {
-      // Codex/OpenCode ancestry on a MUTATION: a stable unsupported-caller
+      // Unsupported harness ancestry on a MUTATION: a stable unsupported-caller
       // result naming the reviewed compatibility limits (GOL-326 D5); no
       // identity fallback. Reads degrade to unbound — compatibility harnesses
       // may read without CLI caller binding.
@@ -278,7 +277,7 @@ export async function runTicket(args, {
           return fail('unsupported_caller', {
             error: 'golem ticket mutations require Pi/Claude CLI caller binding',
             code: 'unsupported_caller',
-            message: 'this native harness does not yet support CLI caller binding. Compatibility limits: reads and revision-gated full replacement through ticket_update work over the advertised MCP tools; block operations and golem ticket mutations do not.',
+            message: 'this native harness does not support CLI caller binding. Reads work without binding; mutations require a trusted Pi/Claude session.',
           }, cause);
         }
         context = null;

@@ -75,7 +75,7 @@ function formatTurnTiming(lastTurn) {
   const mm = String(lastTurn.getMinutes()).padStart(2, '0');
   const ended = `${hh}:${mm}`;
 
-  // For cloud models (ollama-cloud, antigravity, codex, zai, xai),
+  // For cloud models (ollama-cloud, antigravity, zai, xai),
   // cache is typically warm within ~10 minutes
   const isWarm = diffSecs < 600;
   const badge = isWarm ? '🔥' : '❄️';
