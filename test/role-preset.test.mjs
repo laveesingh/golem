@@ -268,9 +268,16 @@ try {
   // GOL-382 R1/R2: every packaged card is a registered role, and old aliases
   // such as planner are no longer rewritten to another role.
   const { seedRoles, setSessionRole, sessionsJsonPath } = await import('../lib/session-role.js');
-  const seedNames = seedRoles().map((role) => role.name);
+  // Check against the source card files, not the seed function's own output:
+  // a stale plugin/ copy must not hide a card that exists in substrate/.
+  const substrateCards = fs.readdirSync(path.join(repo, 'substrate', 'roles'))
+    .filter((file) => file.endsWith('.md')).map((file) => file.slice(0, -3));
+  assert.ok(substrateCards.length > 0, 'substrate has role cards');
   const registered = readRoleRegistry().map((role) => role.name);
-  for (const name of seedNames) assert.ok(registered.includes(name), `packaged role ${name} is registered`);
+  for (const name of substrateCards) {
+    assert.ok(registered.includes(name), `substrate role card ${name} is a registered role`);
+    assert.ok(seedRoles().some((role) => role.name === name), `substrate role card ${name} is seeded`);
+  }
   createRole({ name: 'planner', body: '# Role: planner\n' });
   assert.ok(readRoleRegistry().some((role) => role.name === 'planner'), 'planner is a role of its own');
   const sessionsFile = sessionsJsonPath();
