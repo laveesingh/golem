@@ -3,11 +3,12 @@
 //
 // Dry run by default: builds the scrubbed set from the JSON stores (read
 // only), counts what would be deleted or nulled per store and table, prints a
-// table, and changes nothing. `--apply` backs up every file it will touch,
-// stops the dashboard (only if one is running for this golem home), deletes
-// the records under the registries' own locks and in single SQLite
-// transactions, restarts the dashboard only if it stopped one, and prints
-// exact rollback commands.
+// table, and changes nothing. `--apply` stops the dashboard for this golem
+// home first (a failed stop aborts with no backup and no writes), checkpoints
+// each SQLite database (`wal_checkpoint(TRUNCATE)`) so the backup copies are
+// consistent, backs up every file it will touch, deletes the records under
+// the registries' own locks and in single SQLite transactions, restarts the
+// dashboard only if it stopped one, and prints exact rollback commands.
 //
 // It is a script, not a CLI verb (design D1) and never runs automatically.
 // The lead runs `--apply` after the code lands (D5).
@@ -86,6 +87,7 @@ function isLegacyRow(row) {
 
 function buildScrubSet() {
   const set = new Set();
+  const liveHarnesses = new Map();
   const sources = [
     [sessionsJsonPath(), 'sessions'],
     [sessionFactsJsonPath(), 'facts'],
@@ -94,6 +96,11 @@ function buildScrubSet() {
   for (const [file, key] of sources) {
     for (const row of readRegistry(file, key)[key]) {
       if (LEGACY_HARNESSES.has(row?.harness)) set.add(row.session_id ?? row.canonical_id);
+      // Harness guard (GOL-367 review 2): remember every id a live-harness row
+      // claims, so a stale supervisor/bridge file can never scrub a pi or
+      // claude id.
+      const id = row?.session_id ?? row?.canonical_id;
+      if (id && (row.harness === 'pi' || row.harness === 'claudecode')) liveHarnesses.set(id, row.harness);
     }
   }
   // channels: kind codex-supervisor OR harness codex/opencode
@@ -101,17 +108,22 @@ function buildScrubSet() {
     const channels = readRegistry(channelsJsonPath(), 'channels').channels;
     for (const row of channels) {
       if (isLegacyRow(row)) set.add(row.session_id);
+      if (row?.session_id && (row.harness === 'pi' || row.harness === 'claudecode')) liveHarnesses.set(row.session_id, row.harness);
     }
   } catch { /* unreadable channels.json — nothing to add from it */ }
   const golemHomeDir = process.env.GOLEM_HOME || path.join(process.env.HOME || '', '.golem');
+  const legacyFileIds = new Set();
   try {
     const doc = JSON.parse(readFileSync(path.join(golemHomeDir, 'codex-supervisors.json'), 'utf8'));
-    for (const id of Object.keys(doc?.supervisors ?? {})) set.add(id);
+    for (const id of Object.keys(doc?.supervisors ?? {})) legacyFileIds.add(id);
   } catch { /* absent */ }
   try {
     const doc = JSON.parse(readFileSync(path.join(golemHomeDir, 'opencode-bridges.json'), 'utf8'));
-    for (const bridge of doc?.bridges ?? []) if (bridge?.session_id) set.add(bridge.session_id);
+    for (const bridge of doc?.bridges ?? []) if (bridge?.session_id) legacyFileIds.add(bridge.session_id);
   } catch { /* absent */ }
+  for (const id of legacyFileIds) {
+    if (!liveHarnesses.has(id)) set.add(id);
+  }
   return new Set([...set].filter(Boolean));
 }
 
@@ -276,12 +288,15 @@ function backupFiles(set, home) {
 
 // --- 4. Apply ----------------------------------------------------------------
 
-function applyJsonStores(set) {
+function applyJsonStores() {
   const removed = {};
+  // GOL-367 review 2: the JSON deletes filter by the row's OWN harness, never
+  // by set membership — a pi or claude row can never be removed even if a
+  // stale legacy file once claimed its id.
   const filters = [
-    ['sessions.json', sessionsJsonPath(), 'sessions', (row) => !set.has(row?.session_id)],
-    ['session-facts.json', sessionFactsJsonPath(), 'facts', (row) => !set.has(row?.canonical_id)],
-    ['endpoint-leases.json', endpointLeasesJsonPath(), 'leases', (row) => !set.has(row?.canonical_id ?? row?.session_id)],
+    ['sessions.json', sessionsJsonPath(), 'sessions', (row) => !LEGACY_HARNESSES.has(row?.harness)],
+    ['session-facts.json', sessionFactsJsonPath(), 'facts', (row) => !LEGACY_HARNESSES.has(row?.harness)],
+    ['endpoint-leases.json', endpointLeasesJsonPath(), 'leases', (row) => !LEGACY_HARNESSES.has(row?.harness)],
     ['channels.json', channelsJsonPath(), 'channels', (row) => !isLegacyRow(row)],
   ];
   for (const [name, file, key, keep] of filters) {
@@ -446,26 +461,45 @@ printCounts(rows);
 
 if (!APPLY) {
   log('');
-  log('DRY RUN — nothing was changed. Pass --apply to back up, stop the dashboard,');
-  log('delete these rows, and print rollback commands.');
+  log('DRY RUN — nothing was changed. Pass --apply to stop the dashboard, checkpoint the');
+  log('SQLite files, back up, delete these rows, and print rollback commands.');
   process.exit(0);
 }
 
-// --apply: backup → stop dashboard → scrub → restart → report.
+// --apply order (GOL-367 review 1): stop dashboard → backup (SQLite at rest)
+// → scrub → restart → report. A failed stop aborts with no backup and no
+// writes.
+let stopped;
+try {
+  stopped = await stopDashboard();
+} catch (error) {
+  fail(`could not stop the dashboard — aborting with no backup and no writes (${error.message})`);
+}
+const wasRunning = stopped.length > 0;
+log(wasRunning ? `OK dashboard stopped (${stopped.map(({ pid }) => `pid=${pid}`).join(', ')})` : 'dashboard was not running for this golem home');
+
+// Give SQLite a consistent copy: checkpoint each db so the WAL is folded into
+// the main file, then copy db+wal+shm together.
+for (const dbFile of [trackerDbPath(), typedDeliveryTombstonesDbPath()]) {
+  if (!existsSync(dbFile)) continue;
+  try {
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+    const db = new DatabaseSync(dbFile);
+    try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } finally { db.close(); }
+  } catch (error) {
+    err(`warning: wal_checkpoint(${path.basename(dbFile)}) failed — copying the files as-is (${error.message})`);
+  }
+}
+
 const { backupDir, copied } = backupFiles(set, home);
 if (!copied.length) {
   fail('backup wrote no files — nothing was changed. Refusing to continue.');
 }
-log('');
 log(`OK backup written: ${backupDir} (${copied.length} files)`);
-
-const stopped = await stopDashboard();
-const wasRunning = stopped.length > 0;
-log(wasRunning ? `OK dashboard stopped (${stopped.map(({ pid }) => `pid=${pid}`).join(', ')})` : 'dashboard was not running for this golem home');
 
 const removed = {};
 try {
-  Object.assign(removed, applyJsonStores(set));
+  Object.assign(removed, applyJsonStores());
   Object.assign(removed, applyLegacyFiles(home));
   Object.assign(removed, applyLock());
   Object.assign(removed, applyJournals(set, home));
@@ -502,4 +536,3 @@ if (wasRunning) {
 log('');
 log('Rollback — copy every backed-up file back, then start the dashboard:');
 printRollback(backupDir, copied);
-

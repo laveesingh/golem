@@ -35,6 +35,11 @@ function readJson(name) {
   return JSON.parse(fs.readFileSync(path.join(golemHome, name), 'utf8'));
 }
 
+// GOL-367 review 3: readDashboardPid returns the pid recorded in dashboard.json.
+const { readDashboardPid } = await import('../lib/dashboard-process.js');
+fs.writeFileSync(path.join(golemHome, 'dashboard.json'), JSON.stringify({ url: 'http://127.0.0.1:1', pid: 424242 }));
+assert.equal(await readDashboardPid(), 424242, 'readDashboardPid returns the recorded pid');
+
 // --- Fixture stores ---------------------------------------------------------
 
 writeJson('sessions.json', { version: 1, sessions: [
@@ -57,8 +62,16 @@ writeJson('channels.json', { version: 1, channels: [
   { session_id: CODEX_B, harness: 'codex-supervisor', kind: 'codex-supervisor', pid: 2, host: '127.0.0.1', port: 11 },
   { session_id: CLAUDE_A, harness: 'claudecode', pid: 3, host: '127.0.0.1', port: 12 },
 ] });
-writeJson('codex-supervisors.json', { version: 1, supervisors: { [CODEX_A]: { canonical_id: CODEX_A }, [CODEX_B]: { canonical_id: CODEX_B } } });
-writeJson('opencode-bridges.json', { version: 1, bridges: [{ session_id: OPENCODE_A, pid: 1, host: '127.0.0.1', port: 10 }] });
+writeJson('codex-supervisors.json', { version: 1, supervisors: {
+  [CODEX_A]: { canonical_id: CODEX_A }, [CODEX_B]: { canonical_id: CODEX_B },
+  // Harness guard fixtures: stale legacy files claiming live-harness ids.
+  [PI_A]: { canonical_id: PI_A }, [CLAUDE_A]: { canonical_id: CLAUDE_A },
+} });
+writeJson('opencode-bridges.json', { version: 1, bridges: [
+  { session_id: OPENCODE_A, pid: 1, host: '127.0.0.1', port: 10 },
+  { session_id: PI_A, pid: 2, host: '127.0.0.1', port: 10 },
+  { session_id: CLAUDE_A, pid: 3, host: '127.0.0.1', port: 10 },
+] });
 
 fs.mkdirSync(path.join(golemHome, 'renders', 'codex'), { recursive: true });
 fs.mkdirSync(path.join(golemHome, 'renders', 'opencode'), { recursive: true });
@@ -85,6 +98,7 @@ fs.writeFileSync(path.join(journalsDir, 'hook.jsonl'), journalLines);
 // --- Tracker + tombstone fixtures -------------------------------------------
 
 const { openTrackerDb } = await import('../dashboard/server/tracker-db.js');
+const { countTypedDeliveryTombstones } = await import('../lib/typed-delivery-tombstones.js');
 const { upsertTypedDeliveryTombstone } = await import('../lib/typed-delivery-tombstones.js');
 const tracker = openTrackerDb(path.join(golemHome, 'tracker.db'));
 const db = tracker.raw();
@@ -161,6 +175,7 @@ ok(dry.status === 0, `dry run exits 0 (status=${dry.status})`, dry.stderr);
 ok(dry.stdout.includes('DRY RUN'), 'dry run prints its mode');
 ok(dry.stdout.includes('sessions.json'), 'dry run prints the JSON stores');
 ok(dry.stdout.includes('tracker.db'), 'dry run prints tracker.db rows');
+ok(!/ses_scrub_pi_a/.test(dry.stdout) || dry.stdout.includes('507'), 'dry run counts only legacy ids');
 const after = snapshot();
 for (const name of Object.keys(before)) {
   ok(before[name] === after[name], `dry run left ${name} untouched`);
@@ -192,6 +207,18 @@ ok(channels.includes(CLAUDE_A), 'claude channel row kept');
 
 ok(!fs.existsSync(path.join(golemHome, 'codex-supervisors.json')), 'codex-supervisors.json deleted');
 ok(!fs.existsSync(path.join(golemHome, 'opencode-bridges.json')), 'opencode-bridges.json deleted');
+
+// Harness guard: a pi id and a claude id that the stale legacy files claimed
+// survive every store.
+const guardSessions = readJson('sessions.json').sessions.map((row) => row.session_id);
+ok(guardSessions.includes(PI_A) && guardSessions.includes(CLAUDE_A), 'harness guard: pi/claude sessions survive legacy-file claims');
+const guardFacts = readJson('session-facts.json').facts.map((row) => row.canonical_id);
+ok(guardFacts.includes(PI_A), 'harness guard: pi fact survives');
+const guardChannels = readJson('channels.json').channels.map((row) => row.session_id);
+ok(guardChannels.includes(CLAUDE_A), 'harness guard: claude channel row survives');
+ok(countTypedDeliveryTombstones({ file: path.join(golemHome, 'typed-delivery-tombstones.db') }) === 1, 'harness guard: pi tombstone survives');
+const guardJournal = fs.readFileSync(path.join(journalsDir, 'hook.jsonl'), 'utf8');
+ok(guardJournal.includes(PI_A), 'harness guard: pi journal line survives');
 ok(!fs.existsSync(path.join(golemHome, 'renders', 'codex')) && !fs.existsSync(path.join(golemHome, 'renders', 'opencode')), 'legacy render dirs deleted');
 
 const lock = readJson('substrate.lock').targets;
@@ -219,7 +246,6 @@ ok(raw.prepare('SELECT COUNT(*) AS n FROM notification_schedules').get().n === 0
 check.close();
 
 const tombstoneDb = path.join(golemHome, 'typed-delivery-tombstones.db');
-const { countTypedDeliveryTombstones } = await import('../lib/typed-delivery-tombstones.js');
 ok(countTypedDeliveryTombstones({ file: tombstoneDb }) === 1, 'codex tombstone removed, pi tombstone kept');
 
 // Backup exists and holds the touched stores.
