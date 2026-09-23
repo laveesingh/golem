@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-23 @ MERGE (GOL-365, GOL-369) — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-23 @ b000d3e (GOL-365, GOL-369) — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
