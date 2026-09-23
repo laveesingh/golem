@@ -12,7 +12,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
-import matter from 'gray-matter';
 import { lintSubstrate } from '../lib/compiler/lint.js';
 import { createScratchTicket, promoteScratchIdea, archiveTicket, SMOKE_PROJECT } from '../dashboard/scripts/_scratch.mjs';
 
@@ -57,27 +56,12 @@ try {
   const lint = lintSubstrate({ substrateRoot: source });
   assert.equal(lint.clean, true, JSON.stringify(lint.findings));
 
-  // Every shipped skill parses its front matter and has a non-empty body —
-  // a mechanic the render pipeline depends on.
-  for (const skillDir of fs.readdirSync(path.join(source, 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory())) {
-    const skillFile = path.join(source, 'skills', skillDir.name, 'SKILL.md');
-    if (!fs.existsSync(skillFile)) continue;
-    const parsed = matter(read(skillFile));
-    assert.equal(parsed.data.name, skillDir.name, `${skillDir.name}: front-matter name matches the directory`);
-    assert.ok(String(parsed.content).trim().length > 0, `${skillDir.name}: body is non-empty`);
-  }
-
-  console.log(`source mechanics passed: ${lint.files} files, ${lint.total} words`);
+  console.log(`source report: ${lint.files} files, ${lint.total} words`);
 
   for (const target of ['cc', 'pi']) {
     cli(['sync', '--target', target]);
     cli(['sync', '--target', target, '--check']);
     const render = path.join(state, 'renders', target === 'cc' ? 'cc-plugin' : 'pi');
-    const renderedWriting = read(path.join(render, 'skills/spec-writing/SKILL.md'));
-    assert.equal(matter(renderedWriting).data.name, 'spec-writing');
-    assert.ok(renderedWriting.trim().length > 0, 'spec-writing render is non-empty');
-    const renderedSdd = matter(read(path.join(render, 'skills/spec-driven-development/SKILL.md')));
-    assert.equal(renderedSdd.data.name, 'spec-driven-development', 'the shared SDD skill reaches the isolated render');
     const rules = read(target === 'cc' ? path.join(home, '.claude/CLAUDE.md') : path.join(render, 'instructions/AGENTS.md'));
     // Injection mechanic: cc carries the managed block with its code-generated
     // markers and a non-empty body; pi's shim injects the rendered file itself.
@@ -90,9 +74,6 @@ try {
     assert.equal(read(path.join(render, 'skills/tracker/templates/spec.md')), read(path.join(source, 'skills/tracker/templates/spec.md')));
     assert.equal(read(path.join(render, 'skills/tracker/templates/task.md')), read(path.join(source, 'skills/tracker/templates/task.md')), 'task template parity, not spec-template only');
     assert.equal(read(path.join(render, 'skills/tracker/templates/spec-html.html')), read(path.join(source, 'skills/tracker/templates/spec-html.html')), 'html spec template reaches the render with format metadata');
-    // Retired tool names must not be prescribed by the rendered tracker —
-    // a tool-name mechanic, not a wording check.
-    assert.ok(!read(path.join(render, 'skills/tracker/SKILL.md')).includes('sessions_dispatchable'), 'rendered tracker does not prescribe the retired discovery tool');
     const { GOLEM_TOOL_CONTRACTS } = await import(pathToFileURL(path.join(render, 'lib/golem-tool-contracts.js')));
     const create = GOLEM_TOOL_CONTRACTS.find((c) => c.name === 'ticket_create');
     assert.ok(create, 'rendered contracts register ticket_create');

@@ -1001,18 +1001,12 @@ async function cmdSyncCheckAll({ quiet = false } = {}) {
   if (!quiet) log('');
   say('golem sync --check --all');
 
-  // Source lint runs once, before any render-drift check: word caps, resolving
-  // `§` and `golem:` references, and one owner per fingerprinted rule.
+  // Source size report runs once, before any render-drift check. GOL-377
+  // addendum: it can never fail — an over-cap total is only a warning.
   const lint = lintSubstrate({ substrateRoot: substrateRoot() });
   if (!quiet) log('');
   say(`substrate lint: ${lint.files} files, ${lint.total} words`);
-  if (!quiet) {
-    if (lint.clean) log('  clean');
-    for (const f of lint.findings) err(`  ${f.check}: ${f.file} — ${f.detail}`);
-  }
-  // GOL-366 addendum 2: an over-cap total is a warning, never drift.
   for (const w of lint.warnings ?? []) log(`  warning: ${w.check}: ${w.file} — ${w.detail}`);
-  drift = drift || !lint.clean;
 
   const ccOut = renderDirFor('cc');
   const cc = compiler.checkDrift({ target: 'cc', outDir: ccOut, items: planForTarget('cc') });

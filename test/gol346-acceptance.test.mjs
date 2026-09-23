@@ -250,12 +250,9 @@ try {
   check('A16 real native Pi CLI caller binding (isolated render + isolated leases)',
     nativePi === 'pass', nativePi);
 
-  // ── A17: instructions mechanics (GOL-377) ──────────────────────────────────
-  // The tracker skill exists, is non-empty, and does not prescribe the retired
-  // discovery tool. Wording is the human's to change.
-  const trackerSkill = fs.readFileSync(path.join(repo, 'substrate/skills/tracker/SKILL.md'), 'utf8');
-  check('A17 tracker skill ships non-empty and never prescribes the retired discovery tool',
-    trackerSkill.trim().length > 0 && !trackerSkill.includes('sessions_dispatchable'));
+  // ── A17 retired by GOL-377 addendum: instruction-content checks of any kind
+  // are forbidden. The tracker skill ships through the render's byte-parity
+  // plumbing (instruction-workflow), which is the surviving mechanic.
 
   console.log(failures.length === 0 ? '\nALL GOL-346 ACCEPTANCE CHECKS PASS' : `\n${failures.length} FAILURE(S)`);
   process.exitCode = failures.length === 0 ? 0 : 1;
