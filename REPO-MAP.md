@@ -51,7 +51,6 @@ registries, owns tracker writes, and dispatches to native channels or typed endp
 - Project rules come from `AGENTS.md`; shared rules come from `substrate/`, never renders.
 - Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
 - Supported Pi worker version is 0.85.1 with Node.js 22.19+.
-- Runtime state, credentials, and journals stay outside the repository.
 - Pi and Claude Code are the only harnesses. No test or lint check inspects instruction content.
 - `dashboard/scripts/smoke-settings.mjs` writes the real `~/.claude` and renders; run it deliberately.
 - Herdr tests must `session stop` before deleting a temp HOME; a deleted socket dir leaks a live server.
