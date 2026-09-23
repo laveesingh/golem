@@ -126,7 +126,7 @@ async function main() {
   );
 
   // An unbound spawn without --team refuses.
-  const refused = await runCli(['spawn', 'builder', '--project', project]);
+  const refused = await runCli(['agent', 'create', 'builder', '--project', project]);
   assert.equal(refused.status, 2, 'unbound spawn without --team refuses');
   assert.match(refused.stderr, /no team: pass --team or run golem team lead <team>/);
 
@@ -155,11 +155,11 @@ async function main() {
   assert.ok(!workspaces.some((row) => row.workspace_id === alpha.herdr_workspace_id), 'alpha workspace closed');
   assert.ok(workspaces.some((row) => row.workspace_id === beta.herdr_workspace_id), 'beta workspace kept');
 
-  const listed = await runCli(['list', '--project', project, '--json']);
+  const listed = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(listed.status, 0, listed.stderr);
   const rows = JSON.parse(listed.stdout);
   assert.ok(rows.some((row) => row.team_id === beta.team_id), 'list shows team rows');
-  const tabled = await runCli(['list', '--project', project]);
+  const tabled = await runCli(['agent', 'list', '--scope', 'project', '--project', project]);
   assert.match(tabled.stdout, /TEAM/, 'table carries the TEAM column');
 
   stopSleeper(sleeperB);

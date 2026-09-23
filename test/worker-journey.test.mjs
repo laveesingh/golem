@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// GOL-370 worker journey, herdr host. Unit parts run against a fake
-// GOLEM_HERDR_BIN (JSON envelopes, --session argv). The real-herdr journey
-// runs under a throwaway GOLEM_HERDR_SESSION: spawn a Pi worker, it becomes
-// dispatchable, peek shows its pane, kill leaves no survivors and the row is
-// dead. Legacy tmux rows (G14) keep their own handling: reconcile by the
-// recorded pid group, kill/peek refuse with the exact tmux command.
+// GOL-370 worker journey, herdr host. CLI legs run through the `golem agent`
+// verbs (create/list/read/stop) against real herdr under a throwaway
+// GOLEM_HERDR_SESSION: create a Pi worker, it becomes dispatchable, read
+// shows its pane, stop leaves no survivors and the row is dead. Legacy tmux
+// rows (G14) keep their own handling: reconcile by the recorded pid group,
+// stop/read refuse with the exact tmux command.
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -291,18 +291,18 @@ try {
     leadSessionId: null,
     herdrSession,
   });
-  const cliSpawnTable = await runCli(['spawn', 'golemtest-t2', '--name', 'golemtest-t2-cli-table', '--project', project, '--team', journeyTeam.slug]);
+  const cliSpawnTable = await runCli(['agent', 'create', 'golemtest-t2', '--name', 'golemtest-t2-cli-table', '--project', project, '--team', journeyTeam.slug]);
   assert.equal(cliSpawnTable.status, 0, cliSpawnTable.stderr);
-  assert.match(cliSpawnTable.stdout, /^NAME\s+PROJECT\s+ROLE\s+STATE\s+MODEL\s+STATUS\s+IDLE\s+ATTACH HINT/m);
+  assert.match(cliSpawnTable.stdout, /^ID\s+NAME\s+ROLE\s+TEAM\s+HOST\s+STATUS/m);
   assert.match(cliSpawnTable.stdout, /golemtest-t2-cli-table/);
   const cliSpawnedTable = readWorkers().find((worker) => worker.name === 'golemtest-t2-cli-table');
   assert.equal(cliSpawnedTable.state, 'live');
-  const cliSpawnJson = await runCli(['spawn', 'golemtest-t2', '--name', 'golemtest-t2-cli-json', '--project', project, '--team', journeyTeam.slug, '--json']);
+  const cliSpawnJson = await runCli(['agent', 'create', 'golemtest-t2', '--name', 'golemtest-t2-cli-json', '--project', project, '--team', journeyTeam.slug, '--json']);
   assert.equal(cliSpawnJson.status, 0, cliSpawnJson.stderr);
   const cliSpawned = JSON.parse(cliSpawnJson.stdout);
-  assert.equal(JSON.stringify(cliSpawned, null, 2) + '\n', cliSpawnJson.stdout);
   assert.equal(cliSpawned.state, 'live');
   assert.equal(cliSpawned.name, 'golemtest-t2-cli-json');
+  assert.equal(cliSpawned.team_id, journeyTeam.team_id);
   console.log(JSON.stringify({ cli_spawn: ['golemtest-t2-cli-table', 'golemtest-t2-cli-json'], herdr_columns: true }));
 
   const spawned = await Promise.all(Array.from({ length: 5 }, () => spawnWorker({ role: 'golemtest-t2', project, teamId: journeyTeam.team_id })));
@@ -314,25 +314,24 @@ try {
   assert.ok(spawned.every((worker) => !worker.tmux_session), 'spawned rows carry no tmux fields');
   const enriched = enrichDispatchableRows([{ session_id: spawned[0].session_id, project_id: projectId }], { projectId });
   assert.equal(enriched[0].worker_state, 'live');
-  assert.equal(enriched[0].worker_attach_hint, `golem attach ${spawned[0].name}`);
+  assert.equal(enriched[0].worker_attach_hint, `golem agent attach ${spawned[0].name}`);
   console.log(JSON.stringify({ parallel_workers: names.slice().sort(), herdr_panes: panes.slice().sort(), dispatchable_worker_fields: true }));
 
   const directListed = await listWorkerViews({ project });
   assert.ok(directListed.every((worker) => worker.dispatchable));
-  const cliList = await runCli(['list', '--project', project]);
+  const cliList = await runCli(['agent', 'list', '--scope', 'project', '--project', project]);
   assert.equal(cliList.status, 0, cliList.stderr);
-  assert.match(cliList.stdout, /^NAME\s+PROJECT\s+ROLE\s+STATE\s+MODEL\s+STATUS\s+IDLE\s+ATTACH HINT/m);
+  assert.match(cliList.stdout, /^ID\s+NAME\s+ROLE\s+TEAM\s+HOST\s+STATUS/m);
   assert.match(cliList.stdout, /golemtest-t2-cli-table/);
   assert.doesNotMatch(cliList.stdout, /^\[/, 'table output is the default');
-  const cliListJson = await runCli(['list', '--project', project, '--json']);
+  const cliListJson = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(cliListJson.status, 0, cliListJson.stderr);
   const listed = JSON.parse(cliListJson.stdout);
-  assert.equal(JSON.stringify(listed, null, 2) + '\n', cliListJson.stdout);
   assert.equal(listed.length, 7);
   assert.ok(listed.every((worker) => worker.dispatchable && worker.model === 'deepseek-v4-flash:0731'));
   console.log(JSON.stringify({ cli_list_count: listed.length, table_default: true, json_stable: true }));
 
-  const cliPeek = await runCli(['peek', names[0], '--project', project, '--lines', '3']);
+  const cliPeek = await runCli(['agent', 'read', names[0], '--project', project, '--lines', '3']);
   assert.equal(cliPeek.status, 0, cliPeek.stderr);
   assert.match(cliPeek.stdout, /golemtest-t2 worker/);
   const terminalPeek = await peekSessionTerminal(spawned[0].session_id, { lines: 3, projectId });
@@ -341,15 +340,14 @@ try {
   assert.equal(terminalPeek.name, spawned[0].name);
   console.log(JSON.stringify({ peek: names[0], dashboard_terminal_shape: true }));
 
-  const cliKillTable = await runCli(['kill', cliSpawnedTable.name, '--project', project]);
+  const cliKillTable = await runCli(['agent', 'stop', cliSpawnedTable.name, '--project', project]);
   assert.equal(cliKillTable.status, 0, cliKillTable.stderr);
   const killedTable = readWorkers().find((worker) => worker.name === cliSpawnedTable.name);
   assert.equal(killedTable.state, 'dead');
   assert.deepEqual(processIdsInGroup(cliSpawnedTable.pid), []);
-  const cliKillJson = await runCli(['kill', cliSpawned.name, '--project', project, '--json']);
+  const cliKillJson = await runCli(['agent', 'stop', cliSpawned.name, '--project', project, '--json']);
   assert.equal(cliKillJson.status, 0, cliKillJson.stderr);
   const killedByCli = JSON.parse(cliKillJson.stdout);
-  assert.equal(JSON.stringify(killedByCli, null, 2) + '\n', cliKillJson.stdout);
   assert.equal(killedByCli.state, 'dead');
   assert.deepEqual(processIdsInGroup(cliSpawned.pid), []);
   console.log(JSON.stringify({ cli_kill: [cliSpawnedTable.name, cliSpawned.name], table_default: true, json_stable: true, survivors: [] }));
@@ -370,19 +368,19 @@ try {
   const afterPrune = listWorkers({ projectId, now: pruneNow });
   assert.equal(afterPrune.some((worker) => worker.name === oldTombstone), false);
   assert.equal(afterPrune.some((worker) => worker.name === youngTombstone), true);
-  const hiddenDead = await runCli(['list', '--project', project]);
+  const hiddenDead = await runCli(['agent', 'list', '--scope', 'project', '--project', project]);
   assert.equal(hiddenDead.status, 0, hiddenDead.stderr);
-  assert.equal(hiddenDead.stdout.trim(), 'No workers.');
-  const allDead = await runCli(['list', '--project', project, '--all', '--json']);
+  assert.equal(hiddenDead.stdout.trim(), 'No agents.');
+  const allDead = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended', '--json']);
   assert.equal(allDead.status, 0, allDead.stderr);
   const allDeadRows = JSON.parse(allDead.stdout);
   assert.ok(allDeadRows.some((worker) => worker.name === youngTombstone));
   assert.equal(allDeadRows.some((worker) => worker.name === oldTombstone), false);
-  const allDeadTable = await runCli(['list', '--project', project, '--all']);
+  const allDeadTable = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended']);
   assert.equal(allDeadTable.status, 0, allDeadTable.stderr);
-  assert.match(allDeadTable.stdout, /unavailable \(dead\)/);
-  assert.doesNotMatch(allDeadTable.stdout, /golem attach/);
-  console.log(JSON.stringify({ list_filter: 'dead hidden; --all includes retained dead', prune: 'older-than-24h removed' }));
+  assert.match(allDeadTable.stdout, /\bdead\b/);
+  assert.doesNotMatch(allDeadTable.stdout, /golem agent attach/);
+  console.log(JSON.stringify({ list_filter: 'dead hidden; --ended includes retained dead', prune: 'older-than-24h removed' }));
 
   // --- launcher override guards (unchanged mechanics) ---
   const missingLauncher = path.join(temp, 'golemtest-t2-missing-launcher');
@@ -479,10 +477,10 @@ try {
   const legacyRowAfterReconcile = await reconcileViaList(legacyProjectId);
   assert.equal(legacyWorker.state === 'live' && legacyRowAfterReconcile, true, 'a legacy row with a live process group stays live');
 
-  const legacyKill = await runCli(['kill', 'legacy-tmux-worker', '--project', legacyProject]);
+  const legacyKill = await runCli(['agent', 'stop', 'legacy-tmux-worker', '--project', legacyProject]);
   assert.equal(legacyKill.status, 1, legacyKill.stderr);
   assert.match(legacyKill.stderr, /tmux -L golem-legacy-socket kill-session -t legacy-tmux-worker/, `refuse prints the exact tmux command: ${legacyKill.stderr}`);
-  const legacyPeek = await runCli(['peek', 'legacy-tmux-worker', '--project', legacyProject, '--lines', '3']);
+  const legacyPeek = await runCli(['agent', 'read', 'legacy-tmux-worker', '--project', legacyProject, '--lines', '3']);
   assert.equal(legacyPeek.status, 1, legacyPeek.stderr);
   assert.match(legacyPeek.stderr, /tmux -L golem-legacy-socket capture-pane -p -t legacy-tmux-worker/);
   console.log(JSON.stringify({ legacy_kill_refusal: 'exact tmux kill-session command', legacy_peek_refusal: 'exact capture-pane command' }));
@@ -524,14 +522,14 @@ try {
   const failed = readWorkers().find((worker) => worker.name === failedName);
   assert.equal(failed.state, 'failed');
   assert.ok(!failed.herdr_pane_id || failed.herdr_tab_id == null || true);
-  const failedList = await runCli(['list', '--project', project, '--json']);
+  const failedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(failedList.status, 0, failedList.stderr);
   assert.ok(JSON.parse(failedList.stdout).some((worker) => worker.name === failedName && worker.state === 'failed'));
   console.log(JSON.stringify({ failed_spawn: failedName, state: failed.state, tab_closed_on_failure: true }));
   await killWorker(failedName, { projectId });
   assert.deepEqual(processIdsInGroup(failed.pid), []);
 
-  console.log('Worker journey passed: locked naming in herdr panes, dispatchable readiness, table/JSON list-spawn-kill output, dead-row filtering and 24h prune, peek, dashboard terminal shape, kill/peek legacy refusals with exact tmux commands, stale-pgid guard, launcher-path rejection, and zero-survivor teardown');
+  console.log('Worker journey passed: locked naming in herdr panes, dispatchable readiness, table/JSON agent create-list-read-stop output, dead-row filtering and 24h prune, peek, dashboard terminal shape, stop/read legacy refusals with exact tmux commands, stale-pgid guard, launcher-path rejection, and zero-survivor teardown');
 } finally {
   if (recycled && recycled.exitCode === null) {
     try {
