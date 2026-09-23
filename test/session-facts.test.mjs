@@ -155,9 +155,9 @@ upsertSessionFact({
 });
 assert.equal((await readNativeSessions(() => true, [])).some((row) => row.session_id === 'pi-terminal-fact'), false, 'fact-only terminal Pi worker is absent from the native-session projection');
 
-// GOL-365 R8: a historical row whose harness is an unknown string (post-removal
-// codex/opencode leftovers until the scrub) renders generically — recency
-// liveness, no crash, no mis-route.
+// GOL-365 R8: a historical row whose harness is an unknown string (leftover
+// rows until the scrub) renders generically — recency liveness, no crash,
+// no mis-route.
 const legacyRow = (await readNativeSessions(() => true, [])).find((row) => row.session_id === 'legacy-harness-row');
 assert.ok(legacyRow, 'an unknown-harness registry row projects instead of crashing');
 assert.equal(legacyRow?.harness, 'mystery-harness', 'the unknown harness value survives projection verbatim');

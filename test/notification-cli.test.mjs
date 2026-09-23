@@ -45,7 +45,7 @@ try {
   const unboundHints = { pid: 30, env: { GOLEM_SESSION_ID: 'leftover', GOLEM_CEO_SESSION_ID: 'leftover', PI_SESSION_ID: 'leftover' },
     leases: [], facts: [], readProcess: () => ({ command: '/bin/zsh', ppid: 1 }) };
   assert.equal(resolveCliSessionContext(unboundHints), null, 'complete non-native ancestry is unbound despite leftover id hints');
-  assert.equal(resolveCliSessionContext({ ...unboundHints, readProcess: () => ({ command: 'codex', ppid: 1 }) }), null, 'a removed-harness ancestry is unbound, not fatal');
+  assert.equal(resolveCliSessionContext({ ...unboundHints, readProcess: () => ({ command: 'removed-harness', ppid: 1 }) }), null, 'a removed-harness ancestry is unbound, not fatal');
   console.log('caller ancestry, resume identity, stale/ambiguous/truncated context: passed');
 
   endpoint = await startTypedWorkerEndpoint({ canonicalId: target, ownerToken: 'isolated-owner', deliveryReady: () => true,
