@@ -153,7 +153,7 @@ async function run() {
   const queuedEnvelope = sql2.prepare('SELECT * FROM message_envelopes WHERE id = ?').get(queued.body?.envelope_id);
   check('when_idle: envelope is undelivered without relying on status', queuedEnvelope?.delivery_attempted_at == null && queuedEnvelope?.delivered_at == null, JSON.stringify(queuedEnvelope));
   const queuedPayload = JSON.parse(queuedEnvelope?.payload || '{}');
-  check('target content contains generated message id and ack-first instruction', queuedPayload?.envelope_id === queued.body?.envelope_id && queuedPayload?.content?.includes(`Dispatch message_id: ${queued.body?.envelope_id}`) && queuedPayload?.content?.includes("Acknowledge this dispatch first with ack"), JSON.stringify(queuedPayload));
+  check('target content contains generated message id and ack-first instruction', queuedPayload?.envelope_id === queued.body?.envelope_id && queuedPayload?.content?.includes(`Dispatch message_id: ${queued.body?.envelope_id}`) && queuedPayload?.content?.includes("pass it as envelope_id when you ack"), JSON.stringify(queuedPayload));
   const wrongAck = await jsend('POST', `/api/message-envelopes/${queued.body?.envelope_id}/ack`, { target_session_id: 'offline-queued-session', summary: 'spoof' }, { 'x-golem-caller-session': 'wrong-session' });
   check('envelope ack rejects a non-target', wrongAck.status === 403, `status ${wrongAck.status}`);
   const correctAck = await jsend('POST', `/api/message-envelopes/${queued.body?.envelope_id}/ack`, { target_session_id: 'wrong-session', summary: 'picked up' }, { 'x-golem-caller-session': 'offline-queued-session' });

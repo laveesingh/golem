@@ -31,12 +31,11 @@ function slimSession(row) {
   };
 }
 
-export function teamAssists(rows = []) {
+/** GOL-382 R10: the intake suggestion is the least-loaded live session of the
+ *  configured default role (roles.default), not a fixed role name. No default
+ *  role means no suggestion. */
+export function teamAssists(rows = [], { intakeRole = null } = {}) {
   return {
-    // Role merged into `lead` in GOL-103. The key keeps its old name because
-    // dashboard clients read it; the ROLE queried has to be one that exists.
-    suggested_manager: slimSession(leastLoadedRoleSession(rows, 'lead')),
-    suggested_explorer: slimSession(leastLoadedRoleSession(rows, 'explorer')),
-    suggested_reviewer: slimSession(leastLoadedRoleSession(rows, 'reviewer')),
+    suggested_intake: intakeRole ? slimSession(leastLoadedRoleSession(rows, intakeRole)) : null,
   };
 }
