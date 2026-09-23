@@ -20,6 +20,13 @@ const BASE = `http://${HOST}:${PORT}`;
 const TAG = crypto.randomBytes(6).toString('hex');
 const TMP_DB = path.join(os.tmpdir(), `golem-settings-smoke-${TAG}.db`);
 const TMP_XDG = fs.mkdtempSync(path.join(os.tmpdir(), `golem-settings-smoke-xdg-${TAG}-`));
+// GOL-380: the dashboard and its Sync Now render into the real home unless
+// HOME and GOLEM_HOME point elsewhere. Isolate the whole run — this process
+// and every child it starts — in temp homes, removed in cleanupFiles.
+const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), `golem-settings-smoke-home-${TAG}-`));
+const TMP_GOLEM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), `golem-settings-smoke-golem-home-${TAG}-`));
+process.env.HOME = TMP_HOME;
+process.env.GOLEM_HOME = TMP_GOLEM_HOME;
 const SCREENSHOT = path.join(os.tmpdir(), `golem-settings-smoke-${TAG}.png`);
 
 let failures = 0;
@@ -34,6 +41,8 @@ function cleanupFiles() {
     try { fs.rmSync(TMP_DB + suffix, { force: true }); } catch {}
   }
   try { fs.rmSync(TMP_XDG, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP_HOME, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP_GOLEM_HOME, { recursive: true, force: true }); } catch {}
 }
 
 const child = spawn('node', [SERVER], {
@@ -43,6 +52,8 @@ const child = spawn('node', [SERVER], {
     HOST,
     GOLEM_TRACKER_DB: TMP_DB,
     XDG_CONFIG_HOME: TMP_XDG,
+    HOME: TMP_HOME,
+    GOLEM_HOME: TMP_GOLEM_HOME,
     LOG_LEVEL: 'warn',
     GOLEM_PROJECTS_ROOT: path.join(TMP_XDG, 'projects'),
     GOLEM_IDEAS_ROOT: path.join(TMP_XDG, 'ideas'),
