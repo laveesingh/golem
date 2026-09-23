@@ -160,7 +160,12 @@ try {
   assert.equal(roleChangeBody.activation?.ok, true, JSON.stringify(roleChangeBody));
   assert.equal(worker.sent.length, 0, 'role assignment never starts a Pi turn');
   const prompt = await worker.emit('before_agent_start', { prompt: 'review next', systemPrompt: 'Pi base prompt' });
-  assert.match(prompt.systemPrompt, /Role: reviewer/, 'dashboard role change applies at the next safe boundary');
+  // GOL-377: injection mechanic — the rendered role card for the NEW role is
+  // injected verbatim and the previous role's card is no longer present.
+  const reviewerCard = fs.readFileSync(path.join(render, 'roles', 'reviewer.md'), 'utf8').trim();
+  const leadCard = fs.readFileSync(path.join(render, 'roles', 'lead.md'), 'utf8').trim();
+  assert.ok(reviewerCard.length > 0 && prompt.systemPrompt.includes(reviewerCard), 'dashboard role change applies at the next safe boundary (rendered reviewer card injected)');
+  assert.ok(!prompt.systemPrompt.includes(leadCard), 'the previous lead card is no longer injected after the role change');
 
   // Pi is a full participant: the lead role is assignable like any other
   // harness, and the lead card is injected at the next safe boundary.
@@ -170,7 +175,7 @@ try {
   const leadChangeBody = await leadChange.json();
   assert.equal(leadChange.ok, true, JSON.stringify(leadChangeBody));
   const leadPrompt = await worker.emit('before_agent_start', { prompt: 'lead next', systemPrompt: 'Pi base prompt' });
-  assert.match(leadPrompt.systemPrompt, /Role: lead/, 'lead role card applies at the next safe boundary');
+  assert.ok(leadPrompt.systemPrompt.includes(leadCard) && !leadPrompt.systemPrompt.includes(reviewerCard), 'lead role card applies at the next safe boundary (reviewer card gone)');
 
   // Back to a worker role for the rest of the journey.
   const backToReviewer = await fetch(`${baseUrl}/api/sessions/pi-tools-worker/role`, {
@@ -178,7 +183,7 @@ try {
   });
   assert.equal(backToReviewer.ok, true, JSON.stringify(await backToReviewer.json()));
   const afterRole = await worker.emit('before_agent_start', { prompt: 'review remains', systemPrompt: 'Pi base prompt' });
-  assert.match(afterRole.systemPrompt, /Role: reviewer/, 'role change applies at the next safe boundary');
+  assert.ok(afterRole.systemPrompt.includes(reviewerCard) && !afterRole.systemPrompt.includes(leadCard), 'role change applies at the next safe boundary');
 
   console.log('Pi native tool journey passed: shared tracker identity, read/comment/transition, L4, and safe-boundary role refresh');
 } finally {
