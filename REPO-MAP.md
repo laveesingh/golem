@@ -15,8 +15,10 @@
 
 ### CLI and collaboration
 
-`cli/golem.js` owns launch, worker, dashboard, sync, and diagnostic verbs.
-`cli/collaboration.js` owns session discovery, notify, inspection, and schedules.
+`cli/golem.js` owns launch, agent/team, dashboard, sync, and diagnostic verbs.
+`cli/agent.js` owns the agent toolkit (list, create, read, attach, stop, notify,
+role, dedup); `cli/team.js` owns team create, list, lead, and close.
+`cli/collaboration.js` owns inspection, schedules, and messages.
 `cli/ticket.js` owns flat `golem ticket` authoring over tracker REST.
 `lib/session-role.js` owns role definitions; retired names are migration input only.
 

@@ -530,7 +530,7 @@ async function cmdAgentCreate(role, o, positional, { stdout, cwd, resolveContext
   // G8: every create belongs to a team. The manager ignores teamId until
   // GOL-370 wires the herdr workspace move; resolving (and refusing) here
   // keeps the CLI contract in place on top of either host.
-  const { projectId } = await resolveWorkerProject(o['--project'] ?? null);
+  const { projectId } = await resolveWorkerProject(o['--project'] ?? null, { cwd });
   const caller = callerSession(resolveContext);
   const teams = listTeams({ projectId });
   const workerRow = callerWorkerRow(caller, projectId);
