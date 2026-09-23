@@ -9,6 +9,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import url from 'node:url';
+import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { acquireChrome } from './_chrome.mjs';
 
@@ -20,6 +21,13 @@ const BASE = `http://${HOST}:${PORT}`;
 const TAG = crypto.randomBytes(6).toString('hex');
 const TMP_DB = path.join(os.tmpdir(), `golem-settings-smoke-${TAG}.db`);
 const TMP_XDG = fs.mkdtempSync(path.join(os.tmpdir(), `golem-settings-smoke-xdg-${TAG}-`));
+// GOL-380: the dashboard and its Sync Now render into the real home unless
+// HOME and GOLEM_HOME point elsewhere. Isolate the whole run — this process
+// and every child it starts — in temp homes, removed in cleanupFiles.
+const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), `golem-settings-smoke-home-${TAG}-`));
+const TMP_GOLEM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), `golem-settings-smoke-golem-home-${TAG}-`));
+process.env.HOME = TMP_HOME;
+process.env.GOLEM_HOME = TMP_GOLEM_HOME;
 const SCREENSHOT = path.join(os.tmpdir(), `golem-settings-smoke-${TAG}.png`);
 
 let failures = 0;
@@ -34,6 +42,29 @@ function cleanupFiles() {
     try { fs.rmSync(TMP_DB + suffix, { force: true }); } catch {}
   }
   try { fs.rmSync(TMP_XDG, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP_HOME, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP_GOLEM_HOME, { recursive: true, force: true }); } catch {}
+}
+
+/** True when something already listens on the smoke port (GOL-380 follow-up).
+ *  A stale dashboard from an earlier run answers /api/health, so without
+ *  this check the smoke talks to a dead server's pages and dies later at
+ *  page.goto with a misleading timeout. Fail loudly instead. */
+function portInUse(port, host = HOST) {
+  return new Promise((resolve) => {
+    const sock = net.createConnection({ host, port });
+    let done = false;
+    const finish = (result) => { if (!done) { done = true; sock.destroy(); resolve(result); } };
+    sock.once('connect', () => finish(true));
+    sock.once('error', () => finish(false));
+    setTimeout(() => finish(false), 500);
+  });
+}
+
+if (await portInUse(PORT)) {
+  cleanupFiles();
+  console.log(`[FAIL] port ${PORT} is already in use — free it (a stale dashboard answers health checks and breaks page.goto) and rerun`);
+  process.exit(1);
 }
 
 const child = spawn('node', [SERVER], {
@@ -43,6 +74,8 @@ const child = spawn('node', [SERVER], {
     HOST,
     GOLEM_TRACKER_DB: TMP_DB,
     XDG_CONFIG_HOME: TMP_XDG,
+    HOME: TMP_HOME,
+    GOLEM_HOME: TMP_GOLEM_HOME,
     LOG_LEVEL: 'warn',
     GOLEM_PROJECTS_ROOT: path.join(TMP_XDG, 'projects'),
     GOLEM_IDEAS_ROOT: path.join(TMP_XDG, 'ideas'),
@@ -50,9 +83,11 @@ const child = spawn('node', [SERVER], {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let childExited = false;
+let childBindError = null;
 child.on('exit', () => { childExited = true; });
 child.stderr.on('data', (d) => {
   const s = d.toString();
+  if (/EADDRINUSE/i.test(s)) childBindError = s.trim().split('\n').pop();
   if (/EADDRINUSE|fatal|Error:/i.test(s)) process.stderr.write(`[child] ${s}`);
 });
 
@@ -81,11 +116,25 @@ async function putConfig(body) {
 let chrome = null;
 try {
   await waitForHealth();
-  check('server: /api/health ok', true);
+  // The health check alone cannot prove OUR child serves the port: if our
+  // bind lost a race after the pre-spawn check, a stale server answers
+  // health while our child exits, and page.goto hangs against the stale
+  // one. Refuse that state loudly.
+  if (childExited || child.exitCode != null || child.signalCode != null) {
+    throw new Error(childBindError ?? 'dashboard child exited right after becoming healthy — a stale server may hold the port');
+  }
+  check('server: /api/health ok (our child)', true);
 
   chrome = await acquireChrome();
   const page = await chrome.browser.newPage();
-  await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
+  // One retry: a single slow first navigation (cold caches under the temp
+  // HOME) must not fail the smoke; a second timeout is a real failure.
+  try {
+    await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
+  } catch (err) {
+    console.log(`[WARN] first /settings goto timed out — retrying once (${err?.message?.split('\n')?.[0] ?? err})`);
+    await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
+  }
   await page.waitForSelector('[data-testid="sync-matrix"]', { timeout: 15000 });
   check('settings page: matrix renders', await page.locator('[data-testid="sync-matrix"]').count() === 1);
   check('settings page: commands are neutral', await page.locator('tbody tr', { hasText: 'commands' }).locator('.settings-chip.error').count() === 0);
