@@ -90,6 +90,7 @@ fs.writeFileSync(path.join(process.env.GOLEM_HOME, 'sessions.json'), JSON.string
   sessions: [
     { session_id: 'pi-recency', harness: 'pi', project_path: process.cwd(), name: 'pi-recency', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(freshRegistryAt).toISOString() },
     { session_id: 'pi-recency2', harness: 'pi', project_path: process.cwd(), name: 'pi-recency2', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(staleRegistryAt).toISOString() },
+    { session_id: 'legacy-harness-row', harness: 'mystery-harness', project_path: process.cwd(), name: 'Legacy Harness', status: 'idle', pid: process.pid, boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(freshRegistryAt).toISOString() },
   ],
 }, null, 2));
 const recencyRows = await readNativeSessions(() => true, [
@@ -153,6 +154,14 @@ upsertSessionFact({
   ended_at: new Date().toISOString(), observed_at: new Date().toISOString(),
 });
 assert.equal((await readNativeSessions(() => true, [])).some((row) => row.session_id === 'pi-terminal-fact'), false, 'fact-only terminal Pi worker is absent from the native-session projection');
+
+// GOL-365 R8: a historical row whose harness is an unknown string (post-removal
+// codex/opencode leftovers until the scrub) renders generically — recency
+// liveness, no crash, no mis-route.
+const legacyRow = (await readNativeSessions(() => true, [])).find((row) => row.session_id === 'legacy-harness-row');
+assert.ok(legacyRow, 'an unknown-harness registry row projects instead of crashing');
+assert.equal(legacyRow?.harness, 'mystery-harness', 'the unknown harness value survives projection verbatim');
+assert.equal(typeof legacyRow?.alive, 'boolean', 'unknown-harness liveness resolves to a plain boolean');
 
 // GOL-109 merge overlay: the CLI row's updated_at is fabricated (= startedAt;
 // `claude agents --json` emits no updatedAt), so overlaying it must never
