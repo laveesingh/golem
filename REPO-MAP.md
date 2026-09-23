@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-23 @ b000d3e (GOL-365, GOL-369) — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-23 @ af90a61 (GOL-363/365/369) — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -34,14 +34,13 @@ and ticket CLI guidance; `team-ops/` owns team operations and reminders.
 `html-body.js` (stable block ids) and `md-body.js` (id-less blocks) patch via strict anchors
 (`body-anchor.js`); `mermaid-check.js` reports broken diagrams after commit, 2s bound.
 `notification-schedules.js` and `notification-schedule-runtime.js` own durable schedules;
-`comment-dispatch.js` routes feedback. Agents never touch SQLite directly. `body_revision`
-gates body writes.
+`comment-dispatch.js` routes feedback. Agents never touch SQLite directly.
 
 ### Compiler and delivery
 
-`lib/compiler/` renders substrate with drift/tamper checks and orphan pruning; `lint.js` only
-reports the total word count. `lib/typed-worker-endpoint.js` owns the authenticated Pi envelope
-protocol. `lib/dashboard-process.js` owns dashboard stop/start for one checkout.
+`lib/compiler/` renders substrate with drift/tamper checks; `lint.js` only reports word count.
+`lib/typed-worker-endpoint.js` owns the Pi envelope protocol. `lib/herdr-driver.js` hosts managed
+agents (one herdr session per project); `lib/team-registry.js` owns `teams.json`.
 
 ## Data flow
 
@@ -56,6 +55,7 @@ registries, owns tracker writes, and dispatches to native channels or typed endp
 - Runtime state, credentials, and journals stay outside the repository.
 - Pi and Claude Code are the only harnesses. No test or lint check inspects instruction content.
 - `dashboard/scripts/smoke-settings.mjs` writes the real `~/.claude` and renders; run it deliberately.
+- Herdr tests must `session stop` before deleting a temp HOME; a deleted socket dir leaks a live server.
 
 ## Common tasks
 
