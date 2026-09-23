@@ -33,8 +33,7 @@ Tasks and docs hang under their spec via `parent_id`; a spec can parent child sp
 
 ## Writing
 
-- The body is a living document: Markdown edits replace it whole (batch edits); html folds
-  changes per block (§ Ticket CLI).
+- The body is a living document; fold changes in place (§ Editing).
 - Load `golem:spec-writing` for substantive spec authoring/revision — it owns the writing
   method; templates provide starting shapes.
 - Task bodies carry the agreed decisions, constraints, touch points, and acceptance commands.
@@ -43,19 +42,22 @@ Tasks and docs hang under their spec via `parent_id`; a spec can parent child sp
 
 ## Ticket CLI
 
-`golem ticket` is the canonical authoring family: list, get, create, update, replace-body,
-get-outline, get-block, patch-blocks, add-comment, reply-comment, update-comment.
-`golem ticket --help` carries exact syntax and runnable examples; payloads go through
-file/stdin flags; stdout is JSON only; mutations bind the trusted Pi/Claude session context.
+`golem ticket` is the authoring family; `--help` has syntax and examples.
+
+## Editing
+
+Every edit costs tokens twice, sent and read back. Keep both small.
+
+- Edit from what you hold; `get-outline` or `get-block --anchor` only for an unknown part.
+- One change, one `patch-blocks` call: `--op`, `--anchor` (unique text; add `--prefix` or
+  `--suffix` if it repeats), content on a quoted heredoc. Never put a body in a file.
+- Do not re-read after a write. `replace-body` only for conversion or a rewrite I ask for.
+- Broken Mermaid still saves; fix each `mermaid_errors` entry with one `edit`. Never render.
 
 ## Body format
 
-Format is explicit data, never inferred from a body's first character. Markdown is the default
-(Mermaid, admonitions, `<details>`; blank line after `</summary>`; escape table pipes) — a
-Markdown body starting with an HTML tag is usually a mistake. An HTML spec is a complete safe
-fragment created with `--body-format html` (spec-only): the server sanitizes it and assigns
-stable per-block ids; the editing workflow is `golem:spec-writing` § HTML spec bodies.
-Render Mermaid before saving; exit 0 alone is not proof.
+Markdown is the default (blank line after `</summary>`; escape table pipes). HTML is
+spec-only, via `--body-format html`.
 
 ## States
 
