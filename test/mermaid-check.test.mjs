@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openTrackerDb } from '../dashboard/server/tracker-db.js';
 import {
-  extractDiagrams, checkChangedDiagrams, checkSources,
+  extractDiagrams, checkChangedDiagrams, checkSources, __testSetWorkerPath,
 } from '../dashboard/server/mermaid-check.js';
 import { resolveAnchor } from '../dashboard/server/body-anchor.js';
 import { splitMarkdownBlocks, spansFromBlocks } from '../dashboard/server/md-body.js';
@@ -186,6 +186,24 @@ try {
   check('outline entries are otherwise unchanged (additive mermaid_error only)',
     mdOutline.blocks.every((b) => b.mermaid_error === undefined || (b.kind === 'code' && typeof b.mermaid_error.line === 'number'))
       && htmlOutline.blocks.every((b) => b.id && b.hash && b.comments));
+
+  // T2 follow-up: a worker that never answers must not freeze the server.
+  // Unique diagram source (uncached) forces the worker round trip.
+  __testSetWorkerPath(path.join(repo, 'test/fixtures/mermaid-silent-worker.mjs'));
+  try {
+    const t0 = Date.now();
+    const stuck = db.createTicket({
+      project_id: 'proj-mm', kind: 'spec', title: 'Stuck worker',
+      body: fence('flowchart LR\n  SILENT_HUNG_1 --> B'), created_by: 'smoke',
+    });
+    const elapsed = Date.now() - t0;
+    check('hung worker: write returns in ~2s, commits, reports no mermaid_errors',
+      elapsed >= 1500 && elapsed < 10000
+        && committedWith(stuck.id, 'SILENT_HUNG_1') && !('mermaid_errors' in stuck),
+      `${elapsed}ms`);
+  } finally {
+    __testSetWorkerPath(null);
+  }
 
   db.close();
   console.log(failures.length === 0 ? '\nALL GOL-374 CHECKS PASS' : `\n${failures.length} FAILURE(S)`);

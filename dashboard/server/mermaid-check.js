@@ -14,7 +14,8 @@
 // shared buffer). First diagram-containing write pays worker startup once
 // (~250ms); steady-state cost is parse time only (3–70ms per diagram).
 // Worker failure fails open (no errors reported, write already committed)
-// with a one-time stderr warning. Results are cached per process by diagram
+// with a one-time stderr warning: a hung parse costs one 2s wait and is
+// never retried; only a worker that fails to start is retried once. Results are cached per process by diagram
 // source (bounded), so repeated outline reads are free.
 
 import { Worker } from 'node:worker_threads';
@@ -26,14 +27,27 @@ import { splitMarkdownBlocks, spansFromBlocks } from './md-body.js';
 import { parseAndNormalizeDoc, htmlAnchorIndex } from './html-body.js';
 
 const workerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mermaid-worker.mjs');
+// Test hook (T2 follow-up): point the checker at a fixture worker (e.g. one
+// that never answers). Pass null to restore the production worker. Always
+// drops the live worker so the next check respawns.
 
 let worker = null;
 let warned = false;
+let workerPathOverride = null;
 // One slot: [0] result byte length (-1 overflow/error), [1] done flag.
 const flagBuffer = new SharedArrayBuffer(8);
 const dataBuffer = new SharedArrayBuffer(262144);
 const flag = new Int32Array(flagBuffer);
-const WAIT_TIMEOUT_MS = 30000;
+// T2 follow-up: a hung parse must never freeze the server event loop — one
+// short wait, no retry after a timeout (retry only when the worker fails to
+// start, below).
+const WAIT_TIMEOUT_MS = 2000;
+
+export function __testSetWorkerPath(p) {
+  workerPathOverride = p ?? null;
+  try { worker?.terminate(); } catch { /* ignore */ }
+  worker = null;
+}
 const cache = new Map(); // `${format}\0${source}` -> {line, message} | null
 const CACHE_LIMIT = 500;
 
@@ -45,33 +59,49 @@ function warnOnce(message) {
 
 function ensureWorker() {
   if (worker) return;
-  worker = new Worker(workerPath);
+  worker = new Worker(workerPathOverride ?? workerPath);
   worker.unref();
   worker.on('error', () => { worker = null; });
   worker.on('exit', () => { worker = null; });
 }
 
+const failOpen = (sources, message) => {
+  warnOnce(`${message}; skipping mermaid errors (writes still commit)`);
+  return sources.map(() => ({ ok: true }));
+};
+
 /** Parse many sources through the worker: [{ok, error?}] in input order. */
 function parseManySync(sources) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  try {
+    ensureWorker();
+  } catch {
+    // The worker failed to start: retry once with a fresh spawn.
+    worker = null;
     try {
       ensureWorker();
-      if (!worker) throw new Error('mermaid worker failed to start');
-      Atomics.store(flag, 0, 0);
-      Atomics.store(flag, 1, 0);
-      worker.postMessage({ flagBuffer, dataBuffer, sources });
-      const status = Atomics.wait(flag, 1, 0, WAIT_TIMEOUT_MS);
-      if (status !== 'ok') throw new Error(`mermaid worker wait ${status}`);
-      const length = Atomics.load(flag, 0);
-      if (length < 0) throw new Error('mermaid worker reported overflow');
-      return JSON.parse(Buffer.from(dataBuffer, 0, length).toString('utf8'));
     } catch {
-      try { worker?.terminate(); } catch { /* ignore */ }
       worker = null;
+      return failOpen(sources, 'checker worker failed to start');
     }
   }
-  warnOnce('checker worker unavailable; skipping mermaid errors (writes still commit)');
-  return sources.map(() => ({ ok: true }));
+  if (!worker) return failOpen(sources, 'checker worker unavailable');
+  try {
+    Atomics.store(flag, 0, 0);
+    Atomics.store(flag, 1, 0);
+    worker.postMessage({ flagBuffer, dataBuffer, sources });
+    const status = Atomics.wait(flag, 1, 0, WAIT_TIMEOUT_MS);
+    if (status === 'timed-out') throw new Error('mermaid worker timed out');
+    if (status !== 'ok') throw new Error(`mermaid worker wait ${status}`);
+    const length = Atomics.load(flag, 0);
+    if (length < 0) throw new Error('mermaid worker reported overflow');
+    return JSON.parse(Buffer.from(dataBuffer, 0, length).toString('utf8'));
+  } catch {
+    // Timeout or mid-flight failure: terminate and fail open with NO retry,
+    // so one hung parse costs one bounded wait, never two.
+    try { worker?.terminate(); } catch { /* ignore */ }
+    worker = null;
+    return failOpen(sources, 'checker worker timed out or failed mid-flight');
+  }
 }
 
 function parseLineNumber(message) {
