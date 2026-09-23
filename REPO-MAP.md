@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-16 @ 03f0631 (GOL-353/354) — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-23 @ 6e65367 (GOL-365) — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -38,8 +38,9 @@ and ticket CLI guidance; `team-ops/` owns team operations and reminders.
 
 ### Compiler and delivery
 
-`lib/compiler/` renders substrate with drift/tamper checks and orphan pruning.
-`lib/typed-worker-endpoint.js` owns the authenticated Pi envelope protocol.
+`lib/compiler/` renders substrate with drift/tamper checks and orphan pruning; `lint.js` only
+reports the total word count. `lib/typed-worker-endpoint.js` owns the authenticated Pi envelope
+protocol. `lib/dashboard-process.js` owns dashboard stop/start for one checkout.
 
 ## Data flow
 
@@ -52,6 +53,8 @@ registries, owns tracker writes, and dispatches to native channels or typed endp
 - Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
 - Supported Pi worker version is 0.85.1 with Node.js 22.19+.
 - Runtime state, credentials, and journals stay outside the repository.
+- Pi and Claude Code are the only harnesses. No test or lint check inspects instruction content.
+- `dashboard/scripts/smoke-settings.mjs` writes the real `~/.claude` and renders; run it deliberately.
 
 ## Common tasks
 
