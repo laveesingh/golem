@@ -1059,7 +1059,6 @@
   object-fit: contain;
 }
 .agent-harness-icon.claudecode { color: var(--status-review); }
-.agent-harness-icon.opencode { color: var(--status-active); }
 .agent-card-chips {
   display: flex;
   align-items: center;
@@ -3430,35 +3429,20 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 }
 
 /* Block-level comment decoration — Option C (margin rail). A resolved block
-   stays visible but quieter; the rail does not underline or recolor its text.
+   stays visible but quieter; the rail does not recolor its text or background.
    The row-specific rules keep the signal visible inside the table's cell
    backgrounds, where an inset shadow on <tr> is not painted consistently. */
 .td-md [data-block-id].anno-block-comment {
-  --anno-block-wash: color-mix(in oklab, var(--status-review) 9%, transparent);
-  --anno-block-wash-active: color-mix(in oklab, var(--status-review) 14%, transparent);
-  background: linear-gradient(90deg, var(--anno-block-wash), transparent 44%);
-  box-shadow: inset 3px 0 var(--status-review);
+  box-shadow: inset 6px 0 var(--status-review);
   border-radius: 3px;
-  transition: background 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
-}
-.td-md [data-block-id].anno-block-comment:hover,
-.td-md [data-block-id].anno-block-comment.is-active {
-  background: linear-gradient(90deg, var(--anno-block-wash-active), transparent 52%);
+  transition: box-shadow 150ms ease, opacity 150ms ease;
 }
 .td-md [data-block-id].anno-block-comment.anno-block-resolved { opacity: .55; }
 .td-md tr.anno-block-comment {
-  background: transparent;
   box-shadow: none;
 }
-.td-md tr.anno-block-comment > * {
-  background: var(--anno-block-wash);
-}
 .td-md tr.anno-block-comment > :first-child {
-  box-shadow: inset 3px 0 var(--status-review);
-}
-.td-md tr.anno-block-comment:hover > *,
-.td-md tr.anno-block-comment.is-active > * {
-  background: var(--anno-block-wash-active);
+  box-shadow: inset 6px 0 var(--status-review);
 }
 /* Headings — compact hierarchy, distinct sizes. TKT-0208: 24px/8px heading
    cadence matches the 1.65 line-height + 800px measure; sizes scaled up with
@@ -3569,11 +3553,14 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 .td-md .admonition-important { border-left-color: var(--status-blocked); background: color-mix(in oklab, var(--status-blocked) 9%, var(--bg-1)); }
 .td-md .admonition-important::before { content: "Important"; color: var(--status-blocked); }
 
+/* Share a muted light surface: Mermaid's dark labels need contrast in both views. */
+:root { --mermaid-surface: #d4d4d4; }
+
 /* Mermaid — centered, bordered container. */
 .td-md .mermaid {
   display: flex; justify-content: center; margin: 12px 0; position: relative;
   border: 1px solid var(--border-2); border-radius: var(--radius-2);
-  background: #ececec; padding: 14px; overflow-x: auto;
+  background: var(--mermaid-surface); padding: 14px; overflow-x: auto;
 }
 .td-md .mermaid svg { max-width: 100%; height: auto; border: none; background: transparent; }
 
@@ -3597,7 +3584,7 @@ select.td-select { appearance: none; cursor: pointer; padding-right: 26px;
 
 .mermaid-fs-overlay {
   position: fixed; inset: 0; z-index: 10000;
-  background: #777777;
+  background: var(--mermaid-surface);
   display: grid; overflow: hidden; isolation: isolate;
   opacity: 0; transition: opacity .2s ease;
 }
@@ -5560,8 +5547,6 @@ mark.anno.anno-tail::after {
   pointer-events: none;
 }
 .agent-harness-icon.harness-claudecode { color: var(--status-review); }
-.agent-harness-icon.harness-opencode { color: var(--status-active); }
-.agent-harness-icon.harness-codex { color: var(--accent); }
 .agent-harness-icon.harness-pi { color: var(--text-1); }
 .agent-card.state-busy .agent-card-orb {
   box-shadow: inset -10px -12px 23px rgba(0, 0, 0, .35), 0 0 25px var(--agent-card-signal-soft);

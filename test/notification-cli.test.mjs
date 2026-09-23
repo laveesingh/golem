@@ -45,7 +45,7 @@ try {
   const unboundHints = { pid: 30, env: { GOLEM_SESSION_ID: 'leftover', GOLEM_CEO_SESSION_ID: 'leftover', PI_SESSION_ID: 'leftover' },
     leases: [], facts: [], readProcess: () => ({ command: '/bin/zsh', ppid: 1 }) };
   assert.equal(resolveCliSessionContext(unboundHints), null, 'complete non-native ancestry is unbound despite leftover id hints');
-  assert.throws(() => resolveCliSessionContext({ ...unboundHints, readProcess: () => ({ command: 'codex', ppid: 1 }) }), /does not yet support CLI caller binding/);
+  assert.equal(resolveCliSessionContext({ ...unboundHints, readProcess: () => ({ command: 'removed-harness', ppid: 1 }) }), null, 'a removed-harness ancestry is unbound, not fatal');
   console.log('caller ancestry, resume identity, stale/ambiguous/truncated context: passed');
 
   endpoint = await startTypedWorkerEndpoint({ canonicalId: target, ownerToken: 'isolated-owner', deliveryReady: () => true,
@@ -192,7 +192,7 @@ const bridge=\`const {spawnSync}=require('node:child_process');const r=spawnSync
 const r=spawnSync(process.execPath,['-e',bridge],{encoding:'utf8'});process.stdout.write(r.stdout);process.stderr.write(r.stderr);process.exit(r.status??1);`);
   const nativeEnv = { ...process.env, CLAUDE_CONFIG_DIR: path.join(home, 'claude'), CLAUDE_CODE_SESSION_ID: 'per-run-not-logical',
     CLI_ARGS: JSON.stringify([path.join(repo, 'cli/golem.js'), 'session', 'notify', '--to', target, '--message', 'native grandchild', '--json']) };
-  for (const key of ['GOLEM_SESSION_ID', 'GOLEM_CEO_SESSION_ID', 'PI_SESSION_ID', 'GOLEM_MANAGED_CODEX_BOUND']) delete nativeEnv[key];
+  for (const key of ['GOLEM_SESSION_ID', 'GOLEM_CEO_SESSION_ID', 'PI_SESSION_ID']) delete nativeEnv[key];
   // Async spawn keeps the receiving endpoint in this process responsive.
   const child = spawn(process.execPath, [nativeFixture], { env: nativeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
   let nativeOut = '', nativeErr = ''; child.stdout.on('data', (b) => nativeOut += b); child.stderr.on('data', (b) => nativeErr += b);

@@ -1036,11 +1036,6 @@ async function main() {
     const content = bodyToText(body);
     chat.record('user', 'interrupt', content, sessionId ? { session_id: sessionId } : {});
     if (!sessionId) return reply.code(400).send({ error: 'session_id is required' });
-    const managedCodex = (await listChannels()).some((channel) => channel.session_id === sessionId && channel.kind === 'codex-supervisor');
-    if (managedCodex) {
-      const gated = await pushInterrupt(body, sessionId);
-      return reply.code(gated.status || (gated.ok ? 200 : 502)).send(gated);
-    }
     const result = await deliverControlEnvelope(tracker, {
       sender_id: 'human:dashboard', recipient_session_id: sessionId,
       kind: 'interrupt', content, legacy: { path: '/interrupt', body },
@@ -1057,11 +1052,6 @@ async function main() {
     const content = bodyToText(body) || 'halt requested';
     chat.record('system', 'halt', content, sessionId ? { session_id: sessionId } : {});
     if (!sessionId) return reply.code(400).send({ error: 'session_id is required' });
-    const managedCodex = (await listChannels()).some((channel) => channel.session_id === sessionId && channel.kind === 'codex-supervisor');
-    if (managedCodex) {
-      const gated = await pushHalt(body, sessionId);
-      return reply.code(gated.status || (gated.ok ? 200 : 502)).send(gated);
-    }
     const result = await deliverControlEnvelope(tracker, {
       sender_id: 'human:dashboard', recipient_session_id: sessionId,
       kind: 'halt', content, legacy: { path: '/halt', body },
@@ -1609,9 +1599,9 @@ async function main() {
 
   async function deliverCommentDispatch(ticket, comments, sessionId, { batchId = null, dispatches = [] } = {}) {
     const brief = commentBrief(ticket, comments, { batchId });
-    // GOL-101: a managed Codex supervisor is a typed adapter, not a generic
+    // GOL-101: a typed worker is a typed adapter, not a generic
     // channel — brief.js rejects any push without a durable envelope id, so a
-    // bare pushBrief could never reach a Codex target. Mint the same kind of
+
     // envelope ticket dispatch uses.
     // The mint shares the push's failure path: the enqueue already happened, so
     // anything that stops delivery has to reach the rollback below rather than

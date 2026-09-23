@@ -6,7 +6,7 @@ import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { golemHome } from './lib/golem-home.js';
 import { dashboardJsonPath } from './lib/golem-home.js';
 import { createGolemClient, resolveGolemDashboardBaseUrl } from './lib/golem-client.js';
-import { resolveToolSurface, toolsForSurface } from './lib/golem-tool-contracts.js';
+import { GOLEM_TOOL_CONTRACTS } from './lib/golem-tool-contracts.js';
 import { createGolemToolRuntime } from './lib/golem-tool-runtime.js';
 import { PiNativeAdapter } from './lib/pi-native-adapter.js';
 import { readRoleCard, sessionsJsonPath, setSessionRole, validateSessionRole } from './lib/session-role.js';
@@ -75,7 +75,7 @@ function formatTurnTiming(lastTurn) {
   const mm = String(lastTurn.getMinutes()).padStart(2, '0');
   const ended = `${hh}:${mm}`;
 
-  // For cloud models (ollama-cloud, antigravity, codex, zai, xai),
+  // For cloud models (ollama-cloud, antigravity, zai, xai),
   // cache is typically warm within ~10 minutes
   const isWarm = diffSecs < 600;
   const badge = isWarm ? '🔥' : '❄️';
@@ -227,11 +227,9 @@ export default function golem(pi) {
   const adapter = new PiNativeAdapter(pi);
   adapter.bind();
 
-  // Trusted launch selection: the Pi extension always registers the CLI-first
-  // surface (no session_notify/sessions_dispatchable advertisement); returns
+  // GOL-365: the full shared contract list is the only tool surface; returns
   // and recipient discovery go through the golem CLI per golem:team-ops.
-  const surface = resolveToolSurface('cli-first');
-  for (const contract of toolsForSurface(surface)) {
+  for (const contract of GOLEM_TOOL_CONTRACTS) {
     pi.registerTool({
       name: contract.name,
       label: contract.name,

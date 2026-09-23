@@ -22,10 +22,6 @@ not as permission for unrelated cleanup.
 Protect the result with isolated, repeatable behavior and failure tests plus real integration
 checks. Passing local tests must not hide broken consumers or untested behavior.
 
-Pi and Claude Code are the active priorities. Codex/OpenCode integration removal is separate
-work; do not remove their code or provider access as incidental cleanup. The greenfield PRD is
-paused. Document/editor redesign is separate from this instruction work.
-
 ## Layout
 
 | What | Where |
@@ -70,12 +66,6 @@ claude plugin marketplace add /Users/laveesingh/Documents/software/experiments/g
 claude plugin install golem@golem-local --scope user
 ```
 
-**opencode is bound to this checkout.** `~/.config/opencode/opencode.jsonc` (outside the repo — a
-reader will look in the checkout first) has a `plugin[]` entry pointing at
-`shims/opencode/index.js` by absolute path, and that shim derives `REPO_ROOT` from its own
-location to find `substrate/hooks/`. The shim is not rendered anywhere, so opencode integration
-does not survive the repo moving or going away. `GOLEM_HOOKS_DIR` overrides the hooks path but
-exists for the fail-open test, not as a way to run without the checkout.
 
 See `substrate/README.md` for the channel-consumer launch (`golemc`) and the full setup.
 
@@ -111,11 +101,10 @@ cp -Rc mcp/channel/node_modules .worktrees/<TICKET>-<slug>/mcp/channel/node_modu
   `golem sync --target cc` and `golem sync --target cc --out ./plugin --force`. Bump the root
   `package.json` version when plugin behavior changed — **the render updating is not the same as
   the installed plugin updating.**
-- If `substrate/instructions/AGENTS.md` changed, also `golem sync --target codex` — root rules
-  render as a marked block into `$CODEX_HOME/AGENTS.md` as well as `~/.claude/CLAUDE.md`, and the
-  two are separate targets. The `pi` render also carries instructions, roles, and skills — sync
-  `--target pi` too, unless uncommitted Pi work in `shims/pi/` is active in the checkout (the pi
-  render bundles that shim source). `golem sync --check --all` reports every target.
+- If `substrate/instructions/AGENTS.md` changed, the pi render also carries instructions, roles,
+  and skills — sync `--target pi` too, unless uncommitted Pi work in `shims/pi/` is active in
+  the checkout (the pi render bundles that shim source). `golem sync --check --all` reports
+  every target.
 - If dashboard server behavior changed, restart the dashboard from the main checkout.
 
 **Shared runtimes to avoid inside a worktree** (the generic rule is in

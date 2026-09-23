@@ -22,7 +22,6 @@ what stays uncertain, and which changes need my approval. Read-only.
 | Harness | Store | Read |
 |---|---|---|
 | Claude Code | `~/.claude/projects/<munged-cwd>/*.jsonl` | top-level `user` and `assistant` records: text, `tool_use`, `tool_result`, thinking. Sub-agents sit in sidechain files linked by parent `tool_use` id |
-| Codex | `~/.codex/sessions/**/*.jsonl` | `session_meta` (cwd), `event_msg` user and agent messages, `response_item` |
 | Pi | `~/.pi/agent/sessions/--<cwd-with-dashes>--/<timestamp>_<id>.jsonl` | first line is a header with cwd and id; then tree entries with `id` and `parentId`; roles `user`, `assistant`, `toolResult`, `bashExecution`, `custom`. Walk `parentId` from the leaf for the active path; abandoned branches are rework evidence. `compaction` and `branch_summary` mark summarized history |
 | Other | what I name | inspect the schema before interpreting |
 

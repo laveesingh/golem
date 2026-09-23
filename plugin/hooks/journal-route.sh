@@ -50,7 +50,7 @@ if command -v jq >/dev/null 2>&1 && [ -n "$PAYLOAD" ]; then
   TRANSCRIPT_PATH="$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
 fi
 
-if [ "${HARNESS:-claudecode}" != "opencode" ] && command -v jq >/dev/null 2>&1; then
+if command -v jq >/dev/null 2>&1; then
   PARENT_SESSION_FILE="${HOME:-}/.claude/sessions/${PPID:-}.json"
   if [ -f "$PARENT_SESSION_FILE" ]; then
     _sid="$(jq -r '.sessionId // .session_id // empty' "$PARENT_SESSION_FILE" 2>/dev/null || true)"

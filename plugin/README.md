@@ -3,7 +3,7 @@
 # Golem harness substrate
 
 This directory is the canonical source for Golem's harness artifacts. The
-compiler renders it into Claude Code, Codex, OpenCode, and Pi surfaces. Edit
+compiler renders it into Claude Code and Pi surfaces. Edit
 `substrate/`; do not hand-edit the generated `plugin/` tree.
 
 For the complete source-checkout install, start with the root
@@ -24,10 +24,6 @@ dependencies. Keep the dashboard running before using tracker tools or dispatch.
 - **Claude Code** — `golem claude` launches native Claude Code with the
   development channel. A plain `claude` session can pull tracker work but does
   not receive channel pushes.
-- **Codex** — `golem sync --target codex` renders the ordinary pull-only
-  plugin. `golem codex` launches the version-gated managed private bridge.
-- **OpenCode** — opt-in through `~/.golem/config.json`; its MCP server and
-  runtime shim point to this checkout by absolute path.
 - **Pi** — `golem sync --target pi` renders the native extension. `golem pi`
   provides typed-worker delivery and requires Pi 0.85.1 with Node.js 22.19+
   or newer.
@@ -86,14 +82,11 @@ raw equivalent is:
 claude --dangerously-load-development-channels plugin:golem@golem-workspace
 ```
 
-The launch flag is required for a Claude session to consume pushes. The rendered
-plugin sets `GOLEM_TOOL_SURFACE=cli-first`, so a Claude boot advertises the
-CLI-first surface — `ack`, tracker tools, `ticket_dispatch`, `session_role`, and
-`project_context`; returns and recipient discovery go through `golem session
-notify` / `golem session list` (`golem:team-ops`), and direct calls to the
-omitted outbound tools reject with that guidance. A boot without that selection
-keeps the compatibility list including `session_notify` and
-`sessions_dispatchable`. The dashboard remains the tracker database's single
+The launch flag is required for a Claude session to consume pushes. The
+rendered plugin advertises the one shared tool surface — `ack`, tracker tools,
+`ticket_dispatch`, `session_role`, and `project_context`; returns and recipient
+discovery go through `golem session notify` / `golem session list`
+(`golem:team-ops`). The dashboard remains the tracker database's single
 writer. Ticket lifecycle is the `state` field: `todo`, `in_progress`,
 `blocked`, `review`, `done`, or `archived`.
 
@@ -101,19 +94,6 @@ Coordination is durable tracker work plus exact-session notifications. The
 retired stream and subscription surfaces are not part of the current MCP
 contract.
 
-## OpenCode checkout binding
-
-OpenCode is not a portable copy of this plugin. When enabled,
-`golem sync --target opencode` renders skills and merges these checkout-backed
-entries into `~/.config/opencode/opencode.jsonc`:
-
-- `mcp.golem` runs `mcp/channel/index.js` from this checkout.
-- `plugin[]` loads `shims/opencode/index.js` through an absolute `file://` URL.
-- `skills.paths` points at the Golem render under `~/.golem/renders/opencode/`.
-
-Keep this checkout in place. If it moves, run the sync command again to refresh
-the absolute paths. See [`docs/opencode.md`](../docs/opencode.md) for the
-runtime bridge and project-scoped render contract.
 
 ## File map
 
@@ -128,8 +108,6 @@ substrate/
   README.md              # this source/render document
 
 mcp/channel/              # tracker MCP server and HTTP client source
-shims/opencode/           # OpenCode lifecycle and delivery bridge
-shims/codex/              # Codex lifecycle hook
 shims/pi/                 # Pi extension source
 ```
 

@@ -97,12 +97,8 @@ export function endpointLeasesJsonPath() {
 export function workersJsonPath() {
   return path.join(golemHome(), 'workers.json');
 }
-// One durable record per Golem-owned, headless Codex App Server supervisor.
 // This is intentionally separate from generic session facts: it holds the
 // process/thread recovery mapping and must never be inferred from a hook.
-export function codexSupervisorsJsonPath() {
-  return path.join(golemHome(), 'codex-supervisors.json');
-}
 // Compact replay identity for typed native-worker delivery. Rich adapter
 // history remains bounded in its own registry; this SQLite file holds only
 // durable idempotency tombstones until the tracker has a terminal,

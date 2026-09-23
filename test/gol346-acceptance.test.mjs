@@ -1,7 +1,7 @@
 // GOL-346: final integration/verification for HTML spec collaboration.
 // Covers the cross-surface acceptance journeys that the per-slice suites do
 // not already own: quarantined scratch fixtures (GOL-326 A5/A7/A15 on a real
-// scratch spec), the CLI authoring loop against those fixtures, Codex/OpenCode
+// scratch spec), the CLI authoring loop against those fixtures, unbound-caller
 // caller limits (A16), and — when the local native Pi toolchain is reachable —
 // a real native Pi caller-binding probe. Everything is isolated; scratch
 // tickets are archived in `finally`.
@@ -144,21 +144,21 @@ try {
   check('A8 CLI reply-comment inherits the anchor', replied.exit === 0
     && replied.json.block_id === firstBlock.id);
 
-  // ── A16: Codex/OpenCode compatibility limits ───────────────────────────────
-  const codexError = Object.assign(
-    new Error('this native harness does not yet support CLI caller binding; use its advertised compatibility tools'),
+  // ── A16: unbound-caller CLI mutation limits ───────────────────────────────
+  const unboundCallerError = Object.assign(
+    new Error('no live Pi/Claude CLI caller binding for a mutation'),
     { code: 'INVALID_CALLER_CONTEXT' });
-  const codex = await run(['patch-blocks', scratchSpec.display_id, '--expected-revision', '3', '--operations-file', opsFile], {
-    resolveContext: () => { throw codexError; },
+  const unboundCaller = await run(['patch-blocks', scratchSpec.display_id, '--expected-revision', '3', '--operations-file', opsFile], {
+    resolveContext: () => { throw unboundCallerError; },
   });
-  check('A16 Codex/OpenCode CLI mutation → stable unsupported_caller naming compatibility limits',
-    codex.exit === 2 && codex.json.code === 'unsupported_caller'
-      && /ticket_update/.test(codex.json.message) && /block operations/.test(codex.json.message),
-    codex.out.slice(0, 200));
-  const codexRead = await run(['get-outline', scratchSpec.display_id], {
-    resolveContext: () => { throw codexError; },
+  check('A16 unbound-caller CLI mutation → stable unsupported_caller naming limits',
+    unboundCaller.exit === 2 && unboundCaller.json.code === 'unsupported_caller'
+      && /Pi\/Claude/.test(unboundCaller.json.error) && /trusted Pi\/Claude session/.test(unboundCaller.json.message),
+    unboundCaller.out.slice(0, 200));
+  const unboundCallerRead = await run(['get-outline', scratchSpec.display_id], {
+    resolveContext: () => { throw unboundCallerError; },
   });
-  check('A16 Codex/OpenCode reads stay available without CLI binding', codexRead.exit === 0);
+  check('A16 unbound-caller reads stay available', unboundCallerRead.exit === 0);
 
   // Compatibility MCP path reaches the same server gate (no html bypass).
   let compatGate = null;
@@ -250,13 +250,9 @@ try {
   check('A16 real native Pi CLI caller binding (isolated render + isolated leases)',
     nativePi === 'pass', nativePi);
 
-  // ── A17: instructions prove both formats ───────────────────────────────────
-  const trackerSkill = fs.readFileSync(path.join(repo, 'substrate/skills/tracker/SKILL.md'), 'utf8');
-  check('A17 instruction split: canonical CLI, format split, compatibility limits, no universal ban',
-    trackerSkill.includes('golem ticket --help') && trackerSkill.includes('Format is explicit data')
-      && trackerSkill.includes('Markdown body starting with an HTML tag is usually a mistake')
-      && trackerSkill.includes('Codex/OpenCode compatibility surface')
-      && !trackerSkill.includes('Never start a body with an HTML tag'));
+  // ── A17 retired by GOL-377 addendum: instruction-content checks of any kind
+  // are forbidden. The tracker skill ships through the render's byte-parity
+  // plumbing (instruction-workflow), which is the surviving mechanic.
 
   console.log(failures.length === 0 ? '\nALL GOL-346 ACCEPTANCE CHECKS PASS' : `\n${failures.length} FAILURE(S)`);
   process.exitCode = failures.length === 0 ? 0 : 1;

@@ -5,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as compiler from '../../lib/compiler/engine.js';
 import * as ccAdapter from '../../lib/compiler/adapters/cc.js';
-import * as ocAdapter from '../../lib/compiler/adapters/opencode.js';
 import { loadConfig, saveConfig } from '../../lib/golem-config.js';
 import { golemHome, projectsJsonPath, renderDirFor } from '../../lib/golem-home.js';
 import { projectIdFor } from '../../lib/project-id.js';
@@ -291,24 +290,13 @@ export function saveSubstrateRole(role, data) {
 
 const TARGETS = [
   { id: 'claudecode', target: 'cc', label: 'Claude Code' },
-  { id: 'opencode', target: 'opencode', label: 'opencode' },
 ];
 
-const CAPABILITY_WARNINGS = {
-  opencode: [
-    'opencode has no Claude Code Stop-hook channel; lifecycle parity is provided by the runtime shim where opencode exposes events.',
-    'opencode renders agents and skills into separate harness-native locations, plus a managed opencode.jsonc config fragment.',
-  ],
-};
+const CAPABILITY_WARNINGS = {};
 
 const GLOBAL_ARTIFACTS = ['skills', 'agents', 'roles', 'commands', 'hooks', 'mcp', 'config-fragment', 'instructions'];
 
-const MANAGED_ELSEWHERE = {
-  opencode: {
-    hooks: 'runtime shim',
-    mcp: 'config merge',
-  },
-};
+
 
 function packageVersion() {
   try {
@@ -429,26 +417,6 @@ function resolveProject(projectValue) {
   return { id: projectValue, project_id: projectValue, path: projectValue };
 }
 
-function resolveOpencodeBin() {
-  const probe = spawnSync('sh', ['-c', 'command -v opencode'], { encoding: 'utf8' });
-  if (probe.status === 0 && probe.stdout.trim()) return probe.stdout.trim();
-  const fallback = path.join(process.env.HOME || '', '.opencode', 'bin', 'opencode');
-  return fs.existsSync(fallback) ? fallback : null;
-}
-
-function opencodeVersion(bin = resolveOpencodeBin()) {
-  if (!bin) return null;
-  const res = spawnSync(bin, ['--version'], { encoding: 'utf8' });
-  return res.status === 0 ? res.stdout.trim() : null;
-}
-
-function validateOpencodeConfig(bin) {
-  if (!bin) return { ok: true, skipped: true };
-  const res = spawnSync(bin, ['debug', 'config'], { encoding: 'utf8' });
-  if (res.status === 0) return { ok: true };
-  return { ok: false, error: (res.stderr || res.stdout || `exit ${res.status}`).trim() };
-}
-
 function buildStatus({ project = null } = {}) {
   const cfg = loadConfig();
   const lock = readLockfile();
@@ -497,43 +465,7 @@ function globalCells(cfg) {
       : neutralCell({ harness: 'claudecode', artifact, target: 'cc', enabled: ccEnabled, status: 'empty', label: 'empty', details: { clean: true, drifted_count: 0, orphaned_count: 0 } }));
   }
 
-  const ocEnabled = !!cfg.harnesses?.opencode?.enabled;
-  const ocAgentItems = ocAdapter.buildAgentPlan({ substrateRoot: root });
-  const ocSkillItems = ocAdapter.buildSkillPlan({ substrateRoot: root });
-  const ocRoleItems = ocAdapter.buildRolePlan({ substrateRoot: root });
-  const ocInstructionItems = ocAdapter.buildInstructionPlan({ substrateRoot: root });
-  const ocRows = new Map([
-    ['agents', cell({ harness: 'opencode', scope: 'global', artifact: 'agents', target: 'opencode', outDir: ocAdapter.agentOutDir(), items: ocAgentItems, enabled: ocEnabled, config: { testedVersion: cfg.harnesses?.opencode?.testedVersion ?? null, currentVersion: opencodeVersion() } })],
-    ['skills', cell({ harness: 'opencode', scope: 'global', artifact: 'skills', target: 'opencode', outDir: ocAdapter.skillsOutDir(), items: ocSkillItems, enabled: ocEnabled })],
-    ['roles', cell({ harness: 'opencode', scope: 'global', artifact: 'roles', target: 'opencode', outDir: ocAdapter.rolesOutDir(), items: ocRoleItems, enabled: ocEnabled })],
-    ['instructions', cell({ harness: 'opencode', scope: 'global', artifact: 'instructions', target: 'opencode-instructions', outDir: ocAdapter.instructionOutDir(), items: ocInstructionItems, enabled: ocEnabled })],
-    ['config-fragment', opencodeConfigCell(cfg, ocEnabled)],
-  ]);
-  for (const artifact of GLOBAL_ARTIFACTS) {
-    rows.push(ocRows.get(artifact) ?? neutralCell({
-      harness: 'opencode',
-      artifact,
-      target: 'opencode',
-      enabled: ocEnabled,
-      status: MANAGED_ELSEWHERE.opencode[artifact] ? 'managed' : 'empty',
-      label: MANAGED_ELSEWHERE.opencode[artifact] ?? 'empty',
-      details: { clean: true, drifted_count: 0, orphaned_count: 0 },
-    }));
-  }
   return rows;
-}
-
-function opencodeConfigCell(cfg, enabled) {
-  const outDir = path.dirname(ocAdapter.opencodeConfigPath());
-  const base = { harness: 'opencode', scope: 'global', artifact: 'config-fragment', target: 'opencode', out_dir: ocAdapter.opencodeConfigPath(), status: enabled ? 'in_sync' : 'disabled', details: null, lock: null, warnings: CAPABILITY_WARNINGS.opencode, config: { testedVersion: cfg.harnesses?.opencode?.testedVersion ?? null, currentVersion: opencodeVersion() } };
-  if (!enabled) return base;
-  try {
-    const current = fs.existsSync(ocAdapter.opencodeConfigPath()) ? fs.readFileSync(ocAdapter.opencodeConfigPath(), 'utf8') : '';
-    const next = ocAdapter.computeConfigText(current || '{\n  "$schema": "https://opencode.ai/config.json"\n}\n', ocAdapter.buildConfigMerge({ repoRoot: REPO_ROOT }));
-    return { ...base, status: current === next ? 'in_sync' : 'drifted', out_dir: outDir, details: { clean: current === next, drifted_count: current === next ? 0 : 1, orphaned_count: 0 } };
-  } catch (err) {
-    return { ...base, status: 'error', error: String(err?.message ?? err) };
-  }
 }
 
 function projectCells(cfg, project) {
@@ -545,11 +477,6 @@ function projectCells(cfg, project) {
   const ccItems = ccAdapter.buildProjectPlan({ substrateRoot: root });
   if (ccItems.length) rows.push(cell({ harness: 'claudecode', scope: 'project', artifact: 'config-fragment', target: 'cc', outDir: project.path, items: ccItems, enabled: ccEnabled, projectId }));
 
-  const ocEnabled = !!cfg.harnesses?.opencode?.enabled;
-  const ocAgentItems = ocAdapter.buildProjectAgentPlan({ substrateRoot: root });
-  const ocSkillItems = ocAdapter.buildProjectSkillPlan({ substrateRoot: root });
-  if (ocAgentItems.length) rows.push(cell({ harness: 'opencode', scope: 'project', artifact: 'agents', target: 'opencode', outDir: ocAdapter.projectAgentOutDir(project.path), items: ocAgentItems, enabled: ocEnabled, projectId }));
-  if (ocSkillItems.length) rows.push(cell({ harness: 'opencode', scope: 'project', artifact: 'skills', target: 'opencode', outDir: ocAdapter.projectSkillsOutDir(project.path), items: ocSkillItems, enabled: ocEnabled, projectId }));
   return rows;
 }
 
@@ -591,7 +518,6 @@ function syncTarget({ harness, project = null, force = false }) {
   const started = Date.now();
   const targetDef = TARGETS.find((t) => t.id === harness || t.target === harness);
   if (!targetDef) throw Object.assign(new Error(`unknown target: ${harness}`), { statusCode: 400 });
-  if (targetDef.id === 'opencode' && !cfg.harnesses?.opencode?.enabled) return { harness: targetDef.id, skipped: true, status: 'disabled' };
   if (targetDef.id === 'claudecode' && cfg.harnesses?.claudecode?.enabled === false) return { harness: targetDef.id, skipped: true, status: 'disabled' };
 
   const root = SUBSTRATE_ROOT;
@@ -614,44 +540,6 @@ function syncTarget({ harness, project = null, force = false }) {
       const instructionItems = ccAdapter.buildInstructionPlan({ substrateRoot: root });
       const instructionOutDir = ccAdapter.instructionOutDir();
       results.push({ artifact: 'instructions', out_dir: instructionOutDir, ...renderSummary(compiler.render({ target: 'cc-instructions', outDir: instructionOutDir, items: instructionItems, packageVersion: pkg, force })) });
-    }
-  }
-
-  if (targetDef.id === 'opencode') {
-    if (p) {
-      const projectId = p.project_id || p.id || projectIdFor(p.path);
-      const agentItems = ocAdapter.buildProjectAgentPlan({ substrateRoot: root });
-      const skillItems = ocAdapter.buildProjectSkillPlan({ substrateRoot: root });
-      results.push({ artifact: 'agents', out_dir: ocAdapter.projectAgentOutDir(p.path), ...renderSummary(compiler.render({ target: 'opencode', outDir: ocAdapter.projectAgentOutDir(p.path), items: agentItems, packageVersion: pkg, force, projectId })) });
-      results.push({ artifact: 'skills', out_dir: ocAdapter.projectSkillsOutDir(p.path), ...renderSummary(compiler.render({ target: 'opencode', outDir: ocAdapter.projectSkillsOutDir(p.path), items: skillItems, packageVersion: pkg, force, projectId })) });
-    } else {
-      const agentItems = ocAdapter.buildAgentPlan({ substrateRoot: root });
-      const skillItems = ocAdapter.buildSkillPlan({ substrateRoot: root });
-      // Roles are a separate (target, outDir) bucket for opencode. `golem sync
-      // --check` and `golem doctor` both check it, so a dashboard sync that
-      // skipped it would leave permanent drift and a red doctor with no way to
-      // clear it from the dashboard. cc and codex carry roles inside their
-      // single buildPlan, which is why only opencode needs this.
-      const roleItems = ocAdapter.buildRolePlan({ substrateRoot: root });
-      const instructionItems = ocAdapter.buildInstructionPlan({ substrateRoot: root });
-      results.push({ artifact: 'agents', out_dir: ocAdapter.agentOutDir(), ...renderSummary(compiler.render({ target: 'opencode', outDir: ocAdapter.agentOutDir(), items: agentItems, packageVersion: pkg, force })) });
-      results.push({ artifact: 'skills', out_dir: ocAdapter.skillsOutDir(), ...renderSummary(compiler.render({ target: 'opencode', outDir: ocAdapter.skillsOutDir(), items: skillItems, packageVersion: pkg, force })) });
-      results.push({ artifact: 'roles', out_dir: ocAdapter.rolesOutDir(), ...renderSummary(compiler.render({ target: 'opencode', outDir: ocAdapter.rolesOutDir(), items: roleItems, packageVersion: pkg, force })) });
-      results.push({ artifact: 'instructions', out_dir: ocAdapter.instructionOutDir(), ...renderSummary(compiler.render({ target: 'opencode-instructions', outDir: ocAdapter.instructionOutDir(), items: instructionItems, packageVersion: pkg, force })) });
-      const bin = resolveOpencodeBin();
-      const merge = ocAdapter.buildConfigMerge({ repoRoot: REPO_ROOT });
-      const configRes = ocAdapter.applyConfigMerge({ configPath: ocAdapter.opencodeConfigPath(), merge, validate: () => validateOpencodeConfig(bin) });
-      if (configRes.restored) throw new Error(`opencode config validation failed: ${configRes.error}`);
-      if (bin) {
-        const ver = opencodeVersion(bin);
-        if (ver) {
-          const next = loadConfig();
-          next.harnesses = next.harnesses ?? {};
-          next.harnesses.opencode = { ...next.harnesses.opencode, testedVersion: ver };
-          saveConfig(next);
-        }
-      }
-      results.push({ artifact: 'config-fragment', out_dir: ocAdapter.opencodeConfigPath(), changed: !!configRes.changed, validation_skipped: !bin });
     }
   }
 

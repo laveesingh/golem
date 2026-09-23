@@ -23,7 +23,7 @@ async function request(path, options = {}) {
 
 const ticket = await createScratchTicket({
   title: 'block comment decoration',
-  body: '# Margin rail fixture\n\nAnchor block text.\n\nLegacy inline target.',
+  body: '# Margin rail fixture\n\nAnchor block text.\n\nLegacy inline target.\n\n```mermaid\nsequenceDiagram\n  Alice->>Bob: Readable message\n```',
 });
 const created = [ticket.id];
 const blockId = 'margin-rail-fixture#1';
@@ -81,8 +81,8 @@ try {
   assert.ok(initial.blockCommentIds.split(/\s+/).includes(blockComment.id), 'block anchor records its comment id');
   assert.equal(initial.blockHasOwnMark, false, 'block comment does not create an inline mark');
   assert.equal(initial.legacyMarkCount, 1, 'comment without a block anchor keeps inline mark fallback');
-  assert.match(initial.backgroundImage, /gradient/i, 'Margin rail wash is visible');
-  assert.notEqual(initial.boxShadow, 'none', 'Margin rail is visible as an inset rail');
+  assert.equal(initial.backgroundImage, 'none', 'Comment decoration has no gradient');
+  assert.match(initial.boxShadow, /inset.*6px|6px.*inset/, 'Margin rail is a 6px inset rail');
   assert.ok(initial.cardOrder.indexOf(blockComment.id) < initial.cardOrder.indexOf(legacyComment.id), 'block anchor participates in document comment order');
 
   await page.locator('#anno-fab').click();
@@ -91,6 +91,30 @@ try {
   await wait(100);
   const focused = await inspect();
   assert.match(focused.blockClasses, /is-active/, 'focusing the block comment marks the block active');
+  assert.equal(focused.backgroundImage, 'none', 'Active comment has no gradient');
+
+  // A diagram's light surface must survive comment decoration, including hover.
+  const diagram = page.locator('.td-md .mermaid').first();
+  await diagram.waitFor();
+  await diagram.locator('svg[aria-roledescription="sequence"]').waitFor();
+  const background = () => diagram.evaluate(el => ({
+    color: getComputedStyle(el).backgroundColor,
+    image: getComputedStyle(el).backgroundImage,
+  }));
+  const before = await background();
+  assert.equal(before.color, 'rgb(212, 212, 212)', 'Inline diagram uses muted light surface');
+  await diagram.locator('.mermaid-fs-btn').click();
+  const fullscreen = page.locator('.mermaid-fs-overlay.open');
+  await fullscreen.waitFor();
+  assert.equal(await fullscreen.evaluate(el => getComputedStyle(el).backgroundColor), before.color,
+    'Fullscreen and inline diagrams share the same background');
+  await page.locator('.mermaid-fs-close').click();
+  await fullscreen.waitFor({ state: 'hidden' });
+  await diagram.evaluate(el => el.classList.add('anno-block-comment', 'is-active'));
+  await diagram.hover();
+  await wait(200);
+  assert.deepEqual(await background(), before, 'Commented active/hovered diagram keeps its original background');
+  await diagram.evaluate(el => el.classList.remove('anno-block-comment', 'is-active'));
 
   await page.evaluate(() => localStorage.setItem('golem.tweaks.theme', 'loam'));
   await page.reload({ waitUntil: 'networkidle' });
@@ -98,7 +122,7 @@ try {
   await wait(400);
   const loam = await inspect();
   assert.equal(loam.theme, 'loam', 'Loam theme loads');
-  assert.match(loam.backgroundImage, /gradient/i, 'Margin rail remains visible in Loam');
+  assert.equal(loam.backgroundImage, 'none', 'No comment gradient in Loam');
   assert.notEqual(loam.boxShadow, 'none', 'Margin rail remains visible in Loam');
   await page.screenshot({ path: '/tmp/golem-ui-smoke/block-comment-decoration-loam.png', fullPage: true });
 
@@ -108,7 +132,7 @@ try {
   await wait(400);
   const dark = await inspect();
   assert.equal(dark.theme, 'dark', 'Dark theme loads');
-  assert.match(dark.backgroundImage, /gradient/i, 'Margin rail remains visible in Dark');
+  assert.equal(dark.backgroundImage, 'none', 'No comment gradient in Dark');
   assert.notEqual(dark.boxShadow, 'none', 'Margin rail remains visible in Dark');
   await page.screenshot({ path: '/tmp/golem-ui-smoke/block-comment-decoration-dark.png', fullPage: true });
   assert.deepEqual(pageErrors, [], `no page errors (got ${pageErrors.join(' | ')})`);

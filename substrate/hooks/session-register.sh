@@ -37,8 +37,7 @@ RAW_SESSION_ID=""
 SESSION_NAME=""
 CWD="$PWD"
 # harness: which agentic harness this session runs under. CC sends no such
-# field (defaults to claudecode); the opencode shim (TKT-0577) sets it to
-# "opencode" so the dashboard can distinguish the two. Additive — old readers
+# field (defaults to claudecode). Additive — old readers
 # ignore it.
 HARNESS="claudecode"
 MODEL=""
@@ -322,7 +321,7 @@ global_sync_on_register() {
   local log_file="$log_dir/global-sync-on-register.log"
   mkdir -p "$log_dir" 2>/dev/null || return 0
   (
-    for target in cc cc-marketplace opencode; do
+    for target in cc cc-marketplace; do
       "$cli" sync --check --target "$target" >> "$log_file" 2>&1
       local rc=$?
       if [ "$rc" -eq 1 ]; then

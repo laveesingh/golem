@@ -59,14 +59,13 @@ next-turn hook exists.
 
 ## Harness normalization
 
-Claude Code hooks and the OpenCode shim normalize into the same script stdin shape: `session_id`,
-`cwd`, `harness`, optional tool fields, and raw payload. Codex adapters record documented hook
-fields through the canonical locked session-fact writer; ordinary Codex remains pull-only while
-managed Codex uses the same authenticated typed envelope as active notifications. `SubagentStop`
+Claude Code hooks and the Pi extension normalize into the same script stdin shape: `session_id`,
+`cwd`, `harness`, optional tool fields, and raw payload. Adapters record documented hook
+fields through the canonical locked session-fact writer. `SubagentStop`
 records the child observation without changing the parent session status. Adapters remain
 non-blocking and fail-open.
 
-Managed Codex App Server delivery uses the supervisor-owned canonical actor binding. GOL-124
+Pi typed delivery uses the extension-owned canonical actor binding. GOL-124
 factors its loopback transport and lifecycle into `lib/typed-worker-endpoint.js`: each lease
 authenticates the canonical session and owner token, advertises a protocol version and readiness,
 bounds envelope bytes, and rejects stale owners and duplicate work. Dashboard records `claimed →
@@ -78,7 +77,4 @@ settled. Ticket rows and retries use one total per-session order; a duplicate te
 only settles bookkeeping consumes neither a native opportunity nor the cooldown. Passive cursors,
 subscriptions, and next-turn digests are retired and are not reintroduced by this lifecycle.
 
-Codex remains one adapter: it claims before `turn/start` and records correlated acceptance only
-after the native start result. An ambiguous start is recovery-required and cannot create a second
-turn. Role activation and interrupt/halt remain visibly gated for managed Codex. Ordinary Codex is
-pull-only; Claude Code and OpenCode retain the active-message contract.
+Claude Code and Pi retain the active-message contract.

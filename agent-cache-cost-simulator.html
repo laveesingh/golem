@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Loop Token-Cost Simulator — Prompt-Cache Edition</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1e2640; --line:#2b3552;
+    --ink:#e8ecf5; --muted:#9aa5c0; --faint:#6b7590;
+    --teal:#2dd4bf; --amber:#fbbf24; --rust:#fb7185; --violet:#a78bfa;
+    --blue:#60a5fa; --green:#34d399;
+    --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif}
+  header{padding:28px 24px 18px;max-width:1180px;margin:0 auto}
+  header h1{margin:0 0 6px;font-size:26px;letter-spacing:.2px}
+  header p{margin:4px 0;color:var(--muted);max-width:900px}
+  header .asof{display:inline-block;margin-top:10px;font-size:12.5px;color:var(--faint);
+    border:1px solid var(--line);border-radius:999px;padding:3px 12px;background:var(--panel)}
+  main{max-width:1180px;margin:0 auto;padding:0 24px 60px}
+  section.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:20px 22px;margin:18px 0}
+  h2{margin:0 0 4px;font-size:18px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 14px}
+  .presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .preset{border:2px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;
+    background:var(--panel2);transition:border-color .15s}
+  .preset.active{border-color:var(--teal)}
+  .preset h3{margin:0 0 2px;font-size:15px}
+  .preset .harness{font-size:12.5px;color:var(--muted)}
+  .preset .prices{font-family:var(--mono);font-size:12px;color:var(--ink);margin:8px 0;line-height:1.7}
+  .preset .prices b{color:var(--teal)}
+  .preset select{width:100%;margin-top:6px;background:#0f1526;color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12.5px}
+  .preset label{font-size:11.5px;color:var(--faint);display:block;margin-top:8px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .ctl{margin:12px 0}
+  .ctl .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+  .ctl label{font-size:13.5px}
+  .ctl output{font-family:var(--mono);font-size:14px;font-weight:700;color:#062a27;
+    background:var(--teal);border-radius:999px;padding:2px 12px;white-space:nowrap;margin-left:10px}
+  .ctl .row{gap:10px}
+  .scale{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);
+    font-family:var(--mono);margin-top:1px}
+  .ctl input[type=range]{width:100%;accent-color:var(--teal)}
+  .ctl .hint{font-size:12px;color:var(--faint);margin-top:2px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+  .chip{border:1px solid var(--line);background:#0f1526;color:var(--muted);border-radius:10px;
+    padding:6px 10px;font-family:var(--mono);font-size:12.5px;cursor:pointer;user-select:none}
+  .chip.warm{border-color:#134e4a;color:var(--teal)}
+  .chip.cold{border-color:#7c2d12;color:#fdba74;background:#2a1508}
+  .chip.locked{opacity:.55;cursor:not-allowed}
+  .btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  button{background:#0f1526;color:var(--ink);border:1px solid var(--line);border-radius:9px;
+    padding:7px 13px;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--teal)}
+  button.primary{background:#0d3b37;border-color:var(--teal);color:#bff5ec}
+  .toggle{display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-size:13.5px}
+  .toggle input{margin-top:4px;accent-color:var(--teal)}
+  .toggle small{display:block;color:var(--faint);font-size:12px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+  .kpi{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .kpi .v{font-family:var(--mono);font-size:19px;color:var(--teal)}
+  .kpi .k{font-size:11.5px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);font-family:var(--mono)}
+  th{color:var(--muted);font-family:inherit;font-weight:600;font-size:12px}
+  td:first-child,th:first-child{text-align:left;font-family:inherit}
+  td.coldtag{color:#fdba74} td.warmtag{color:var(--teal)}
+  tr.coldrow td{background:rgba(251,113,133,.05)}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);margin:8px 0}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:baseline}
+  svg.chart{width:100%;height:auto;background:#0f1526;border:1px solid var(--line);border-radius:10px}
+  details{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:10px 14px;margin:10px 0}
+  details summary{cursor:pointer;font-weight:600;font-size:14px}
+  details p,details li{font-size:13.5px;color:#c6cde2}
+  details table{font-size:12px}
+  details td,details th{font-family:inherit;text-align:left}
+  details td.num{text-align:right;font-family:var(--mono)}
+  code{background:#0f1526;border:1px solid var(--line);border-radius:6px;padding:1px 6px;
+    font-family:var(--mono);font-size:12.5px}
+  a{color:var(--blue)}
+  .turn{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;gap:12px;align-items:center;
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0}
+  .turn.coldrow{border-color:#7c2d12;background:#221207}
+  .tstat{border-radius:9px;padding:7px 12px;font-family:var(--mono);font-size:13px;font-weight:700;
+    cursor:pointer;border:1px solid #134e4a;background:#0d3b37;color:#bff5ec;white-space:nowrap}
+  .turn.coldrow .tstat{border-color:#7c2d12;background:#431407;color:#fdba74}
+  .tstat.locked{cursor:not-allowed}
+  .tmain{min-width:0}
+  .tline{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted);flex-wrap:wrap}
+  .tline b{color:var(--ink);font-family:var(--mono)}
+  .tbar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:#0f1526;margin:6px 0}
+  .tcost{font-family:var(--mono);font-size:12.5px}
+  .tcost span{color:var(--faint)}
+  .tfield{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)}
+  input.numin{width:88px;background:#0f1526;color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:6px 8px;font-family:var(--mono);font-size:13px}
+  input.numin:disabled{opacity:.4}
+  .tdel{border:1px solid var(--line);background:#0f1526;color:var(--muted);border-radius:8px;
+    padding:6px 10px;font-size:14px;cursor:pointer}
+  .tdel:hover{border-color:var(--rust);color:var(--rust)}
+  .tdel.locked{opacity:.3;cursor:not-allowed}
+  @media(max-width:760px){.turn{grid-template-columns:auto minmax(0,1fr);grid-auto-rows:auto}}
+  #dock{position:fixed;left:0;right:0;bottom:14px;z-index:50;display:flex;justify-content:center;
+    pointer-events:none;padding:0 12px}
+  .dock-inner{pointer-events:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+    background:rgba(23,30,46,.96);border:1px solid var(--teal);border-radius:16px;
+    padding:10px 16px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+  .dock-inner label{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .dock-total{font-family:var(--mono);font-size:13px;color:var(--teal);min-width:170px;text-align:right}
+  body{padding-bottom:92px}
+  .scrollx{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#0f1526}
+  .scrollx svg.chart{border:0;border-radius:0}
+  .turntable{border-collapse:collapse;margin:0;font-size:12.5px}
+  .turntable th{white-space:nowrap}
+  .turntable td.num{white-space:nowrap}
+  .turntable .tstat{padding:5px 9px;font-size:12px}
+  .tbar.sm{width:110px;min-width:110px;margin:0}
+  input.numin.sm{width:74px;padding:5px 6px;font-size:12px}
+  tr.coldrow td{background:rgba(251,113,133,.05)}
+  .foot{color:var(--faint);font-size:12.5px;margin-top:26px}
+  .pricegrid{width:100%;border-collapse:collapse;font-size:12px}
+  .pricegrid input{width:76px;background:#0f1526;color:var(--ink);border:1px solid var(--line);
+    border-radius:6px;padding:4px 6px;font-family:var(--mono);font-size:12px;text-align:right}
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent-Loop Token-Cost Simulator <span style="color:var(--teal)">· prompt-cache edition</span></h1>
+  <p>How KV-cache / prompt caching changes what you actually pay across multi-turn agent runs —
+  for <b>Claude Code</b> and <b>Pi</b>, across Anthropic and OpenAI models. Tune the scenario,
+  force cache-cold turns where you paused too long, and compare the bill.</p>
+  <span class="asof">Prices verified 16 Sep 2026 · Anthropic + OpenAI official docs (links below) · all $/1M tokens, USD</span>
+</header>
+
+<main>
+<!-- ============ 1. MODEL / HARNESS ============ -->
+<section class="panel">
+  <h2>1 · Pick the focus setup (model + harness)</h2>
+  <p class="sub">Click a card to focus it in §3. Each card carries its own cache-retention setting, used in the §4 comparison too. Prices are editable in §5.</p>
+  <div class="presets" id="presets"></div>
+</section>
+
+<!-- ============ 2. SCENARIO ============ -->
+<section class="panel">
+  <h2>2 · The agent-run scenario</h2>
+  <p class="sub">Build the run below: it starts with turn 1 (task load: instructions, tool schemas, repo context, about 20k tokens).
+  Every turn you append <b>re-sends the whole transcript so far</b> plus the previous turn's output and fresh tool results (the re-sent prefix is what the cache absorbs).
+  Append COLD turns where you paused past the retention window and watch the full context get re-billed at write price.</p>
+  <div class="grid2">
+    <div>
+      <div class="ctl">
+        <div class="row"><label>Initial context (turn-1 input)</label><output id="oC0"></output></div>
+        <input type="range" id="inC0" min="2000" max="200000" step="1000" value="20000">
+        <div class="hint">System prompt + tool definitions + repo context. Default 20,000.</div>
+      </div>
+      <div class="ctl">
+        <div class="row"><label>Default output for turns you add (billed as output, fed back next turn)</label><output id="oOut"></output></div>
+        <input type="range" id="inOut" min="200" max="8000" step="100" value="1800">
+        <div class="hint">Stamped onto each turn you append: override per turn in its row below.</div>
+      </div>
+      <!-- new-tail tokens moved to the floating dock below -->
+    </div>
+    <div>
+      <div class="ctl">
+        <label>How to build</label>
+        <div class="hint">Use the floating bar at the bottom: set the <b>new-tail</b> tokens (tool stdout arriving with the turn), then <b>+ Warm turn</b> or <b>+ Cold turn</b>. Each row in section 3 carries its own cold/warm flip, output and tail editors, mini cost bar and remove button.</div>
+        <div class="hint"><b>COLD</b> = pause exceeded the retention window (or prefix changed / model unloaded): full input re-billed at <b>write</b> price. Warm = prefix billed at <b>read</b> price.</div>
+        <div class="btnrow">
+          <button id="btnResetRun">Reset run (back to turn 1)</button>
+        </div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="inWriteDelta" checked>
+        <span>Bill each warm turn's new tail at <b>cache-write</b> price
+        <small>Harness re-marks a breakpoint on the new tail so the <i>next</i> turn can hit it (what Claude Code &amp; Pi both do). Untick to bill the tail at base input price instead (≈20–25% cheaper on the tail only).</small></span>
+      </label>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. FOCUS RESULT ============ -->
+<section class="panel">
+  <h2 id="focusTitle">3 · Run cost</h2>
+  <p class="sub" id="focusSub"></p>
+  <div class="kpis" id="kpis"></div>
+  <div id="turnList"></div>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--teal)"></span>cache read</span>
+    <span><span class="sw" style="background:var(--amber)"></span>cache write</span>
+    <span><span class="sw" style="background:var(--rust)"></span>fresh input (base price)</span>
+    <span><span class="sw" style="background:var(--violet)"></span>output</span>
+    <span>orange dashed outline + * = COLD turn (rows and chart share these colors)</span>
+  </div>
+  <div class="scrollx"><div id="turnChart"></div></div>
+  <!-- per-turn table retired: editable turn rows live in #turnList above -->
+  <div class="btnrow">
+    <button id="btnCsv">Export per-turn CSV</button>
+  </div>
+</section>
+
+<!-- ============ 4. COMPARE ============ -->
+<section class="panel">
+  <h2>4 · Same run, all four setups side by side</h2>
+  <p class="sub">Identical scenario (§2) and per-card retention settings (§1). The no-cache column bills every turn's full input at base input price — that's the world without KV-cache.</p>
+  <div id="cmpChart"></div>
+  <div style="overflow-x:auto"><table id="cmpTable"></table></div>
+</section>
+
+<!-- ============ 5. PRICES ============ -->
+<section class="panel">
+  <h2>5 · Price book (advanced — edit anything)</h2>
+  <p class="sub">Defaults are the verified list prices. Anthropic write price follows the card's TTL (5-min = 1.25×, 1-hour = 2×); OpenAI write = 1.25× list. Fable 5.1 reads are special: 0.025× base instead of 0.1×.</p>
+  <div style="overflow-x:auto"><table class="pricegrid" id="priceTable"></table></div>
+  <div class="btnrow"><button id="btnResetPrices">Reset to list prices</button></div>
+</section>
+
+<!-- ============ 6. LEARN ============ -->
+<section class="panel">
+  <h2>6 · What is actually going on (the in-depth bit)</h2>
+
+  <details open>
+    <summary>KV-cache / prompt caching in one paragraph</summary>
+    <p>A transformer re-computes attention over every input token on every request — unless the provider
+    kept the already-computed key/value tensors (<b>KV-cache</b>) for an exact prompt <b>prefix</b>.
+    In an agent loop the harness re-sends the whole transcript each turn, so turns 2…N mostly re-send
+    bytes the provider has already processed. Providers expose that reuse as <b>prompt caching</b>:
+    the first time a prefix is seen you pay a <b>cache-write</b> surcharge to store it; later identical
+    prefixes are billed at the cheap <b>cache-read</b> rate; <b>output tokens always cost full output price</b>
+    (including hidden reasoning tokens).</p>
+  </details>
+
+  <details open>
+    <summary>Retention windows — how long a cache stays warm</summary>
+    <table>
+      <tr><th>Provider / harness</th><th>Short / default</th><th>Long / extended</th><th>Notes</th></tr>
+      <tr><td>Anthropic API (Claude Code, Pi)</td><td class="num">5 min · write 1.25×</td><td class="num">1 h · write 2×</td><td>Read = 0.1× base (Fable 5.1: 0.025×). Every hit refreshes the TTL. Min ~1,024 cacheable tokens.</td></tr>
+      <tr><td>Claude Code harness</td><td class="num" colspan="2">marks long-lived breakpoints (≈1 h behaviour)</td><td>4 breakpoints over tools → system → messages. Toggle the card to 5-min to see the cheaper-write alternative.</td></tr>
+      <tr><td>OpenAI API (Pi)</td><td class="num" colspan="2">automatic prefix cache · 5–10 min idle, evicted ≤1 h</td><td>Min 1,024 tokens, 128-token increments. Stable prefix first; any edit breaks the hit from that point on.</td></tr>
+      <tr><td>Pi <code>PI_CACHE_RETENTION</code></td><td class="num">short: 5 min (Anthropic) / in-memory (OpenAI)</td><td class="num">long: 1 h (Anthropic) / 24 h (OpenAI, direct API only)</td><td><code>long</code> raises Anthropic write cost; OpenAI 24-h mode is legacy/deprecated surface.</td></tr>
+      <tr><td>Ollama (local, Pi custom provider)</td><td class="num" colspan="2">$0 per token · reuse while model stays loaded</td><td><code>keep_alive</code> default 5 min; prefix must be byte-identical; big prompts cost VRAM/latency, not dollars.</td></tr>
+    </table>
+  </details>
+
+  <details>
+    <summary>Anatomy of one warm turn vs one cold turn</summary>
+    <p><b>Warm:</b> input = <i>old transcript</i> (cache READ, e.g. $0.50/MTok on Opus 5) + <i>new tail</i>
+    (last output + tool results, cache WRITE so next turn hits). Only the small tail pays full-ish price —
+    that is the "tiny fraction at input cost" effect you described.</p>
+    <p><b>Cold:</b> the TTL lapsed (long tool run, lunch break, compaction, prefix edit, model unload).
+    The whole context — say 30–40k tokens by mid-run — is re-processed and re-written at <b>write</b> price
+    (2× base on Anthropic 1-h, 1.25× on 5-min/OpenAI). Mid-run colds dominate the bill, which is why this
+    simulator forces two of them (turns 5 and 9 by default).</p>
+  </details>
+
+  <details>
+    <summary>Subscription vs API — when these numbers apply</summary>
+    <p><b>Claude Code on a Pro/Max subscription:</b> flat monthly fee with a usage allowance — no per-token
+    bill inside the allowance; caching just stretches the allowance further. <b>Claude Code on API credits:</b>
+    every token bills exactly as simulated here. <b>Pi</b> is always BYO-key / OAuth-metered: the simulation
+    is the bill (plus any ChatGPT/Codex plan allowance on the OpenAI side). Ollama-local = $0 + your hardware.</p>
+  </details>
+
+  <details>
+    <summary>Assumptions &amp; limits of this simulator</summary>
+    <ul>
+      <li>Transcript resend model: input(n) = input(n-1) + output(n-1) + fresh(n). Each row's output/tail is editable; appended turns inherit the section-2 output default and the dock tail value. Compaction, summarisation, and sub-agent contexts are not modelled.</li>
+      <li>Warm-turn tail billed at write price by default (harness re-caches); toggle in §2 for base-price tail.</li>
+      <li>OpenAI cold turns billed at the 1.25× write rate; granularity (128-token steps) ignored — immaterial at these sizes.</li>
+      <li>OpenAI prompts &gt;272k input tokens bill 2× input/cache and 1.5× output — applied automatically, badge in the table.</li>
+      <li>Reasoning / thinking tokens (if any) bill as output; tool-call fees (search, code-execution) excluded.</li>
+      <li>Single-run view: no batch/flex discounts, no enterprise tiers, taxes excluded.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Sources (retrieved 16 Sep 2026)</summary>
+    <ul>
+      <li>Anthropic model + cache pricing (Fable 5.1 reads at 0.025×): <a href="https://platform.claude.com/docs/en/about-claude/pricing">platform.claude.com/docs/en/about-claude/pricing</a></li>
+      <li>Anthropic prompt-caching mechanics (TTL refresh, breakpoints, 20-block lookback): <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching">prompt-caching docs</a></li>
+      <li>GPT-5.6 Sol pricing ($4 / $0.40 / $20, writes 1.25×): <a href="https://developers.openai.com/api/docs/models/gpt-5.6-sol">developers.openai.com …/gpt-5.6-sol</a></li>
+      <li>GPT-6 Astra pricing ($10 / $1 / $50, writes $12.50): <a href="https://developers.openai.com/api/docs/models/gpt-6-astra">developers.openai.com …/gpt-6-astra</a></li>
+      <li>OpenAI automatic prefix caching (1,024 min, 5–10 min idle, ≤1 h): <a href="https://openai.com/index/api-prompt-caching/">openai.com/index/api-prompt-caching</a></li>
+      <li>Pi providers &amp; Ollama setup: <a href="https://pi.dev/docs/latest/providers">pi.dev/docs/latest/providers</a> · <a href="https://docs.ollama.com/integrations/pi">docs.ollama.com/integrations/pi</a></li>
+      <li>Pi <code>PI_CACHE_RETENTION</code> (short vs long): <a href="https://pi.dev/news/releases/0.50.2">pi.dev/news/releases/0.50.2</a></li>
+    </ul>
+  </details>
+</section>
+
+<div id="dock"><div class="dock-inner">
+  <label>New tail <input class="numin" id="dockFresh" type="number" min="0" step="100" value="700"> tok</label>
+  <button id="addWarm" class="primary">+ Warm turn</button>
+  <button id="addCold">+ Cold turn</button>
+  <div class="dock-total" id="dockTotal"></div>
+</div></div>
+<p class="foot">Single-file simulator — no network calls, no dependencies. Numbers are list-price estimates for reasoning about cache behaviour, not invoices.</p>
+</main>
+
+<script>
+'use strict';
+/* ---------- price book (list prices, $/1M) ---------- */
+const LIST = {
+  fable:{label:'Claude Fable 5.1',harness:'Claude Code',provider:'anthropic',
+    input:10,write5:12.50,write1:20,read:0.25,output:50,ttl:'1h',
+    blurb:'Frontier reasoning · reads at 0.025× base'},
+  opus:{label:'Claude Opus 5',harness:'Claude Code',provider:'anthropic',
+    input:5,write5:6.25,write1:10,read:0.50,output:25,ttl:'1h',
+    blurb:'Workhorse coding model'},
+  sol:{label:'GPT-5.6 Sol',harness:'Pi',provider:'openai',
+    input:4,cached:0.40,write:5.00,output:20,retention:'auto',
+    blurb:'Flagship GPT-5.6 · promo thru 21 Nov 2026'},
+  astra:{label:'GPT-6 Astra',harness:'Pi',provider:'openai',
+    input:10,cached:1.00,write:12.50,output:50,retention:'auto',
+    blurb:'Most capable · hardest end-to-end work'}
+};
+const ORDER = ['fable','opus','sol','astra'];
+let prices = JSON.parse(JSON.stringify(LIST));
+
+/* ---------- scenario state ---------- */
+const S = {focus:'opus', C0:20000, O:1800, F:700,
+  turns:[{cold:true,out:1800,fresh:0}], writeDelta:true};
+
+const $ = id => document.getElementById(String(id).replace(/^#/, ''));
+const fmtT = n => Math.round(n).toLocaleString('en-US');
+const fmt$ = n => n < 1 ? '$'+n.toFixed(4) : '$'+n.toFixed(2);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+
+/* ---------- core simulation (pure) ---------- */
+function rates(key){
+  const p = prices[key];
+  if(p.provider==='anthropic'){
+    return {inP:p.input,
+      writeP:(p.ttl==='1h'?p.write1:p.write5),
+      readP:p.read, outP:p.output,
+      tag:p.ttl==='1h'?'1-hour TTL (write 2×)':'5-min TTL (write 1.25×)'};
+  }
+  return {inP:p.input, writeP:p.write,
+    readP:p.cached, outP:p.output,
+    tag:p.retention==='long24'?'extended 24-h retention':'automatic cache (5–10 min idle)'};
+}
+function simulate(key){
+  const p = prices[key], r = rates(key);
+  const rows=[]; let prev=null, cum=0;
+  let tIn=0,tRead=0,tWrite=0,tFresh=0,tOut=0,cIn=0,cOut=0;
+  for(let i=0;i<S.turns.length;i++){
+    const n=i+1, t=S.turns[i];
+    const input = i===0 ? S.C0 : prev + S.turns[i-1].out + t.fresh;
+    const cold = i===0 ? true : t.cold;
+    const uplift = (p.provider==='openai' && input>272000);
+    const mIn = uplift?2:1, mOut = uplift?1.5:1;
+    let read=0, write=0, fresh=0, costIn=0;
+    if(cold){ write=input; costIn = input/1e6*r.writeP*mIn; }
+    else{
+      read = prev;
+      const delta = S.turns[i-1].out + t.fresh;
+      if(S.writeDelta){ write=delta; costIn=(read*r.readP + delta*r.writeP)/1e6*mIn; }
+      else{ fresh=delta; costIn=(read*r.readP + delta*r.inP)/1e6*mIn; }
+    }
+    const costOut = t.out/1e6*r.outP*mOut;
+    const total = costIn+costOut; cum+=total;
+    tIn+=input; tRead+=read; tWrite+=write; tFresh+=fresh; tOut+=t.out;
+    cIn+=costIn; cOut+=costOut;
+    rows.push({n,cold,input,read,write,fresh,out:t.out,costIn,costOut,total,cum,uplift});
+    prev=input;
+  }
+  // no-cache baseline
+  let base=0;
+  { let prev2=null;
+    for(let i=0;i<S.turns.length;i++){
+      const t=S.turns[i];
+      const input = i===0?S.C0:prev2+S.turns[i-1].out+t.fresh;
+      const up=(p.provider==='openai'&&input>272000);
+      base += input/1e6*r.inP*(up?2:1) + t.out/1e6*r.outP*(up?1.5:1);
+      prev2=input;
+    } }
+  const total=cIn+cOut;
+  return {rows,total,cIn,cOut,base,saved:base-total,savedPct:100*(base-total)/base,
+    hitRate:100*tRead/tIn, blendIn:1e6*cIn/tIn, avgTurn:total/S.turns.length, tIn,tRead,tOut,rates:r};
+}
+
+/* ---------- preset cards ---------- */
+function renderPresets(){
+  $('presets').innerHTML = ORDER.map(k=>{
+    const p=prices[k], L=LIST[k];
+    const priceLine = p.provider==='anthropic'
+      ? `in <b>$${p.input}</b> · write <b>$${(p.ttl==='1h'?p.write1:p.write5).toFixed(2)}</b> · read <b>$${p.read}</b> · out <b>$${p.output}</b>`
+      : `in <b>$${p.input}</b> · write <b>$${p.write.toFixed(2)}</b> · cached <b>$${p.cached}</b> · out <b>$${p.output}</b>`;
+    const sel = p.provider==='anthropic'
+      ? `<label>Cache TTL
+         <select data-k="${k}" data-f="ttl">
+           <option value="1h"${p.ttl==='1h'?' selected':''}>1 hour — write 2× base</option>
+           <option value="5m"${p.ttl==='5m'?' selected':''}>5 minute — write 1.25× base</option>
+         </select></label>`
+      : `<label>Cache retention (Pi)
+         <select data-k="${k}" data-f="retention">
+           <option value="auto"${p.retention==='auto'?' selected':''}>Automatic — 5–10 min idle</option>
+           <option value="long24"${p.retention==='long24'?' selected':''}>Extended 24 h (Pi long, direct API)</option>
+         </select></label>`;
+    return `<div class="preset${S.focus===k?' active':''}" data-pick="${k}">
+      <h3>${esc(p.label)}</h3>
+      <div class="harness">via ${esc(p.harness)} · ${p.provider==='anthropic'?'Anthropic API':'OpenAI API'} · ${esc(L.blurb)}</div>
+      <div class="prices">$/1M — ${priceLine}</div>${sel}</div>`;
+  }).join('');
+  document.querySelectorAll('[data-pick]').forEach(el=>
+    el.addEventListener('click',e=>{ if(e.target.tagName!=='SELECT'){S.focus=el.dataset.pick; renderAll();} }));
+  document.querySelectorAll('.preset select').forEach(el=>
+    el.addEventListener('change',()=>{ prices[el.dataset.k][el.dataset.f]=el.value; renderAll(); }));
+}
+
+/* ---------- scenario controls ---------- */
+function bindRange(id,out,fmt,fn){
+  const el=$(id);
+  const scale=document.createElement('div');
+  scale.className='scale';
+  scale.innerHTML='<span>'+esc(fmt(+el.min))+'</span><span>'+esc(fmt(+el.max))+'</span>';
+  el.after(scale);
+  const upd=()=>{ $(out).textContent=fmt(+el.value); fn(+el.value); };
+  el.addEventListener('input',()=>{ $(out).textContent=fmt(+el.value); fn(+el.value); renderResults(); });
+  upd();
+}
+function renderTurns(sim,segs){
+  const box=$('turnList');
+  const dot=' \u00b7 ';
+  box.innerHTML=`<div class="scrollx"><table class="turntable">`+
+    `<tr><th>Turn</th><th>Mix</th><th>Input tok</th><th>Out tok</th><th>Fresh tail</th>`+
+    `<th>Read $</th><th>Write/new $</th><th>Output $</th><th>Turn $</th><th>Cumul $</th><th></th></tr>`+
+    sim.rows.map((r,i)=>{
+    const {cR,cW,cF}=segs[i], t=S.turns[i];
+    const tot=r.total||1e-9;
+    const pct=v=>Math.max(0,100*v/tot).toFixed(1)+'%';
+    return `<tr class="${r.cold?'coldrow':''}">`+
+      `<td><button class="tstat${i===0?' locked':''}" data-flip="${i}"${i===0?' disabled':''} title="${i===0?'Turn 1 always pays full write price':'Click to flip warm/cold'}">T${r.n}${dot}${r.cold?'COLD':'warm'}</button></td>`+
+      `<td><div class="tbar sm"><div style="width:${pct(cR)};background:#2dd4bf"></div><div style="width:${pct(cW)};background:#fbbf24"></div><div style="width:${pct(cF)};background:#fb7185"></div><div style="width:${pct(r.costOut)};background:#a78bfa"></div></div></td>`+
+      `<td class="num">${fmtT(r.input)}${r.uplift?' (2x)':''}</td>`+
+      `<td><input class="numin sm" type="number" min="0" step="100" value="${t.out}" data-out="${i}" title="Model output this turn"></td>`+
+      (i===0
+        ? `<td class="num">--</td>`
+        : `<td><input class="numin sm" type="number" min="0" step="100" value="${t.fresh}" data-fr="${i}" title="Fresh tail arriving with this turn"></td>`)+
+      `<td class="num">${cR?cR.toFixed(4):'--'}</td><td class="num">${(cW+cF).toFixed(4)}</td><td class="num">${r.costOut.toFixed(4)}</td>`+
+      `<td class="num"><b>${r.total.toFixed(4)}</b></td><td class="num">${r.cum.toFixed(4)}</td>`+
+      (i===0
+        ? `<td><button class="tdel locked" disabled title="Turn 1 is the anchor of the run">\u00d7</button></td>`
+        : `<td><button class="tdel" data-del="${i}" title="Remove this turn">\u00d7</button></td>`)+
+      `</tr>`;
+    }).join('')+`</table></div>`;
+  box.querySelectorAll('[data-flip]').forEach(b=>b.addEventListener('click',()=>{
+    const i=+b.dataset.flip; if(i===0) return;
+    S.turns[i].cold=!S.turns[i].cold; renderResults(); }));
+  box.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
+    S.turns.splice(+b.dataset.del,1); renderResults(); }));
+  box.querySelectorAll('[data-out]').forEach(el=>el.addEventListener('change',()=>{
+    S.turns[+el.dataset.out].out=Math.max(0,Math.round(+el.value||0)); renderResults(); }));
+  box.querySelectorAll('[data-fr]').forEach(el=>el.addEventListener('change',()=>{
+    S.turns[+el.dataset.fr].fresh=Math.max(0,Math.round(+el.value||0)); renderResults(); }));
+}
+
+/* ---------- results ---------- */
+function renderResults(){
+  const key=S.focus, p=prices[key], sim=simulate(key);
+  $('focusTitle').textContent=`3 · Run cost — ${p.label} via ${p.harness}`;
+  const coldList=sim.rows.filter(r=>r.cold).map(r=>'T'+r.n).join(', ');
+  $('focusSub').textContent=`${sim.rates.tag} - ${sim.rows.length} turn${sim.rows.length===1?'':'s'} - ${fmtT(sim.tIn)} input tokens in - cold: ${coldList}`;
+  $('kpis').innerHTML=[
+    ['Total run',fmt$(sim.total)],
+    ['No-cache baseline',fmt$(sim.base)],
+    ['Saved by cache',fmt$(sim.saved)+` (${sim.savedPct.toFixed(0)}%)`],
+    ['Avg / turn',fmt$(sim.avgTurn)],
+    ['Input spend',fmt$(sim.cIn)],
+    ['Output spend',fmt$(sim.cOut)],
+    ['Cache hit rate',sim.hitRate.toFixed(1)+'% of input'],
+    ['Blended input', '$'+sim.blendIn.toFixed(2)+'/1M']
+  ].map(([k,v])=>`<div class="kpi"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+  // stacked bar chart
+  const W=Math.max(640,sim.rows.length*64), H=280, padL=64, padB=36, padT=16;
+  const max=Math.max(...sim.rows.map(r=>r.total))*1.12;
+  const bw=(W-padL-14)/sim.rows.length;
+  // per-row cost segments (input split into read / write / fresh)
+  const segs=sim.rows.map(r=>{
+    const rp=sim.rates;
+    const cR=r.read/1e6*rp.readP*(r.uplift&&p.provider==='openai'?2:1);
+    const cW=r.write/1e6*rp.writeP*(r.uplift&&p.provider==='openai'?2:1);
+    const cF=r.fresh/1e6*rp.inP*(r.uplift&&p.provider==='openai'?2:1);
+    return {cR,cW,cF};
+  });
+  let svg=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
+  for(let g=0;g<=3;g++){
+    const y=padT+(H-padT-padB)*g/3, v=max*(1-g/3);
+    svg+=`<line x1="${padL}" y1="${y}" x2="${W-6}" y2="${y}" stroke="#2b3552"/>`+
+      `<text x="4" y="${y+4}" fill="#6b7590" font-size="11" font-family="monospace">${v<1?'$'+v.toFixed(2):'$'+v.toFixed(1)}</text>`;
+  }
+  sim.rows.forEach((r,i)=>{
+    const {cR,cW,cF}=segs[i];
+    const x=padL+i*bw+3, w=Math.max(8,bw-6);
+    const tot=r.total, y0=H-padB;
+    const y=v=>y0-(v/max)*(H-padT-padB);
+    let acc=0;
+    const part=(val,col)=>{ if(val<=0)return'';
+      const yA=y(acc+val), yB=y(acc); acc+=val;
+      return `<rect x="${x.toFixed(1)}" y="${yA.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1,yB-yA).toFixed(1)}" fill="${col}"/>`; };
+    svg+=part(cR,'#2dd4bf')+part(cW,'#fbbf24')+part(cF,'#fb7185')+part(r.costOut,'#a78bfa');
+    if(r.cold) svg+=`<rect x="${x.toFixed(1)}" y="${y(tot).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(2,(y0-y(tot))).toFixed(1)}" fill="none" stroke="#fdba74" stroke-dasharray="4 3" rx="3"/>`;
+    svg+=`<text x="${(x+w/2).toFixed(1)}" y="${H-14}" fill="${r.cold?'#fdba74':'#6b7590'}" font-size="11" text-anchor="middle" font-family="monospace">${r.cold?('T'+r.n+'*'):('T'+r.n)}</text>`;
+  });
+  svg+='</svg>';
+  $('turnChart').style.minWidth=W+'px';
+  $('turnChart').innerHTML=svg;
+
+  renderTurns(sim,segs);
+  $('dockTotal').textContent=sim.rows.length+(sim.rows.length===1?' turn - ':' turns - ')+fmt$(sim.total)+' total';
+
+  renderCompare();
+}
+
+/* ---------- comparison ---------- */
+function renderCompare(){
+  const sims=ORDER.map(k=>({k,p:prices[k],s:simulate(k)}));
+  const max=Math.max(...sims.map(o=>o.s.total));
+  const BW=460;
+  let svg=`<svg class="chart" viewBox="0 0 640 ${sims.length*64+24}" role="img">`;
+  sims.forEach((o,i)=>{
+    const y=14+i*64, w=Math.max(3,(o.s.total/max)*BW);
+    svg+=`<text x="0" y="${y+14}" fill="#e8ecf5" font-size="12">${esc(o.p.label)} · ${esc(o.p.harness)}</text>`;
+    svg+=`<rect x="0" y="${y+20}" width="${w.toFixed(0)}" height="18" rx="4" fill="${S.focus===o.k?'#2dd4bf':'#3b82a6'}"/>`;
+    svg+=`<text x="${(w+8).toFixed(0)}" y="${y+34}" fill="#9aa5c0" font-size="12" font-family="monospace">${fmt$(o.s.total)} · saves ${o.s.savedPct.toFixed(0)}%</text>`;
+  });
+  svg+='</svg>';
+  $('cmpChart').innerHTML=svg;
+  let t=`<tr><th>Setup</th><th>Total</th><th>Input $</th><th>Output $</th><th>No-cache</th><th>Saved</th><th>Hit rate</th><th>Blended in $/1M</th></tr>`;
+  sims.forEach(o=>{
+    t+=`<tr><td>${esc(o.p.label)} · ${esc(o.p.harness)}</td><td><b>${fmt$(o.s.total)}</b></td>`+
+      `<td>${fmt$(o.s.cIn)}</td><td>${fmt$(o.s.cOut)}</td><td>${fmt$(o.s.base)}</td>`+
+      `<td>${o.s.savedPct.toFixed(1)}%</td><td>${o.s.hitRate.toFixed(1)}%</td><td>$${o.s.blendIn.toFixed(2)}</td></tr>`;
+  });
+  $('cmpTable').innerHTML=t;
+}
+
+/* ---------- price editor ---------- */
+function renderPriceTable(){
+  const cell=(k,f)=>`<input data-k="${k}" data-f="${f}" type="number" step="0.01" min="0" value="${prices[k][f]}">`;
+  let t=`<tr><th style="text-align:left">Setup</th><th>Input $/1M</th><th>Write 5m</th><th>Write 1h / OAI write</th><th>Read / cached</th><th>Output $/1M</th></tr>`;
+  ORDER.forEach(k=>{
+    const p=prices[k];
+    t+=`<tr><td style="text-align:left">${esc(p.label)}</td><td class="num">${cell(k,'input')}</td>`+
+      (p.provider==='anthropic'
+        ? `<td class="num">${cell(k,'write5')}</td><td class="num">${cell(k,'write1')}</td><td class="num">${cell(k,'read')}</td>`
+        : `<td class="num">—</td><td class="num">${cell(k,'write')}</td><td class="num">${cell(k,'cached')}</td>`)+
+      `<td class="num">${cell(k,'output')}</td></tr>`;
+  });
+  $('priceTable').innerHTML=t;
+  document.querySelectorAll('#priceTable input').forEach(el=>
+    el.addEventListener('change',()=>{ prices[el.dataset.k][el.dataset.f]=+el.value||0; renderAll(); }));
+}
+
+/* ---------- misc ---------- */
+function renderAll(){ renderPresets(); renderResults(); }
+$('btnResetRun').onclick=()=>{ S.turns=[{cold:true,out:S.O,fresh:0}]; renderResults(); };
+$('addWarm').onclick=()=>addTurn(false);
+$('addCold').onclick=()=>addTurn(true);
+$('dockFresh').onchange=e=>{ S.F=Math.max(0,Math.round(+e.target.value||0)); e.target.value=S.F; };
+function addTurn(cold){
+  S.turns.push({cold,out:S.O,fresh:Math.max(0,Math.round(S.F))});
+  renderResults();
+  const items=document.querySelectorAll('#turnList tr');
+  const last=items[items.length-1];
+  if(last&&last.scrollIntoView) last.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+$('btnResetPrices').onclick=()=>{ prices=JSON.parse(JSON.stringify(LIST)); renderPresets(); renderPriceTable(); renderResults(); };
+$('inWriteDelta').onchange=e=>{ S.writeDelta=e.target.checked; renderResults(); };
+$('btnCsv').onclick=()=>{
+  const sim=simulate(S.focus), p=prices[S.focus];
+  let csv='turn,cache,input_tokens,cached_tokens,new_tail_tokens,output_tokens,read_usd,write_new_usd,output_usd,turn_usd,cumul_usd\n';
+  const rp=sim.rates;
+  sim.rows.forEach(r=>{
+    const m=r.uplift&&p.provider==='openai'?2:1;
+    const cR=r.read/1e6*rp.readP*m, cW=r.write/1e6*rp.writeP*m, cF=r.fresh/1e6*rp.inP*m;
+    csv+=`${r.n},${r.cold?'cold':'warm'},${r.input},${r.read},${r.write+r.fresh},${r.out},${cR.toFixed(6)},${(cW+cF).toFixed(6)},${r.costOut.toFixed(6)},${r.total.toFixed(6)},${r.cum.toFixed(6)}\n`;
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`agent-cache-sim_${S.focus}_${sim.rows.length}turns.csv`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+};
+
+/* ---------- init ---------- */
+bindRange('#inC0','#oC0',v=>fmtT(v)+' tok',v=>S.C0=v);
+bindRange('#inOut','#oOut',v=>fmtT(v)+' tok',v=>S.O=v);
+renderPresets(); renderPriceTable(); renderResults();
+</script>
+</body>
+</html>

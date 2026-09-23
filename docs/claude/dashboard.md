@@ -46,8 +46,7 @@ The settings page contains three extension sections:
 - A reserved work-loop settings section for future controls.
 
 The sync route uses the same compiler engine and adapters as `golem sync`, so
-dashboard and CLI status should agree. opencode config validation still delegates
-to `opencode debug config` when the binary is available.
+dashboard and CLI status should agree.
 
 ## Tracker Comment Dispatch
 
@@ -84,8 +83,7 @@ next batch would find nothing to send. Instead both routes **return 502 and roll
 the enqueue back** (`cancelDispatches`), returning every comment to
 `undispatched` so the human can retry against a reachable session. `recomputeState`
 treats an all-cancelled row set as "never delivered", not as `addressed`. The
-push carries a durable `session_notify` envelope because a managed Codex
-supervisor rejects any brief without one.
+push carries a durable `session_notify` envelope addressed to the target session.
 
 Delivery is active. The durable comment/report is written first, then the dashboard sends a
 `session_notify` envelope to the exact target session id. The event ledger remains audit and

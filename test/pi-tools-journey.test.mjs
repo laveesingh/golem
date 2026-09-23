@@ -112,27 +112,18 @@ try {
   worker = harness(extension, 'pi-tools-worker');
   await worker.emit('session_start', { reason: 'startup' });
 
-  // GOL-335 D2: the actual Pi registration is the product surface. It must be
-  // the CLI-first selection — omit the outbound delivery/discovery tools, adapt
-  // descriptions — not just a contract list that happens to match.
-  const { resolveToolSurface, toolsForSurface } = await import(pathToFileURL(path.join(repo, 'lib/golem-tool-contracts.js')));
+  // GOL-365: the full shared contract list is the only tool surface. Pi must
+  // register exactly it — no outbound delivery/discovery tools, no hidden ones.
+  const { GOLEM_TOOL_CONTRACTS } = await import(pathToFileURL(path.join(repo, 'lib/golem-tool-contracts.js')));
   const registeredNames = [...worker.tools.keys()];
-  const cliFirstContracts = toolsForSurface(resolveToolSurface('cli-first'));
-  assert.deepEqual(registeredNames.sort(), cliFirstContracts.map((c) => c.name).sort(),
-    'Pi registers exactly the CLI-first surface');
+  assert.deepEqual(registeredNames.sort(), GOLEM_TOOL_CONTRACTS.map((c) => c.name).sort(),
+    'Pi registers exactly the shared contract list');
   assert.ok(!worker.tools.has('session_notify') && !worker.tools.has('sessions_dispatchable'),
-    'Pi must not register the outbound delivery/discovery tools');
-  for (const contract of cliFirstContracts) {
+    'Pi must not register the retired outbound delivery/discovery tools');
+  for (const contract of GOLEM_TOOL_CONTRACTS) {
     const registered = worker.tools.get(contract.name);
-    assert.equal(registered.description, contract.description, `description adapted for ${contract.name}`);
-    assert.ok(!JSON.stringify(registered).includes('sessions_dispatchable'), `${contract.name} must not reference hidden discovery tools`);
+    assert.ok(registered, `${contract.name}: registered`);
   }
-  // Negative control: the compatibility surface (with the outbound tools) must
-  // fail this same checker, proving the check discriminates by surface.
-  assert.throws(() => {
-    assert.deepEqual(registeredNames.sort(), toolsForSurface(resolveToolSurface('compatibility')).map((c) => c.name).sort(),
-      'compatibility surface must not match the CLI-first registration');
-  }, 'restoring a hidden tool to the registered set must fail the CLI-first check');
 
   const role = await worker.tools.get('session_role').execute('role-call', { role: 'builder' }, undefined, undefined, worker.ctx);
   assert.equal(role.details.ok, true, role.content[0].text);
@@ -168,7 +159,12 @@ try {
   assert.equal(roleChangeBody.activation?.ok, true, JSON.stringify(roleChangeBody));
   assert.equal(worker.sent.length, 0, 'role assignment never starts a Pi turn');
   const prompt = await worker.emit('before_agent_start', { prompt: 'review next', systemPrompt: 'Pi base prompt' });
-  assert.match(prompt.systemPrompt, /Role: reviewer/, 'dashboard role change applies at the next safe boundary');
+  // GOL-377: injection mechanic — the rendered role card for the NEW role is
+  // injected verbatim and the previous role's card is no longer present.
+  const reviewerCard = fs.readFileSync(path.join(render, 'roles', 'reviewer.md'), 'utf8').trim();
+  const leadCard = fs.readFileSync(path.join(render, 'roles', 'lead.md'), 'utf8').trim();
+  assert.ok(reviewerCard.length > 0 && prompt.systemPrompt.includes(reviewerCard), 'dashboard role change applies at the next safe boundary (rendered reviewer card injected)');
+  assert.ok(!prompt.systemPrompt.includes(leadCard), 'the previous lead card is no longer injected after the role change');
 
   // Pi is a full participant: the lead role is assignable like any other
   // harness, and the lead card is injected at the next safe boundary.
@@ -178,7 +174,7 @@ try {
   const leadChangeBody = await leadChange.json();
   assert.equal(leadChange.ok, true, JSON.stringify(leadChangeBody));
   const leadPrompt = await worker.emit('before_agent_start', { prompt: 'lead next', systemPrompt: 'Pi base prompt' });
-  assert.match(leadPrompt.systemPrompt, /Role: lead/, 'lead role card applies at the next safe boundary');
+  assert.ok(leadPrompt.systemPrompt.includes(leadCard) && !leadPrompt.systemPrompt.includes(reviewerCard), 'lead role card applies at the next safe boundary (reviewer card gone)');
 
   // Back to a worker role for the rest of the journey.
   const backToReviewer = await fetch(`${baseUrl}/api/sessions/pi-tools-worker/role`, {
@@ -186,7 +182,7 @@ try {
   });
   assert.equal(backToReviewer.ok, true, JSON.stringify(await backToReviewer.json()));
   const afterRole = await worker.emit('before_agent_start', { prompt: 'review remains', systemPrompt: 'Pi base prompt' });
-  assert.match(afterRole.systemPrompt, /Role: reviewer/, 'role change applies at the next safe boundary');
+  assert.ok(afterRole.systemPrompt.includes(reviewerCard) && !afterRole.systemPrompt.includes(leadCard), 'role change applies at the next safe boundary');
 
   console.log('Pi native tool journey passed: shared tracker identity, read/comment/transition, L4, and safe-boundary role refresh');
 } finally {

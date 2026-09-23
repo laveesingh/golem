@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// P7 settings-page journey smoke. Runs an isolated dashboard, opens /settings in
-// headless Chrome, toggles opencode off, verifies disabled matrix cells, clicks
-// Sync Now, and captures a screenshot for review evidence.
+// P7 settings-page journey smoke (GOL-365: Pi/Claude only). Runs an isolated
+// dashboard, opens /settings in headless Chrome, toggles the claudecode
+// harness off, verifies disabled matrix cells, clicks Sync Now, and captures a
+// screenshot for review evidence.
 
 import os from 'node:os';
 import path from 'node:path';
@@ -81,7 +82,6 @@ let chrome = null;
 try {
   await waitForHealth();
   check('server: /api/health ok', true);
-  await putConfig({ harnesses: { opencode: { enabled: true } } });
 
   chrome = await acquireChrome();
   const page = await chrome.browser.newPage();
@@ -89,18 +89,24 @@ try {
   await page.waitForSelector('[data-testid="sync-matrix"]', { timeout: 15000 });
   check('settings page: matrix renders', await page.locator('[data-testid="sync-matrix"]').count() === 1);
   check('settings page: commands are neutral', await page.locator('tbody tr', { hasText: 'commands' }).locator('.settings-chip.error').count() === 0);
-  check('settings page: opencode hooks managed by runtime shim', await page.locator('.settings-chip', { hasText: 'runtime shim' }).count() > 0);
-  check('settings page: opencode mcp managed by config merge', await page.locator('.settings-chip', { hasText: 'config merge' }).count() > 0);
   check('settings page: initial drift is visible', await page.locator('.settings-chip.drifted').count() > 0);
 
-  const oc = page.locator('[data-testid="harness-opencode"]');
-  check('settings page: opencode switch initially enabled', await oc.isChecked());
-  await oc.click();
+  const cc = page.locator('[data-testid="harness-claudecode"]');
+  check('settings page: claudecode switch initially enabled', await cc.isChecked());
+  await cc.click();
   await page.waitForFunction(() => {
     const chips = [...document.querySelectorAll('.settings-chip')];
     return chips.some((n) => n.textContent.trim() === 'disabled');
   }, null, { timeout: 10000 });
-  check('settings page: toggle opencode off shows disabled cells', await page.locator('.settings-chip.disabled').count() > 0);
+  check('settings page: toggle claudecode off shows disabled cells', await page.locator('.settings-chip.disabled').count() > 0);
+
+  // Re-enable the harness so Sync Now actually renders (not a skip) and the
+  // initial claudecode drift is cleared by the sync.
+  await cc.click();
+  await page.waitForFunction(() => {
+    const chips = [...document.querySelectorAll('.settings-chip')];
+    return !chips.some((n) => n.textContent.trim() === 'disabled');
+  }, null, { timeout: 10000 });
 
   await page.locator('[data-testid="sync-now"]').click();
   await page.waitForSelector('[data-testid="sync-result"]', { timeout: 30000 });

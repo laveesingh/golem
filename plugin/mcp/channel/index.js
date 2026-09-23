@@ -29,8 +29,11 @@ import {
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import * as tracker from './tracker-client.js';
-import { resolveToolSurface, toolsForSurface } from '../../lib/golem-tool-contracts.js';
-import { bridgeEndpointForParent, managedCodexBinding, resolveCallerSessionId, resolveProjectCwd, sessionsForParent } from './identity.js';
+import { GOLEM_TOOL_CONTRACTS } from '../../lib/golem-tool-contracts.js';
+
+// GOL-365: the full shared contract list is the only tool surface.
+const GOLEM_TOOL_LIST = GOLEM_TOOL_CONTRACTS.map((c) => ({ name: c.name, description: c.description, inputSchema: c.inputSchema }));
+import { resolveCallerSessionId, resolveProjectCwd, sessionsForParent } from './identity.js';
 import { readClaudeSessionRecord } from '../../lib/claude-session-context.js';
 import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../../lib/session-role.js';
 import { releaseEndpointLeases, renewEndpointLease, upsertSessionFact } from '../../lib/session-facts.js';
@@ -57,20 +60,11 @@ const ALLOWED_SENDERS = new Set(
     .map((s) => s.trim())
     .filter(Boolean),
 );
-// A Golem-owned Codex App Server uses this process only as a stdio MCP server.
+// Golem sessions consume this process as a stdio MCP server.
 // Its supervisor is the sole addressed-delivery endpoint; binding an ordinary
 // channel HTTP port here would create a second, unauthenticated route and make
 // the dashboard falsely believe generic Claude notification delivery works.
-const MANAGED_CODEX_MCP_ONLY = process.env.GOLEM_MANAGED_CODEX_MCP_ONLY === '1';
 
-// Trusted launch selection (GOL-335 D2): the launching config chooses the tool
-// surface — Claude's rendered plugin mcp.json sets GOLEM_TOOL_SURFACE=cli-first;
-// Codex/OpenCode constructions leave it unset and keep the compatibility list.
-// An invalid explicit selection refuses to boot rather than silently advertising
-// an unintended surface. This is advertisement policy only: it never authorizes
-// a caller or replaces identity validation.
-const TOOL_SURFACE = resolveToolSurface(process.env.GOLEM_TOOL_SURFACE);
-const OMITTED_TOOLS = new Set(TOOL_SURFACE.omitted);
 
 // Identity for chat-routing and dispatch.
 //
@@ -93,8 +87,6 @@ function readParentSessionFile() {
   return null;
 }
 function deriveSessionId() {
-  const managed = managedCodexBinding();
-  if (managed.enabled) return managed.sessionId || '';
   // Explicit launcher override wins; else the logical id from the parent session
   // file; else the per-run CLAUDE_CODE_SESSION_ID (last resort — diverges on resume).
   if (process.env.GOLEM_CEO_SESSION_ID) return process.env.GOLEM_CEO_SESSION_ID;
@@ -105,8 +97,7 @@ function deriveSessionId() {
 function deriveSessionName() {
   const j = readParentSessionFile();
   if (j && typeof j.name === 'string' && j.name) return j.name;
-  const bridge = bridgeEndpointForParent({ home: tracker.golemHome() });
-  return bridge && typeof bridge.name === 'string' && bridge.name ? bridge.name : null;
+  return null;
 }
 
 function launcherBoundSessionId() {
@@ -126,14 +117,11 @@ function launcherBoundSessionId() {
 // mirror of lib/golem-home.js within the same package.
 const CHANNELS_REGISTRY = path.join(tracker.golemHome(), 'channels.json');
 const CHANNELS_LOCK = `${CHANNELS_REGISTRY}.lock`;
-const OPENCODE_BRIDGES_REGISTRY = path.join(tracker.golemHome(), 'opencode-bridges.json');
 
 // A live HTTP child is only an endpoint, not proof that its host can consume
 // Claude channel notifications. Claude Code may initialize ordinary MCP tools
 // even when its model-provider configuration is ineligible for Channels. Keep
 // the signal deliberately narrow: completed MCP initialization plus the
-// absence of a provider mode Anthropic documents as unsupported. OpenCode does
-// not use Claude Channels; its promptAsync bridge remains ready independently.
 let MCP_INITIALIZED = false;
 let BOUND_PORT = null;
 
@@ -163,9 +151,6 @@ function claudeChannelProviderStatus(env = process.env) {
 }
 
 function channelConsumerStatus(harness) {
-  if (harness === 'opencode') {
-    return { ready: true, reason: null, transport: 'opencode-bridge' };
-  }
   const provider = claudeChannelProviderStatus();
   if (!provider.supported) {
     return { ready: false, reason: provider.reason, transport: 'claude-channel' };
@@ -186,14 +171,6 @@ function channelReadinessError(reason) {
   return 'Claude Code channel consumer readiness is unknown. Restart the session with an Anthropic-authenticated Claude Code channel configuration and --dangerously-load-development-channels plugin:golem@golem-workspace.';
 }
 
-// Claude Code supplies an identity through its parent registry or environment.
-// OpenCode does not: its shim writes a bridge shortly after this MCP starts.
-const WATCH_OPENCODE_BRIDGES = !(
-  MANAGED_CODEX_MCP_ONLY
-  || process.env.GOLEM_CEO_SESSION_ID
-  || readParentSessionFile()?.sessionId
-  || process.env.CLAUDE_CODE_SESSION_ID
-);
 
 // Mutable: re-derived on each (re)register so a session file that wasn't written
 // yet at module load, or a later /rename, is picked up within one heartbeat.
@@ -205,7 +182,6 @@ let SESSION_NAME = deriveSessionName();
 const listeners = new Set();
 
 function broadcast(eventName, payload) {
-  // Resolve at emission time: a sibling bridge can appear after registration,
   // and a cached formerly-unique id must not be stamped onto its events.
   const sessionId = deriveSessionId();
   const enriched = sessionId ? { session_id: sessionId, ...payload } : { ...payload };
@@ -280,19 +256,10 @@ function registerChannel(port, { logMissing = true } = {}) {
   // self-heals a channel that first registered under a fallback run-id.
   SESSION_ID = deriveSessionId();
   SESSION_NAME = deriveSessionName();
-  const bridge = bridgeEndpointForParent({ home: tracker.golemHome() });
   const siblings = sessionsForParent({ home: tracker.golemHome() });
-  const harness = siblings.length || (bridge && bridge.session_id === SESSION_ID) ? 'opencode' : 'claudecode';
+  const harness = 'claudecode';
   const consumer = channelConsumerStatus(harness);
   if (!SESSION_ID && siblings.length === 0) {
-    if (WATCH_OPENCODE_BRIDGES) {
-      withChannelLock(() => {
-        const reg = readChannelsRegistry();
-        const before = reg.channels.length;
-        reg.channels = reg.channels.filter((channel) => channel.pid !== process.pid);
-        if (reg.channels.length !== before) writeChannelsRegistry(reg);
-      });
-    }
     if (logMissing) process.stderr.write('[golem-channel] no unambiguous session id; channel will not register\n');
     return false;
   }
@@ -328,8 +295,8 @@ function registerChannel(port, { logMissing = true } = {}) {
       upsertSessionFact({
         canonical_id: row.session_id,
         harness,
-        locator: { raw_session_id: harness === 'claudecode' ? (process.env.CLAUDE_CODE_SESSION_ID || row.session_id) : row.session_id },
-        continuation_key: harness === 'claudecode' ? row.session_id : null,
+        locator: { raw_session_id: process.env.CLAUDE_CODE_SESSION_ID || row.session_id },
+        continuation_key: row.session_id,
         ...(row.name ? { name: row.name } : {}),
         ...(row.status ? { status: row.status } : {}),
         observed_at: new Date().toISOString(),
@@ -341,7 +308,7 @@ function registerChannel(port, { logMissing = true } = {}) {
         port,
         pid: process.pid,
         harness,
-        kind: harness === 'opencode' ? 'opencode-bridge' : 'claude-channel',
+        kind: 'claude-channel',
         consumer_ready: consumer.ready,
         consumer_reason: consumer.reason,
         consumer_transport: consumer.transport,
@@ -353,89 +320,14 @@ function registerChannel(port, { logMissing = true } = {}) {
   return true;
 }
 
-function opencodeSiblingSignature() {
-  return JSON.stringify(
-    sessionsForParent({ home: tracker.golemHome() })
-      .map((row) => [row.session_id, row.name || null])
-      .sort(([a], [b]) => a.localeCompare(b)),
-  );
-}
-
-let bridgeWatchListener = null;
-
-function watchOpencodeBridges(port) {
-  if (!WATCH_OPENCODE_BRIDGES || bridgeWatchListener) return;
-  let previousSignature = null;
-  bridgeWatchListener = () => {
-    const nextSignature = opencodeSiblingSignature();
-    if (nextSignature === previousSignature) return;
-    previousSignature = nextSignature;
-    try { registerChannel(port, { logMissing: false }); } catch { /* transient — heartbeat retries */ }
-  };
-  fs.watchFile(OPENCODE_BRIDGES_REGISTRY, { persistent: false, interval: 100 }, bridgeWatchListener);
-  // Close the narrow race between the first registration attempt and watcher setup.
-  bridgeWatchListener();
-}
-
-function stopWatchingOpencodeBridges() {
-  if (!bridgeWatchListener) return;
-  fs.unwatchFile(OPENCODE_BRIDGES_REGISTRY, bridgeWatchListener);
-  bridgeWatchListener = null;
-}
-
-function unregisterChannel() {
-  try {
-    releaseEndpointLeases(LEASE_OWNER);
-    withChannelLock(() => {
-      const reg = readChannelsRegistry();
-      const before = reg.channels.length;
-      // Filter by PID, not session_id. When Claude Code recycles this MCP
-      // child, the successor process boots and registerChannel's *before*
-      // this old process's exit handler runs. Both share SESSION_ID, so a
-      // session_id-based filter here would delete the successor's fresh
-      // entry — wiping the session from the registry. Removing only our own
-      // pid leaves the successor intact.
-      reg.channels = reg.channels.filter((c) => c.pid !== process.pid);
-      if (reg.channels.length !== before) writeChannelsRegistry(reg);
-    });
-  } catch (err) {
-    process.stderr.write(`[golem-channel] failed to unregister: ${err.message}\n`);
-  }
-}
-
-async function postToOpencodeBridge(bridge, bodyObj) {
-  const url = `http://${bridge.host}:${bridge.port}/push`;
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 5000);
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyObj),
-      signal: ctl.signal,
-    });
-    const text = await resp.text();
-    if (!resp.ok) throw new Error(`opencode bridge ${resp.status}: ${text}`);
-    return { ok: true, status: resp.status, body: text };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 // --- MCP server ------------------------------------------------------------
 // Outbound return instructions are surface-selected: a compatibility boot names
 // its advertised tools; a CLI-first boot names the CLI and golem:team-ops.
 // Provenance headers and receiving event kinds are shared and unchanged.
-const MCP_RETURN_GUIDANCE = TOOL_SURFACE.name === 'cli-first'
-  ? {
-      delegatedReturns: '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies notify the authenticated exact session_id with `golem session notify` from the CLI (discovery: `golem session list`); see golem:team-ops.',
-      peerHelp: 'Peer help travels as a direct CLI notification to the exact captured session_id (`golem session notify`; discovery `golem session list`); see golem:team-ops — there are no consult wrapper tools or passive subscriptions.',
-    }
-  : {
-      delegatedReturns: '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies use `session_notify` to the authenticated exact session_id.',
-      peerHelp: null,
-      peerHelpText: 'Peer help uses `session_notify` only. Send a concise header plus the report or question to the exact captured session_id; there are no consult wrapper tools or passive subscriptions.',
-    };
+const MCP_RETURN_GUIDANCE = {
+  delegatedReturns: '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies notify the authenticated exact session_id with `golem session notify` from the CLI (discovery: `golem session list`); see golem:team-ops.',
+  peerHelp: 'Peer help travels as a direct CLI notification to the exact captured session_id (`golem session notify`; discovery `golem session list`); see golem:team-ops — there are no consult wrapper tools or passive subscriptions.',
+};
 const mcp = new Server(
   { name: 'golem', version: VERSION },
   {
@@ -458,28 +350,17 @@ const mcp = new Server(
       '  • `ack` — fires IMMEDIATELY on receipt of every inbound event, no exceptions. One short sentence describing what this session understood and is about to do. Pass the same kind; include gate_id for gate_* events. For role_assign, ack is the entire job.',
       MCP_RETURN_GUIDANCE.delegatedReturns,
       'Order of operations for any inbound channel event: 1) call ack on receipt, 2) do the work (role_assign: none), 3) reply in chat if a user-facing answer is needed, 4) yield.',
-      TOOL_SURFACE.name === 'cli-first'
-        ? MCP_RETURN_GUIDANCE.peerHelp
-        : MCP_RETURN_GUIDANCE.peerHelpText,
+      MCP_RETURN_GUIDANCE.peerHelp,
     ].join(' '),
   },
 );
 
 // --- Reply tool: `ack` -----------------------------------------------
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: toolsForSurface(TOOL_SURFACE),
+  tools: GOLEM_TOOL_LIST,
 }));
 
 function resolveToolCaller(injectedSessionId) {
-  const managed = managedCodexBinding();
-  if (managed.enabled) {
-    if (!managed.sessionId) return { sessionId: null, error: managed.error, reject: true };
-    if (typeof injectedSessionId === 'string' && injectedSessionId.trim() && injectedSessionId.trim() !== managed.sessionId) {
-      return { sessionId: null, error: 'golem: managed Codex caller identity conflicts with the supervisor binding; refusing the tool call.', reject: true };
-    }
-    return { sessionId: managed.sessionId, source: 'managed_codex_supervisor' };
-  }
-
   const bound = launcherBoundSessionId();
   if (bound) {
     if (typeof injectedSessionId === 'string' && injectedSessionId.trim() && injectedSessionId.trim() !== bound) {
@@ -488,17 +369,6 @@ function resolveToolCaller(injectedSessionId) {
     return { sessionId: bound, source: 'launcher_binding' };
   }
 
-  // Without a CC launcher/parent binding, only a live OpenCode bridge can
-  // authorize the per-call id written by its local shim. A model-supplied id
-  // with no matching bridge is never accepted as an actor.
-  const bridges = sessionsForParent({ home: tracker.golemHome() });
-  if (typeof injectedSessionId === 'string' && injectedSessionId.trim()) {
-    const injected = injectedSessionId.trim();
-    if (bridges.some((bridge) => bridge.session_id === injected)) {
-      return { sessionId: injected, source: 'opencode_shim' };
-    }
-    return { sessionId: null, error: 'golem: injected caller identity is not backed by a live OpenCode bridge; refusing the tool call.', reject: true };
-  }
   const resolved = resolveCallerSessionId({ home: tracker.golemHome() });
   return { ...resolved, sessionId: resolved.sessionId || null };
 }
@@ -512,14 +382,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
   if (caller.reject) {
     return { isError: true, content: [{ type: 'text', text: caller.error || 'golem: caller identity is invalid; refusing the tool call.' }] };
-  }
-
-  // A selected surface hides its outbound delivery/discovery tools. A direct
-  // call to an omitted name must not fall through to the handler (a hidden
-  // alternate route) or to the generic unknown-tool error: reject with
-  // actionable CLI guidance before any discovery or delivery side effect.
-  if (OMITTED_TOOLS.has(name)) {
-    return { isError: true, content: [{ type: 'text', text: `${name} is not part of this Golem tool surface (GOLEM_TOOL_SURFACE=${TOOL_SURFACE.name}). Notify a live peer with \`golem session notify --to <id> --message "<text>" --json\` and discover recipients with \`golem session list --json\` (golem:team-ops). No delivery or discovery side effect occurred.` }] };
   }
 
   if (name === 'ack') {
@@ -586,7 +448,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         encoding: 'utf8',
         input: JSON.stringify({ session_id: SESSION_ID || '', cwd: projectCwd }),
         stdio: ['pipe', 'pipe', 'ignore'],
-        timeout: 3000, // matches shims/opencode/index.js; a hung script must not block stdio
+        timeout: 3000, // a hung script must not block stdio
       });
       const ctx = JSON.parse(out)?.hookSpecificOutput?.additionalContext || '';
       return { content: [{ type: 'text', text: ctx.trim() || '(no project context available)' }] };
@@ -595,46 +457,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
   }
 
-  // --- Session-to-session notification --------------------------------------
-  // Validate an exact immutable session_id against the current dispatchable
-  // surface. Names and labels are intentionally not routing keys: a rename or
-  // duplicate label must never redirect an active handoff.
-  if (name === 'session_notify') {
-    const to = typeof args.to === 'string' ? args.to.trim() : '';
-    const text = typeof args.text === 'string' ? args.text.trim() : '';
-    if (!to) return { isError: true, content: [{ type: 'text', text: 'session_notify: exact `to` session_id is required.' }] };
-    if (!text) return { isError: true, content: [{ type: 'text', text: 'session_notify: `text` is required.' }] };
-
-    let sessions;
-    try {
-      sessions = await tracker.listDispatchable(); // no project ⇒ all live sessions
-    } catch (err) {
-      return { isError: true, content: [{ type: 'text', text: `session_notify: could not list live sessions — ${err instanceof Error ? err.message : String(err)}` }] };
-    }
-    sessions = Array.isArray(sessions) ? sessions : [];
-
-    const target = sessions.find((s) => s && s.session_id === to);
-    if (!target) return { isError: true, content: [{ type: 'text', text: `session_notify: no live dispatchable session has exact session_id "${to}". Labels/names are not accepted; call sessions_dispatchable before choosing a new recipient.` }] };
-    if (target.reachable === false) {
-      return { isError: true, content: [{ type: 'text', text: `session_notify: target session_id "${target.session_id}" has no live channel (unreachable) — it cannot receive a push right now.` }] };
-    }
-
-    const message = args.ticket ? `${args.ticket}: ${text}` : text;
-    try {
-      const senderId = caller.sessionId;
-      if (!senderId) return { isError: true, content: [{ type: 'text', text: 'session_notify: no trusted caller session id.' }] };
-      const delivery = await tracker.notifySession({ session_id: target.session_id, text: message, sender_id: senderId, project_id: target.project_id || null });
-      return { isError: delivery?.ok === false, content: [{ type: 'text', text: JSON.stringify({ ok: delivery?.ok !== false, session_id: target.session_id, delivery }, null, 2) }] };
-    } catch (err) {
-      return { isError: true, content: [{ type: 'text', text: `session_notify: delivery failed — ${err instanceof Error ? err.message : String(err)}` }] };
-    }
-  }
-
-
   // --- Golem tracker tools ---------------------------------------------------
   // Each delegates to the HTTP client and returns compact JSON the agent can act
   // on. Identity defaults are injected here so the agent rarely passes ids.
-  if (name.startsWith('ticket_') || name === 'sessions_dispatchable') {
+  if (name.startsWith('ticket_')) {
     const displayCache = new Map();
     const displayForRef = async (ref) => {
       if (typeof ref !== 'string' || !/^TKT-/.test(ref)) return ref;
@@ -786,10 +612,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         }));
       }
 
-      if (name === 'sessions_dispatchable') {
-        const proj = args.project || defaultProject || undefined;
-        return await jsonResult(await tracker.listDispatchable(proj));
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { isError: true, content: [{ type: 'text', text: msg }] };
@@ -842,16 +664,32 @@ function renderTrustedIdentity(content, metadata = {}) {
   ].join('\n');
 }
 
+function unregisterChannel() {
+  try {
+    releaseEndpointLeases(LEASE_OWNER);
+    withChannelLock(() => {
+      const reg = readChannelsRegistry();
+      const before = reg.channels.length;
+      // Filter by PID, not session_id. When Claude Code recycles this MCP
+      // child, the successor process boots and registerChannel's *before*
+      // this old process's exit handler runs. Both share SESSION_ID, so a
+      // session_id-based filter here would delete the successor's fresh
+      // entry — wiping the session from the registry. Removing only our own
+      // pid leaves the successor intact.
+      reg.channels = reg.channels.filter((c) => c.pid !== process.pid);
+      if (reg.channels.length !== before) writeChannelsRegistry(reg);
+    });
+  } catch (err) {
+    process.stderr.write(`[golem-channel] failed to unregister: ${err.message}\n`);
+  }
+}
+
+
 async function pushEvent(kind, content, extraMeta = {}, targetSessionId = null) {
   // meta keys must be identifiers (letters/digits/underscore) — hyphens
   // are silently dropped by Claude Code. snake_case only.
   const meta = { kind, ...extraMeta };
   const renderedContent = renderTrustedIdentity(content, extraMeta);
-  const bridge = bridgeEndpointForParent({ home: tracker.golemHome() });
-  if (bridge) {
-    await postToOpencodeBridge(bridge, { session_id: targetSessionId || deriveSessionId(), kind, content: renderedContent, meta });
-    return;
-  }
   const consumer = channelConsumerStatus('claudecode');
   if (!consumer.ready) {
     const error = new Error(channelReadinessError(consumer.reason));
@@ -886,10 +724,7 @@ const server = http.createServer(async (req, res) => {
       if (!canonicalId || ownerToken !== LEASE_OWNER || !ownedIds.has(canonicalId)) {
         return sendJson(res, 403, { ok: false, error: 'lease identity mismatch' });
       }
-      const harness = sessionsForParent({ home: tracker.golemHome() }).length > 0
-        || bridgeEndpointForParent({ home: tracker.golemHome() })
-        ? 'opencode'
-        : 'claudecode';
+      const harness = 'claudecode';
       const consumer = channelConsumerStatus(harness);
       return sendJson(res, 200, {
         ok: true,
@@ -1035,12 +870,12 @@ function extractMetadata(raw) {
 // --- Boot ------------------------------------------------------------------
 mcp.oninitialized = () => {
   MCP_INITIALIZED = true;
-  if (!MANAGED_CODEX_MCP_ONLY && BOUND_PORT != null) {
+  if (BOUND_PORT != null) {
     try { registerChannel(BOUND_PORT, { logMissing: false }); } catch { /* heartbeat retries */ }
   }
 };
 
-if (!MANAGED_CODEX_MCP_ONLY) server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, () => {
   const addr = server.address();
   const boundPort = typeof addr === 'object' && addr ? addr.port : PORT;
   BOUND_PORT = boundPort;
@@ -1051,7 +886,6 @@ if (!MANAGED_CODEX_MCP_ONLY) server.listen(PORT, HOST, () => {
   try { registerChannel(boundPort); } catch (err) {
     process.stderr.write(`[golem-channel] register failed: ${err.message}\n`);
   }
-  watchOpencodeBridges(boundPort);
   // Re-assert registration on an interval. registerChannel only fires once at
   // listen — if this session's entry is ever lost afterward (a cross-process
   // write race, a manual edit, file corruption), it would never come back.
@@ -1070,21 +904,15 @@ if (!MANAGED_CODEX_MCP_ONLY) server.listen(PORT, HOST, () => {
 // primary cleanup path.
 function shutdown(code = 0, why = 'signal') {
   try { process.stderr.write(`[golem-channel] shutdown (${why})\n`); } catch { /* stderr gone */ }
-  if (!MANAGED_CODEX_MCP_ONLY) {
-    stopWatchingOpencodeBridges();
-    unregisterChannel();
-    try { server.close(); } catch { /* ignore */ }
-  }
+  unregisterChannel();
+  try { server.close(); } catch { /* ignore */ }
   process.exit(code);
 }
 process.on('SIGINT',  () => shutdown(0, 'SIGINT'));
 process.on('SIGTERM', () => shutdown(0, 'SIGTERM'));
 process.on('SIGHUP',  () => shutdown(0, 'SIGHUP'));
 process.on('beforeExit', () => {
-  if (!MANAGED_CODEX_MCP_ONLY) {
-    stopWatchingOpencodeBridges();
-    unregisterChannel();
-  }
+  unregisterChannel();
 });
 // TKT-0369: the channel died mid-session with zero trace (no stderr, no crash
 // report) — every abnormal exit must say why, or the next death is
