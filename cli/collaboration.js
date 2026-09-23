@@ -1,11 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import crypto from 'node:crypto';
 import { createGolemClient, resolveGolemDashboardBaseUrl } from '../lib/golem-client.js';
 import { dashboardJsonPath } from '../lib/golem-home.js';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
-import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
-import { NotificationError, notificationBodyLimit, validateNotificationSize, validateNotificationText, validateOperationId, notificationExit, parseNotificationDuration, normalizeNotificationTiming } from '../lib/notification-contract.js';
+import { NotificationError, validateOperationId, notificationExit } from '../lib/notification-contract.js';
 
 const commands = {
   'schedule list': { flags: { '--all': 'bool', '--json': 'bool' }, args: 0,
@@ -24,7 +20,7 @@ const commands = {
       'golem schedule inspect <schedule-id> [--content] [--json]',
       '',
       'Usage: inspect cadence, occurrence delivery, and (with --content) the stored text of one schedule.',
-      'Input: the schedule id as returned by `golem session notify ... --every/--after` (its receipt is kind "schedule"; save it).',
+      'Input: the schedule id as returned by `golem agent notify ... --every/--after` (its receipt is kind "schedule"; save it).',
       'Timing: inspect before and after cancelling; content is opt-in.',
       'Receipts: shows whether occurrences were delivered; settlement is not task completion.',
       'Examples:',
@@ -43,33 +39,6 @@ const commands = {
       'Examples:',
       '  golem schedule cancel <schedule-id>          # as the bound creator',
       '  golem schedule cancel <schedule-id> --human  # only for an explicitly unbound human shell',
-    ].join('\n') },
-  'session list': { flags: { '--project': 'value', '--all': 'bool', '--json': 'bool' }, args: 0,
-    help: [
-      'golem session list [--project <id-or-path>] [--all] [--json]',
-      '',
-      'Usage: list live canonical session ids with status and delivery readiness — the discovery input for `session notify` and `ticket_dispatch`.',
-      'Input: defaults to the caller project; --all lists every project. Copy the exact session_id; never route by name or label.',
-      'Examples:',
-      '  golem session list --json             # this project, machine-readable',
-      '  golem session list --all              # every project',
-      'Exit codes: 0 listed, 1 operational failure, 2 invalid input/context.',
-    ].join('\n') },
-  'session notify': { flags: { '--to': 'value', '--message': 'value', '--message-file': 'value', '--ticket': 'value', '--request-id': 'value', '--after': 'value', '--every': 'value', '--json': 'bool', '--human': 'bool' }, args: 0,
-    help: [
-      'golem session notify --to <id|self> (--message <text>|--message-file <path|->) [--ticket <ref>] [--request-id <uuid>] [--after <duration>] [--every <duration>] [--json] [--human]',
-      '',
-      'Usage: push a durable notification to one exact live session id, or schedule a reminder to yourself.',
-      'Input: inline --message, a path via --message-file, or stdin with --message-file - (UTF-8, size-capped). --to takes an exact session id from `golem session list`; self requires a bound session. --ticket prefixes context. Unbound mutations require --human; bound agents must not use it.',
-      'Timing: without --after/--every it sends immediately. Durations use integer ms/s/m/h/d. --after schedules once; --every repeats, first due after one interval unless --after sets the first delay. Zero delay is allowed. Delivery follows runtime ticks/readiness, not an exact-time alarm. The message is captured once.',
-      'Receipts: an immediate send returns a message receipt (kind "message"); a scheduled send returns a schedule receipt (kind "schedule") — save the schedule id for inspect/cancel. Exit 0: durably admitted, not work completed. Exit 1: operational failure. Exit 2: invalid input/context. Exit 3: uncertain; retry or inspect the original operation using the same request id — a fresh id is a new message.',
-      'Examples:',
-      '  golem session list --json                                           # find the exact recipient id first',
-      '  golem session notify --to <session-id> --message "build done" --json # immediate peer return',
-      '  golem session notify --to self --message "check verifier return" --after 15m --json # one-shot self-reminder',
-      '  golem session notify --to self --message-file ./notes.txt --every 1h --json # recurring self-reminder',
-      '  golem session notify --to <session-id> --message-file - --json      # read the text from stdin',
-      '  <lost response? retry unchanged with the same --request-id>; then `golem message inspect <message-id> --json`',
     ].join('\n') },
   'message inspect': { flags: { '--content': 'bool', '--json': 'bool' }, args: 1,
     help: [
@@ -106,18 +75,6 @@ function parse(family, args) {
   if (positional.length !== command.args) throw new NotificationError(command.help.split('\n')[0]);
   return { key, options, positional };
 }
-async function readText(file, stdin) {
-  const stream = file === '-' ? stdin : fs.createReadStream(file);
-  const chunks = []; let size = 0;
-  for await (const chunk of stream) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += bytes.length;
-    if (size > notificationBodyLimit) throw new NotificationError(`message input exceeds ${notificationBodyLimit} bytes`, 'NOTIFICATION_TOO_LARGE', 413);
-    chunks.push(bytes);
-  }
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)); }
-  catch { throw new NotificationError('message file/stdin must contain valid UTF-8 text'); }
-}
 async function requireProtocol(client, scheduling = false) {
   let capability;
   try { capability = await client.request('GET', '/api/messages/notify', { timeoutMs: 5000 }); }
@@ -141,25 +98,6 @@ export async function runCollaboration(family, args, {
     const { key, options: o, positional } = parsed;
     const context = resolveContext();
     const client = injectedClient ?? createGolemClient({ baseUrl: resolveGolemDashboardBaseUrl({ dashboardFile: dashboardJsonPath() }), callerSessionId: context?.sessionId });
-    if (key === 'session list') {
-      if (o['--all'] && o['--project']) throw new NotificationError('--all and --project are mutually exclusive');
-      const explicit = o['--project'];
-      const project = o['--all'] ? null : explicit
-        ? (/^[\w-]+-[a-f0-9]{6}$/.test(explicit) ? explicit : projectIdFor(await resolveProjectRoot(path.resolve(cwd, explicit))))
-        : context?.projectId || projectIdFor(await resolveProjectRoot(context?.projectPath || cwd));
-      const rows = await client.request('GET', '/api/native-sessions');
-      if (!Array.isArray(rows)) throw new Error('invalid session-list response');
-      const items = rows.filter((row) => row.alive === true && (!project || row.project_id === project)).map((row) => ({
-        session_id: row.session_id, name: row.name || row.label || null, project_id: row.project_id,
-        alive: row.alive, status: row.status, harness: row.harness, role: row.role,
-        model: row.model, provider: row.provider, pending_count: row.pending_count ?? 0,
-        current_in_progress_ticket: row.current_in_progress_ticket
-          ? { id: row.current_in_progress_ticket.id, display_id: row.current_in_progress_ticket.display_id, title: row.current_in_progress_ticket.title } : null,
-        delivery_ready: row.delivery_ready, reason: row.delivery_reason,
-      }));
-      stdout(json ? JSON.stringify(items) : items.map((row) => `${row.session_id}\t${JSON.stringify(row.name)}\t${row.status}\t${row.delivery_ready ? 'ready' : row.reason || 'not ready'}`).join('\n'));
-      return 0;
-    }
     if (key === 'schedule list' || key === 'schedule inspect') {
       const value = await client.request('GET', key === 'schedule list' ? '/api/schedules' : `/api/schedules/${encodeURIComponent(positional[0])}`,
         { timeoutMs: 5000, params: { ...(o['--all'] ? { all: '1' } : {}), ...(o['--content'] ? { content: '1' } : {}) } });
@@ -185,30 +123,6 @@ export async function runCollaboration(family, args, {
       if (receipt.kind !== 'message' || receipt.id !== positional[0]) throw new Error('inspection returned a different message id');
       stdout(JSON.stringify(receipt, null, json ? 0 : 2)); return 0;
     }
-    operationId = validateOperationId(o['--request-id'] ?? crypto.randomUUID());
-    if (context && o['--human']) throw new NotificationError('bound agents cannot use --human', 'INVALID_CALLER_CONTEXT');
-    if (!context && !o['--human']) throw new NotificationError('unbound mutation requires --human', 'INVALID_CALLER_CONTEXT');
-    if (!o['--to'] || (o['--to'] === 'self' && !context)) throw new NotificationError('--to requires an exact id; self requires a bound session');
-    if (Object.hasOwn(o, '--message') === Object.hasOwn(o, '--message-file')) throw new NotificationError('provide exactly one of --message or --message-file');
-    if (o['--ticket'] !== undefined && !o['--ticket'].trim()) throw new NotificationError('--ticket requires nonblank context');
-    let text;
-    try { text = validateNotificationText(Object.hasOwn(o, '--message') ? o['--message'] : await readText(o['--message-file'], stdin)); }
-    catch (error) { if (error instanceof NotificationError) throw error; throw new NotificationError(error.message, 'MESSAGE_INPUT_ERROR'); }
-    const timing = o['--after'] !== undefined || o['--every'] !== undefined ? normalizeNotificationTiming({
-      ...(o['--after'] !== undefined ? { after_ms: parseNotificationDuration(o['--after']) } : {}),
-      ...(o['--every'] !== undefined ? { every_ms: parseNotificationDuration(o['--every']) } : {}),
-    }) : null;
-    const body = { operation_id: operationId, sender_id: context?.sessionId || 'human:cli',
-      session_id: o['--to'], text, ...(context?.projectId ? { project_id: context.projectId } : {}),
-      ...(o['--ticket'] ? { ticket: o['--ticket'] } : {}), ...(o['--human'] ? { human: true } : {}), ...(timing ? { timing } : {}) };
-    validateNotificationSize(body);
-    await requireProtocol(client, !!timing);
-    mutationStarted = true;
-    const result = await client.notifySession(body);
-    if (result?.operation_id !== operationId || result?.receipt?.id !== operationId) throw new Error('notification response did not confirm the original operation id');
-    const exit = notificationExit(result.receipt);
-    stdout(json ? JSON.stringify(result.receipt) : `${result.receipt.kind} ${operationId}: ${result.receipt.state}${result.receipt.reason ? ` — ${result.receipt.reason}` : ''}`);
-    return exit;
   } catch (error) {
     const refused = ['ECONNREFUSED', 'ENOTFOUND'].includes(error?.cause?.cause?.code ?? error?.cause?.code);
     const invalid = error instanceof NotificationError || (error.status >= 400 && error.status < 500);

@@ -87,7 +87,7 @@ copy or rewrite that configuration.
 The tracker is the source of truth for cross-session work. Ticket lifecycle is
 `state` only: `todo`, `in_progress`, `blocked`, `review`, `done`, or `archived`.
 Comments and dispatch preserve planned work. On Pi and interactive Claude,
-`golem session list/notify`, `golem message inspect`, and `golem schedule ...`
+`golem agent list/notify`, `golem message inspect`, and `golem schedule ...`
 provide direct coordination and agent-managed follow-up. The event ledger is
 audit history, not a message subscription.
 
@@ -116,8 +116,8 @@ golem help
 | `golem dashboard:restart` | Replace the registered dashboard with a detached instance. |
 | `golem status [--json]` | Report dashboard health and its canonical URL. |
 | `golem doctor` | Check dependencies, local state, renders, integrations, and dashboard reachability. |
-| `golem role <role\|clear>` | Set or clear a session role. Built-ins are `lead`, `builder`, `explorer`, and `reviewer`. |
-| `golem session list\|notify ...` | Discover sessions or send an idempotent immediate/delayed/recurring notification. |
+| `golem agent list\|notify ...` | List agents or send an idempotent immediate/delayed/recurring notification. |
+| `golem agent role <role\|clear>` | Set or clear an agent's role. Built-ins are `lead`, `builder`, `explorer`, and `reviewer`. |
 | `golem message inspect <id>` | Inspect delivery without inferring work completion. |
 | `golem schedule list\|inspect\|cancel ...` | Manage follow-up reminders explicitly. |
 | `golem migrate-home` | Move legacy local state to `~/.golem`, with a backup and rollback. |

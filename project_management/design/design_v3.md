@@ -170,7 +170,7 @@ The first time any `golem` CLI subcommand runs, an idempotent helper ensures `pr
 | `golem help`                                          | Print help. | user |
 | **v3 — sessions** | | |
 | `golem session start [--project <id\|path>] [--detach]` | Spawn a CEO (`claude --session-id <uuid> --append-system-prompt-file …`). If `--project` is passed, claim it pre-spawn. | user |
-| `golem session list [--json]`                         | Show live sessions + claim state. | user |
+| the v3 session roster command (now `golem agent list`)      | Show live sessions + claim state. | user |
 | `golem session stop <session-id\|--all> [--force]`    | Kill a session (TERM, then KILL). Removes its registry row. | user |
 | `golem session claim <project\|--root> [--session-id <uuid>]` | Acquire a lock for the current session. If `--session-id` is omitted, read `$CLAUDE_CODE_SESSION_ID`. | CEO (via Bash) or user |
 | `golem session release [--session-id <uuid>] [<project>]` | Release the current session's claim. Optional positional verifies that the claim being released matches. | CEO / SessionEnd hook |

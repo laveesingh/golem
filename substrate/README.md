@@ -83,7 +83,7 @@ claude --dangerously-load-development-channels plugin:golem@golem-workspace
 The launch flag is required for a Claude session to consume pushes. The
 rendered plugin advertises the one shared tool surface — `ack`, tracker tools,
 `ticket_dispatch`, `session_role`, and `project_context`; returns and recipient
-discovery go through `golem session notify` / `golem session list`
+discovery go through `golem agent notify` / `golem agent list`
 (`golem:team-ops`). The dashboard remains the tracker database's single
 writer. Ticket lifecycle is the `state` field: `todo`, `in_progress`,
 `blocked`, `review`, `done`, or `archived`.

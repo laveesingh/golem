@@ -20,8 +20,14 @@ npx golem <command>
 | `golem dashboard [--public]` | Start the admin dashboard on `http://dashboard.golem.localhost:7420`. Pass extra args through to `npm start`. |
 | `golem doctor` | Sanity-check the environment. |
 | `golem status [--json]` | Probe the dashboard `/api/health` endpoint and print the canonical URL. |
-| `golem session list [--project <id-or-path>] [--all] [--json]` | Discover live canonical sessions and delivery readiness. |
-| `golem session notify --to <id\|self> --message-file <path\|-> [--request-id <uuid>] [--json]` | Send an idempotent notification; `--message` accepts direct text instead. |
+| `golem agent list [--scope team\|project\|all] [--json]` | List agents: id, name, role, team, host, status, herdr state, model, delivery. |
+| `golem agent create <role> [--team <team>] [--json]` | Start a managed agent in the caller's team (`--team` picks another). |
+| `golem agent read <agent> [--lines N]` | Print an agent's terminal output. |
+| `golem agent attach <agent>` | Attach to an agent's terminal. |
+| `golem agent stop <agent> [--json]` | End an agent; the record stays, marked ended. |
+| `golem agent notify --to <id\|self> --message-file <path\|-> [--request-id <uuid>] [--json]` | Send an idempotent notification; `--message` accepts direct text instead. |
+| `golem agent role <role\|clear> [<agent>] [--json]` | Set or clear an agent's role. |
+| `golem agent dedup [--apply]` | Dry-run named-session duplicate cleanup. |
 | `golem message inspect <id> [--content] [--json]` | Inspect delivery, not task completion; content is opt-in. |
 | `golem schedule list [--all] [--json]` | List your durable notification schedules. |
 | `golem schedule inspect <id> [--content] [--json]` | Inspect cadence and current occurrence delivery. |
@@ -30,7 +36,7 @@ npx golem <command>
 
 ## Notification workflow
 
-Run `golem session notify --help` for the input and exit contracts. File `-` reads
+Run `golem agent notify --help` for the input and exit contracts. File `-` reads
 stdin. Unbound human mutations require `--human`; a bound agent cannot use it to
 bypass broken identity. Pi uses live native ancestry/leases; Claude uses its
 logical/resumed native record, including `CLAUDE_CONFIG_DIR`.
@@ -49,5 +55,5 @@ the request ID. Existing notify tools remain compatible during the staged cutove
 
 ## Removed v3 commands
 
-The old `session` operations are replaced by `session list/notify` above.
+The old `spawn`, `list`, `peek`, `attach`, `kill`, `role`, `sessions dedup` and `session list/notify` verbs are replaced by `golem agent ...` above.
 `install`, `cleanup`, `reinstall`, `project`, `dispatch`, `ack` are retired with v4. The new harness uses native Claude Code sessions and a central SQLite tracker in the dashboard; there is no CEO, no Substrator, and no symlinked agents/skills/commands.
