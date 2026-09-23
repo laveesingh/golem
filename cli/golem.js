@@ -35,7 +35,7 @@ import { dashboardUrl, probeDashboard, startDashboardDetached, stopDashboard } f
 import { MIN_PI_NODE, SUPPORTED_PI_VERSION, piNodeSupported } from '../lib/pi-compatibility.js';
 import { resolveRolePreset } from '../lib/role-preset.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
-import { HERDR_SUPPORTED_VERSION, herdrVersion } from '../lib/herdr-driver.js';
+import { HERDR_SUPPORTED_VERSION, herdrSessionForProject, herdrVersion } from '../lib/herdr-driver.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -571,6 +571,15 @@ async function cmdDoctor() {
     else log(`  ⚠ herdr ${version} on PATH — supported version is ${HERDR_SUPPORTED_VERSION}`);
   } catch (e) {
     skip(`herdr version not checked — ${e.message}`);
+  }
+  try {
+    for (const p of knownProjects()) {
+      const pid = p.project_id ?? p.id;
+      if (!pid) continue;
+      log(`  · ${p.name || pid}: herdr session ${herdrSessionForProject(pid)}`);
+    }
+  } catch (e) {
+    skip(`herdr sessions not listed — ${e.message}`);
   }
 
   log('');

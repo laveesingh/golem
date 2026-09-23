@@ -154,6 +154,30 @@ assert.throws(() => driver.resolveSession(null), /herdr session is required/);
 check('resolveSession throws without any session', true);
 process.env.GOLEM_HERDR_SESSION = session;
 
+// 9. G2 session names: one function serves spawn, team create and doctor.
+// Without the override, derivation lowercases, collapses illegal runs to
+// one '-', and falls back to the project id on empty/collision.
+delete process.env.GOLEM_HERDR_SESSION;
+const { projectHerdrSession } = await import('../lib/team-herdr.js');
+const known = [
+  { project_id: 'proj-myapp-111111', name: 'My App!' },
+  { project_id: 'proj-clash1-222222', name: 'Clash!' },
+  { project_id: 'proj-clash2-333333', name: 'clash?' },
+  { project_id: 'proj-empty-444444', name: '!!!' },
+];
+check('My App! derives my-app', driver.herdrSessionForProject('proj-myapp-111111', { knownProjects: known }) === 'my-app');
+check('team seam derives the same session as spawn', projectHerdrSession('proj-myapp-111111', { knownProjects: known }) === 'my-app');
+check('colliding names fall back to the project id',
+  driver.herdrSessionForProject('proj-clash1-222222', { knownProjects: known }) === 'proj-clash1-222222'
+  && projectHerdrSession('proj-clash2-333333', { knownProjects: known }) === 'proj-clash2-333333');
+check('empty derivations fall back to the project id', driver.herdrSessionForProject('proj-empty-444444', { knownProjects: known }) === 'proj-empty-444444');
+check('long names cap at the 32-char herdr limit',
+  driver.herdrSessionForProject('proj-long-555555', { knownProjects: [...known, { project_id: 'proj-long-555555', name: `${'a'.repeat(40)}!` }] }) === 'a'.repeat(32));
+process.env.GOLEM_HERDR_SESSION = session;
+check('GOLEM_HERDR_SESSION overrides derivation on both paths',
+  driver.herdrSessionForProject('proj-myapp-111111', { knownProjects: known }) === session
+  && projectHerdrSession('proj-myapp-111111', { knownProjects: known }) === session);
+
 console.log(failures === 0 ? '\nHERDR DRIVER UNIT TESTS PASS' : `\n${failures} FAILURE(S)`);
 process.exitCode = failures === 0 ? 0 : 1;
 
@@ -163,4 +187,3 @@ for (const key of Object.keys(originalEnv)) {
   else process.env[key] = originalEnv[key];
 }
 fs.rmSync(temp, { recursive: true, force: true });
-

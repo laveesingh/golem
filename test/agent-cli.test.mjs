@@ -365,4 +365,19 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   assert.equal(rows[0].delivery, 'ready');
 }
 
+// --- enrichDispatchableRows keeps the roster's delivery_ready ---
+{
+  const { enrichDispatchableRows } = await import('../lib/worker-manager.js');
+  const enriched = enrichDispatchableRows([
+    { session_id: 'sess-alpha-1', delivery_ready: false, status: 'idle', project_id: projectId },
+    { session_id: 'sess-external-1', name: 'field-lead', delivery_ready: true, status: 'idle', project_id: projectId },
+  ], { projectId });
+  const managedRow = enriched.find((row) => row.session_id === 'sess-alpha-1');
+  assert.equal(managedRow.delivery_ready, false, 'a managed row with delivery_ready:false stays not ready');
+  assert.equal(managedRow.host, 'legacy', 'row without herdr placement keeps the legacy host');
+  const externalRow = enriched.find((row) => row.session_id === 'sess-external-1');
+  assert.equal(externalRow.delivery_ready, true, 'an external row with delivery_ready:true stays ready');
+  assert.equal(externalRow.host, 'external');
+}
+
 console.log('agent CLI passed: help, verb map, scope defaults, ambiguity, create, role, dedup, removed verbs');

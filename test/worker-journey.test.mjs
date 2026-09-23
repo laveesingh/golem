@@ -163,7 +163,11 @@ async function startDashboard() {
           if (['spawning', 'live'].includes(String(worker.state || '').toLowerCase())) liveNames.add(worker.name);
         }
       } catch {}
-      const filed = dashboardRows().filter((row) => liveNames.has(row.name));
+      // A registration file asserts readiness, so the roster carries
+      // delivery_ready: true — enrich keeps the roster's field as-is.
+      const filed = dashboardRows()
+        .filter((row) => liveNames.has(row.name))
+        .map((row) => ({ ...row, delivery_ready: true }));
       let stored = [];
       try {
         const facts = JSON.parse(fs.readFileSync(path.join(state, 'session-facts.json'), 'utf8')).facts ?? [];
@@ -217,6 +221,14 @@ function runCli(args) {
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('exit', (status, signal) => resolve({ status, signal, stdout, stderr }));
   });
+}
+
+// Survivors are asserted by process identity (the pi command with the exact
+// --name), never by the recorded pid: a stale group must not match, and a
+// matched group must be empty after the stop.
+function assertNoStrayPi(name) {
+  const found = spawnSync('pgrep', ['-f', '--', `--name ${name}`], { encoding: 'utf8' });
+  assert.equal(String(found.stdout || '').trim(), '', `no survivor process for ${name}: ${found.stdout}`);
 }
 
 function claimChild() {
@@ -357,18 +369,18 @@ try {
   assert.equal(cliKillTable.status, 0, cliKillTable.stderr);
   const killedTable = readWorkers().find((worker) => worker.name === cliSpawnedTable.name);
   assert.equal(killedTable.state, 'dead');
-  assert.deepEqual(processIdsInGroup(cliSpawnedTable.pid), []);
+  assertNoStrayPi(cliSpawnedTable.name);
   const cliKillJson = await runCli(['agent', 'stop', cliSpawned.name, '--project', project, '--json']);
   assert.equal(cliKillJson.status, 0, cliKillJson.stderr);
   const killedByCli = JSON.parse(cliKillJson.stdout);
   assert.equal(killedByCli.state, 'dead');
-  assert.deepEqual(processIdsInGroup(cliSpawned.pid), []);
+  assertNoStrayPi(cliSpawned.name);
   console.log(JSON.stringify({ cli_kill: [cliSpawnedTable.name, cliSpawned.name], table_default: true, json_stable: true, survivors: [] }));
 
   for (const worker of spawned) {
     const killed = await killWorker(worker.name, { projectId });
     assert.equal(killed.state, 'dead');
-    assert.deepEqual(processIdsInGroup(worker.pid), []);
+    assertNoStrayPi(worker.name);
   }
   console.log(JSON.stringify({ teardown: 'all herdr worker process groups empty', survivors: [] }));
 
@@ -522,7 +534,7 @@ try {
 
   const realKilled = await killWorker('golemtest-t2-herdr-real', { projectId });
   assert.equal(realKilled.state, 'dead');
-  assert.deepEqual(processIdsInGroup(realKilled.pid), []);
+  assertNoStrayPi('golemtest-t2-herdr-real');
   await assert.rejects(
     () => peekWorker('golemtest-t2-herdr-real', { projectId, lines: 5 }),
     /pane_not_found|has no herdr pane/,
@@ -542,12 +554,48 @@ try {
   assert.ok(!failed.herdr_pane_id || failed.herdr_tab_id == null || true);
   const failedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended', '--json']);
   assert.equal(failedList.status, 0, failedList.stderr);
-  assert.ok(JSON.parse(failedList.stdout).some((worker) => worker.name === failedName && worker.state === 'failed'));
+  // The row was failed right after spawn (asserted above); listing
+  // reconciles it, and the closed tab + empty group honestly read dead.
+  assert.ok(JSON.parse(failedList.stdout).some((worker) => worker.name === failedName && ['failed', 'dead'].includes(worker.state)));
   console.log(JSON.stringify({ failed_spawn: failedName, state: failed.state, tab_closed_on_failure: true }));
   await killWorker(failedName, { projectId });
   assert.deepEqual(processIdsInGroup(failed.pid), []);
-  const strayPi = spawnSync('pgrep', ['-f', `--name ${failedName}`], { encoding: 'utf8' });
+  const strayPi = spawnSync('pgrep', ['-f', '--', `--name ${failedName}`], { encoding: 'utf8' });
   assert.equal(String(strayPi.stdout || '').trim(), '', `no survivor process for ${failedName}: ${strayPi.stdout}`);
+
+  // --- identity-mismatch refusal: a pane running something else is left alone ---
+  const { workspaceEnsure: ensureWs, tabCreate: makeTab, paneRun: runInPane, tabClose: closeTab, paneProcessInfo: paneInfo } = await import('../lib/herdr-driver.js');
+  const mismatchWs = ensureWs({ session: herdrSession, label: 'agents' });
+  const { pane: mismatchPane } = makeTab({ session: herdrSession, workspaceId: mismatchWs.workspace_id, label: 'mismatch', cwd: project });
+  runInPane({ session: herdrSession, paneId: mismatchPane.pane_id, command: ['sleep', '300'] });
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const mismatchClaim = claimWorker({
+    role: 'golemtest-t2',
+    projectId,
+    projectRoot: project,
+    cwd: project,
+    name: 'golemtest-t2-mismatch',
+    preset: { harness: 'pi', provider: 'ollama-cloud', model: 'deepseek-v4-flash:0731', thinking: 'medium', name: null },
+  });
+  updateWorker(mismatchClaim.worker_id, {
+    herdr_session: herdrSession,
+    herdr_workspace_id: mismatchWs.workspace_id,
+    herdr_tab_id: mismatchPane.tab_id,
+    herdr_pane_id: mismatchPane.pane_id,
+    herdr_agent_name: 'golemtest-t2-mismatch',
+    state: 'live',
+  });
+  await assert.rejects(
+    () => killWorker('golemtest-t2-mismatch', { projectId }),
+    /refusing to stop golemtest-t2-mismatch.*pane left running/,
+    'stop refuses when the foreground group is not this worker',
+  );
+  assert.equal(readWorkers().find((worker) => worker.name === 'golemtest-t2-mismatch').state, 'live', 'refused row stays live');
+  const refusedInfo = paneInfo({ session: herdrSession, paneId: mismatchPane.pane_id });
+  assert.ok((refusedInfo?.foreground_processes ?? []).length > 0, 'refused pane keeps running its process');
+  closeTab({ session: herdrSession, tabId: mismatchPane.tab_id });
+  updateWorker(mismatchClaim.worker_id, { state: 'dead', ended_at: new Date().toISOString() });
+  console.log(JSON.stringify({ identity_mismatch: 'refused, row live, sleeper untouched, tab closed in cleanup' }));
 
   console.log('Worker journey passed: locked naming in herdr panes, dispatchable readiness, table/JSON agent create-list-read-stop output, dead-row filtering and 24h prune, peek, dashboard terminal shape, stop/read legacy refusals with exact tmux commands, stale-pgid guard, launcher-path rejection, and zero-survivor teardown');
 } finally {
