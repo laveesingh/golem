@@ -19,14 +19,13 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync, rmdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, symlinkSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, resolve, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { golemHome, legacyConfigDir, migratedHomeDir, trackerDbPath, renderDirFor, projectsJsonPath, sessionsJsonPath } from '../lib/golem-home.js';
+import { golemHome, legacyConfigDir, migratedHomeDir, trackerDbPath, renderDirFor, projectsJsonPath } from '../lib/golem-home.js';
 import { projectIdFor } from '../lib/project-id.js';
-import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../lib/session-role.js';
 import { updateProjectLsp } from '../lib/lsp.js';
 import * as compiler from '../lib/compiler/engine.js';
 import { lintSubstrate } from '../lib/compiler/lint.js';
@@ -37,19 +36,6 @@ import { dashboardUrl, probeDashboard, startDashboardDetached, stopDashboard } f
 import { MIN_PI_NODE, SUPPORTED_PI_VERSION, piNodeSupported } from '../lib/pi-compatibility.js';
 import { resolveRolePreset } from '../lib/role-preset.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
-import { resolveCliSessionContext } from '../lib/cli-session-context.js';
-import { listTeams } from '../lib/team-registry.js';
-import { findWorkerBySession } from '../lib/worker-registry.js';
-import { resolveCallerTeam, resolveListTeam } from '../lib/team-context.js';
-import {
-  attachSwarm,
-  attachWorker,
-  killWorker,
-  listWorkerViews,
-  peekWorker,
-  resolveWorkerProject,
-  spawnWorker,
-} from '../lib/worker-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -134,567 +120,6 @@ function publicSupervisorRecord(record) {
   return { ...record, health };
 }
 
-function readSessionsRegistry() {
-  try {
-    const parsed = JSON.parse(readFileSync(sessionsJsonPath(), 'utf8'));
-    return Array.isArray(parsed?.sessions) ? parsed.sessions : [];
-  } catch {
-    return [];
-  }
-}
-
-function readSessionsRegistryObject(file = sessionsJsonPath()) {
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8'));
-    return parsed && typeof parsed === 'object' && Array.isArray(parsed.sessions) ? parsed : { version: 1, sessions: [] };
-  } catch {
-    return { version: 1, sessions: [] };
-  }
-}
-
-function writeSessionsRegistryObject(file, reg) {
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.tmp.${process.pid}`;
-  writeFileSync(tmp, JSON.stringify(reg, null, 2));
-  renameSync(tmp, file);
-}
-
-function withFileLock(lockPath, fn) {
-  try { mkdirSync(dirname(lockPath), { recursive: true }); } catch { /* ignore */ }
-  for (let i = 0; i < 50; i++) {
-    try {
-      mkdirSync(lockPath);
-      try { return fn(); }
-      finally { try { rmdirSync(lockPath); } catch { /* ignore */ } }
-    } catch (e) {
-      if (e?.code === 'EEXIST') {
-        try {
-          const st = statSync(lockPath);
-          if (Date.now() - st.mtimeMs > 5000) rmdirSync(lockPath);
-        } catch { /* ignore */ }
-        const wait = Date.now() + 20;
-        while (Date.now() < wait) { /* brief spin */ }
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw new Error(`failed to acquire ${lockPath}`);
-}
-
-function rowTime(row, keys) {
-  for (const key of keys) {
-    const t = Date.parse(row?.[key] || '');
-    if (Number.isFinite(t)) return t;
-  }
-  return 0;
-}
-
-function isLiveSessionRow(row) {
-  return !row?.ended_at;
-}
-
-function rowFreshness(row, alive) {
-  return alive
-    ? rowTime(row, ['updated_at', 'last_seen_at', 'boot_time', 'started_at'])
-    : rowTime(row, ['ended_at', 'updated_at', 'last_seen_at', 'boot_time', 'started_at']);
-}
-
-function sessionLabel(row) {
-  return `${row.session_id || '(no session_id)'}${row.model ? ` (model=${row.model})` : ''}`;
-}
-
-function keptSessionLabel(row, reason) {
-  return `${row.session_id || '(no session_id)'} (${reason}${row.model ? `, model=${row.model}` : ''})`;
-}
-
-function sessionProjectScope(row) {
-  return row?.project_path || row?.project_id || row?.cwd || '';
-}
-
-
-function sessionsDedupPlan(sessions) {
-  // Scope by project so same role name in different projects never collapses.
-  const groups = new Map();
-  sessions.forEach((row, index) => {
-    const name = typeof row?.name === 'string' ? row.name.trim() : '';
-    if (!name) return;
-    const key = `${sessionProjectScope(row)}\0${name}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({ row, index });
-  });
-
-  const plans = [];
-  for (const [key, rows] of groups) {
-    if (rows.length < 2) continue;
-    const name = key.split('\0').slice(1).join('\0') || key;
-    const live = rows.filter(({ row }) => isLiveSessionRow(row));
-    const candidates = live.length ? live : rows;
-    const keep = candidates
-      .slice()
-      .sort((a, b) => rowFreshness(b.row, live.length > 0) - rowFreshness(a.row, live.length > 0))[0];
-    const mark = rows.filter((entry) => entry.index !== keep.index && !entry.row.ended_at);
-    plans.push({ kind: 'named', name, keep, mark, liveKept: live.length > 0 });
-  }
-  return plans;
-}
-
-function printSessionsDedupPlan(plans, apply) {
-  if (!plans.length) {
-    log(`golem sessions dedup: no project-scoped named duplicates found (${apply ? 'applied' : 'dry-run'})`);
-    return;
-  }
-  log(`golem sessions dedup ${apply ? '--apply' : '(dry-run; pass --apply to write)'}`);
-  for (const plan of plans) {
-    const reason = plan.liveKept ? 'freshest live' : 'freshest ended';
-    const scope = sessionProjectScope(plan.keep.row) || '(no project)';
-    log(`name ${plan.name} @ ${scope}: would keep ${keptSessionLabel(plan.keep.row, reason)}`);
-    if (plan.mark.length) {
-      log(`name ${plan.name} @ ${scope}: would mark ended: ${plan.mark.map(({ row }) => sessionLabel(row)).join(', ')}`);
-    } else {
-      log(`name ${plan.name} @ ${scope}: no un-ended duplicates to mark`);
-    }
-  }
-}
-
-
-async function cmdSessions(args) {
-  const sub = args[0];
-  if (!sub || sub === '-h' || sub === '--help') {
-    log(`Usage: golem sessions dedup [--apply]
-
-Commands:
-  dedup          Dry-run named-session duplicate cleanup.
-
-Options:
-  --apply        Write the cleanup. Without --apply, prints the plan only.
-  -h, --help     Show help.`);
-    return;
-  }
-  if (sub !== 'dedup') fatal(2, `Unknown sessions command: ${sub}\n\nRun \`golem sessions --help\`.`);
-  const rest = args.slice(1);
-  if (rest.includes('-h') || rest.includes('--help')) {
-    log(`Usage: golem sessions dedup [--apply]
-
-Dry-run by default. Groups rows in ~/.golem/sessions.json by non-empty name
-within the same project path, keeps the freshest live row, and with --apply
-marks other un-ended rows ended_at=<now>. Also marks stale/terminal unnamed rows.`);
-    return;
-  }
-  const unknown = rest.filter((a) => a !== '--apply');
-  if (unknown.length) fatal(2, `unknown sessions dedup option: ${unknown[0]}`);
-
-  const apply = rest.includes('--apply');
-  const file = sessionsJsonPath();
-  const run = () => {
-    const reg = readSessionsRegistryObject(file);
-    const plans = [...sessionsDedupPlan(reg.sessions)];
-    printSessionsDedupPlan(plans, apply);
-    if (!apply) return;
-    const now = new Date().toISOString();
-    let changed = false;
-    for (const plan of plans) {
-      for (const { index } of plan.mark) {
-        if (reg.sessions[index]?.ended_at) continue;
-        reg.sessions[index] = { ...reg.sessions[index], status: 'superseded', ended_at: now };
-        changed = true;
-      }
-    }
-    if (changed) writeSessionsRegistryObject(file, reg);
-    log(changed ? `applied: marked duplicate/stale sessions ended_at=${now}` : 'applied: no changes');
-  };
-  if (apply) withFileLock(`${file}.lock`, run);
-  else run();
-}
-
-function resolveSessionArg(value, sessions) {
-  if (!value) return null;
-  const exact = sessions.find((s) => s.session_id === value || s.name === value);
-  if (exact) return exact;
-  const pref = sessions.filter((s) => typeof s.session_id === 'string' && s.session_id.startsWith(value));
-  if (pref.length === 1) return pref[0];
-  if (pref.length > 1) {
-    throw new Error(`ambiguous session prefix "${value}" (${pref.length} matches)`);
-  }
-  throw new Error(`session not found: ${value}`);
-}
-
-function liveSessionLines(sessions) {
-  return sessions
-    .slice()
-    .sort((a, b) => String(b.last_seen_at || '').localeCompare(String(a.last_seen_at || '')))
-    .map((s) => `  ${s.session_id}${s.name ? `  ${s.name}` : ''}${s.project_path ? `  ${s.project_path}` : ''}`);
-}
-
-async function cmdRole(args) {
-  const roleArg = args[0];
-  if (roleArg === 'list' || roleArg === '--list') {
-    log(SESSION_ROLES.join('\n'));
-    return;
-  }
-  if (!roleArg || roleArg === '-h' || roleArg === '--help') {
-    log(`Usage: golem role <${SESSION_ROLES.join('|')}|clear> [--session <id-or-name>]\n       golem role list`);
-    return;
-  }
-  const role = roleArg === 'clear' ? null : roleArg;
-  if (role != null && !SESSION_ROLES.includes(role)) {
-    fatal(2, `invalid role: ${roleArg} (expected ${SESSION_ROLES.join('|')} or clear)`);
-  }
-  let sessionOpt = null;
-  for (let i = 1; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--session') {
-      sessionOpt = args[++i];
-      if (!sessionOpt) fatal(2, '--session requires a value');
-    } else if (a.startsWith('--session=')) {
-      sessionOpt = a.slice('--session='.length);
-    } else {
-      fatal(2, `unknown role option: ${a}`);
-    }
-  }
-  const sessions = readSessionsRegistry();
-  let target;
-  try {
-    if (sessionOpt) {
-      target = resolveSessionArg(sessionOpt, sessions);
-    } else if (process.env.CLAUDE_CODE_SESSION_ID) {
-      target = resolveSessionArg(process.env.CLAUDE_CODE_SESSION_ID, sessions);
-    } else {
-      const lines = liveSessionLines(sessions);
-      fatal(2, `--session is required when CLAUDE_CODE_SESSION_ID is unset.${lines.length ? `\n\nKnown sessions:\n${lines.join('\n')}` : ''}`);
-    }
-  } catch (e) {
-    fatal(2, e.message);
-  }
-  const updated = setSessionRole(target.session_id, role, { by: 'human:cli' });
-  const activation = role ? await pushRoleBriefDirect(updated.session_id, role, updated) : null;
-  log(JSON.stringify({
-    ok: true,
-    session_id: updated.session_id,
-    name: updated.name ?? null,
-    role: updated.role,
-    role_updated_at: updated.role_updated_at,
-    role_updated_by: updated.role_updated_by,
-    activation,
-  }, null, 2));
-}
-
-function workerProjectHelp() {
-  return '[--project <path-or-project-id>]';
-}
-
-const WORKER_TABLE_COLUMNS = [
-  { key: 'name', label: 'NAME', max: 24 },
-  { key: 'project_id', label: 'PROJECT', max: 20 },
-  { key: 'role', label: 'ROLE', max: 18 },
-  { key: 'state', label: 'STATE', max: 10 },
-  { key: 'model', label: 'MODEL', max: 30 },
-  { key: 'status', label: 'STATUS', max: 12 },
-  { key: 'idle', label: 'IDLE', max: 10 },
-  { key: 'attach_hint', label: 'ATTACH HINT', max: 32 },
-  { key: 'team', label: 'TEAM', max: 24 },
-];
-
-function formatIdle(value) {
-  if (value == null || value === '' || !Number.isFinite(Number(value))) return '-';
-  let seconds = Math.max(0, Math.floor(Number(value)));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  seconds %= 60;
-  if (minutes < 60) return `${minutes}m ${seconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (hours < 24) return `${hours}h ${remainingMinutes}m`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ${hours % 24}h`;
-}
-
-function workerTableValue(worker, key) {
-  if (key === 'idle') return formatIdle(worker?.idle_seconds);
-  if (key === 'attach_hint' && String(worker?.state || '').toLowerCase() === 'dead') return 'unavailable (dead)';
-  const value = worker?.[key];
-  if (value == null || value === '') return '-';
-  return String(value).replace(/\s+/g, ' ');
-}
-
-function fitTableCell(value, width) {
-  const text = String(value);
-  if (text.length <= width) return text.padEnd(width);
-  return `${text.slice(0, Math.max(1, width - 1))}…`;
-}
-
-function formatWorkerTable(workers) {
-  const rows = Array.isArray(workers) ? workers : [workers];
-  if (!rows.length) return 'No workers.';
-  const values = rows.map((worker) => WORKER_TABLE_COLUMNS.map((column) => workerTableValue(worker, column.key)));
-  const widths = WORKER_TABLE_COLUMNS.map((column, index) => Math.min(
-    column.max,
-    Math.max(column.label.length, ...values.map((row) => row[index].length)),
-  ));
-  const header = WORKER_TABLE_COLUMNS.map((column, index) => fitTableCell(column.label, widths[index])).join('  ');
-  const divider = widths.map((width) => '-'.repeat(width)).join('  ');
-  const body = values.map((row) => row.map((value, index) => fitTableCell(value, widths[index])).join('  '));
-  return [header, divider, ...body].join('\n');
-}
-
-/** Attach the team slug for the TEAM table column; null renders as '-'. */
-function attachTeamSlugs(workers) {
-  const rows = Array.isArray(workers) ? workers : [workers];
-  if (!rows.length) return workers;
-  let teams = [];
-  try { teams = listTeams({}); } catch { teams = []; }
-  return rows.map((view) => ({
-    ...view,
-    team: teams.find((row) => row.team_id === view?.team_id)?.slug ?? null,
-  }));
-}
-
-function emitWorkerOutput(value, { json = false } = {}) {
-  if (json) {
-    // Keep the pre-table JSON representation byte-compatible for machine users.
-    log(JSON.stringify(value, null, 2));
-    return;
-  }
-  log(formatWorkerTable(value));
-}
-
-async function cmdSpawn(args) {
-  if (!args.length || args[0] === '-h' || args[0] === '--help') {
-    log(`Usage: golem spawn <role> [--name <name>] [--profile <name>] [--team <team>] ${workerProjectHelp()} [--json]
-
-Create one Pi worker in a detached tmux pty. The worker is registered and
-role-assigned before this command returns. A failed readiness wait leaves the
-worker's tmux session available for peek/inspection. With --profile, the named
-model profile overrides the role's default (resolution: --profile > role
-default > role exec). The worker joins --team, or the caller's team (the team
-the caller leads, else the team on the caller's own worker row); an unbound
-shell must pass --team.`);
-    return;
-  }
-  const role = args[0];
-  const wantJson = args.includes('--json');
-  let name = null;
-  let project = null;
-  let profile = null;
-  let teamFlag = null;
-  for (let index = 1; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--json') {
-      continue;
-    }
-    if (arg === '--name') {
-      name = args[++index] ?? null;
-      if (!name || name.startsWith('-')) fatal(2, 'golem spawn --name requires a value');
-    } else if (arg.startsWith('--name=')) {
-      name = arg.slice('--name='.length);
-    } else if (arg === '--profile') {
-      profile = args[++index] ?? null;
-      if (!profile || profile.startsWith('-')) fatal(2, 'golem spawn --profile requires a value');
-    } else if (arg.startsWith('--profile=')) {
-      profile = arg.slice('--profile='.length);
-      if (!profile) fatal(2, 'golem spawn --profile requires a value');
-    } else if (arg === '--project') {
-      project = args[++index] ?? null;
-      if (!project || project.startsWith('-')) fatal(2, 'golem spawn --project requires a value');
-    } else if (arg.startsWith('--project=')) {
-      project = arg.slice('--project='.length);
-    } else if (arg === '--team') {
-      teamFlag = args[++index] ?? null;
-      if (!teamFlag || teamFlag.startsWith('-')) fatal(2, 'golem spawn --team requires a value');
-    } else if (arg.startsWith('--team=')) {
-      teamFlag = arg.slice('--team='.length);
-      if (!teamFlag) fatal(2, 'golem spawn --team requires a value');
-    } else {
-      fatal(2, `unknown spawn option: ${arg}`);
-    }
-  }
-  try {
-    // GOL-363 G8: every spawn belongs to a team. spawnWorker ignores teamId
-    // until GOL-370 wires the herdr workspace move; resolving (and refusing)
-    // here keeps the CLI contract in place on top of either host.
-    const { projectId } = await resolveWorkerProject(project);
-    let caller = null;
-    try { caller = resolveCliSessionContext()?.sessionId ?? null; } catch { caller = null; }
-    let workerRow = null;
-    if (caller) {
-      try { workerRow = findWorkerBySession(caller, { projectId }); } catch { workerRow = null; }
-    }
-    let team;
-    try {
-      team = resolveCallerTeam({ teamRef: teamFlag, projectId, callerSessionId: caller, teams: listTeams({ projectId }), workerRow });
-    } catch (error) {
-      fatal(2, `golem spawn: ${error.message}`);
-    }
-    const worker = await spawnWorker({ role, name, project, profile, teamId: team.team_id });
-    emitWorkerOutput(worker, { json: wantJson });
-  } catch (error) {
-    fatal(1, `golem spawn: ${error.message}`);
-  }
-}
-
-async function cmdListWorkers(args) {
-  if (args.includes('-h') || args.includes('--help')) {
-    log(`Usage: golem list ${workerProjectHelp()} [--all] [--all-projects] [--json]
-
-List live, spawning, and failed Golem workers as a table. Dead rows are
-hidden by default; --all includes retained dead rows. Use --json for the
-machine-readable worker-record shape.
-
-Without --project this lists workers for the CURRENT project — resolved
-from the working directory by walking up to the nearest .git or CLAUDE.md
-(the same rule as hook routing). Pass --all-projects to list every
-project's workers. The PROJECT column shows which project each belongs to.`);
-    return;
-  }
-  const wantJson = args.includes('--json');
-  const includeDead = args.includes('--all');
-  const allProjects = args.includes('--all-projects');
-  let project = null;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--json' || arg === '--all' || arg === '--all-projects') {
-      continue;
-    }
-    if (arg === '--project') {
-      project = args[++index] ?? null;
-      if (!project || project.startsWith('-')) fatal(2, 'golem list --project requires a value');
-    } else if (arg.startsWith('--project=')) {
-      project = arg.slice('--project='.length);
-    } else {
-      fatal(2, `unknown list option: ${arg}`);
-    }
-  }
-  try {
-    const views = await listWorkerViews({ project: allProjects ? null : (project ?? '.'), includeDead });
-    // GOL-363 G8/D2: the list defaults to the caller's team when it has one;
-    // --all-projects (and an explicit --project) keep the wider scope.
-    let team = null;
-    if (!allProjects && project == null) {
-      try {
-        const { projectId } = await resolveWorkerProject('.');
-        let caller = null;
-        try { caller = resolveCliSessionContext()?.sessionId ?? null; } catch { caller = null; }
-        let workerRow = null;
-        if (caller) {
-          try { workerRow = findWorkerBySession(caller, { projectId }); } catch { workerRow = null; }
-        }
-        team = resolveListTeam({ projectId, callerSessionId: caller, teams: listTeams({ projectId }), workerRow });
-      } catch { team = null; }
-    }
-    const scopedViews = team ? views.filter((view) => view.team_id === team.team_id) : views;
-    emitWorkerOutput(attachTeamSlugs(scopedViews), { json: wantJson });
-  } catch (error) {
-    fatal(1, `golem list: ${error.message}`);
-  }
-}
-
-async function cmdAttachWorker(args) {
-  if (!args.length || args[0] === '-h' || args[0] === '--help') {
-    log(`Usage: golem attach [<name>] ${workerProjectHelp()}
-
-Attach the current terminal to a worker's real tmux TUI. Without a name,
-attach the project's whole swarm — its dedicated tmux server tree.`);
-    return;
-  }
-  let name = null;
-  let project = null;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--project') {
-      project = args[++index] ?? null;
-      if (!project || project.startsWith('-')) fatal(2, 'golem attach --project requires a value');
-    } else if (arg.startsWith('--project=')) {
-      project = arg.slice('--project='.length);
-    } else if (name == null && !arg.startsWith('-')) {
-      name = arg;
-    } else {
-      fatal(2, `unknown attach option: ${arg}`);
-    }
-  }
-  try {
-    if (name == null) {
-      // No worker named: attach the project's whole swarm (its tmux server).
-      const { projectId } = await resolveWorkerProject(project);
-      const status = attachSwarm(projectId);
-      if (status) process.exitCode = status;
-      return;
-    }
-    const { projectId } = await resolveWorkerProject(project);
-    const status = attachWorker(name, { projectId });
-    if (status) process.exitCode = status;
-  } catch (error) {
-    fatal(1, `golem attach: ${error.message}`);
-  }
-}
-
-async function cmdPeekWorker(args) {
-  if (!args.length || args[0] === '-h' || args[0] === '--help') {
-    log(`Usage: golem peek <name> [--lines <N>] ${workerProjectHelp()}
-
-Capture worker scrollback without attaching or sending input.`);
-    return;
-  }
-  const name = args[0];
-  let lines = null;
-  let project = null;
-  for (let index = 1; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--lines') {
-      lines = Number(args[++index]);
-      if (!Number.isInteger(lines) || lines < 1) fatal(2, 'golem peek --lines requires a positive integer');
-    } else if (arg.startsWith('--lines=')) {
-      lines = Number(arg.slice('--lines='.length));
-      if (!Number.isInteger(lines) || lines < 1) fatal(2, 'golem peek --lines requires a positive integer');
-    } else if (arg === '--project') {
-      project = args[++index] ?? null;
-      if (!project || project.startsWith('-')) fatal(2, 'golem peek --project requires a value');
-    } else if (arg.startsWith('--project=')) {
-      project = arg.slice('--project='.length);
-    } else {
-      fatal(2, `unknown peek option: ${arg}`);
-    }
-  }
-  try {
-    const { projectId } = await resolveWorkerProject(project);
-    process.stdout.write(await peekWorker(name, { projectId, lines }));
-  } catch (error) {
-    fatal(1, `golem peek: ${error.message}`);
-  }
-}
-
-async function cmdKillWorker(args) {
-  if (!args.length || args[0] === '-h' || args[0] === '--help') {
-    log(`Usage: golem kill <name> ${workerProjectHelp()} [--json]
-
-Kill one worker: tmux kill-session, TERM the recorded process group, KILL
-survivors, verify the group is empty, then mark the worker dead.`);
-    return;
-  }
-  const name = args[0];
-  const wantJson = args.includes('--json');
-  let project = null;
-  for (let index = 1; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--json') {
-      continue;
-    }
-    if (arg === '--project') {
-      project = args[++index] ?? null;
-      if (!project || project.startsWith('-')) fatal(2, 'golem kill --project requires a value');
-    } else if (arg.startsWith('--project=')) {
-      project = arg.slice('--project='.length);
-    } else {
-      fatal(2, `unknown kill option: ${arg}`);
-    }
-  }
-  try {
-    const { projectId } = await resolveWorkerProject(project);
-    emitWorkerOutput(await killWorker(name, { projectId }), { json: wantJson });
-  } catch (error) {
-    const code = /refusing to kill|ambiguous|not found/i.test(error.message) ? 2 : 1;
-    fatal(code, `golem kill: ${error.message}`);
-  }
-}
 
 async function cmdDashboard(args) {
   const serverEntry = resolve(DASHBOARD_DIR, 'server', 'index.js');
@@ -1293,25 +718,16 @@ Run:
                        --role applies a validated role preset and --profile
                        selects a reusable model config; Pi keeps its own
                        profile, providers, and sessions.
-  spawn <role> [--name X] [--profile <name>] [--team T] [--project P] [--json]
-                       Spawn one named Pi worker in detached tmux. The worker
-                       joins --team or the caller's team; an unbound shell
-                       must pass --team.
-  list [--project P] [--all] [--json]
-                       List worker records as a table; --all includes dead rows.
-                       Defaults to the caller's team; --all-projects (below)
-                       keeps the wider scope.
+  agent list|create|read|attach|stop|notify|role|dedup [--help]
+                       One toolkit for every agent: list the roster, create a
+                       managed agent in your team, read or attach to its
+                       terminal, stop it, notify a session, set a role, or
+                       clean up duplicate session rows.
+                       See golem agent --help.
   team create|list|lead|close [--help]
                        Lead-owned teams: create a team and its herdr
                        workspace, list teams, take a team's lead, or close
                        a team and stop only its agents.
-  attach <name>       Attach to a worker's real tmux TUI.
-  peek <name> [--lines N]
-                       Read worker scrollback without attaching.
-  kill <name> [--json] Kill one worker and verify its process group is empty.
-                       --json preserves the machine-readable worker records.
-  role <role|clear> [--session <id-or-name>]
-                         Set or clear a session role (${SESSION_ROLES.join(', ')}).
   ticket <operation> [args] [flags]
                        Flat agent authoring family over the tracker REST API:
                        list, get, create, update, replace-body, get-outline,
@@ -1321,15 +737,10 @@ Run:
                        --json is the stable contract: stdout carries
                        only result JSON, diagnostics go to stderr. See
                        golem ticket --help.
-  session list|notify [--help]
-                         Discover sessions or send idempotent notifications.
   schedule list|inspect|cancel [--help]
                          Manage durable delayed and recurring notifications.
   message inspect <id> [--content] [--json]
                          Inspect delivery without claiming task completion.
-  sessions dedup [--apply]
-                         Dry-run named-session duplicate cleanup; --apply marks
-                         stale duplicate rows ended_at under sessions.json.lock.
   migrate-home         One-time move of ~/.config/golem -> ~/.golem (ADR-4).
                        Backs up first, stops the dashboard, moves, symlinks
                        the old path to the new one, restarts. Explicit only —
@@ -1742,25 +1153,11 @@ async function main() {
     case 'pi':
       await cmdPi(rest);
       break;
-    case 'spawn':
-      await cmdSpawn(rest);
+    case 'agent': {
+      const { runAgent } = await import('./agent.js');
+      process.exitCode = await runAgent(cmd, rest);
       break;
-    case 'list':
-      await cmdListWorkers(rest);
-      break;
-    case 'attach':
-      await cmdAttachWorker(rest);
-      break;
-    case 'peek':
-      await cmdPeekWorker(rest);
-      break;
-    case 'kill':
-      await cmdKillWorker(rest);
-      break;
-    case 'role':
-      await cmdRole(rest);
-      break;
-    case 'session':
+    }
     case 'schedule':
     case 'message': {
       const { runCollaboration } = await import('./collaboration.js');
@@ -1777,9 +1174,6 @@ async function main() {
       process.exitCode = await runTicket(rest);
       break;
     }
-    case 'sessions':
-      await cmdSessions(rest);
-      break;
     case 'migrate-home':
       await cmdMigrateHome(rest);
       break;

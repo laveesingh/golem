@@ -331,9 +331,9 @@ try {
   // GOL-371: spawns join a team. Seed the row directly (no herdr workspace —
   // this suite exercises the tmux host, not the team workspace).
   createTeam({ label: 'Model Team', projectId, herdrSession: 'model-profiles-test' });
-  const spawnedDefault = await runCollecting(['spawn', 'reviewer', '--name', 'golemtest-t3-default', '--team', 'model-team', '--project', project]);
+  const spawnedDefault = await runCollecting(['agent', 'create', 'reviewer', '--name', 'golemtest-t3-default', '--team', 'model-team', '--project', project]);
   assert.equal(spawnedDefault.status, 0, spawnedDefault.stderr);
-  const spawnedOverride = await runCollecting(['spawn', 'reviewer', '--profile', 'luna-max', '--name', 'golemtest-t3-override', '--team', 'model-team', '--project', project]);
+  const spawnedOverride = await runCollecting(['agent', 'create', 'reviewer', '--profile', 'luna-max', '--name', 'golemtest-t3-override', '--team', 'model-team', '--project', project]);
   assert.equal(spawnedOverride.status, 0, spawnedOverride.stderr);
 
   const defaultRow = readWorkers().find((worker) => worker.name === 'golemtest-t3-default');
@@ -364,11 +364,11 @@ try {
     '--provider', 'openai-codex', '--model', 'gpt-5.6-luna', '--thinking', 'max',
   ]);
 
-  const listOutput = await runCollecting(['list', '--project', project]);
+  const listOutput = await runCollecting(['agent', 'list', '--scope', 'project', '--project', project]);
   assert.equal(listOutput.status, 0, listOutput.stderr);
   assert.match(listOutput.stdout, /golemtest-t3-default/);
   assert.match(listOutput.stdout, /grok-4\.6/);
-  assert.match(listOutput.stdout, /gpt-5\.6-luna/, 'golem list shows the resolved override model');
+  assert.match(listOutput.stdout, /gpt-5\.6-luna/, 'agent list shows the resolved override model');
   console.log(JSON.stringify({ spawn: 'default + override workers live', list_shows: ['grok-4.6', 'gpt-5.6-luna'] }));
 
   for (const row of [defaultRow, overrideRow]) {

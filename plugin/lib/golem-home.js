@@ -97,6 +97,12 @@ export function endpointLeasesJsonPath() {
 export function workersJsonPath() {
   return path.join(golemHome(), 'workers.json');
 }
+// One durable record per lead-owned team (GOL-363 G7). Each team is a
+// workspace-owning unit inside one project: worker rows point at it through
+// team_id. Same lock and atomic writer pattern as the worker registry.
+export function teamsJsonPath() {
+  return path.join(golemHome(), 'teams.json');
+}
 // This is intentionally separate from generic session facts: it holds the
 // process/thread recovery mapping and must never be inferred from a hook.
 // Compact replay identity for typed native-worker delivery. Rich adapter

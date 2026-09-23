@@ -325,8 +325,8 @@ function registerChannel(port, { logMissing = true } = {}) {
 // its advertised tools; a CLI-first boot names the CLI and golem:team-ops.
 // Provenance headers and receiving event kinds are shared and unchanged.
 const MCP_RETURN_GUIDANCE = {
-  delegatedReturns: '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies notify the authenticated exact session_id with `golem session notify` from the CLI (discovery: `golem session list`); see golem:team-ops.',
-  peerHelp: 'Peer help travels as a direct CLI notification to the exact captured session_id (`golem session notify`; discovery `golem session list`); see golem:team-ops — there are no consult wrapper tools or passive subscriptions.',
+  delegatedReturns: '  Direct user-facing answers (chat responses, clarifications, decision asks, final results of short briefs) are delivered via your normal chat response — do NOT use a tool for them. Delegated returns and consultation replies notify the authenticated exact session_id with `golem agent notify` from the CLI (discovery: `golem agent list`); see golem:team-ops.',
+  peerHelp: 'Peer help travels as a direct CLI notification to the exact captured session_id (`golem agent notify`; discovery `golem agent list`); see golem:team-ops — there are no consult wrapper tools or passive subscriptions.',
 };
 const mcp = new Server(
   { name: 'golem', version: VERSION },

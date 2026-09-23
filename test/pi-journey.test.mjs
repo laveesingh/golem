@@ -457,7 +457,7 @@ async function main() {
   assert.equal(readJson(path.join(env.GOLEM_HOME, 'session-facts.json')).facts.find((f) => f.canonical_id === sessionId).status, 'idle');
   // CLI ancestry binding works after reload: resolveCliSessionContext with the
   // reclaimed lease resolves exactly the canonical session (the resolver's own
-  // ancestry walk, same code path `golem session notify` and `golem ticket`
+  // ancestry walk, same code path `golem agent notify` and `golem ticket`
   // use from a real Pi descendant).
   const { resolveCliSessionContext } = await import('../lib/cli-session-context.js');
   const reboundLeases = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases

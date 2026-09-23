@@ -92,7 +92,7 @@ const contracts = [
   },
   {
     name: 'project_context',
-    description: 'Re-render this session\'s ambient project context — role card, LSP, recently closed work as id+title pointers, and the last 40 commits. Live recipients are intentionally not boot context: call `golem session list` immediately before a new handoff. Returns pointers, never ticket bodies: pull those with ticket_get.',
+    description: 'Re-render this session\'s ambient project context — role card, LSP, recently closed work as id+title pointers, and the last 40 commits. Live recipients are intentionally not boot context: call `golem agent list` immediately before a new handoff. Returns pointers, never ticket bodies: pull those with ticket_get.',
     inputSchema: object({}),
   },
 ];
