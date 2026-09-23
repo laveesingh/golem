@@ -29,6 +29,9 @@ import {
 import {
   outlineFromMarkdown, applyMarkdownOperations, describeMarkdownBlock,
 } from './md-body.js';
+import {
+  checkChangedDiagrams, markdownOutlineErrors, htmlOutlineErrors,
+} from './mermaid-check.js';
 
 const SCHEMA_VERSION = 22;
 
@@ -219,6 +222,23 @@ function withAnchorStatus(ticketRow, comments) {
   return comments.map((c) => (c.block_id
     ? { ...c, anchor_status: ids.has(c.block_id) ? 'anchored' : 'detached' }
     : c));
+}
+
+/**
+ * GOL-369 D7: flag failing diagrams on an HTML outline (additive only —
+ * entries gain `mermaid_error: {line, message}` while they fail).
+ */
+function withHtmlMermaidErrors(outlineBlocks, body) {
+  const errs = htmlOutlineErrors(body);
+  if (!errs.size) return outlineBlocks;
+  return outlineBlocks.map((b) => (errs.has(b.id) ? { ...b, mermaid_error: errs.get(b.id) } : b));
+}
+
+/** GOL-369 D7: flag failing diagrams on a Markdown outline (additive only). */
+function withMarkdownMermaidErrors(outlineBlocks, body) {
+  const errs = markdownOutlineErrors(body);
+  if (!errs.size) return outlineBlocks;
+  return outlineBlocks.map((b, i) => (errs.has(i) ? { ...b, mermaid_error: errs.get(i) } : b));
 }
 
 /** D4: missing expected_revision rejects (400); stale revision conflicts (409). */
@@ -1765,8 +1785,14 @@ WHERE state_changed_at IS NULL`).run();
         return row;
       });
       const ticket = hydrateTicket(txn());
+      // GOL-369 D7: the write always commits; changed diagrams are reported.
+      // Create treats every diagram as changed (empty before-body).
+      const createdMermaidErrors = checkChangedDiagrams('', ticket.body, format);
+      if (createdMermaidErrors.length) ticket.mermaid_errors = createdMermaidErrors;
       // D3 rule 5: create responses carry the normalized outline + assigned IDs.
-      if (format === 'html') ticket.outline = parseAndNormalizeDoc(ticket.body).blocks;
+      if (format === 'html') {
+        ticket.outline = withHtmlMermaidErrors(parseAndNormalizeDoc(ticket.body).blocks, ticket.body);
+      }
       return ticket;
     },
 
@@ -2035,6 +2061,9 @@ WHERE state_changed_at IS NULL`).run();
       // format change requires expected_revision; stale writes conflict with
       // the current revision and current outline. Markdown body writes stay
       // ungated (compatibility) but still increment the revision once.
+      // GOL-369 D7: the before-body/format below feeds the Mermaid check
+      // after the commit (the write always commits; errors only report).
+      let bodyWrite = null;
       if ('body' in updates || 'body_format' in updates) {
         const requestedFormat = 'body_format' in updates
           ? validateBodyFormat(updates.body_format)
@@ -2056,6 +2085,11 @@ WHERE state_changed_at IS NULL`).run();
           : toMarkdownBody(updates.body);
         updates.body_format = requestedFormat;
         updates.body_revision = Number(existing.body_revision ?? 1) + 1;
+        bodyWrite = {
+          before: existing.body,
+          beforeFormat: currentFormat,
+          format: requestedFormat,
+        };
       }
 
       const ts = now();
@@ -2118,10 +2152,16 @@ WHERE state_changed_at IS NULL`).run();
         return stmts.getTicket.get(id);
       });
       const ticket = hydrateTicket(txn());
+      // GOL-369 D7: report changed diagrams on body writes (committed above).
+      if (bodyWrite) {
+        const writeMermaidErrors = checkChangedDiagrams(
+          bodyWrite.before, ticket.body, bodyWrite.format, bodyWrite.beforeFormat);
+        if (writeMermaidErrors.length) ticket.mermaid_errors = writeMermaidErrors;
+      }
       // D3 rule 5: full-update responses of HTML tickets carry the normalized
       // outline + assigned IDs so callers never re-parse the body.
       if ((ticket.body_format ?? 'markdown') === 'html') {
-        ticket.outline = parseAndNormalizeDoc(ticket.body).blocks;
+        ticket.outline = withHtmlMermaidErrors(parseAndNormalizeDoc(ticket.body).blocks, ticket.body);
       }
       return ticket;
     },
@@ -2153,7 +2193,7 @@ WHERE state_changed_at IS NULL`).run();
           display_id: row.display_id,
           body_format: 'markdown',
           body_revision: Number(row.body_revision ?? 1),
-          blocks: outlineFromMarkdown(row.body),
+          blocks: withMarkdownMermaidErrors(outlineFromMarkdown(row.body), row.body),
         };
       }
       const { blocks } = parseAndNormalizeDoc(row.body);
@@ -2163,7 +2203,7 @@ WHERE state_changed_at IS NULL`).run();
         display_id: row.display_id,
         body_format: 'html',
         body_revision: Number(row.body_revision ?? 1),
-        blocks: blocks.map((b) => ({
+        blocks: withHtmlMermaidErrors(blocks.map((b) => ({
           id: b.id,
           parent_id: b.parent_id,
           kind: b.kind,
@@ -2175,7 +2215,7 @@ WHERE state_changed_at IS NULL`).run();
             open: open.get(b.id) ?? 0,
             resolved: resolved.get(b.id) ?? 0,
           },
-        })),
+        })), row.body),
       };
     },
 
@@ -2318,6 +2358,8 @@ WHERE state_changed_at IS NULL`).run();
           },
         });
         const { open, resolved } = this.blockCommentCounts(id);
+        // GOL-369 D7: the batch committed above; report its changed diagrams.
+        const htmlPatchMermaidErrors = checkChangedDiagrams(bodyBefore, bodyAfter, 'html');
         return {
           ticket_id: current.id,
           display_id: current.display_id,
@@ -2325,11 +2367,12 @@ WHERE state_changed_at IS NULL`).run();
           inserted: result.inserted,
           removed: removedIds,
           detached,
-          outline: result.blocks.map((b) => ({
+          ...(htmlPatchMermaidErrors.length ? { mermaid_errors: htmlPatchMermaidErrors } : {}),
+          outline: withHtmlMermaidErrors(result.blocks.map((b) => ({
             id: b.id, parent_id: b.parent_id, kind: b.kind, tag: b.tag,
             heading: b.heading, short_text: b.short_text, hash: b.hash,
             comments: { open: open.get(b.id) ?? 0, resolved: resolved.get(b.id) ?? 0 },
-          })),
+          })), bodyAfter),
         };
       });
       return txn();
@@ -2376,6 +2419,8 @@ WHERE state_changed_at IS NULL`).run();
             body_revision: nextRevision,
           },
         });
+        // GOL-369 D7: the batch committed above; report its changed diagrams.
+        const mdPatchMermaidErrors = checkChangedDiagrams(bodyBefore, bodyAfter, 'markdown');
         return {
           ticket_id: current.id,
           display_id: current.display_id,
@@ -2384,7 +2429,8 @@ WHERE state_changed_at IS NULL`).run();
           inserted: [],
           removed: [],
           detached: [],
-          outline: outlineFromMarkdown(bodyAfter),
+          ...(mdPatchMermaidErrors.length ? { mermaid_errors: mdPatchMermaidErrors } : {}),
+          outline: withMarkdownMermaidErrors(outlineFromMarkdown(bodyAfter), bodyAfter),
         };
       });
       return txn();

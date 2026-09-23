@@ -127,6 +127,10 @@ function splitTokens(tokens, base) {
       level: token.type === 'heading' ? token.depth : null,
       heading: token.type === 'heading' ? String(token.text ?? '').trim() : null,
       children: null,
+      // GOL-369 D7: code fence payloads for the Mermaid check (internal;
+      // the outline shape is unchanged).
+      lang: token.type === 'code' ? (token.lang ?? null) : null,
+      text: token.type === 'code' ? String(token.text ?? '') : null,
     };
     block.short_text = shortText(token, token.raw);
     offset += token.raw.length;

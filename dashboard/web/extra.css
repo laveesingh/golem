@@ -4222,6 +4222,26 @@ mark.anno.anno-tail::after {
 .td-comments { padding: 14px 22px; }
 .td-composer { padding: 12px 22px; border-top: 1px solid var(--border-1); }
 
+/* ===== GOL-369 D7: server-reported Mermaid errors under the editor ===== */
+.td-mermaid-errors {
+  margin: 10px 22px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--status-review) 45%, transparent);
+  border-radius: var(--radius-1);
+  background: color-mix(in oklab, var(--status-review) 10%, var(--bg-2));
+  font-size: 12px;
+}
+.td-mermaid-errors-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.td-mermaid-errors ul { margin: 0; padding-left: 18px; }
+.td-mermaid-errors li { margin: 2px 0; }
+
 /* ===== TKT-0285: fields sidebar — .td-props moves into a sticky left .td-side;
    the title + body + (0284) Work-items panel live in .td-main, which re-centers
    within the remaining horizontal space (gutters both sides). The annotation rail
