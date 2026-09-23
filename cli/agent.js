@@ -1,7 +1,7 @@
 // golem agent — the one agent toolkit (GOL-363 G9, G10, T1–T8, R5, R8, R13).
 //
-// Replaces golem spawn/list/peek/attach/kill/role, golem sessions dedup and
-// golem session list/notify with no aliases. Flag parser and help style
+// This family replaces the previous per-verb top-level commands and the old
+// session family with no aliases. Flag parser and help style
 // follow cli/collaboration.js. The notify implementation moved over
 // unchanged apart from its help wording; schedule and message stay where
 // they were. Name/id resolution (T2) and scope flags (T3) build on
@@ -447,8 +447,8 @@ async function runNotify(o, { stdout, stdin, context, client, operationId, onMut
     session_id: o['--to'], text, ...(context?.projectId ? { project_id: context.projectId } : {}),
     ...(o['--ticket'] ? { ticket: o['--ticket'] } : {}), ...(o['--human'] ? { human: true } : {}), ...(timing ? { timing } : {}) };
   validateNotificationSize(body);
-  onMutating();
   await requireProtocol(client, !!timing);
+  onMutating();
   const result = await client.notifySession(body);
   if (result?.operation_id !== operationId || result?.receipt?.id !== operationId) throw new Error('notification response did not confirm the original operation id');
   return { operationId, result };

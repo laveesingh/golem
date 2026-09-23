@@ -13,6 +13,7 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-notify-cli-'));
 process.env.GOLEM_HOME = home;
 process.env.GOLEM_TRACKER_DB = path.join(home, 'tracker.db');
 const { runCollaboration } = await import('../cli/collaboration.js');
+const { runAgent } = await import('../cli/agent.js');
 const { resolveCliSessionContext } = await import('../lib/cli-session-context.js');
 const { createGolemClient } = await import('../lib/golem-client.js');
 const { startTypedWorkerEndpoint, closeTypedWorkerEndpoint } = await import('../lib/typed-worker-endpoint.js');
@@ -71,13 +72,14 @@ try {
   const humanClient = createGolemClient({ baseUrl: base });
   const run = async (family, args, extra = {}) => {
     const out = [], err = [];
-    const exit = await runCollaboration(family, args, { client: normalClient, resolveContext: () => ({ sessionId: caller }),
+    const driver = family === 'agent' ? runAgent : runCollaboration;
+    const exit = await driver(family, args, { client: normalClient, resolveContext: () => ({ sessionId: caller }),
       stdout: (s) => out.push(s), stderr: (s) => err.push(s), ...extra });
     return { exit, out: out.join('\n'), err: err.join('\n') };
   };
   const id = crypto.randomUUID(), text = 'Unicode 日本語\n"quoted" \\ tail\n';
   const file = path.join(home, 'message.txt'); fs.writeFileSync(file, text);
-  let result = await run('session', ['notify', '--to', target, '--message-file', file, '--ticket', 'GOL-331', '--request-id', id, '--json']);
+  let result = await run('agent', ['notify', '--to', target, '--message-file', file, '--ticket', 'GOL-331', '--request-id', id, '--json']);
   assert.equal(result.exit, 0, result.out || result.err);
   assert.equal(JSON.parse(result.out).id, id);
   assert.equal(result.err, '');
@@ -91,16 +93,16 @@ try {
   assert.doesNotMatch(peerHeader, /Return route: session_notify/);
   assert.doesNotMatch(peerHeader, /Return recipient: human:cli/);
   const before = inputs.size;
-  result = await run('session', ['notify', '--to', target, '--message', text, '--ticket', 'GOL-331', '--request-id', id, '--json']);
+  result = await run('agent', ['notify', '--to', target, '--message', text, '--ticket', 'GOL-331', '--request-id', id, '--json']);
   assert.equal(result.exit, 0); assert.equal(inputs.size, before);
-  result = await run('session', ['notify', '--to', target, '--message', 'changed', '--request-id', id, '--json']);
+  result = await run('agent', ['notify', '--to', target, '--message', 'changed', '--request-id', id, '--json']);
   assert.equal(result.exit, 2); assert.equal(JSON.parse(result.out).code, 'OPERATION_CONFLICT'); assert.equal(inputs.size, before);
   result = await run('message', ['inspect', id, '--json']);
   assert.equal(result.exit, 0); assert.equal(Object.hasOwn(JSON.parse(result.out), 'content'), false);
   result = await run('message', ['inspect', id, '--content', '--json']);
   assert.ok(JSON.parse(result.out).content.endsWith(text));
   const raceId = crypto.randomUUID(), raceBefore = inputs.size;
-  const racing = await Promise.all(Array.from({ length: 6 }, () => run('session', ['notify', '--to', target, '--message', 'concurrent same key', '--request-id', raceId, '--json'])));
+  const racing = await Promise.all(Array.from({ length: 6 }, () => run('agent', ['notify', '--to', target, '--message', 'concurrent same key', '--request-id', raceId, '--json'])));
   assert.ok(racing.every((item) => item.exit === 0), JSON.stringify(racing));
   assert.equal(inputs.size, raceBefore + 1, 'concurrent idempotent admissions produce one input');
   console.log('real API/SQLite/endpoint file content, ticket context, idempotent retry/conflict and inspection: passed');
@@ -112,14 +114,14 @@ try {
     return response;
   } });
   const lostArgs = ['notify', '--to', target, '--message', 'lost response', '--request-id', lostId, '--json'];
-  result = await run('session', lostArgs, { client: losingClient });
+  result = await run('agent', lostArgs, { client: losingClient });
   assert.equal(result.exit, 3); assert.equal(JSON.parse(result.out).operation_id, lostId);
   const afterLoss = inputs.size;
-  result = await run('session', lostArgs);
+  result = await run('agent', lostArgs);
   assert.equal(result.exit, 0); assert.equal(inputs.size, afterLoss);
   console.log('lost mutation response exits uncertain and same-key retry creates no extra input: passed');
 
-  result = await run('session', ['notify', '--to', target, '--message-file', '-', '--human', '--json'],
+  result = await run('agent', ['notify', '--to', target, '--message-file', '-', '--human', '--json'],
     { resolveContext: () => null, client: humanClient, stdin: Readable.from(['human stdin\n']) });
   assert.equal(result.exit, 0, result.out);
   const humanInput = inputs.get(JSON.parse(result.out).id).content;
@@ -131,21 +133,21 @@ try {
     ['notify', '--to', target, '--message', ' ', '--json'],
     ['notify', '--to', target, '--message', 'x', '--request-id', 'bad', '--json'],
     ['notify', '--to', target, '--unknown', '--json'],
-  ]) assert.equal((await run('session', args)).exit, 2);
-  assert.equal((await run('session', ['notify', '--to', target, '--message', 'x', '--json'], { resolveContext: () => null })).exit, 2);
-  assert.equal((await run('session', ['notify', '--to', 'self', '--message', 'x', '--human', '--json'], { resolveContext: () => null })).exit, 2);
-  result = await run('session', ['notify', '--message-file', '/missing', '--help'], { resolveContext: () => { throw new Error('help must not resolve identity'); } });
+  ]) assert.equal((await run('agent', args)).exit, 2);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message', 'x', '--json'], { resolveContext: () => null })).exit, 2);
+  assert.equal((await run('agent', ['notify', '--to', 'self', '--message', 'x', '--human', '--json'], { resolveContext: () => null })).exit, 2);
+  result = await run('agent', ['notify', '--message-file', '/missing', '--help'], { resolveContext: () => { throw new Error('help must not resolve identity'); } });
   assert.equal(result.exit, 0);
-  const cliHelp = spawnSync(process.execPath, ['cli/golem.js', 'session', 'notify', '--message-file', '/missing', '--help'], { cwd: repo, encoding: 'utf8' });
+  const cliHelp = spawnSync(process.execPath, ['cli/golem.js', 'agent', 'notify', '--message-file', '/missing', '--help'], { cwd: repo, encoding: 'utf8' });
   assert.equal(cliHelp.status, 0, cliHelp.stderr); assert.match(cliHelp.stdout, /request-id/);
   // GOL-335 D2: the documented commands must be runnable, and the receipts and
   // uncertain-operation advice must be present, not only section headings.
-  const notifyHelp = spawnSync(process.execPath, ['cli/golem.js', 'session', 'notify', '--help'], { cwd: repo, encoding: 'utf8' });
+  const notifyHelp = spawnSync(process.execPath, ['cli/golem.js', 'agent', 'notify', '--help'], { cwd: repo, encoding: 'utf8' });
   assert.equal(notifyHelp.status, 0, notifyHelp.stderr);
   for (const section of ['Usage:', 'Input:', 'Timing:', 'Receipts:', 'Examples:', 'Exit 0: durably admitted, not work completed', 'Exit 3: uncertain']) {
     assert.match(notifyHelp.stdout, new RegExp(section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `notify help section: ${section}`);
   }
-  assert.match(notifyHelp.stdout, /golem session list --json/, 'examples show where recipient ids come from');
+  assert.match(notifyHelp.stdout, /golem agent list --json/, 'examples show where recipient ids come from');
   assert.match(notifyHelp.stdout, /same request id/);
   const scheduleHelpText = spawnSync(process.execPath, ['cli/golem.js', 'schedule', '--help'], { cwd: repo, encoding: 'utf8' });
   assert.equal(scheduleHelpText.status, 0, scheduleHelpText.stderr);
@@ -159,25 +161,25 @@ try {
   console.log('human provenance, stdin, validation, help before context/file access and actual CLI entry point: passed');
 
   const unbound = () => resolveCliSessionContext(unboundHints);
-  assert.equal((await run('session', ['list', '--all', '--json'], { resolveContext: unbound, client: humanClient })).exit, 0);
+  assert.equal((await run('agent', ['list', '--scope', 'all', '--json'], { resolveContext: unbound, client: humanClient })).exit, 0);
   assert.equal((await run('message', ['inspect', id, '--json'], { resolveContext: unbound, client: humanClient })).exit, 0);
-  assert.equal((await run('session', ['notify', '--to', target, '--message', 'explicit operator', '--human', '--json'], { resolveContext: unbound, client: humanClient })).exit, 0);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message', 'explicit operator', '--human', '--json'], { resolveContext: unbound, client: humanClient })).exit, 0);
   const inputCount = inputs.size;
   const noProtocolClient = createGolemClient({ baseUrl: base, callerSessionId: caller, fetchImpl: async (_url, init) => {
     assert.equal(init.method, 'GET', 'incompatible server must never receive a mutation');
     return new Response('{"notification_protocol":0}', { status: 200 });
   } });
-  assert.equal((await run('session', ['notify', '--to', target, '--message', 'do not send', '--json'], { client: noProtocolClient })).exit, 1);
-  assert.equal((await run('session', ['notify', '--to', target, '--message', '\\'.repeat(600000), '--json'])).exit, 2);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message', 'do not send', '--json'], { client: noProtocolClient })).exit, 1);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message', '\\'.repeat(600000), '--json'])).exit, 2);
   const oversizeId = crypto.randomUUID();
-  result = await run('session', ['notify', '--to', target, '--message', 'x'.repeat(1048576 - 200), '--request-id', oversizeId, '--json']);
+  result = await run('agent', ['notify', '--to', target, '--message', 'x'.repeat(1048576 - 200), '--request-id', oversizeId, '--json']);
   assert.equal(result.exit, 2, 'receiving wrapper size must be checked before admission');
   assert.equal((await fetch(`${base}/api/message-envelopes/${oversizeId}`)).status, 404);
   const invalidUtf8 = path.join(home, 'invalid-utf8'); fs.writeFileSync(invalidUtf8, Buffer.from([0xc0, 0xaf]));
-  assert.equal((await run('session', ['notify', '--to', target, '--message-file', invalidUtf8, '--json'])).exit, 2);
-  assert.equal((await run('session', ['notify', '--to', target, '--message-file', '/definitely-missing-input', '--json'])).exit, 2);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message-file', invalidUtf8, '--json'])).exit, 2);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message-file', '/definitely-missing-input', '--json'])).exit, 2);
   assert.equal(inputs.size, inputCount);
-  result = await run('session', ['notify', '--to', target, '--message', '--json']);
+  result = await run('agent', ['notify', '--to', target, '--message', '--json']);
   assert.equal(result.exit, 0); assert.match(result.out, /^message /, 'a message value is not an output-format flag');
   console.log('protocol preflight, encoded/request wrapper limits, invalid input and value/flag separation: passed');
 
@@ -191,7 +193,7 @@ fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR,'sessions',process.pid+
 const bridge=\`const {spawnSync}=require('node:child_process');const r=spawnSync(process.execPath,JSON.parse(process.env.CLI_ARGS),{encoding:'utf8'});process.stdout.write(r.stdout);process.stderr.write(r.stderr);process.exit(r.status??1);\`;
 const r=spawnSync(process.execPath,['-e',bridge],{encoding:'utf8'});process.stdout.write(r.stdout);process.stderr.write(r.stderr);process.exit(r.status??1);`);
   const nativeEnv = { ...process.env, CLAUDE_CONFIG_DIR: path.join(home, 'claude'), CLAUDE_CODE_SESSION_ID: 'per-run-not-logical',
-    CLI_ARGS: JSON.stringify([path.join(repo, 'cli/golem.js'), 'session', 'notify', '--to', target, '--message', 'native grandchild', '--json']) };
+    CLI_ARGS: JSON.stringify([path.join(repo, 'cli/golem.js'), 'agent', 'notify', '--to', target, '--message', 'native grandchild', '--json']) };
   for (const key of ['GOLEM_SESSION_ID', 'GOLEM_CEO_SESSION_ID', 'PI_SESSION_ID']) delete nativeEnv[key];
   // Async spawn keeps the receiving endpoint in this process responsive.
   const child = spawn(process.execPath, [nativeFixture], { env: nativeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -203,14 +205,14 @@ const r=spawnSync(process.execPath,['-e',bridge],{encoding:'utf8'});process.stdo
 
   const scheduleId = crypto.randomUUID();
   const scheduleArgs = ['notify', '--to', target, '--message', 'scheduled context', '--after', '1h', '--every', '2h', '--request-id', scheduleId, '--json'];
-  result = await run('session', scheduleArgs);
+  result = await run('agent', scheduleArgs);
   assert.equal(result.exit, 0, result.out); const scheduled = JSON.parse(result.out);
   assert.equal(scheduled.kind, 'schedule'); assert.equal(scheduled.state, 'active');
   assert.equal(scheduled.interval_ms, 7200000); assert.equal(scheduled.current_occurrence, null);
-  result = await run('session', scheduleArgs);
+  result = await run('agent', scheduleArgs);
   assert.equal(JSON.parse(result.out).next_due_at, scheduled.next_due_at, 'idempotent retry never shifts the due time');
-  assert.equal((await run('session', ['notify', '--to', target, '--message', 'scheduled context', '--request-id', scheduleId, '--json'])).exit, 2);
-  assert.equal((await run('session', ['notify', '--to', target, '--message', text, '--ticket', 'GOL-331', '--after', '1h', '--request-id', id, '--json'])).exit, 2);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message', 'scheduled context', '--request-id', scheduleId, '--json'])).exit, 2);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message', text, '--ticket', 'GOL-331', '--after', '1h', '--request-id', id, '--json'])).exit, 2);
   const stranger = { client: createGolemClient({ baseUrl: base, callerSessionId: 'stranger' }), resolveContext: () => ({ sessionId: 'stranger' }) };
   assert.deepEqual(JSON.parse((await run('schedule', ['list', '--json'], stranger)).out), []);
   assert.ok(JSON.parse((await run('schedule', ['list', '--all', '--json'], stranger)).out).some((s) => s.id === scheduleId));
@@ -223,14 +225,14 @@ const r=spawnSync(process.execPath,['-e',bridge],{encoding:'utf8'});process.stdo
   assert.equal(result.exit, 0); const cancelledAt = JSON.parse(result.out).cancelled_at;
   assert.equal(JSON.parse((await run('schedule', ['cancel', scheduleId, '--human', '--json'], operator)).out).cancelled_at, cancelledAt);
   for (const flags of [['--after', '-1s'], ['--every', '0s'], ['--after', '10'], ['--every', '99999999999999999d']]) {
-    assert.equal((await run('session', ['notify', '--to', target, '--message', 'invalid time', ...flags, '--json'])).exit, 2);
+    assert.equal((await run('agent', ['notify', '--to', target, '--message', 'invalid time', ...flags, '--json'])).exit, 2);
   }
   const preTimingClient = createGolemClient({ baseUrl: base, callerSessionId: caller, fetchImpl: async (_url, init) => {
     assert.equal(init.method, 'GET'); return new Response('{"notification_protocol":1,"idempotency":true}');
   } });
-  assert.equal((await run('session', ['notify', '--to', target, '--message', 'never send early', '--after', '1m', '--json'], { client: preTimingClient })).exit, 1);
+  assert.equal((await run('agent', ['notify', '--to', target, '--message', 'never send early', '--after', '1m', '--json'], { client: preTimingClient })).exit, 1);
   const nowId = crypto.randomUUID();
-  result = await run('session', ['notify', '--to', target, '--message', 'clock delivers this', '--after', '0s', '--request-id', nowId, '--json']);
+  result = await run('agent', ['notify', '--to', target, '--message', 'clock delivers this', '--after', '0s', '--request-id', nowId, '--json']);
   assert.equal(result.exit, 0, result.out);
   let arrived;
   for (let i = 0; i < 200; i++) {

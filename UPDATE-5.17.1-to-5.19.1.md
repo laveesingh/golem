@@ -17,7 +17,7 @@ No data migration: existing tickets default to `markdown`, nothing is rewritten.
 - **Ticket CLI is canonical** (`golem ticket list/get/create/update/replace-body/get-outline/get-block/patch-blocks/add-comment/reply-comment/update-comment`). JSON-only stdout, file/stdin payloads, exits non-zero with machine-readable errors.
 - **HTML spec bodies (specs only).** Sanitized fragments, stable per-block ids, `body_format`/`body_revision`, outline + block-patch routes. Dashboard has a format selector, block editor, and format-aware image paste.
 - **MCP tools are the single shared surface**: reads + revision-gated full replacement. Pi/Claude also do ticket writes via the CLI.
-- **Decision-led + collaboration cleanup:** CLI-first tool surface (`golem session notify/list` instead of `session_notify`), neutral return receipts, reusable SDD method, reminders live in `team-ops`.
+- **Decision-led + collaboration cleanup:** CLI-first tool surface (`golem agent notify` instead of `session_notify`), neutral return receipts, reusable SDD method, reminders live in `team-ops`.
 - **Reliability fixes:** comment dispatch refuses implicit offline recipients (400), Pi reload keeps binding, dashboard block-editor/comment-anchor layout fixes.
 
 ## Might break → adaptation
@@ -29,7 +29,7 @@ No data migration: existing tickets default to `markdown`, nothing is rewritten.
 | HTML writes without a revision | `400 expected_revision_required`; stale → `409` with current revision + outline | Retry with the returned revision (`get-outline` first) |
 | Changing a ticket's kind freely | An `html` ticket can't become non-spec via kind PATCH | Convert format explicitly first (new body + `expected_revision`) |
 | Comment auto-dispatched to some live session when assignee offline | Refused (`400`); drawer shows a recipient picker | Pick an explicit live recipient |
-| `session_notify` / `sessions_dispatchable` in Pi/Claude tools | Removed from CLI-first surface | Use `golem session notify` / `golem session list` |
+| `session_notify` / `sessions_dispatchable` in Pi/Claude tools | Removed from CLI-first surface | Use `golem agent notify` / `golem agent list` |
 | Non-lead coordinating a spec | Allowed only on your explicit authorization | Authorize in chat or assignment; skill access alone grants nothing |
 | Return messages with embedded `session_notify` syntax | Neutral receipts: sender id + recipient id + `golem:team-ops` pointer | Follow the pointer, don't parse syntax |
 
