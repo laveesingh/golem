@@ -54,13 +54,25 @@ CARD=""
 if [ -n "$SESSION_ID" ] && command -v jq >/dev/null 2>&1; then
   SESSIONS_JSON="$GOLEM_HOME_DIR/sessions.json"
   ROLE="$(jq -r --arg sid "$SESSION_ID" '(.sessions // [])[] | select(.session_id == $sid) | .role // empty' "$SESSIONS_JSON" 2>/dev/null | head -n 1 || true)"
-  # A session nobody assigned is the lead (Global Rules § First, every session), so it
-  # boots with the lead card instead of no card at all. Only on a harness SessionStart
-  # payload: the Pi shim calls this script for ambient context and injects its own card.
+  # A managed agent's launcher passes its role in GOLEM_ROLE, which is set before
+  # the first SessionStart can read sessions.json (GOL-382 R11).
+  [ -z "$ROLE" ] && ROLE="${GOLEM_ROLE:-}"
+  # A session nobody assigned boots with the configured default role (GOL-382 R3):
+  # roles.default in config.json; a missing key means lead, null or "" means none.
+  # Only on a harness SessionStart payload: the Pi shim calls this script for
+  # ambient context and injects its own card.
   if [ -z "$ROLE" ] && [ -n "$PAYLOAD" ]; then
     HOOK_EVENT="$(printf '%s' "$PAYLOAD" | jq -r '.hook_event_name // empty' 2>/dev/null || true)"
-    [ "$HOOK_EVENT" = "SessionStart" ] && ROLE="lead"
+    if [ "$HOOK_EVENT" = "SessionStart" ]; then
+      if [ -f "$GOLEM_HOME_DIR/config.json" ]; then
+        ROLE="$(jq -r '(.roles // {}) | if has("default") then (.default // "") else "lead" end' "$GOLEM_HOME_DIR/config.json" 2>/dev/null || printf 'lead')"
+      else
+        ROLE="lead"
+      fi
+    fi
   fi
+  # A role name also names a file below; accept only registry-shaped names.
+  printf '%s' "$ROLE" | grep -Eq '^[a-z][a-z0-9-]{1,31}$' || ROLE=""
   if [ -n "$ROLE" ]; then
     for candidate in "$GOLEM_HOME_DIR/roles/$ROLE.md" "${GOLEM_ROLES_DIR:+$GOLEM_ROLES_DIR/$ROLE.md}" "$SCRIPT_DIR/../roles/$ROLE.md"; do
       if [ -n "$candidate" ] && [ -f "$candidate" ]; then

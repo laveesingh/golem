@@ -259,6 +259,24 @@ try {
   assert.match(noPreset.stderr, /builder, designer, explorer, reviewer/);
   assert.doesNotMatch(noPreset.stderr, /model is required/);
 
+  // GOL-382 R1/R2: every packaged card is a registered role, and old aliases
+  // such as planner are no longer rewritten to another role.
+  const { seedRoles, setSessionRole, sessionsJsonPath } = await import('../lib/session-role.js');
+  const seedNames = seedRoles().map((role) => role.name);
+  const registered = readRoleRegistry().map((role) => role.name);
+  for (const name of seedNames) assert.ok(registered.includes(name), `packaged role ${name} is registered`);
+  createRole({ name: 'planner', body: '# Role: planner\n' });
+  assert.ok(readRoleRegistry().some((role) => role.name === 'planner'), 'planner is a role of its own');
+  const sessionsFile = sessionsJsonPath();
+  const sessionsReg = fs.existsSync(sessionsFile) ? JSON.parse(fs.readFileSync(sessionsFile, 'utf8')) : { version: 1, sessions: [] };
+  sessionsReg.sessions.push({ session_id: 'alias-session', harness: 'claudecode', name: 'alias' });
+  fs.mkdirSync(path.dirname(sessionsFile), { recursive: true });
+  fs.writeFileSync(sessionsFile, JSON.stringify(sessionsReg));
+  setSessionRole('alias-session', 'planner', { by: 'human:cli' });
+  readRoleRegistry();
+  const aliasRow = JSON.parse(fs.readFileSync(sessionsJsonPath(), 'utf8')).sessions.find((row) => row.session_id === 'alias-session');
+  assert.equal(aliasRow?.role, 'planner', 'a planner session keeps its role across registry reloads');
+
   const modelWithoutProvider = run(['pi', '--model', 'model-only']);
   assert.equal(modelWithoutProvider.status, 2);
   assert.match(modelWithoutProvider.stderr, /requires --provider and --model together/);
