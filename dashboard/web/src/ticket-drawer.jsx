@@ -453,17 +453,25 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
   // stale store ticket never need a refresh for the human to recover (GOL-350).
   const [editError, setEditError] = React.useState(null);
   const [editExpectedRevision, setEditExpectedRevision] = React.useState(null);
+  // GOL-369 D7: the save always commits; when the response reports broken
+  // diagrams, they show under the editor as a dismissible panel. The save
+  // itself still counts as successful.
+  const [mermaidErrors, setMermaidErrors] = React.useState(null);
 
   const onSaveEdit = React.useCallback(() => {
     if (!ticketId || !editBuf || isEditBodyUploading) return;
     setSaving(true);
     setEditError(null);
+    setMermaidErrors(null);
     const html = (ticket?.body_format ?? 'markdown') === 'html';
     const expected = html ? (editExpectedRevision ?? ticket.body_revision) : null;
     const patch = { body: editBuf.body, actor: 'human', ...(expected != null ? { expected_revision: expected } : {}) };
     window.SubstrateAPI.updateTicket(ticketId, patch)
       .then((updated) => {
         if (updated && updated.id) window.Store.upsertTrackerTicket(updated);
+        if (Array.isArray(updated?.mermaid_errors) && updated.mermaid_errors.length > 0) {
+          setMermaidErrors(updated.mermaid_errors);
+        }
         setEditExpectedRevision(null);
         setEditBuf(null);
         setEditBodyUploads([]);
@@ -511,6 +519,9 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
     })
       .then((result) => {
         setBlockEdit(null);
+        if (Array.isArray(result?.mermaid_errors) && result.mermaid_errors.length > 0) {
+          setMermaidErrors(result.mermaid_errors);
+        }
         if (result?.ticket_id) {
           // The WS delta will refresh the store; also pull the outline-bearing
           // update so the persisted ids render immediately.
@@ -1160,7 +1171,7 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                   )}
                   <button
                     className="orch-btn small ghost td-edit-btn"
-                    onClick={() => { setEditExpectedRevision(null); setEditError(null); setEditBuf({ body: ticket.body || '' }); }}
+                    onClick={() => { setEditExpectedRevision(null); setEditError(null); setMermaidErrors(null); setEditBuf({ body: ticket.body || '' }); }}
                     title="Edit body"
                   >
                     Edit
@@ -1305,6 +1316,25 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
                   <div className="td-body-empty">No description.</div>
                 )}
               </div>
+
+              {/* GOL-369 D7: the save committed; these diagrams failed the
+                  server-side Mermaid check. Dismiss after fixing (one edit
+                  per diagram is enough — the next save re-checks). */}
+              {mermaidErrors && mermaidErrors.length > 0 && (
+                <div className="td-mermaid-errors" role="alert">
+                  <div className="td-mermaid-errors-head">
+                    <span>
+                      Mermaid check — {mermaidErrors.length} diagram{mermaidErrors.length === 1 ? '' : 's'} saved with errors (the save succeeded).
+                    </span>
+                    <button className="orch-btn small ghost" onClick={() => setMermaidErrors(null)}>Dismiss</button>
+                  </div>
+                  <ul>
+                    {mermaidErrors.map((e, i) => (
+                      <li key={i} className="mono">{String(e.first_line || '').slice(0, 80)} — line {e.line}: {e.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* TKT-0284: spec → children panel. Specs surface their children
                   (work items with parent_id = this spec) as a clickable list

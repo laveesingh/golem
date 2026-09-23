@@ -24,8 +24,14 @@ import { loadConfig } from '../../lib/golem-config.js';
 import { createCommentDispatchService, defaultDispatchStateForComment } from './comment-dispatch.js';
 import {
   BODY_FORMATS, TrackerInputError, applyBlockOperations, badRequest, blockHtmlFromDoc, notFound,
-  revisionConflict, parseAndNormalizeDoc, searchTextFromHtml,
+  revisionConflict, parseAndNormalizeDoc, resolveHtmlAnchor, htmlSectionHtml, searchTextFromHtml,
 } from './html-body.js';
+import {
+  outlineFromMarkdown, applyMarkdownOperations, describeMarkdownBlock,
+} from './md-body.js';
+import {
+  checkChangedDiagrams, markdownOutlineErrors, htmlOutlineErrors,
+} from './mermaid-check.js';
 
 const SCHEMA_VERSION = 22;
 
@@ -218,6 +224,23 @@ function withAnchorStatus(ticketRow, comments) {
     : c));
 }
 
+/**
+ * GOL-369 D7: flag failing diagrams on an HTML outline (additive only —
+ * entries gain `mermaid_error: {line, message}` while they fail).
+ */
+function withHtmlMermaidErrors(outlineBlocks, body) {
+  const errs = htmlOutlineErrors(body);
+  if (!errs.size) return outlineBlocks;
+  return outlineBlocks.map((b) => (errs.has(b.id) ? { ...b, mermaid_error: errs.get(b.id) } : b));
+}
+
+/** GOL-369 D7: flag failing diagrams on a Markdown outline (additive only). */
+function withMarkdownMermaidErrors(outlineBlocks, body) {
+  const errs = markdownOutlineErrors(body);
+  if (!errs.size) return outlineBlocks;
+  return outlineBlocks.map((b, i) => (errs.has(i) ? { ...b, mermaid_error: errs.get(i) } : b));
+}
+
 /** D4: missing expected_revision rejects (400); stale revision conflicts (409). */
 function requireExpectedRevision(existing, patch) {
   if (patch.expected_revision == null) {
@@ -232,6 +255,8 @@ function requireExpectedRevision(existing, patch) {
     const extra = { expected_revision: Number(patch.expected_revision), current_revision: current };
     if ((existing.body_format ?? 'markdown') === 'html') {
       try { extra.outline = parseAndNormalizeDoc(existing.body).blocks; } catch { /* body unreadable: revision pointer is enough */ }
+    } else {
+      try { extra.outline = outlineFromMarkdown(existing.body); } catch { /* body unreadable: revision pointer is enough */ }
     }
     throw revisionConflict(`stale body_revision: expected ${patch.expected_revision}, current ${current}`, extra);
   }
@@ -1760,8 +1785,14 @@ WHERE state_changed_at IS NULL`).run();
         return row;
       });
       const ticket = hydrateTicket(txn());
+      // GOL-369 D7: the write always commits; changed diagrams are reported.
+      // Create treats every diagram as changed (empty before-body).
+      const createdMermaidErrors = checkChangedDiagrams('', ticket.body, format);
+      if (createdMermaidErrors.length) ticket.mermaid_errors = createdMermaidErrors;
       // D3 rule 5: create responses carry the normalized outline + assigned IDs.
-      if (format === 'html') ticket.outline = parseAndNormalizeDoc(ticket.body).blocks;
+      if (format === 'html') {
+        ticket.outline = withHtmlMermaidErrors(parseAndNormalizeDoc(ticket.body).blocks, ticket.body);
+      }
       return ticket;
     },
 
@@ -2030,6 +2061,9 @@ WHERE state_changed_at IS NULL`).run();
       // format change requires expected_revision; stale writes conflict with
       // the current revision and current outline. Markdown body writes stay
       // ungated (compatibility) but still increment the revision once.
+      // GOL-369 D7: the before-body/format below feeds the Mermaid check
+      // after the commit (the write always commits; errors only report).
+      let bodyWrite = null;
       if ('body' in updates || 'body_format' in updates) {
         const requestedFormat = 'body_format' in updates
           ? validateBodyFormat(updates.body_format)
@@ -2051,6 +2085,11 @@ WHERE state_changed_at IS NULL`).run();
           : toMarkdownBody(updates.body);
         updates.body_format = requestedFormat;
         updates.body_revision = Number(existing.body_revision ?? 1) + 1;
+        bodyWrite = {
+          before: existing.body,
+          beforeFormat: currentFormat,
+          format: requestedFormat,
+        };
       }
 
       const ts = now();
@@ -2113,27 +2152,21 @@ WHERE state_changed_at IS NULL`).run();
         return stmts.getTicket.get(id);
       });
       const ticket = hydrateTicket(txn());
+      // GOL-369 D7: report changed diagrams on body writes (committed above).
+      if (bodyWrite) {
+        const writeMermaidErrors = checkChangedDiagrams(
+          bodyWrite.before, ticket.body, bodyWrite.format, bodyWrite.beforeFormat);
+        if (writeMermaidErrors.length) ticket.mermaid_errors = writeMermaidErrors;
+      }
       // D3 rule 5: full-update responses of HTML tickets carry the normalized
       // outline + assigned IDs so callers never re-parse the body.
       if ((ticket.body_format ?? 'markdown') === 'html') {
-        ticket.outline = parseAndNormalizeDoc(ticket.body).blocks;
+        ticket.outline = withHtmlMermaidErrors(parseAndNormalizeDoc(ticket.body).blocks, ticket.body);
       }
       return ticket;
     },
 
     // ---- GOL-326: HTML outline / block read / atomic block patch ----------
-
-    /** Shared guard: the block contracts apply to HTML spec bodies only. */
-    requireHtmlTicket(id) {
-      const row = stmts.getTicket.get(id);
-      if (!row) throw notFound(`ticket '${id}' not found`);
-      if ((row.body_format ?? 'markdown') !== 'html') {
-        throw badRequest(
-          `ticket '${id}' has a Markdown body; outline, block reads and block patches apply to html spec bodies`,
-          'unsupported_format', { body_format: 'markdown' });
-      }
-      return row;
-    },
 
     /** Comment open/resolved counts per block for one ticket. */
     blockCommentCounts(ticketId) {
@@ -2147,9 +2180,22 @@ WHERE state_changed_at IS NULL`).run();
       return { open, resolved };
     },
 
-    /** GET /api/tickets/:id/outline — ordered blocks with anchor metadata. */
+    /** GET /api/tickets/:id/outline — ordered blocks with anchor metadata.
+     * Dispatches by body_format (GOL-369 D5): HTML keeps id/parent_id/hash
+     * plus comment counts; Markdown returns kind/heading/level/section with
+     * no ids. */
     getTicketOutline(id) {
-      const row = this.requireHtmlTicket(id);
+      const row = stmts.getTicket.get(id);
+      if (!row) throw notFound(`ticket '${id}' not found`);
+      if ((row.body_format ?? 'markdown') !== 'html') {
+        return {
+          ticket_id: row.id,
+          display_id: row.display_id,
+          body_format: 'markdown',
+          body_revision: Number(row.body_revision ?? 1),
+          blocks: withMarkdownMermaidErrors(outlineFromMarkdown(row.body), row.body),
+        };
+      }
       const { blocks } = parseAndNormalizeDoc(row.body);
       const { open, resolved } = this.blockCommentCounts(id);
       return {
@@ -2157,7 +2203,7 @@ WHERE state_changed_at IS NULL`).run();
         display_id: row.display_id,
         body_format: 'html',
         body_revision: Number(row.body_revision ?? 1),
-        blocks: blocks.map((b) => ({
+        blocks: withHtmlMermaidErrors(blocks.map((b) => ({
           id: b.id,
           parent_id: b.parent_id,
           kind: b.kind,
@@ -2169,23 +2215,62 @@ WHERE state_changed_at IS NULL`).run();
             open: open.get(b.id) ?? 0,
             resolved: resolved.get(b.id) ?? 0,
           },
-        })),
+        })), row.body),
       };
     },
 
-    /** GET /api/tickets/:id/blocks/:blockId — one block, not the full body. */
-    getTicketBlock(id, blockId) {
-      const row = this.requireHtmlTicket(id);
+    /** GET one block — by positional id, by anchor, or a whole section under a
+     * heading anchor (GOL-369 D5). `blockId` keeps its HTML positional meaning;
+     * `opts.anchor` is `{text, prefix?, suffix?}`; `opts.section` returns the
+     * section instead of the single block. An op gives an id or an anchor,
+     * never both. */
+    getTicketBlock(id, blockId = null, opts = {}) {
+      const row = stmts.getTicket.get(id);
+      if (!row) throw notFound(`ticket '${id}' not found`);
+      const anchor = opts.anchor ?? null;
+      const sectionOnly = opts.section === true;
+      if ((row.body_format ?? 'markdown') !== 'html') {
+        if (blockId != null && anchor) {
+          throw badRequest('give block id or anchor, never both', 'invalid_target');
+        }
+        if (blockId != null) {
+          throw badRequest(
+            `ticket '${id}' has a Markdown body, which has no block ids; read with ?anchor=`,
+            'invalid_target', { body_format: 'markdown' });
+        }
+        if (!anchor) {
+          throw badRequest('markdown block reads need an anchor (?anchor= with optional &prefix= &suffix=)',
+            'invalid_target', { body_format: 'markdown' });
+        }
+        const described = describeMarkdownBlock(row.body, anchor, { section: sectionOnly });
+        return {
+          ticket_id: row.id,
+          display_id: row.display_id,
+          body_format: 'markdown',
+          body_revision: Number(row.body_revision ?? 1),
+          ...described,
+        };
+      }
       const parsed = parseAndNormalizeDoc(row.body);
-      const meta = parsed.blocks.find((b) => b.id === blockId);
+      let resolvedId = blockId != null ? String(blockId) : null;
+      if (anchor) {
+        if (resolvedId) throw badRequest('give block id or anchor, never both', 'invalid_target');
+        resolvedId = resolveHtmlAnchor(parsed.doc, anchor);
+      }
+      if (!resolvedId) {
+        throw badRequest('html block reads need a block id or an anchor (?anchor= with optional &prefix= &suffix=)',
+          'invalid_target');
+      }
+      const meta = parsed.blocks.find((b) => b.id === resolvedId);
       if (!meta) {
-        throw notFound(`block '${blockId}' not found on ticket '${id}'`, 'block_not_found', {
-          block_id: blockId,
+        throw notFound(`block '${resolvedId}' not found on ticket '${id}'`, 'block_not_found', {
+          block_id: resolvedId,
           body_revision: Number(row.body_revision ?? 1),
         });
       }
       const comments = withAnchorStatus(row, stmts.getComments.all(id))
-        .filter((c) => c.block_id === blockId);
+        .filter((c) => c.block_id === resolvedId);
+      const section = sectionOnly ? htmlSectionHtml(parsed.doc, resolvedId) : null;
       return {
         ticket_id: row.id,
         display_id: row.display_id,
@@ -2196,29 +2281,33 @@ WHERE state_changed_at IS NULL`).run();
         heading: meta.heading,
         short_text: meta.short_text,
         hash: meta.hash,
-        html: blockHtmlFromDoc(parsed.doc, blockId),
+        html: sectionOnly ? section.html : blockHtmlFromDoc(parsed.doc, resolvedId),
         body_revision: Number(row.body_revision ?? 1),
         comments,
-        child_blocks: parsed.blocks.filter((b) => b.parent_id === blockId)
+        child_blocks: parsed.blocks.filter((b) => b.parent_id === resolvedId)
           .map((b) => ({ id: b.id, kind: b.kind })),
+        ...(sectionOnly ? { section: true } : {}),
       };
     },
 
     /**
      * POST /api/tickets/:id/block-patches — one atomic operations batch
-     * (GOL-326 write contract). Revision is re-checked inside the transaction;
-     * any invalid operation rolls the whole batch back.
+     * (GOL-326 write contract, GOL-369 one grammar for both formats). Revision
+     * is re-checked inside the transaction; any invalid operation rolls the
+     * whole batch back. Markdown patches require expected_revision and return
+     * `{body_revision, outline}` with no ids.
+     *
+     * T2 hook: both branches bind `bodyBefore`/`bodyAfter` around the commit —
+     * the Mermaid check compares exactly those two bodies.
      */
     patchTicketBlocks(id, input = {}) {
       const row = stmts.getTicket.get(id);
       if (!row) throw notFound(`ticket '${id}' not found`);
-      if ((row.body_format ?? 'markdown') !== 'html') {
-        throw badRequest(
-          `ticket '${id}' has a Markdown body; block patches apply to html spec bodies`,
-          'unsupported_format', { body_format: 'markdown' });
-      }
       if (input.expected_revision == null) {
         throw badRequest('block patches require expected_revision', 'expected_revision_required');
+      }
+      if ((row.body_format ?? 'markdown') !== 'html') {
+        return this.patchMarkdownBlocks(id, input);
       }
       const ts = now();
       const txn = db.transaction(() => {
@@ -2238,6 +2327,7 @@ WHERE state_changed_at IS NULL`).run();
             });
         }
         const before = parseAndNormalizeDoc(current.body);
+        const bodyBefore = before.html;
         let result;
         try {
           result = applyBlockOperations(before.doc, input.operations);
@@ -2245,6 +2335,7 @@ WHERE state_changed_at IS NULL`).run();
           if (err instanceof TrackerInputError) throw err;
           throw badRequest(`block operations failed: ${err?.message ?? err}`, 'invalid_block_operations');
         }
+        const bodyAfter = result.html;
         // Removed IDs = persisted IDs that no longer exist after the batch;
         // their comments detach explicitly (never silently retargeted).
         const removedIds = [...before.ids].filter((blockId) => !result.ids.has(blockId));
@@ -2253,7 +2344,7 @@ WHERE state_changed_at IS NULL`).run();
           .map((c) => ({ id: c.id, author: c.author, block_id: c.block_id, anchor_status: 'detached' }));
         const nextRevision = currentRevision + 1;
         db.prepare('UPDATE tickets SET body = ?, body_revision = ?, updated_at = ? WHERE id = ?')
-          .run(result.html, nextRevision, ts, id);
+          .run(bodyAfter, nextRevision, ts, id);
         recordEvent({
           ticket_id: id,
           project_id: current.project_id,
@@ -2267,6 +2358,8 @@ WHERE state_changed_at IS NULL`).run();
           },
         });
         const { open, resolved } = this.blockCommentCounts(id);
+        // GOL-369 D7: the batch committed above; report its changed diagrams.
+        const htmlPatchMermaidErrors = checkChangedDiagrams(bodyBefore, bodyAfter, 'html');
         return {
           ticket_id: current.id,
           display_id: current.display_id,
@@ -2274,11 +2367,70 @@ WHERE state_changed_at IS NULL`).run();
           inserted: result.inserted,
           removed: removedIds,
           detached,
-          outline: result.blocks.map((b) => ({
+          ...(htmlPatchMermaidErrors.length ? { mermaid_errors: htmlPatchMermaidErrors } : {}),
+          outline: withHtmlMermaidErrors(result.blocks.map((b) => ({
             id: b.id, parent_id: b.parent_id, kind: b.kind, tag: b.tag,
             heading: b.heading, short_text: b.short_text, hash: b.hash,
             comments: { open: open.get(b.id) ?? 0, resolved: resolved.get(b.id) ?? 0 },
-          })),
+          })), bodyAfter),
+        };
+      });
+      return txn();
+    },
+
+    /** Markdown block patches: same revision gate and atomicity as HTML, no
+     * ids anywhere (GOL-369 R1/D5). Markdown comment anchors are text-based
+     * and resolve in the browser, so no comment detaches. */
+    patchMarkdownBlocks(id, input = {}) {
+      const ts = now();
+      const txn = db.transaction(() => {
+        const current = stmts.getTicket.get(id);
+        if (!current) throw notFound(`ticket '${id}' not found`);
+        const currentRevision = Number(current.body_revision ?? 1);
+        if (Number(input.expected_revision) !== currentRevision) {
+          throw revisionConflict(
+            `stale body_revision: expected ${input.expected_revision}, current ${currentRevision}`,
+            {
+              expected_revision: Number(input.expected_revision),
+              current_revision: currentRevision,
+              outline: outlineFromMarkdown(current.body),
+            });
+        }
+        const bodyBefore = current.body;
+        let result;
+        try {
+          result = applyMarkdownOperations(bodyBefore, input.operations);
+        } catch (err) {
+          if (err instanceof TrackerInputError) throw err;
+          throw badRequest(`block operations failed: ${err?.message ?? err}`, 'invalid_block_operations');
+        }
+        const bodyAfter = toMarkdownBody(result.body);
+        const nextRevision = currentRevision + 1;
+        db.prepare('UPDATE tickets SET body = ?, body_revision = ?, updated_at = ? WHERE id = ?')
+          .run(bodyAfter, nextRevision, ts, id);
+        recordEvent({
+          ticket_id: id,
+          project_id: current.project_id,
+          type: 'block_patched',
+          actor: input.actor ?? 'human',
+          data: {
+            body_format: 'markdown',
+            operations: (input.operations ?? []).length,
+            body_revision: nextRevision,
+          },
+        });
+        // GOL-369 D7: the batch committed above; report its changed diagrams.
+        const mdPatchMermaidErrors = checkChangedDiagrams(bodyBefore, bodyAfter, 'markdown');
+        return {
+          ticket_id: current.id,
+          display_id: current.display_id,
+          body_format: 'markdown',
+          body_revision: nextRevision,
+          inserted: [],
+          removed: [],
+          detached: [],
+          ...(mdPatchMermaidErrors.length ? { mermaid_errors: mdPatchMermaidErrors } : {}),
+          outline: withMarkdownMermaidErrors(outlineFromMarkdown(bodyAfter), bodyAfter),
         };
       });
       return txn();
