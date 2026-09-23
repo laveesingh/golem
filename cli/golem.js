@@ -716,6 +716,66 @@ async function cmdDoctor() {
   }
 }
 
+// Per-verb help for the six in-file verbs (GOL-381). cmdHelp() prints these
+// inline, and `golem <verb> --help|-h` prints just its own entry. The wording
+// lives here once — keep it identical in both paths.
+function helpDashboard() {
+  return `  dashboard [--public] [--port P] [npm-start-args…]
+                       Start the admin dashboard on ${dashboardUrl()}.
+                       --port is an explicit alternate port; --public binds
+                       0.0.0.0 (LAN-reachable, no auth).`;
+}
+
+function helpDashboardRestart() {
+  return `  dashboard:restart [--public] [--port P] [npm-start-args…]
+                       Stop every matching dashboard process and restart detached.`;
+}
+
+function helpMigrateHome() {
+  return `  migrate-home         One-time move of ~/.config/golem -> ~/.golem (ADR-4).
+                       Backs up first, stops the dashboard, moves, symlinks
+                       the old path to the new one, restarts. Explicit only —
+                       never runs automatically. Rollback is one command
+                       (printed on completion).`;
+}
+
+function helpSync() {
+  return `  sync [--check] [--all] [--target cc|cc-marketplace|pi] [--out <dir>]
+       [--force] [--project <root>]
+                        Render substrate/ sources into a harness bundle
+                        (default target: cc, default out: ~/.golem/renders/
+                        cc-plugin/). --check reports drift without writing
+                        (exit 0 clean, 1 drifted). --force overwrites a
+                        hand-edited (tampered) output; without it, sync warns
+                        and refuses that one file.
+                        --project switches to project-scoped artifacts only,
+                        rendering into the project root's harness-local dirs and
+                        recording the lockfile under projects.<project_id>.
+                         With --check --all, or only --check and no target/project args, reports
+                        global renders plus all known project render sections.
+                       Root instructions render as a marked block into
+                       ~/.claude/CLAUDE.md. Text outside the markers is yours
+                       and is never rewritten. Skipped when --out is given,
+                       since the bundle is going elsewhere.`;
+}
+
+function helpDoctor() {
+  return `  doctor               Sanity-check the environment.`;
+}
+
+function helpStatus() {
+  return `  status [--json]    Dashboard health + canonical URL.`;
+}
+
+const IN_FILE_VERB_HELP = {
+  'dashboard': helpDashboard,
+  'dashboard:restart': helpDashboardRestart,
+  'migrate-home': helpMigrateHome,
+  'sync': helpSync,
+  'doctor': helpDoctor,
+  'status': helpStatus,
+};
+
 function cmdHelp() {
   log(`golem — minimal Node CLI for the v4 harness.
 
@@ -724,12 +784,8 @@ Usage:
   node cli/golem.js <command> [args]
 
 Run:
-  dashboard [--public] [--port P] [npm-start-args…]
-                       Start the admin dashboard on ${dashboardUrl()}.
-                       --port is an explicit alternate port; --public binds
-                       0.0.0.0 (LAN-reachable, no auth).
-  dashboard:restart [--public] [--port P] [npm-start-args…]
-                       Stop every matching dashboard process and restart detached.
+${helpDashboard()}
+${helpDashboardRestart()}
   claude|cc [--backend native|ollama] [--model <id>] [-- <claude args...>]
                        Open Claude Code with Golem's development channel loaded;
                        optionally launch through Ollama with an explicit model.
@@ -761,32 +817,12 @@ Run:
                          Manage durable delayed and recurring notifications.
   message inspect <id> [--content] [--json]
                          Inspect delivery without claiming task completion.
-  migrate-home         One-time move of ~/.config/golem -> ~/.golem (ADR-4).
-                       Backs up first, stops the dashboard, moves, symlinks
-                       the old path to the new one, restarts. Explicit only —
-                       never runs automatically. Rollback is one command
-                       (printed on completion).
-  sync [--check] [--all] [--target cc|cc-marketplace|pi] [--out <dir>]
-       [--force] [--project <root>]
-                        Render substrate/ sources into a harness bundle
-                        (default target: cc, default out: ~/.golem/renders/
-                        cc-plugin/). --check reports drift without writing
-                        (exit 0 clean, 1 drifted). --force overwrites a
-                        hand-edited (tampered) output; without it, sync warns
-                        and refuses that one file.
-                        --project switches to project-scoped artifacts only,
-                        rendering into the project root's harness-local dirs and
-                        recording the lockfile under projects.<project_id>.
-                         With --check --all, or only --check and no target/project args, reports
-                        global renders plus all known project render sections.
-                       Root instructions render as a marked block into
-                       ~/.claude/CLAUDE.md. Text outside the markers is yours
-                       and is never rewritten. Skipped when --out is given,
-                       since the bundle is going elsewhere.
+${helpMigrateHome()}
+${helpSync()}
 
 Inspect:
-  doctor               Sanity-check the environment.
-  status [--json]    Dashboard health + canonical URL.
+${helpDoctor()}
+${helpStatus()}
   help                 Show this message.
 
 Removed in v4 (no longer supported):
@@ -1148,6 +1184,17 @@ async function main() {
 
   if (removed.has(cmd)) {
     cmdRemoved(cmd);
+    return;
+  }
+
+  // GOL-381: `--help`/`-h` on an in-file verb prints that verb's help and
+  // exits 0 — the handler never runs, so no sync, migrate, dashboard, or
+  // probe side effects happen.
+  if (
+    Object.hasOwn(IN_FILE_VERB_HELP, cmd) &&
+    rest.some((arg) => arg === '--help' || arg === '-h')
+  ) {
+    log(IN_FILE_VERB_HELP[cmd]());
     return;
   }
 
