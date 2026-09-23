@@ -15,6 +15,12 @@
 // read time and never persisted.
 import crypto from 'node:crypto';
 import * as parse5 from 'parse5';
+// GOL-369 D2: the owned error family lives in the shared anchor module so
+// both engines throw one class identity; re-exported here so existing
+// import paths keep working.
+import { TrackerInputError, badRequest, notFound, revisionConflict, resolveAnchor, resolveEditRange } from './body-anchor.js';
+
+export { TrackerInputError, badRequest, notFound, revisionConflict };
 
 export const BODY_FORMATS = Object.freeze(['markdown', 'html']);
 
@@ -107,23 +113,6 @@ const NESTED_BLOCK_KINDS = new Map([['ul', 'list'], ['ol', 'list'], ['li', 'item
 const CONTAINER_TAGS = new Set(['section', 'article', 'aside', 'header', 'footer', 'main', 'nav', 'div', 'details', 'figure', 'blockquote']);
 
 export const BLOCK_ID_PATTERN = /^b-[a-z0-9]{8,64}$/;
-
-export class TrackerInputError extends Error {
-  constructor(message, code, status = 400, extra = null) {
-    super(message);
-    this.name = 'TrackerInputError';
-    this.code = code;
-    this.status = status;
-    if (extra) this.extra = extra;
-  }
-}
-
-export const badRequest = (message, code = 'invalid_input', extra = null) =>
-  new TrackerInputError(message, code, 400, extra);
-export const notFound = (message, code = 'not_found', extra = null) =>
-  new TrackerInputError(message, code, 404, extra);
-export const revisionConflict = (message, extra = null) =>
-  new TrackerInputError(message, 'revision_conflict', 409, extra);
 
 function isElement(node) {
   return node?.nodeName !== undefined && node.tagName !== undefined;
@@ -357,16 +346,114 @@ export function outlineFromDoc(fragment, ids = null) {
 
 /** Canonical outer HTML of one block by ID (null when absent). */
 export function blockHtmlFromDoc(doc, blockId) {
-  const find = (node) => {
-    for (const child of childElements(node)) {
-      if (attrValue(child, 'data-block-id') === blockId) return child;
-      const hit = find(child);
+  const hit = findBlockNode(doc, blockId);
+  return hit ? serializeNodes([hit]) : null;
+}
+
+/** Deepest element node carrying data-block-id === blockId (null when absent). */
+export function findBlockNode(node, blockId) {
+  for (const child of childElements(node)) {
+    if (attrValue(child, 'data-block-id') === blockId) return child;
+    const hit = findBlockNode(child, blockId);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * Whole-document anchor search text (GOL-369 D2): the text content with
+ * whitespace collapsed, plus per-character innermost-block ownership so an
+ * anchor resolves to the innermost block covering its text.
+ * Returns `{text, spans}` where spans are `{start, end, ref: blockId}`.
+ */
+export function htmlAnchorIndex(doc) {
+  const raw = [];
+  const walk = (node, stack) => {
+    if (node.nodeName === '#text') {
+      const innermost = stack.length ? stack[stack.length - 1] : null;
+      for (const ch of String(node.value ?? '')) raw.push({ ch, block: innermost });
+      return;
+    }
+    if (!isElement(node)) {
+      // Fragment roots (and any other non-element containers) splice through.
+      for (const child of node.childNodes ?? []) walk(child, stack);
+      return;
+    }
+    const id = attrValue(node, 'data-block-id');
+    const next = id ? [...stack, id] : stack;
+    for (const child of node.childNodes ?? []) walk(child, next);
+  };
+  walk(doc, []);
+  let text = '';
+  const owner = [];
+  let pending = false;
+  let pendingBlock = null;
+  for (const { ch, block } of raw) {
+    if (/\s/.test(ch)) {
+      pending = true;
+      pendingBlock = pendingBlock ?? block;
+      continue;
+    }
+    if (pending && text.length) {
+      text += ' ';
+      owner.push(pendingBlock ?? block);
+    }
+    pending = false;
+    pendingBlock = null;
+    text += ch;
+    owner.push(block);
+  }
+  const ranges = new Map();
+  owner.forEach((block, idx) => {
+    if (!block) return;
+    const r = ranges.get(block) ?? { start: idx, end: idx + 1 };
+    r.start = Math.min(r.start, idx);
+    r.end = Math.max(r.end, idx + 1);
+    ranges.set(block, r);
+  });
+  return { text, spans: [...ranges].map(([block, r]) => ({ ...r, ref: block })) };
+}
+
+/** Strict anchor → block id against a normalized live document (D2). */
+export function resolveHtmlAnchor(doc, anchor) {
+  const { text, spans } = htmlAnchorIndex(doc);
+  return resolveAnchor(text, spans, anchor).ref;
+}
+
+/**
+ * Section HTML for a heading block: the heading through the next sibling
+ * heading of the same or a higher level, inside the same parent (D4).
+ * Returns `{level, html}` with the joined canonical outer HTML.
+ */
+export function htmlSectionHtml(doc, blockId) {
+  const node = findBlockNode(doc, blockId);
+  if (!node) return null;
+  const tag = node.tagName.toLowerCase();
+  const hm = /^h([1-6])$/.exec(tag);
+  if (!hm) {
+    throw badRequest(`section operations need a heading block, not '${tag}'`, 'section_target_not_heading', { block_id: blockId });
+  }
+  const level = Number(hm[1]);
+  const container = findBlockContainer(doc, node);
+  const siblings = childElements(container);
+  const startIdx = siblings.indexOf(node);
+  let endIdx = siblings.length;
+  for (let k = startIdx + 1; k < siblings.length; k += 1) {
+    const kh = /^h([1-6])$/.exec(siblings[k].tagName.toLowerCase());
+    if (kh && Number(kh[1]) <= level) { endIdx = k; break; }
+  }
+  return { level, html: serializeNodes(siblings.slice(startIdx, endIdx)) };
+}
+
+function findBlockContainer(node, target) {
+  for (const child of childElements(node)) {
+    if (child === target) return node;
+    if (childElements(child).length) {
+      const hit = findBlockContainer(child, target);
       if (hit) return hit;
     }
-    return null;
-  };
-  const hit = find(doc);
-  return hit ? serializeNodes([hit]) : null;
+  }
+  return node;
 }
 
 /**
@@ -400,7 +487,12 @@ export function applyBlockOperations(doc, operations) {
   if (!Array.isArray(operations) || operations.length === 0) {
     throw badRequest('operations must be a non-empty array', 'invalid_operations');
   }
-  const OPS = new Set(['replace', 'insert_before', 'insert_after', 'move_before', 'move_after', 'remove']);
+  // GOL-369 D4: one grammar for both formats. `content` is an alias of
+  // `html`; targeting is `block_id` OR `anchor`, never both; moves take
+  // `anchor_block_id` OR `to_anchor`. `edit` runs on the serialized
+  // canonical body; section ops span same-parent sibling headings.
+  const OPS = new Set(['replace', 'insert_before', 'insert_after', 'move_before', 'move_after', 'remove',
+    'edit', 'replace_section', 'append_to_section']);
   const blockId = (node) => attrValue(node, 'data-block-id');
   // One flat index of id → { node, container, parentBlockId } rebuilt per
   // operation so removed IDs simply stop resolving mid-batch.
@@ -433,35 +525,76 @@ export function applyBlockOperations(doc, operations) {
     const name = String(op?.op ?? '');
     if (!OPS.has(name)) throw badRequest(`unknown operation '${name}'`, 'invalid_operation', { op: name });
     const map = index();
+    const hasId = op.block_id != null;
+    const hasAnchor = op.anchor != null;
+    if (hasId && hasAnchor) {
+      throw badRequest(`operation '${name}': give block_id or anchor, never both`, 'invalid_target', { op: name });
+    }
+    // Whole-body edit on the serialized canonical body. `old` must occur
+    // exactly once (prefix/suffix allowed); touching `data-block-*` fails so
+    // identity can never be forged or dropped by an edit. Renormalized after,
+    // so persisted ids survive.
+    if (name === 'edit') {
+      if (hasId || hasAnchor) {
+        throw badRequest(`operation 'edit': targets the whole body; drop block_id/anchor`, 'invalid_target', { op: name });
+      }
+      const oldText = String(op.old ?? '');
+      if (!oldText) throw badRequest(`operation 'edit': old is required and must be non-empty`, 'invalid_operation', { op: name });
+      if (typeof op.new !== 'string') {
+        throw badRequest(`operation 'edit': new is required and must be a string`, 'invalid_operation', { op: name });
+      }
+      if (/data-block-/i.test(oldText) || /data-block-/i.test(op.new)) {
+        throw badRequest(`operation 'edit': must not touch data-block-* attributes`, 'protected_attribute', { op: name });
+      }
+      const canonical = serializeNodes(doc.childNodes);
+      const { start, end } = resolveEditRange(canonical, op);
+      const fresh = parseAndNormalizeDocInternal(canonical.slice(0, start) + op.new + canonical.slice(end));
+      doc.childNodes = fresh.doc.childNodes;
+      continue;
+    }
+    const resolveTargetId = () => {
+      if (hasAnchor) return resolveHtmlAnchor(doc, op.anchor);
+      if (!hasId) throw badRequest(`operation '${name}': block_id or anchor is required`, 'invalid_operation', { op: name });
+      return String(op.block_id);
+    };
     const requireTarget = (id, field = 'block_id') => {
       if (!id) throw badRequest(`operation '${name}': ${field} is required`, 'invalid_operation', { op: name });
       const entry = map.get(String(id));
       if (!entry) throw notFound(`operation '${name}': block '${id}' not found`, 'block_not_found', { block_id: id, op: name });
       return entry;
     };
+    // `content` is the cross-format payload name; `html` stays accepted.
+    const payloadHtml = () => {
+      const payload = op.html ?? op.content;
+      if (typeof payload !== 'string' || !payload) {
+        throw badRequest(`operation '${name}': html/content is required and must be non-empty`, 'invalid_operation', { op: name });
+      }
+      return payload;
+    };
     const replaceChild = (entry, replacement) => {
       const siblings = entry.container.childNodes;
       siblings.splice(siblings.indexOf(entry.node), 1, replacement);
     };
     if (name === 'remove') {
-      const entry = requireTarget(op.block_id);
+      const entry = requireTarget(resolveTargetId());
       entry.container.childNodes.splice(entry.container.childNodes.indexOf(entry.node), 1);
       continue;
     }
     if (name === 'replace') {
-      const entry = requireTarget(op.block_id);
-      const root = parseOperationBlock(op.html, name);
+      const targetId = resolveTargetId();
+      const entry = requireTarget(targetId);
+      const root = parseOperationBlock(payloadHtml(), name);
       // The replacement root retains the target ID (write contract); duplicate
       // or malformed descendant IDs fail the batch in the final validation.
-      setAttr(root, 'data-block-id', String(op.block_id));
+      setAttr(root, 'data-block-id', targetId);
       removeAttr(root, 'data-block-parent-id');
       removeAttr(root, 'data-block-kind');
       replaceChild(entry, root);
       continue;
     }
     if (name === 'insert_before' || name === 'insert_after') {
-      const entry = requireTarget(op.block_id);
-      const root = parseOperationBlock(op.html, name);
+      const entry = requireTarget(resolveTargetId());
+      const root = parseOperationBlock(payloadHtml(), name);
       removeAttr(root, 'data-block-parent-id');
       removeAttr(root, 'data-block-kind');
       const siblings = entry.container.childNodes;
@@ -470,20 +603,58 @@ export function applyBlockOperations(doc, operations) {
       insertRootIds.push(root);
       continue;
     }
-    // move_before / move_after
-    const entry = requireTarget(op.block_id);
-    const anchor = requireTarget(op.anchor_block_id, 'anchor_block_id');
-    if (entry.node === anchor.node) {
-      throw badRequest(`operation '${name}': cannot move a block relative to itself`, 'invalid_move',
-        { block_id: op.block_id });
+    if (name === 'move_before' || name === 'move_after') {
+      const targetId = resolveTargetId();
+      const entry = requireTarget(targetId);
+      const destHasId = op.anchor_block_id != null;
+      const destHasAnchor = op.to_anchor != null;
+      if (destHasId && destHasAnchor) {
+        throw badRequest(`operation '${name}': give anchor_block_id or to_anchor, never both`, 'invalid_target', { op: name });
+      }
+      const destId = destHasAnchor ? resolveHtmlAnchor(doc, op.to_anchor) : op.anchor_block_id;
+      const anchor = requireTarget(destId, 'anchor_block_id');
+      if (entry.node === anchor.node) {
+        throw badRequest(`operation '${name}': cannot move a block relative to itself`, 'invalid_move',
+          { block_id: targetId });
+      }
+      if (descendsFrom(anchor.node, entry.node)) {
+        throw badRequest(`operation '${name}': cannot move '${targetId}' relative to its own descendant '${anchor.node === entry.node ? targetId : destId}'`,
+          'invalid_move', { block_id: targetId, anchor_block_id: destId });
+      }
+      entry.container.childNodes.splice(entry.container.childNodes.indexOf(entry.node), 1);
+      anchor.container.childNodes.splice(
+        anchor.container.childNodes.indexOf(anchor.node) + (name === 'move_after' ? 1 : 0), 0, entry.node);
+      continue;
     }
-    if (descendsFrom(anchor.node, entry.node)) {
-      throw badRequest(`operation '${name}': cannot move '${op.block_id}' relative to its own descendant '${op.anchor_block_id}'`,
-        'invalid_move', { block_id: op.block_id, anchor_block_id: op.anchor_block_id });
+    // Section ops: heading through the next sibling heading of the same or a
+    // higher level, inside the same parent element.
+    if (name === 'replace_section' || name === 'append_to_section') {
+      const targetId = resolveTargetId();
+      const entry = requireTarget(targetId);
+      const section = htmlSectionHtml(doc, targetId);
+      const root = parseOperationBlock(payloadHtml(), name);
+      removeAttr(root, 'data-block-parent-id');
+      removeAttr(root, 'data-block-kind');
+      const kids = entry.container.childNodes;
+      const siblings = childElements(entry.container);
+      const startIdx = siblings.indexOf(entry.node);
+      let endIdx = siblings.length;
+      for (let k = startIdx + 1; k < siblings.length; k += 1) {
+        const kh = /^h([1-6])$/.exec(siblings[k].tagName.toLowerCase());
+        if (kh && Number(kh[1]) <= section.level) { endIdx = k; break; }
+      }
+      if (name === 'append_to_section') {
+        const before = endIdx < siblings.length ? siblings[endIdx] : null;
+        kids.splice(before ? kids.indexOf(before) : kids.length, 0, root);
+      } else {
+        const at = kids.indexOf(siblings[startIdx]);
+        for (let k = endIdx - 1; k >= startIdx; k -= 1) kids.splice(kids.indexOf(siblings[k]), 1);
+        kids.splice(at, 0, root);
+      }
+      insertRootIds.push(root);
+      continue;
     }
-    entry.container.childNodes.splice(entry.container.childNodes.indexOf(entry.node), 1);
-    anchor.container.childNodes.splice(
-      anchor.container.childNodes.indexOf(anchor.node) + (name === 'move_after' ? 1 : 0), 0, entry.node);
+    throw badRequest(`unknown operation '${name}'`, 'invalid_operation', { op: name });
   }
   // Final validation pass: assigns IDs to new content (inserts, replacement
   // descendants), preserves valid caller-supplied IDs, and fails the whole

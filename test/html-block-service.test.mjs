@@ -284,6 +284,109 @@ try {
       return c.anchor_kind === 'text' && hits.some((h) => h.id === mdSpec.id);
     })());
 
+  // ---- GOL-373 (T1): one grammar for both formats (anchors, content alias,
+  // edit, section ops) on a fresh ticket — earlier tickets keep their exact
+  // revision history for the A6/A13/A7/A9 assertions above. ------------------
+  const anchored = db.createTicket({
+    project_id: 'proj-abc123', kind: 'spec', title: 'Anchored html',
+    body: '<h2>Alpha</h2><p>First section body.</p><h2>Beta</h2><p>Second section body.</p>',
+    body_format: 'html', created_by: 'smoke',
+  });
+  const anchoredOutline = () => db.getTicketOutline(anchored.id);
+  const anchoredRev = () => db.getTicket(anchored.id).body_revision;
+  const aPatched = db.patchTicketBlocks(anchored.id, {
+    expected_revision: anchoredRev(),
+    operations: [{ op: 'replace', anchor: { text: 'First section body.' }, html: '<p>First section REPLACED.</p>' }],
+  });
+  check('T1 anchor-targeted replace commits and keeps sibling ids stable',
+    aPatched.body_revision === 2 && db.getTicket(anchored.id).body.includes('First section REPLACED.')
+      && anchoredOutline().blocks.find((b) => b.heading === 'Beta').id != null);
+  const aInserted = db.patchTicketBlocks(anchored.id, {
+    expected_revision: anchoredRev(),
+    // `content` is the cross-format payload name; `html` stays an alias.
+    operations: [{ op: 'insert_after', anchor: { text: 'First section REPLACED.' }, content: '<p>Inserted via content alias.</p>' }],
+  });
+  check('T1 anchor-targeted insert with the content alias commits',
+    aInserted.body_revision === 3 && /^b-[a-z0-9]{12}$/.test(aInserted.inserted[0])
+      && db.getTicket(anchored.id).body.includes('Inserted via content alias.'));
+  const secondPara = anchoredOutline().blocks.find((b) => b.short_text === 'Second section body.');
+  const aMoved = db.patchTicketBlocks(anchored.id, {
+    expected_revision: anchoredRev(),
+    operations: [{ op: 'move_before', anchor: { text: 'Second section body.' }, to_anchor: { text: 'First section REPLACED.' } }],
+  });
+  check('T1 anchor-targeted move with to_anchor keeps the moved id',
+    aMoved.body_revision === 4
+      && anchoredOutline().blocks.some((b) => b.id === secondPara.id && b.short_text === 'Second section body.')
+      && db.getTicket(anchored.id).body.indexOf('Second section body.') < db.getTicket(anchored.id).body.indexOf('First section REPLACED.'));
+  const aSection = db.patchTicketBlocks(anchored.id, {
+    expected_revision: anchoredRev(),
+    operations: [{ op: 'append_to_section', anchor: { text: 'Beta' }, html: '<p>Beta appended.</p>' }],
+  });
+  check('T1 anchor-targeted section op appends at the section end',
+    aSection.body_revision === 5 && /Beta appended\.<\/p>$/.test(db.getTicket(anchored.id).body));
+  const aEdited = db.patchTicketBlocks(anchored.id, {
+    expected_revision: anchoredRev(),
+    operations: [{ op: 'edit', old: 'Beta appended.', new: 'Beta edited.' }],
+  });
+  check('T1 whole-body edit commits and survivors keep their ids',
+    aEdited.body_revision === 6 && db.getTicket(anchored.id).body.includes('Beta edited.')
+      && anchoredOutline().blocks.some((b) => b.id === secondPara.id));
+  check('T1 edit touching data-block-* is rejected and writes nothing',
+    (() => {
+      const before = db.getTicket(anchored.id).body;
+      const rev = anchoredRev();
+      try {
+        db.patchTicketBlocks(anchored.id, {
+          expected_revision: rev,
+          operations: [{ op: 'edit', old: 'Beta edited.', new: '<p data-block-id="b-000000000000">forged</p>' }],
+        });
+        return false;
+      } catch (e) {
+        return e.code === 'protected_attribute' && db.getTicket(anchored.id).body === before
+          && db.getTicket(anchored.id).body_revision === rev;
+      }
+    })());
+  check('T1 block_id + anchor together is rejected',
+    (() => {
+      try {
+        db.patchTicketBlocks(anchored.id, {
+          expected_revision: anchoredRev(),
+          operations: [{ op: 'remove', block_id: secondPara.id, anchor: { text: 'Beta' } }],
+        });
+        return false;
+      } catch (e) { return e.code === 'invalid_target'; }
+    })());
+  check('T1 legacy {block_id, html} and anchor_block_id still pass',
+    (() => {
+      const p = db.patchTicketBlocks(anchored.id, {
+        expected_revision: anchoredRev(),
+        operations: [
+          { op: 'replace', block_id: secondPara.id, html: '<p>Second via legacy path.</p>' },
+          { op: 'move_after', block_id: secondPara.id, anchor_block_id: anchoredOutline().blocks[0].id },
+        ],
+      });
+      return p.body_revision === anchoredRev() && db.getTicket(anchored.id).body.includes('Second via legacy path.');
+    })());
+  check('T1 ambiguous anchor fails the batch with candidates',
+    (() => {
+      try {
+        db.patchTicketBlocks(anchored.id, {
+          expected_revision: anchoredRev(),
+          operations: [{ op: 'remove', anchor: { text: 'Beta' } }],
+        });
+        return false;
+      } catch (e) {
+        return e.code === 'anchor_ambiguous' && (e.extra?.candidates ?? []).length > 1;
+      }
+    })());
+  check('T1 html anchor read resolves through the service',
+    db.getTicketBlock(anchored.id, null, { anchor: { text: 'Second via legacy' } }).block_id === secondPara.id);
+  check('T1 html section read returns the section html',
+    (() => {
+      const sec = db.getTicketBlock(anchored.id, null, { anchor: { text: 'Alpha' }, section: true });
+      return sec.section === true && sec.html.includes('First section REPLACED.') && !sec.html.includes('Beta edited.');
+    })());
+
   // ---- REST boundary -------------------------------------------------------
   {
     const { WebSocket } = await import('ws');
@@ -343,9 +446,13 @@ try {
     check('A4 REST get-block unknown id → 404 block_not_found',
       missingBlock.status === 404 && missingBlock.json?.code === 'block_not_found');
     const mdOutline = await api(`/api/tickets/${restMd.json.id}/outline`);
-    check('outline/patch on a markdown ticket → 400 unsupported_format',
-      mdOutline.status === 400 && mdOutline.json?.code === 'unsupported_format'
-        && (await api(`/api/tickets/${restMd.json.id}/block-patches`, { expected_revision: 1, operations: [{ op: 'remove', block_id: 'x' }], actor: 'smoke' })).json?.code === 'unsupported_format');
+    // GOL-373: Markdown outline and patches are supported (no ids); a
+    // block_id target on Markdown is rejected as invalid_target.
+    check('T1 REST markdown outline works with no ids',
+      mdOutline.status === 200 && mdOutline.json?.body_format === 'markdown'
+        && Array.isArray(mdOutline.json?.blocks) && mdOutline.json.blocks.every((b) => !('id' in b)));
+    check('T1 REST markdown block_id target → 400 invalid_target',
+      (await api(`/api/tickets/${restMd.json.id}/block-patches`, { expected_revision: 1, operations: [{ op: 'remove', block_id: 'x' }], actor: 'smoke' })).json?.code === 'invalid_target');
 
     // A15 via REST: missing/stale revision on html full-body PATCH.
     const noRev = await api(`/api/tickets/${restHtmlId}`, { body: '<p>no revision</p>', actor: 'smoke' }, 'PATCH');

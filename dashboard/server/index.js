@@ -1326,6 +1326,24 @@ async function main() {
     }
   });
 
+  // GET /api/tickets/:id/block?anchor=&prefix=&suffix=&section= — anchor-targeted
+  // read for both formats (GOL-369 D5). Existing id routes stay unchanged.
+  fastify.get('/api/tickets/:id/block', async (req, reply) => {
+    const ticket = resolveTicketRef(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: 'not_found' });
+    try {
+      const q = req.query ?? {};
+      const anchor = q.anchor != null
+        ? { text: String(q.anchor), prefix: q.prefix, suffix: q.suffix }
+        : null;
+      return tracker.getTicketBlock(ticket.id, q.block_id ?? null, {
+        anchor,
+        section: q.section === '1' || q.section === 'true',
+      });
+    } catch (err) {
+      return sendTrackerError(reply, err);
+    }
+  });
   // POST /api/tickets/:id/block-patches — atomic insert/replace/move/remove
   // batch against expected_revision (GOL-326 D3/D4).
   fastify.post('/api/tickets/:id/block-patches', async (req, reply) => {
