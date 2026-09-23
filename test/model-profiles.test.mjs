@@ -73,6 +73,33 @@ for (const signal of ['SIGTERM', 'SIGHUP']) process.once(signal, () => process.e
 setInterval(() => {}, 1000);
 `, { mode: 0o700 });
 
+// GOL-382 R11: a fake claude for the Claude spawn journey. `golem claude`
+// runs it inside the herdr pane; it captures argv plus the launch env and
+// registers the session id golem chose through --session-id.
+fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null; };
+const name = flag('--name');
+const sessionId = flag('--session-id');
+if (!name || !sessionId) process.exit(0);
+fs.mkdirSync(process.env.GOLEM_TEST_PI_CAPTURE_DIR, { recursive: true });
+fs.writeFileSync(path.join(process.env.GOLEM_TEST_PI_CAPTURE_DIR, 'claude-' + name + '.json'), JSON.stringify({
+  args, role: process.env.GOLEM_ROLE || null, ceo: process.env.GOLEM_CEO_SESSION_ID || null,
+}, null, 2));
+fs.writeFileSync(path.join(process.env.GOLEM_TEST_REGISTRATION_DIR, 'claude-' + name + '.json'), JSON.stringify({
+  session_id: sessionId,
+  name,
+  role: null,
+  harness: 'claudecode',
+  project_id: process.env.GOLEM_TEST_PROJECT_ID,
+  status: 'idle',
+}));
+for (const signal of ['SIGTERM', 'SIGHUP']) process.once(signal, () => process.exit(0));
+setInterval(() => {}, 1000);
+`, { mode: 0o700 });
+
 Object.assign(process.env, {
   GOLEM_HOME: state,
   HOME: path.join(temp, 'home'),
@@ -393,13 +420,39 @@ try {
   assert.equal(externalRow.team, null);
   console.log(JSON.stringify({ spawn: 'default + override workers live', list_shows: ['grok-4.6', 'gpt-5.6-luna'] }));
 
-  for (const row of [defaultRow, overrideRow]) {
+  // --- 7. Claude profiles and a Claude spawn (GOL-382 R11) --------------
+  assert.throws(() => createProfile({ name: 'claude-no-model', harness: 'claude' }), /model is required/);
+  assert.throws(() => createProfile({ name: 'claude-bad-effort', harness: 'claude', model: 'claude-x', thinking: 'off' }), /thinking must be one of low/);
+  const claudeProfile = createProfile({ name: 'claude-test', harness: 'claude', model: 'claude-test-model', thinking: 'high' });
+  assert.equal(claudeProfile.harness, 'claude');
+  assert.equal(claudeProfile.provider, null, 'a claude profile carries no provider');
+  assert.equal(resolveRoleExecution('reviewer', { profile: 'claude-test' }).harness, 'claude', 'a claude profile resolves to the claude harness');
+  const piWithClaude = await runCollecting(['pi', '--role', 'reviewer', '--profile', 'claude-test']);
+  assert.equal(piWithClaude.status, 2, 'golem pi refuses a claude profile');
+  assert.match(piWithClaude.stderr, /runs on claude, not pi/);
+
+  const spawnedClaude = await runCollecting(['agent', 'create', 'reviewer', '--profile', 'claude-test', '--name', 'golemtest-t3-claude', '--team', 'model-team', '--project', project]);
+  assert.equal(spawnedClaude.status, 0, spawnedClaude.stderr);
+  const claudeRow = readWorkers().find((worker) => worker.name === 'golemtest-t3-claude');
+  assert.equal(claudeRow.state, 'live');
+  assert.equal(claudeRow.preset.harness, 'claude');
+  const claudeLaunch = JSON.parse(fs.readFileSync(path.join(captureDir, 'claude-golemtest-t3-claude.json'), 'utf8'));
+  const launchFlag = (flag) => claudeLaunch.args[claudeLaunch.args.indexOf(flag) + 1];
+  assert.equal(claudeRow.session_id, launchFlag('--session-id'), 'the row binds exactly the session id golem chose');
+  assert.equal(claudeLaunch.ceo, claudeRow.session_id, 'GOLEM_CEO_SESSION_ID carries the same id for the channel');
+  assert.equal(claudeLaunch.role, 'reviewer', 'GOLEM_ROLE reaches the pane for the boot card');
+  assert.equal(launchFlag('--model'), 'claude-test-model');
+  assert.equal(launchFlag('--effort'), 'high');
+  assert.ok(claudeLaunch.args.includes('--dangerously-load-development-channels'), 'the golem claude wrapper loads the channel');
+
+  for (const row of [defaultRow, overrideRow, claudeRow]) {
     const killed = await killWorker(row.name, { projectId: row.project_id });
     assert.equal(killed.state, 'dead');
   }
-  console.log(JSON.stringify({ teardown: 'both workers killed' }));
+  assert.equal(fs.existsSync(path.join(captureDir, 'claude-golemtest-t3-claude.json')), true);
+  console.log(JSON.stringify({ teardown: 'pi and claude workers killed' }));
 
-  console.log('Model profiles journey passed: deduped seed, idempotent first-load, precedence --profile > default > exec, raw overrides win, spawn preset honesty, forwarded --profile');
+  console.log('Model profiles journey passed: deduped seed, idempotent first-load, precedence --profile > default > exec, raw overrides win, spawn preset honesty, forwarded --profile, claude profiles and exact claude spawn');
 } finally {
   // Best-effort kill of leaked workers first (needs the server), then stop
   // the throwaway session BEFORE removing any dir — the server does not die

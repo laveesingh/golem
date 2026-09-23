@@ -152,7 +152,7 @@ try {
   assert.equal(readRoleRegistry().find((row) => row.name === 'preset').exec.thinking, 'high');
   assert.throws(() => updateRoleExec('preset', { thinking: 'invalid' }), /thinking must be one of/);
   assert.equal(resolveRoleExecution('preset').thinking, 'high', 'invalid writes do not reach the registry');
-  assert.throws(() => updateRoleMeta('preset', { exec: { harness: 'claude' } }), /harness must be "pi"/);
+  assert.throws(() => updateRoleMeta('preset', { exec: { harness: 'codex' } }), /harness must be one of pi, claude/);
   assert.throws(() => createRole({
     name: 'bad-preset',
     exec: { provider: 'p', model: 'm', thinking: 'invalid' },
@@ -204,7 +204,13 @@ try {
     thinking: 'medium',
     name: null,
   });
-  assert.throws(() => validateRolePreset({ harness: 'claude', provider: 'p', model: 'm', thinking: 'medium' }, { applyDefaults: false }), /harness must be "pi"/);
+  // GOL-382 R11: claude is a managed harness; it needs a model and takes an optional effort.
+  assert.deepEqual(validateRolePreset({ harness: 'claude', provider: 'p', model: 'm', thinking: 'medium' }, { applyDefaults: false }),
+    { harness: 'claude', provider: null, model: 'm', thinking: 'medium', name: null });
+  assert.deepEqual(validateRolePreset({ harness: 'claude', model: 'm' }, { applyDefaults: false }),
+    { harness: 'claude', provider: null, model: 'm', thinking: null, name: null });
+  assert.throws(() => validateRolePreset({ harness: 'claude', model: 'm', thinking: 'minimal' }, { applyDefaults: false }), /thinking must be one of low/);
+  assert.throws(() => validateRolePreset({ harness: 'codex', provider: 'p', model: 'm', thinking: 'medium' }, { applyDefaults: false }), /harness must be one of pi, claude/);
   assert.throws(() => validateRolePreset({ harness: 'pi', provider: 'p', model: 'm', thinking: 'invalid' }, { applyDefaults: false }), /thinking must be one of/);
   assert.throws(() => validateRolePreset({ harness: 'pi', provider: null, model: 'm', thinking: 'medium' }, { applyDefaults: false }), /provider is required/);
   assert.throws(() => validateRolePreset({ harness: 'pi', provider: 'p', model: null, thinking: 'medium' }, { applyDefaults: false }), /model is required/);

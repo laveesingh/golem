@@ -1038,6 +1038,9 @@ async function cmdPi(args) {
     if (!profileExec) {
       fatal(2, `golem pi: unknown model profile "${profile}"; expected one of: ${listProfileNames().join(', ') || '(none)'}`);
     }
+    if ((profileExec.harness ?? 'pi') !== 'pi') {
+      fatal(2, `golem pi: model profile "${profile}" runs on ${profileExec.harness}, not pi`);
+    }
   }
   const effectiveProvider = provider ?? profileExec?.provider ?? null;
   const effectiveModel = model ?? profileExec?.model ?? null;
