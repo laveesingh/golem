@@ -431,7 +431,7 @@ if (existsSync(trackerDb)) {
 const tombstonesDb = typedDeliveryTombstonesDbPath();
 if (existsSync(tombstonesDb)) {
   try {
-    tombstoneCount = countTypedDeliveryTombstonesFor([...set], { file: tombstonesDb });
+    tombstoneCount = await countTypedDeliveryTombstonesFor([...set], { file: tombstonesDb });
   } catch (error) {
     tombstoneCount = `unreadable: ${error.message}`;
   }

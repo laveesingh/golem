@@ -44,7 +44,7 @@
     "check": "node --check cli/golem.js && npm run audit:skills && node cli/golem.js sync --check --all",
     "audit:skills": "node scripts/audit-skills.mjs && node scripts/audit-skills.mjs .claude/skills",
     "test": "node test/claude-cli.test.mjs && node test/pi-cli.test.mjs && node test/role-preset.test.mjs && node test/model-profiles.test.mjs && node test/model-catalog.test.mjs && node test/dashboard-model-profiles.test.mjs && node test/worker-journey.test.mjs && node test/state-watcher.test.mjs && node test/dashboard-lifecycle.test.mjs && node test/instruction-block.test.mjs && node test/instruction-workflow.test.mjs && node test/session-facts.test.mjs && node test/session-project-pinning.test.mjs && node test/pi-journey.test.mjs && node test/pi-tools-journey.test.mjs && node test/pi-tracker-integration.test.mjs && node test/model-providers.test.mjs && node test/substrate-api.test.mjs && node test/scrub-legacy-harnesses.test.mjs && node mcp/channel/tracker-client.test.mjs && npm run test:collaboration",
-    "test:collaboration": "node test/notification-cli.test.mjs && node test/notification-schedule.test.mjs && node test/pi-delivery-failures.test.mjs && node test/notification-delivery.test.mjs && node test/typed-immediate-retry.test.mjs && node test/typed-worker-endpoint.test.mjs",
+    "test:collaboration": "node test/cross-harness-matrix.test.mjs && node test/notification-cli.test.mjs && node test/notification-schedule.test.mjs && node test/pi-delivery-failures.test.mjs && node test/notification-delivery.test.mjs && node test/typed-immediate-retry.test.mjs && node test/typed-worker-endpoint.test.mjs",
     "postinstall": "npm ci --omit=dev --prefix mcp/channel",
     "test:release": "node test/release-smoke.mjs",
     "measure:turns": "node scripts/measure-turns.mjs",
@@ -52,7 +52,7 @@
     "dashboard:build": "vite build --config dashboard/vite.config.js",
     "dashboard:dev": "vite --config dashboard/vite.config.js",
     "dashboard:serve": "npm run dashboard:build && node dashboard/server/index.js",
-    "test:dashboard:browser": "node dashboard/scripts/gol-495-browser.mjs && node dashboard/scripts/nested-composer-overlay.browser.mjs && node dashboard/scripts/gol-129-pi-browser.mjs && node dashboard/scripts/comment-image-paste.browser.mjs",
+    "test:dashboard:browser": "node dashboard/scripts/gol-461-browser.mjs && node dashboard/scripts/gol-495-browser.mjs && node dashboard/scripts/nested-composer-overlay.browser.mjs && node dashboard/scripts/gol-129-pi-browser.mjs && node dashboard/scripts/comment-image-paste.browser.mjs",
     "test:pi:dashboard": "node test/typed-immediate-retry.test.mjs && npm run dashboard:build && node dashboard/scripts/gol-129-pi-browser.mjs",
     "check:dashboard": "dashboard/scripts/check.sh"
   },

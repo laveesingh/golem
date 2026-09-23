@@ -518,7 +518,30 @@ function syncTarget({ harness, project = null, force = false }) {
   const started = Date.now();
   const targetDef = TARGETS.find((t) => t.id === harness || t.target === harness);
   if (!targetDef) throw Object.assign(new Error(`unknown target: ${harness}`), { statusCode: 400 });
+  if (targetDef.id === 'claudecode' && cfg.harnesses?.claudecode?.enabled === false) return { harness: targetDef.id, skipped: true, status: 'disabled' };
 
+  const root = SUBSTRATE_ROOT;
+  const pkg = packageVersion();
+  const results = [];
+  const p = project ? resolveProject(project) : null;
+  if (Date.now() - started > SYNC_TIMEOUT_MS) throw new Error('sync timed out before start');
+
+  if (targetDef.id === 'claudecode') {
+    if (p) {
+      const items = ccAdapter.buildProjectPlan({ substrateRoot: root });
+      const res = compiler.render({ target: 'cc', outDir: p.path, items, packageVersion: pkg, force, projectId: p.project_id || p.id || projectIdFor(p.path) });
+      results.push({ artifact: 'project', out_dir: p.path, ...renderSummary(res) });
+    } else {
+      const outDir = renderDirFor('cc');
+      const items = ccAdapter.buildPlan({ substrateRoot: root, repoRoot: REPO_ROOT, packageVersion: pkg });
+      const res = compiler.render({ target: 'cc', outDir, items, packageVersion: pkg, force });
+      ccAdapter.syncMcpChannelDeps({ repoRoot: REPO_ROOT, outDir });
+      results.push({ artifact: 'global', out_dir: outDir, ...renderSummary(res) });
+      const instructionItems = ccAdapter.buildInstructionPlan({ substrateRoot: root });
+      const instructionOutDir = ccAdapter.instructionOutDir();
+      results.push({ artifact: 'instructions', out_dir: instructionOutDir, ...renderSummary(compiler.render({ target: 'cc-instructions', outDir: instructionOutDir, items: instructionItems, packageVersion: pkg, force })) });
+    }
+  }
 
   return { harness: targetDef.id, status: 'ok', elapsed_ms: Date.now() - started, results };
 }

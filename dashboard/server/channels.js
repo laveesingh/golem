@@ -124,9 +124,7 @@ export async function readChannels() {
       ...c,
       url: `http://${c.host}:${c.port}`,
       endpoint_health: 'legacy-pid-only',
-      delivery_ready: false
-        ? c.delivery_ready !== false
-        : c.consumer_ready === true && c.delivery_ready === true,
+      delivery_ready: c.consumer_ready === true && c.delivery_ready === true,
     }));
   return [...healthy, ...legacy];
 }
