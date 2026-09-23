@@ -93,7 +93,7 @@ export function endpointLeasesJsonPath() {
 }
 // One durable record per Golem-owned, headless Pi worker. It is separate from
 // session-facts.json: facts are harness-owned liveness evidence, while this
-// registry records the tmux/process identity Golem launched.
+// registry records the pane/process identity Golem launched.
 export function workersJsonPath() {
   return path.join(golemHome(), 'workers.json');
 }
