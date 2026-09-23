@@ -18,7 +18,8 @@ const {
   createTeam,
   findTeam,
   listTeams,
-  setTeamLead,
+  joinTeam,
+  teamHasSession,
   setTeamWorkspace,
   closeTeam,
 } = await import('../lib/team-registry.js');
@@ -57,15 +58,16 @@ assert.throws(() => herdrAgentNameFor('Bad Slug', 'builder1'), /team slug is req
 // --- team rows ----------------------------------------------------------------
 const blue = createTeam({ label: 'Blue Team', projectId: projectA, herdrSession: 'herdr-a' });
 assert.equal(blue.slug, 'blue-team');
-assert.equal(blue.lead_session_id, null);
+assert.equal(blue.owner_session_id, null);
+assert.deepEqual(blue.member_session_ids, []);
 assert.equal(blue.herdr_workspace_id, null);
 assert.equal(blue.closed_at, null);
 assert.match(blue.team_id, /^[0-9a-f-]{36}$/);
 
 const red = createTeam({
-  label: 'Red Team', projectId: projectA, leadSessionId: 'lead-1', herdrSession: 'herdr-a', herdrWorkspaceId: 'w9',
+  label: 'Red Team', projectId: projectA, ownerSessionId: 'lead-1', herdrSession: 'herdr-a', herdrWorkspaceId: 'w9',
 });
-assert.equal(red.lead_session_id, 'lead-1');
+assert.equal(red.owner_session_id, 'lead-1');
 assert.equal(red.herdr_workspace_id, 'w9');
 
 // Duplicate slug among open teams in the same project refuses.
@@ -85,14 +87,40 @@ assert.equal(findTeam('nope', { projectId: projectA }), null);
 assert.equal(listTeams({ projectId: projectA }).length, 2);
 assert.equal(listTeams({ projectId: projectB }).length, 1);
 
-// --- lead handoff ---------------------------------------------------------------
-const moved = setTeamLead(red.team_id, 'lead-9');
-assert.equal(moved.lead_session_id, 'lead-9');
-const alsoLed = setTeamLead(blue.team_id, 'lead-9');
-assert.equal(alsoLed.lead_session_id, 'lead-9');
-assert.equal(findTeam(red.team_id).lead_session_id, null, 'handoff clears the previous team');
-assert.throws(() => setTeamLead(red.team_id, ''), /lead session_id is required/);
-assert.throws(() => setTeamLead('missing-id', 'lead-9'), /team not found/);
+// --- owner and members (GOL-382 R4) ----------------------------------------------
+const moved = joinTeam(red.team_id, 'lead-9', { owner: true });
+assert.equal(moved.owner_session_id, 'lead-9');
+assert.deepEqual(moved.member_session_ids, ['lead-1'], 'the previous owner stays a member');
+const joined = joinTeam(blue.team_id, 'lead-9');
+assert.deepEqual(joined.member_session_ids, ['lead-9'], 'join without --owner adds a member');
+assert.equal(joined.owner_session_id, null);
+assert.equal(findTeam(red.team_id).owner_session_id, null, 'joining another team leaves the previous one');
+assert.ok(teamHasSession(findTeam(blue.team_id), 'lead-9'));
+assert.ok(!teamHasSession(findTeam(red.team_id), 'lead-9'));
+// A new team takes its owner out of any other open team.
+const green = createTeam({ label: 'Green Team', projectId: projectA, ownerSessionId: 'lead-9', herdrSession: 'herdr-a' });
+assert.ok(!teamHasSession(findTeam(blue.team_id), 'lead-9'), 'create leaves the previous team');
+assert.equal(green.owner_session_id, 'lead-9');
+closeTeam(green.team_id);
+joinTeam(blue.team_id, 'lead-9', { owner: true });
+assert.throws(() => joinTeam(red.team_id, ''), /session_id is required/);
+assert.throws(() => joinTeam('missing-id', 'lead-9'), /team not found/);
+// Rows written before owners (lead_session_id only) read as the owner; writes
+// mirror lead_session_id for an old reader.
+{
+  const file = teamsJsonPath();
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const legacy = raw.teams.find((row) => row.team_id === red.team_id);
+  delete legacy.owner_session_id;
+  delete legacy.member_session_ids;
+  legacy.lead_session_id = 'legacy-lead';
+  fs.writeFileSync(file, JSON.stringify(raw));
+  assert.equal(findTeam(red.team_id).owner_session_id, 'legacy-lead', 'legacy lead reads as owner');
+  setTeamWorkspace(red.team_id, 'w9');
+  const written = JSON.parse(fs.readFileSync(file, 'utf8')).teams.find((row) => row.team_id === red.team_id);
+  assert.equal(written.owner_session_id, 'legacy-lead');
+  assert.equal(written.lead_session_id, 'legacy-lead', 'lead_session_id is mirrored on write');
+}
 
 // --- workspace + close -----------------------------------------------------------
 const withWs = setTeamWorkspace(blue.team_id, 'w1');
@@ -105,9 +133,9 @@ const blue2 = createTeam({ label: 'Blue Team', projectId: projectA, herdrSession
 assert.notEqual(blue2.team_id, blue.team_id);
 // Slug lookup prefers the open row.
 assert.equal(findTeam('blue-team', { projectId: projectA }).team_id, blue2.team_id);
-assert.equal(listTeams({ projectId: projectA }).length, 3);
+assert.equal(listTeams({ projectId: projectA }).length, 4);
 assert.equal(listTeams({ projectId: projectA, includeClosed: false }).length, 2);
-assert.throws(() => setTeamLead(blue.team_id, 'lead-9'), /team is closed/);
+assert.throws(() => joinTeam(blue.team_id, 'lead-9'), /team is closed/);
 
 // --- team-scoped worker naming ----------------------------------------------------
 const team1 = createTeam({ label: 'Team One', projectId: projectA, herdrSession: 'herdr-a' });
@@ -161,8 +189,9 @@ assert.throws(() => resolveCallerTeam({ teamRef: 'nope', projectId: projectA, te
 // A slug shared with a closed row resolves to the open team.
 assert.equal(resolveCallerTeam({ teamRef: 'blue-team', projectId: projectA, teams }).team_id, blue2.team_id);
 
-// Lead session resolves to the led team.
-setTeamLead(team1.team_id, 'lead-alpha');
+// An owner or a member resolves to its team.
+joinTeam(team1.team_id, 'lead-alpha', { owner: true });
+joinTeam(team2.team_id, 'member-beta');
 const teamsAfterLead = listTeams({ projectId: projectA });
 assert.equal(
   resolveCallerTeam({ projectId: projectA, callerSessionId: 'lead-alpha', teams: teamsAfterLead }).team_id,
@@ -173,7 +202,12 @@ assert.equal(
   resolveListTeam({ projectId: projectA, callerSessionId: 'lead-alpha', teams: teamsAfterLead }).team_id,
   team1.team_id,
 );
-// Own worker row resolves when the caller leads nothing.
+assert.equal(
+  resolveCallerTeam({ projectId: projectA, callerSessionId: 'member-beta', teams: listTeams({ projectId: projectA }) }).team_id,
+  team2.team_id,
+  'a joined member resolves to its team',
+);
+// Own worker row resolves when the caller owns or joined nothing.
 const workerRow = findWorkerBySession('sess-builder-2');
 assert.equal(
   resolveCallerTeam({ projectId: projectA, callerSessionId: 'sess-builder-2', teams: teamsAfterLead, workerRow }).team_id,
@@ -198,4 +232,4 @@ assert.throws(
   new RegExp(NO_TEAM_MESSAGE),
 );
 
-console.log('team registry journey passed: slugs, rows, handoff, close, team-scoped naming, session lookup, G8 resolution');
+console.log('team registry journey passed: slugs, rows, owner/member join, legacy lead read + mirror, close, team-scoped naming, session lookup, G8 resolution');

@@ -1,4 +1,4 @@
-// golem team — lead-owned teams (GOL-363 R2, R3, R9; GOL-371).
+// golem team — teams with an owner and members (GOL-363 R2, R3; GOL-371; GOL-382 R4).
 //
 // Flag parser and help style follow cli/collaboration.js. Herdr workspace
 // calls go through the lib/team-herdr.js seam, which delegates to
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
 import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import { NotificationError } from '../lib/notification-contract.js';
-import { createTeam, findTeam, listTeams, setTeamLead, setTeamWorkspace, closeTeam } from '../lib/team-registry.js';
+import { createTeam, findTeam, joinTeam, listTeams, setTeamWorkspace, closeTeam } from '../lib/team-registry.js';
 import { activeWorkerStates, listWorkers } from '../lib/worker-registry.js';
 import { killWorker } from '../lib/worker-manager.js';
 import { readSessionFacts } from '../lib/session-facts.js';
@@ -17,6 +17,7 @@ import {
   createTeamWorkspace,
   ensureProjectSession,
   projectHerdrSession,
+  unmanagedAgentPanes,
 } from '../lib/team-herdr.js';
 
 const commands = {
@@ -24,8 +25,8 @@ const commands = {
     help: [
       'golem team create <label> [--project <id-or-path>] [--json]',
       '',
-      'Usage: create a team and its herdr workspace. Does not launch a lead.',
-      'Input: a label; the slug comes from the label and must be unique among open teams in the project. Run by a bound session, that session becomes the lead; from an unbound shell the team starts with no lead.',
+      'Usage: create a team and its herdr workspace. Does not launch any agent.',
+      'Input: a label; the slug comes from the label and must be unique among open teams in the project. Run by a bound session, that session becomes the owner and leaves any other open team; from an unbound shell the team starts with no owner. An existing herdr workspace with the same label in the project herdr session is reused.',
       'Receipts: prints the team id, slug and workspace id. Exit codes: 0 created, 1 operational failure, 2 invalid input/context.',
       'Examples:',
       '  golem team create "Blue team" --json   # machine-readable team record',
@@ -34,25 +35,26 @@ const commands = {
     help: [
       'golem team list [--project <id-or-path>] [--json]',
       '',
-      'Usage: list the project teams with lead, agent count, state and workspace.',
+      'Usage: list the project teams with owner, members, agent count, state and workspace.',
       'Input: defaults to the caller project. Exit codes: 0 listed, 1 operational failure, 2 invalid input/context.',
       'Examples:',
       '  golem team list --json   # this project, machine-readable',
     ].join('\n') },
-  'team lead': { flags: { '--project': 'value', '--json': 'bool' }, args: 1,
+  'team join': { flags: { '--owner': 'bool', '--project': 'value', '--json': 'bool' }, args: 1,
     help: [
-      'golem team lead <team> [--project <id-or-path>] [--json]',
+      'golem team join <team> [--owner] [--project <id-or-path>] [--json]',
       '',
-      'Usage: make the calling bound session the lead of one team (by id or slug). Covers starting the lead after creating the team, and handoff: the session is cleared from any other open team it led. Workers stay in the team.',
-      'Input: the team id or slug. Only a bound session may run it. Exit codes: 0 set, 1 operational failure, 2 invalid input/context.',
+      'Usage: put the calling bound session in one team (by id or slug) as a member, or as its owner with --owner (the previous owner stays a member). The session leaves any other open team: a session is in at most one open team. Its team is where `golem agent create` starts agents and what `golem agent list` shows by default.',
+      'Input: the team id or slug. Only a bound session may run it. Exit codes: 0 joined, 1 operational failure, 2 invalid input/context.',
       'Examples:',
-      '  golem team lead blue-team   # take the lead of the blue team',
+      '  golem team join blue-team           # join the blue team',
+      '  golem team join blue-team --owner   # take ownership of the blue team',
     ].join('\n') },
   'team close': { flags: { '--project': 'value', '--json': 'bool' }, args: 1,
     help: [
       'golem team close <team> [--project <id-or-path>] [--json]',
       '',
-      'Usage: stop every live agent in one team (by id or slug), close its workspace, and mark it closed. Other teams are not touched.',
+      'Usage: stop every live agent in one team (by id or slug) and mark it closed. The herdr workspace closes only when nothing but those agents ran in it; a pane golem does not manage (for example an owner you started yourself) keeps it open. Other teams are not touched.',
       'Input: the team id or slug. Exit codes: 0 closed, 1 operational failure, 2 invalid input/context.',
       'Examples:',
       '  golem team close blue-team   # retire the blue team only',
@@ -110,7 +112,7 @@ async function resolveTeamProject(explicit, { cwd, resolveContext }) {
   return projectIdFor(await resolveProjectRoot(cwd));
 }
 
-function leadName(sessionId) {
+function sessionName(sessionId) {
   if (!sessionId) return null;
   try {
     const fact = readSessionFacts().find((entry) => entry.canonical_id === sessionId);
@@ -127,9 +129,10 @@ function teamView(team, workerCount) {
     label: team.label,
     slug: team.slug,
     project_id: team.project_id,
-    lead: team.lead_session_id
-      ? { session_id: team.lead_session_id, name: leadName(team.lead_session_id) }
+    owner: team.owner_session_id
+      ? { session_id: team.owner_session_id, name: sessionName(team.owner_session_id) }
       : null,
+    members: (team.member_session_ids ?? []).map((sessionId) => ({ session_id: sessionId, name: sessionName(sessionId) })),
     agent_count: workerCount,
     state: team.closed_at == null ? 'open' : 'closed',
     herdr_session: team.herdr_session,
@@ -151,7 +154,7 @@ export async function runTeam(family, args, {
   stderr = (text) => process.stderr.write(`${text}\n`),
   cwd = process.cwd(),
   resolveContext = resolveCliSessionContext,
-  herdr = { ensureProjectSession, createTeamWorkspace, closeTeamWorkspace, projectHerdrSession },
+  herdr = { ensureProjectSession, createTeamWorkspace, closeTeamWorkspace, projectHerdrSession, unmanagedAgentPanes },
 } = {}) {
   let json = args.includes('--json');
   try {
@@ -169,7 +172,7 @@ export async function runTeam(family, args, {
         return 0;
       }
       stdout(views.length
-        ? views.map((view) => [view.slug, view.label, view.lead ? view.lead.session_id : '-', `${view.agent_count} agents`, view.state, view.herdr_workspace_id ?? '-'].join('  ')).join('\n')
+        ? views.map((view) => [view.slug, view.label, view.owner ? view.owner.session_id : '-', `${view.members.length} members`, `${view.agent_count} agents`, view.state, view.herdr_workspace_id ?? '-'].join('  ')).join('\n')
         : 'No teams.');
       return 0;
     }
@@ -181,7 +184,7 @@ export async function runTeam(family, args, {
       const team = createTeam({
         label,
         projectId,
-        leadSessionId: caller,
+        ownerSessionId: caller,
         herdrSession: session,
       });
       try {
@@ -200,14 +203,15 @@ export async function runTeam(family, args, {
       }
     }
 
-    if (key === 'team lead') {
+    if (key === 'team join') {
       const caller = callerSession(resolveContext);
-      if (!caller) throw new NotificationError('team lead requires a bound session', 'INVALID_CALLER_CONTEXT');
+      if (!caller) throw new NotificationError('team join requires a bound session', 'INVALID_CALLER_CONTEXT');
       const team = findTeam(positional[0], { projectId });
       if (!team) throw new NotificationError(`unknown team: ${positional[0]}`);
-      const updated = setTeamLead(team.team_id, caller);
+      const owner = Boolean(o['--owner']);
+      const updated = joinTeam(team.team_id, caller, { owner });
       const view = teamView(updated, agentCountFor(updated.team_id, projectId));
-      stdout(json ? JSON.stringify(view) : `team ${view.slug} lead ${caller}`);
+      stdout(json ? JSON.stringify(view) : `team ${view.slug} ${owner ? 'owner' : 'member'} ${caller}`);
       return 0;
     }
 
@@ -223,12 +227,20 @@ export async function runTeam(family, args, {
         stopped.push(dead?.name ?? member.name);
       }
       let workspaceClosed = false;
+      let keptFor = [];
       if (team.herdr_workspace_id) {
-        workspaceClosed = herdr.closeTeamWorkspace(team.herdr_session, team.herdr_workspace_id);
+        // A pane running an agent golem did not start (an owner started by
+        // hand) keeps the workspace open (GOL-382 R4).
+        try {
+          keptFor = herdr.unmanagedAgentPanes(team.herdr_session, team.herdr_workspace_id, members.map((row) => row.herdr_pane_id));
+        } catch { keptFor = []; }
+        if (!keptFor.length) workspaceClosed = herdr.closeTeamWorkspace(team.herdr_session, team.herdr_workspace_id);
       }
       const closed = closeTeam(team.team_id);
-      const result = { ...teamView(closed, 0), stopped, workspace_closed: workspaceClosed };
-      stdout(json ? JSON.stringify(result) : `team ${closed.slug} closed (${stopped.length} agents stopped)`);
+      const keptPanes = keptFor.map((pane) => pane.pane_id);
+      const result = { ...teamView(closed, 0), stopped, workspace_closed: workspaceClosed, workspace_kept_for: keptPanes };
+      const keptNote = keptPanes.length ? `; workspace kept open for ${keptPanes.join(', ')}` : '';
+      stdout(json ? JSON.stringify(result) : `team ${closed.slug} closed (${stopped.length} agents stopped${keptNote})`);
       return 0;
     }
 

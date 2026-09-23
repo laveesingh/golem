@@ -63,6 +63,7 @@ if (process.env.GOLEM_FAKE_NO_REGISTER !== '1') {
     name,
     role: null,
     harness: 'pi',
+    launch_nonce: process.env.GOLEM_PI_LAUNCH_NONCE,
     project_id: process.env.GOLEM_TEST_PROJECT_ID,
     status: 'idle',
   }));

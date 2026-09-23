@@ -744,9 +744,9 @@ Run:
                        terminal, stop it, notify a session, set a role, or
                        clean up duplicate session rows.
                        See golem agent --help.
-  team create|list|lead|close [--help]
-                       Lead-owned teams: create a team and its herdr
-                       workspace, list teams, take a team's lead, or close
+  team create|list|join|close [--help]
+                       Teams: create a team and its herdr workspace, list
+                       teams, join a team (or own it with --owner), or close
                        a team and stop only its agents.
   ticket <operation> [args] [flags]
                        Flat agent authoring family over the tracker REST API:
@@ -1088,7 +1088,8 @@ async function cmdPi(args) {
   if (!dashboard.ok) err(`golem pi: dashboard unavailable (${dashboard.error}); starting in degraded mode and tracker tools will fail until it returns`);
 
   Object.assign(childEnv, {
-    GOLEM_PI_LAUNCH_NONCE: randomUUID(),
+    // A managed spawn passes its worker id as the nonce and waits for it (GOL-382 R5).
+    GOLEM_PI_LAUNCH_NONCE: process.env.GOLEM_PI_LAUNCH_NONCE || randomUUID(),
     GOLEM_PI_VERSION: piVersion,
     GOLEM_PI_EXTENSION_VERSION: readPackageVersion(),
     // Skip Pi's boot-time pi.dev catalog refresh: it hangs ~15s when pi.dev is
