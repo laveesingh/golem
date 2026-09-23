@@ -49,9 +49,10 @@ Tasks and docs hang under their spec via `parent_id`; a spec can parent child sp
 Every edit costs tokens twice, sent and read back. Keep both small.
 
 - Edit from what you hold; `get-outline` or `get-block --anchor` only for an unknown part.
-- One change, one `patch-blocks` call: `--op`, `--anchor` (unique text; add `--prefix` or
-  `--suffix` if it repeats), content on a quoted heredoc. Never put a body in a file.
-- Do not re-read after a write. `replace-body` only for conversion or a rewrite I ask for.
+- One change, one `patch-blocks` call: `--expected-revision`, `--op`, `--anchor` (unique text;
+  add `--prefix` or `--suffix` if it repeats), content on a quoted heredoc. Never put a body
+  in a file.
+- Do not re-read after a write; its `body_revision` is the next expected revision. `replace-body` only for conversion or a rewrite I ask for.
 - Broken Mermaid still saves; fix each `mermaid_errors` entry with one `edit`. Never render.
 
 ## Body format
