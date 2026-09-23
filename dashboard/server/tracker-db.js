@@ -3476,3 +3476,94 @@ WHERE state_changed_at IS NULL`).run();
 
   return api.init();
 }
+
+// --- GOL-365 R7: one-off legacy-harness purge ------------------------------
+// Runtime and delivery rows keyed by retired (codex/opencode) session ids.
+// Tickets, comments, ticket events and links stay; only the assignee pointer
+// is nulled. All deletes run in ONE transaction; every table is probed first
+// so older on-disk schemas never make the purge throw.
+const LEGACY_PURGE_TABLES = [
+  { table: 'dispatch_queue', where: 'session_id' },
+  { table: 'session_labels', where: 'session_id' },
+  { table: 'comment_dispatches', where: 'session_id' },
+  { table: 'envelope_delivery_retries', where: 'session_id' },
+  { table: 'message_acknowledgements', where: 'recipient_session_id' },
+];
+
+function legacyPurgeColumn(table, column, raw) {
+  const cols = raw.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.length) return false;
+  return cols.includes(column);
+}
+
+function legacyEnvelopeWhere(ids) {
+  return `(sender_session_id IN (${ids}) OR target_session_id IN (${ids}))`;
+}
+
+/** Count the rows a legacy-harness purge would delete or null (read-only). */
+export function countLegacyHarnessRows(dbPath = defaultDbPath(), sessionIds = []) {
+  const ids = [...new Set(sessionIds)].filter(Boolean);
+  if (!ids.length) return {};
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    const counts = {};
+    const idList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
+    const envelopeWhere = `(sender_session_id IN (${idList}) OR target_session_id IN (${idList}))`;
+    for (const { table, where } of LEGACY_PURGE_TABLES) {
+      if (!legacyPurgeColumn(table, where, db)) continue;
+      counts[table] = db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where} IN (${idList})`).get().n;
+    }
+    if (legacyPurgeColumn('message_envelopes', 'sender_session_id', db)) {
+      counts.message_envelopes = db.prepare(`SELECT COUNT(*) AS n FROM message_envelopes WHERE ${envelopeWhere}`).get().n;
+    }
+    if (legacyPurgeColumn('notification_schedules', 'creator_id', db)) {
+      counts.notification_schedules = db.prepare(
+        `SELECT COUNT(*) AS n FROM notification_schedules WHERE creator_id IN (${idList}) OR target_session_id IN (${idList})`
+      ).get().n;
+    }
+    if (legacyPurgeColumn('tickets', 'assignee', db)) {
+      counts.tickets_assignee_nulled = db.prepare(`SELECT COUNT(*) AS n FROM tickets WHERE assignee IN (${idList}) OR dispatched_to IN (${idList})`).get().n;
+    }
+    return counts;
+  } finally {
+    db.close();
+  }
+}
+
+/** Remove every runtime/delivery row keyed by the given session ids, in ONE transaction. */
+export function purgeLegacyHarnessRows(dbPath = defaultDbPath(), sessionIds = []) {
+  const ids = [...new Set(sessionIds)].filter(Boolean);
+  if (!ids.length) return { deleted: {}, nulled: 0 };
+  const db = openTrackerDb(dbPath);
+  const raw = db.raw();
+  try {
+    const idList = ids.map((id) => `'${id.replace(/'/g, "''")}'`);
+    const envelopeWhere = `(sender_session_id IN (${idList}) OR target_session_id IN (${idList}))`;
+    const counts = raw.transaction(() => {
+      const deleted = {};
+      for (const { table, where } of LEGACY_PURGE_TABLES) {
+        if (!legacyPurgeColumn(table, where, raw)) continue;
+        deleted[table] = raw.prepare(`DELETE FROM ${table} WHERE ${where} IN (${idList})`).run().changes;
+      }
+      if (legacyPurgeColumn('notification_schedules', 'creator_id', raw)) {
+        // Schedules referencing envelopes about to disappear must not dangle
+        // (current_envelope_id is a real FK).
+        raw.prepare(`UPDATE notification_schedules SET current_envelope_id = NULL WHERE current_envelope_id IN (SELECT id FROM message_envelopes WHERE ${envelopeWhere})`).run();
+        deleted.notification_schedules = raw.prepare(
+          `DELETE FROM notification_schedules WHERE creator_id IN (${idList}) OR target_session_id IN (${idList})`
+        ).run().changes;
+      }
+      if (legacyPurgeColumn('message_envelopes', 'sender_session_id', raw)) {
+        deleted.message_envelopes = raw.prepare(`DELETE FROM message_envelopes WHERE ${envelopeWhere}`).run().changes;
+      }
+      let nulled = 0;
+      if (legacyPurgeColumn('tickets', 'assignee', raw)) {
+        nulled = raw.prepare(`UPDATE tickets SET assignee = NULL, dispatched_to = NULL WHERE assignee IN (${idList}) OR dispatched_to IN (${idList})`).run().changes;
+      }
+      return { deleted, nulled };
+    })();
+    return counts;
+  } finally {
+    db.close();
+  }
+}
