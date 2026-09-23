@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-16 @ 03f0631 (GOL-353/354) — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-23 @ bb39542 (GOL-369) — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -29,10 +29,12 @@ and ticket CLI guidance; `team-ops/` owns team operations and reminders.
 ### Dashboard
 
 `dashboard/server/index.js` exposes REST/WebSocket routes. `tracker-db.js` owns persistence;
-`html-body.js` owns HTML sanitization, stable `data-block-id` values, and atomic block edits.
+`html-body.js` owns HTML sanitization and stable `data-block-id`s; `md-body.js` splits Markdown
+into id-less blocks; both patch via strict text anchors (`body-anchor.js`). `mermaid-check.js`
+parses changed diagrams in a worker after commit (reports only, 2s bound).
 `notification-schedules.js` and `notification-schedule-runtime.js` own durable schedules;
 `comment-dispatch.js` routes feedback. Agents use API/CLI/MCP, never SQLite directly. Ticket
-`state` is the lifecycle; explicit `body_format` and monotonic `body_revision` gate HTML writes.
+`state` is the lifecycle; explicit `body_format` and monotonic `body_revision` gate block writes.
 
 ### Compiler and delivery
 
