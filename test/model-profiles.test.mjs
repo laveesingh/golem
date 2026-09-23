@@ -182,6 +182,7 @@ try {
     loadProfilesStore, renameProfile, setRoleDefault, updateProfile,
   } = await import('../lib/model-profiles.js');
   const { readWorkers } = await import('../lib/worker-registry.js');
+  const { createTeam } = await import('../lib/team-registry.js');
   const { killWorker } = await import('../lib/worker-manager.js');
 
   // --- 1. First-load seed: dedupe + role_defaults ------------------------
@@ -327,9 +328,12 @@ try {
   // NOTE: pass the explicit project path (not '.') — projectFromInput resolves
   // '.' through the real /private cwd, which hashes differently from the
   // /var symlink form the test computes projectIdFor() from.
-  const spawnedDefault = await runCollecting(['spawn', 'reviewer', '--name', 'golemtest-t3-default', '--project', project]);
+  // GOL-371: spawns join a team. Seed the row directly (no herdr workspace —
+  // this suite exercises the tmux host, not the team workspace).
+  createTeam({ label: 'Model Team', projectId, herdrSession: 'model-profiles-test' });
+  const spawnedDefault = await runCollecting(['spawn', 'reviewer', '--name', 'golemtest-t3-default', '--team', 'model-team', '--project', project]);
   assert.equal(spawnedDefault.status, 0, spawnedDefault.stderr);
-  const spawnedOverride = await runCollecting(['spawn', 'reviewer', '--profile', 'luna-max', '--name', 'golemtest-t3-override', '--project', project]);
+  const spawnedOverride = await runCollecting(['spawn', 'reviewer', '--profile', 'luna-max', '--name', 'golemtest-t3-override', '--team', 'model-team', '--project', project]);
   assert.equal(spawnedOverride.status, 0, spawnedOverride.stderr);
 
   const defaultRow = readWorkers().find((worker) => worker.name === 'golemtest-t3-default');
