@@ -58,6 +58,7 @@ for (const key of envKeys) originalEnv[key] = process.env[key];
 
 fs.mkdirSync(bin, { recursive: true });
 fs.mkdirSync(project, { recursive: true });
+fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# GOL-370 worker-journey fixture\n');
 fs.mkdirSync(registrationDir, { recursive: true });
 fs.mkdirSync(lockState, { recursive: true });
 fs.mkdirSync(path.join(state, 'renders', 'pi'), { recursive: true });
