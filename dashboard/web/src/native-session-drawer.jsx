@@ -58,7 +58,7 @@ function NsdTerminalView({ sessionId, session, alive, events = [], peek = null }
   };
 
   const copyAttach = () => {
-    const hint = terminal?.attach_hint || `golem attach ${session?.name || sessionId}`;
+    const hint = terminal?.attach_hint || `golem agent attach ${session?.name || sessionId}`;
     navigator.clipboard?.writeText(hint).then(() => {
       setCopiedAttach(true);
       setTimeout(() => setCopiedAttach(false), 2000);

@@ -35,7 +35,7 @@ sequence; `POST /api/bus/prune` applies retention policy.
 ## Active handoffs
 
 Cross-session coordination uses ordinary notification envelopes. Pi and interactive Claude agents
-use `golem session list/notify` and exact immutable session IDs; compatibility tools remain for
+use `golem agent list/notify` and exact immutable session IDs; compatibility tools remain for
 other harnesses. Labels and names are display data, not routing keys. Claude background sessions do
 not consume development-channel messages and are rejected before notification admission.
 

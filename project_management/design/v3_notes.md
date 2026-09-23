@@ -133,7 +133,7 @@ Reason: Claude Code's team registry at `~/.claude/teams/<name>/` is machine-glob
 
 ```
 golem session start   [--project <id|path>] [--root] [--detach]
-golem session list    [--json]
+the v3 session roster command [--json] (now `golem agent list`)
 golem session stop    <session-id|--all> [--force]
 golem session claim   <project|--root> [--session-id <uuid>]
 golem session release [--session-id <uuid>] [<project>]
@@ -304,7 +304,7 @@ SessionEnd hook → journal-event.sh session-end
 
 **Ship first:**
 - `golem session start [--project X]`
-- `golem session list`
+- the v3 session roster command (now `golem agent list`)
 - `golem session claim <project>` / `release`
 - `golem project register / unregister / list`
 - Auto-registration of `golem-root`
