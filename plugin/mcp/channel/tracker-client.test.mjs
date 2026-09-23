@@ -630,12 +630,10 @@ async function main() {
   check('MCP advertises the canonical shared contract source without schema drift',
     JSON.stringify(tools.tools) === JSON.stringify(GOLEM_TOOL_CONTRACTS),
     `mcp=${tools.tools.length} shared=${GOLEM_TOOL_CONTRACTS.length}`);
+  // GOL-377: the boot instructions string is injected prose — only its
+  // presence is a mechanic.
   const bootInstructions = mcpClient.getInstructions?.() || '';
-  check('boot instructions prescribe the CLI notification route',
-    /golem session notify/.test(bootInstructions) && /golem:team-ops/.test(bootInstructions),
-    bootInstructions.slice(0, 200));
-  check('boot instructions do not force a lead persona onto authorized coordinators',
-    !/run the lead sequence/.test(bootInstructions), bootInstructions.slice(0, 200));
+  check('boot instructions are injected non-empty', bootInstructions.trim().length > 0, bootInstructions.slice(0, 120));
   check('MCP omits retired subscription and consult wrapper tools', !tools.tools.some((tool) => ['subscribe', 'unsubscribe', 'subscriptions_list', 'consult_request', 'consult_reply', 'consult_status'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   check('MCP retires worker lifecycle tools', !tools.tools.some((tool) => ['session_spawn', 'session_kill'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   // GOL-366 fix round 1: the retired delivery/discovery tools never execute.
@@ -670,23 +668,15 @@ async function main() {
   check('shared contract source records the retired transition surface',
     GOLEM_TOOL_CONTRACTS.every((entry) => entry.name !== 'ticket_transition') && !!RETIRED_GOLEM_TOOL_CONTRACTS.ticket_transition);
   const updateTool = tools.tools.find((tool) => tool.name === 'ticket_update');
-  check('ticket_update teaches the single state lifecycle',
-    /todo.*in_progress.*review.*done/s.test(updateTool?.description || '') && !/phase/i.test(updateTool?.description || ''),
+  check('ticket_update ships a non-empty description', !!updateTool && String(updateTool.description || '').trim().length > 0,
     updateTool?.description);
-  check('no advertised tool mentions phases', !tools.tools.some((tool) => /phase/i.test(JSON.stringify(tool))),
-    tools.tools.filter((tool) => /phase/i.test(JSON.stringify(tool))).map((tool) => tool.name).join(', '));
   // GOL-151: three doc types, no streams, no waves.
   check('MCP no longer lists stream tools', !tools.tools.some((tool) => /^stream_/.test(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   check('shared contract source records the retired stream surface',
     GOLEM_TOOL_CONTRACTS.every((entry) => !entry.name.startsWith('stream_')) && !!RETIRED_GOLEM_TOOL_CONTRACTS.streams);
-  check('no advertised tool mentions streams or waves',
-    !tools.tools.some((tool) => /\bstream|\bwave/i.test(JSON.stringify(tool))),
-    tools.tools.filter((tool) => /\bstream|\bwave/i.test(JSON.stringify(tool))).map((tool) => tool.name).join(', '));
   const createTool = tools.tools.find((tool) => tool.name === 'ticket_create');
-  check('ticket_create teaches the three doc types',
-    /spec\|task\|doc \(default task\)/.test(createTool?.inputSchema?.properties?.kind?.description || '')
-      && !/work-item|question|decision/.test(JSON.stringify(createTool)),
-    JSON.stringify(createTool?.inputSchema?.properties?.kind));
+  check('ticket_create schema exposes the kind enum',
+    !!createTool && !!createTool.inputSchema?.properties?.kind, JSON.stringify(createTool?.inputSchema?.properties?.kind));
 
   const defaultKind = await callTool('ticket_create', { project: PROJECT_ID, title: 'MCP default kind' });
   check('ticket_create defaults to task', !defaultKind.result.isError && defaultKind.json?.kind === 'task', defaultKind.text);
@@ -865,8 +855,8 @@ async function main() {
       .every((name) => soleSurfaceNames.includes(name)),
     soleSurfaceNames.join(', '));
   const soleRoleTool = soleSurfaceTools.tools.find((tool) => tool.name === 'session_role');
-  check('session_role description names the supported roles',
-    /lead|builder/.test(soleRoleTool?.description || ''), JSON.stringify(soleRoleTool));
+  check('session_role ships a non-empty description', !!soleRoleTool && String(soleRoleTool.description || '').trim().length > 0,
+    JSON.stringify(soleRoleTool));
 
   // Real failure/cleanup checks on the proxy fixture itself.
   // (1) A real network hang: an accepting-never-responding loopback upstream,

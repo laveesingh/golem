@@ -275,14 +275,14 @@ async function main() {
   const roleResult = await harness.tools.get('session_role').execute('tool-role', { role: 'builder' }, undefined, undefined, harness.ctx);
   assert.equal(roleResult.details.ok, true, roleResult.content[0].text);
   const prompt = await harness.emit('before_agent_start', { prompt: 'inspect role context', systemPrompt: 'Pi base prompt' });
-  const renderedInstructions = fs.readFileSync(path.join(render, 'instructions', 'AGENTS.md'), 'utf8');
-  const instructionsTitle = renderedInstructions.split('\n').find((line) => line.trim().length > 0).trim();
-  assert.ok(prompt.systemPrompt.includes(instructionsTitle), 'Golem instructions are injected without a Pi profile file');
-  assert.match(prompt.systemPrompt, /Role: builder/, 'role truth is read at the safe turn boundary');
-  assert.match(prompt.systemPrompt, /Recent commits(?: \(\d+ of \d+\))?:/, 'bounded shipped L4 context is injected, including its budget-truncated header');
+  // GOL-377: injection mechanics only — the rendered instructions and the
+  // builder role card are injected verbatim (any wording still passes).
+  const renderedInstructions = fs.readFileSync(path.join(render, 'instructions', 'AGENTS.md'), 'utf8').trim();
+  assert.ok(renderedInstructions.length > 0, 'rendered instructions are non-empty');
+  assert.ok(prompt.systemPrompt.includes(renderedInstructions), 'Golem instructions are injected without a Pi profile file');
+  const builderRoleCard = fs.readFileSync(path.join(render, 'roles', 'builder.md'), 'utf8').trim();
+  assert.ok(builderRoleCard.length > 0 && prompt.systemPrompt.includes(builderRoleCard), 'the assigned role card is injected at the safe turn boundary');
   assert.ok(prompt.systemPrompt.includes(execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()), 'L4 includes a real recent commit, not only a heading');
-  assert.match(prompt.systemPrompt, /lead personally surveys code and grounds scope and design/);
-  assert.match(prompt.systemPrompt, /follow the assigned role card/);
   assert.ok(fs.existsSync(path.join(discovered.skillPaths[0], 'spec-writing', 'SKILL.md')), 'the discovered skill pool includes spec-writing');
   let lease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === sessionId);
   assert.equal(lease.kind, 'typed-worker');

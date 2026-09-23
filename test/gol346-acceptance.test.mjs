@@ -250,13 +250,12 @@ try {
   check('A16 real native Pi CLI caller binding (isolated render + isolated leases)',
     nativePi === 'pass', nativePi);
 
-  // ── A17: instructions prove both formats ───────────────────────────────────
+  // ── A17: instructions mechanics (GOL-377) ──────────────────────────────────
+  // The tracker skill exists, is non-empty, and does not prescribe the retired
+  // discovery tool. Wording is the human's to change.
   const trackerSkill = fs.readFileSync(path.join(repo, 'substrate/skills/tracker/SKILL.md'), 'utf8');
-  check('A17 instruction split: canonical CLI, format split, compatibility limits, no universal ban',
-    trackerSkill.includes('golem ticket --help') && trackerSkill.includes('Format is explicit data')
-      && trackerSkill.includes('Markdown body starting with an HTML tag is usually a mistake')
-      && trackerSkill.includes('shared read surface')
-      && !trackerSkill.includes('Never start a body with an HTML tag'));
+  check('A17 tracker skill ships non-empty and never prescribes the retired discovery tool',
+    trackerSkill.trim().length > 0 && !trackerSkill.includes('sessions_dispatchable'));
 
   console.log(failures.length === 0 ? '\nALL GOL-346 ACCEPTANCE CHECKS PASS' : `\n${failures.length} FAILURE(S)`);
   process.exitCode = failures.length === 0 ? 0 : 1;
