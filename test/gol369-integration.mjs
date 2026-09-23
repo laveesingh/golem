@@ -76,6 +76,14 @@ try {
     ...process.env, GOLEM_HOME: home, HOME: home, XDG_CONFIG_HOME: path.join(tmp, 'xdg'),
     PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ''}`,
   };
+  // Review fix: inherited session identity must not leak into the grandchild.
+  // From a Claude Code session, cli-session-context.js:83 rejects unbound
+  // --human mutations when these are present. Test-only scrub; the script
+  // already simulates a plain human shell (fake `ps` above).
+  for (const name of ['CLAUDE_CODE_SESSION_ID', 'GOLEM_SESSION_ID', 'GOLEM_CEO_SESSION_ID',
+    'PI_SESSION_ID', 'GOLEM_MANAGED_CODEX_BOUND']) {
+    delete cliEnv[name];
+  }
   const cli = (args, stdinText = null) => {
     const cmd = `golem ticket ${args.join(' ')}`;
     const res = spawnSync(process.execPath, [path.join(repo, 'cli/golem.js'), 'ticket', ...args], {
