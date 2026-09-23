@@ -24,17 +24,16 @@ role, dedup); `cli/team.js` owns team create, list, lead, and close.
 
 ### Instructions
 
-`substrate/skills/spec-driven-development/` owns the reusable spec method. `lead/` owns
-orchestration and grounding; `spec-writing/` authors specs; `tracker/` owns records, templates,
-and ticket CLI guidance; `team-ops/` owns team operations and reminders.
+`substrate/skills/`: `spec-driven-development/` (spec method), `lead/`, `spec-writing/`,
+`tracker/` (records, templates, ticket CLI), `team-ops/` (teams, agents, reminders).
 
 ### Dashboard
 
 `dashboard/server/index.js` exposes REST/WebSocket routes. `tracker-db.js` owns persistence;
 `html-body.js` (stable block ids) and `md-body.js` (id-less blocks) patch via strict anchors
 (`body-anchor.js`); `mermaid-check.js` reports broken diagrams after commit, 2s bound.
-`notification-schedules.js` and `notification-schedule-runtime.js` own durable schedules;
-`comment-dispatch.js` routes feedback. Agents never touch SQLite directly.
+`notification-schedule*.js` own durable schedules; `comment-dispatch.js` routes feedback.
+Agents never touch SQLite directly.
 
 ### Compiler and delivery
 
