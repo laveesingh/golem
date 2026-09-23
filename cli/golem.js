@@ -11,8 +11,7 @@
 //                Stop and restart the admin dashboard detached.
 //   claude / cc  Open Claude Code as a Golem channel consumer, optionally via Ollama.
 //   pi           Open native Pi with Golem's rendered bridge extension.
-//   spawn/list/attach/peek/kill
-//                Manage detached Pi workers in the Golem tmux namespace.
+//   agent        One toolkit for every agent (list/create/read/attach/stop).
 //   doctor       Sanity-check the environment.
 //   status       Dashboard health + canonical URL.
 //   help         Show this message.

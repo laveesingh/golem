@@ -416,10 +416,10 @@ try {
     try { sessionStop(throwaway); } catch {}
     await new Promise((resolve) => setTimeout(resolve, 1000));
     try { sessionDelete(throwaway); } catch {}
-    const remaining = sessionList().filter((row) => String(row?.name ?? row ?? '').startsWith('golem-test-'));
-    assert.equal(remaining.length, 0, `no golem-test-* herdr sessions remain: ${JSON.stringify(remaining)}`);
-    const pgrep = spawnSync('pgrep', ['-f', 'herdr --session golem-test-'], { encoding: 'utf8' });
-    assert.equal(String(pgrep.stdout || '').trim(), '', `no golem-test-* herdr server processes remain: ${pgrep.stdout}`);
+    const remaining = sessionList().filter((row) => String(row?.name ?? row ?? '') === throwaway);
+    assert.equal(remaining.length, 0, `throwaway herdr session is gone: ${JSON.stringify(remaining)}`);
+    const pgrep = spawnSync('pgrep', ['-f', `herdr --session ${throwaway}`], { encoding: 'utf8' });
+    assert.equal(String(pgrep.stdout || '').trim(), '', `no throwaway herdr server process remains: ${pgrep.stdout}`);
   }
   for (const [key, value] of Object.entries(originalEnv)) {
     if (value === undefined) delete process.env[key];

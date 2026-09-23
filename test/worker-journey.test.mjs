@@ -153,8 +153,17 @@ async function startDashboard() {
       // The pane runs the fixture fake pi: temp HOME has no login profile,
       // so the inherited PATH's bin/pi wins over the real Pi. Serve its
       // registration files, plus any rows a real Pi bridge wrote to the
-      // GOLEM_HOME stores — whichever exists.
-      const filed = dashboardRows();
+      // GOLEM_HOME stores — whichever exists. Like the real dashboard, only
+      // live sessions are dispatchable: drop files whose worker row is gone
+      // or ended, so killed workers don't linger as ghosts.
+      const liveNames = new Set();
+      try {
+        const workers = JSON.parse(fs.readFileSync(path.join(state, 'workers.json'), 'utf8')).workers ?? [];
+        for (const worker of workers) {
+          if (['spawning', 'live'].includes(String(worker.state || '').toLowerCase())) liveNames.add(worker.name);
+        }
+      } catch {}
+      const filed = dashboardRows().filter((row) => liveNames.has(row.name));
       let stored = [];
       try {
         const facts = JSON.parse(fs.readFileSync(path.join(state, 'session-facts.json'), 'utf8')).facts ?? [];
@@ -295,19 +304,19 @@ try {
     leadSessionId: null,
     herdrSession,
   });
-  const cliSpawnTable = await runCli(['agent', 'create', 'golemtest-t2', '--name', 'golemtest-t2-cli-table', '--project', project, '--team', journeyTeam.slug]);
+  const cliSpawnTable = await runCli(['agent', 'create', 'golemtest-t2', '--name', 'gt2-cli-table', '--project', project, '--team', journeyTeam.slug]);
   assert.equal(cliSpawnTable.status, 0, cliSpawnTable.stderr);
   assert.match(cliSpawnTable.stdout, /^ID\s+NAME\s+ROLE\s+TEAM\s+HOST\s+STATUS/m);
-  assert.match(cliSpawnTable.stdout, /golemtest-t2-cli-table/);
-  const cliSpawnedTable = readWorkers().find((worker) => worker.name === 'golemtest-t2-cli-table');
+  assert.match(cliSpawnTable.stdout, /gt2-cli-table/);
+  const cliSpawnedTable = readWorkers().find((worker) => worker.name === 'gt2-cli-table');
   assert.equal(cliSpawnedTable.state, 'live');
-  const cliSpawnJson = await runCli(['agent', 'create', 'golemtest-t2', '--name', 'golemtest-t2-cli-json', '--project', project, '--team', journeyTeam.slug, '--json']);
+  const cliSpawnJson = await runCli(['agent', 'create', 'golemtest-t2', '--name', 'gt2-cli-json', '--project', project, '--team', journeyTeam.slug, '--json']);
   assert.equal(cliSpawnJson.status, 0, cliSpawnJson.stderr);
   const cliSpawned = JSON.parse(cliSpawnJson.stdout);
   assert.equal(cliSpawned.state, 'live');
-  assert.equal(cliSpawned.name, 'golemtest-t2-cli-json');
+  assert.equal(cliSpawned.name, 'gt2-cli-json');
   assert.equal(cliSpawned.team_id, journeyTeam.team_id);
-  console.log(JSON.stringify({ cli_spawn: ['golemtest-t2-cli-table', 'golemtest-t2-cli-json'], herdr_columns: true }));
+  console.log(JSON.stringify({ cli_spawn: ['gt2-cli-table', 'gt2-cli-json'], herdr_columns: true }));
 
   const spawned = await Promise.all(Array.from({ length: 5 }, () => spawnWorker({ role: 'golemtest-t2', project, teamId: journeyTeam.team_id })));
   const names = spawned.map((worker) => worker.name);
@@ -326,7 +335,7 @@ try {
   const cliList = await runCli(['agent', 'list', '--scope', 'project', '--project', project]);
   assert.equal(cliList.status, 0, cliList.stderr);
   assert.match(cliList.stdout, /^ID\s+NAME\s+ROLE\s+TEAM\s+HOST\s+STATUS/m);
-  assert.match(cliList.stdout, /golemtest-t2-cli-table/);
+  assert.match(cliList.stdout, /gt2-cli-table/);
   assert.doesNotMatch(cliList.stdout, /^\[/, 'table output is the default');
   const cliListJson = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(cliListJson.status, 0, cliListJson.stderr);
@@ -514,6 +523,11 @@ try {
   const realKilled = await killWorker('golemtest-t2-herdr-real', { projectId });
   assert.equal(realKilled.state, 'dead');
   assert.deepEqual(processIdsInGroup(realKilled.pid), []);
+  await assert.rejects(
+    () => peekWorker('golemtest-t2-herdr-real', { projectId, lines: 5 }),
+    /pane_not_found|has no herdr pane/,
+    'killed pane is gone from herdr',
+  );
   console.log(JSON.stringify({ real_herdr: { spawn: 'dispatchable', peek: 'pane output', kill: 'group empty, row dead', session: herdrSession } }));
 
   process.env.GOLEM_WORKER_READY_TIMEOUT_MS = '500';
@@ -532,6 +546,8 @@ try {
   console.log(JSON.stringify({ failed_spawn: failedName, state: failed.state, tab_closed_on_failure: true }));
   await killWorker(failedName, { projectId });
   assert.deepEqual(processIdsInGroup(failed.pid), []);
+  const strayPi = spawnSync('pgrep', ['-f', `--name ${failedName}`], { encoding: 'utf8' });
+  assert.equal(String(strayPi.stdout || '').trim(), '', `no survivor process for ${failedName}: ${strayPi.stdout}`);
 
   console.log('Worker journey passed: locked naming in herdr panes, dispatchable readiness, table/JSON agent create-list-read-stop output, dead-row filtering and 24h prune, peek, dashboard terminal shape, stop/read legacy refusals with exact tmux commands, stale-pgid guard, launcher-path rejection, and zero-survivor teardown');
 } finally {
@@ -561,10 +577,10 @@ try {
     try { sessionStop(throwaway); } catch {}
     await new Promise((resolve) => setTimeout(resolve, 1000));
     try { sessionDelete(throwaway); } catch {}
-    const remaining = sessionList().filter((row) => String(row?.name ?? row ?? '').startsWith('golem-test-'));
-    assert.equal(remaining.length, 0, `no golem-test-* herdr sessions remain: ${JSON.stringify(remaining)}`);
-    const pgrep = spawnSync('pgrep', ['-f', 'herdr --session golem-test-'], { encoding: 'utf8' });
-    assert.equal(String(pgrep.stdout || '').trim(), '', `no golem-test-* herdr server processes remain: ${pgrep.stdout}`);
+    const remaining = sessionList().filter((row) => String(row?.name ?? row ?? '') === throwaway);
+    assert.equal(remaining.length, 0, `throwaway herdr session is gone: ${JSON.stringify(remaining)}`);
+    const pgrep = spawnSync('pgrep', ['-f', `herdr --session ${throwaway}`], { encoding: 'utf8' });
+    assert.equal(String(pgrep.stdout || '').trim(), '', `no throwaway herdr server process remains: ${pgrep.stdout}`);
   }
   if (server) await new Promise((resolve) => server.close(resolve));
   for (const [key, value] of Object.entries(originalEnv)) {

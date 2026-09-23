@@ -281,9 +281,9 @@ export function buildAgentRows(views, { teams = [], herdrStates = new Map() } = 
       team: slugFor(view.team_id),
       team_label: labelFor(view.team_id),
       // Transitional host value: herdr placement ids mean herdr, older rows
-      // still carry the tmux host GOL-370 is removing. Converges to
+      // still carry the pre-cutover host GOL-370 is removing. Converges to
       // herdr|external once the cutover lands.
-      host: view.herdr_session || view.herdr_workspace_id ? 'herdr' : 'tmux',
+      host: view.herdr_session || view.herdr_workspace_id ? 'herdr' : 'legacy',
       state: view.state,
       status: view.status,
       herdr_state: states.get(view.herdr_agent_name ?? view.name) ?? null,
