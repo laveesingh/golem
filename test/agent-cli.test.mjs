@@ -59,14 +59,85 @@ function viewFor(row, extra = {}) {
   };
 }
 
-// Manager stub shaped like the worker-manager exports.
+// Manager stub shaped like the worker-manager exports. The roster carries
+// the managed live rows plus one external session with no worker record.
 const calls = [];
+function enrichedView(row, { host = 'herdr' } = {}) {
+  return {
+    session_id: row.session_id ?? null,
+    name: row.name,
+    label: row.name,
+    status: row.state === 'live' ? 'idle' : row.state,
+    role: row.role,
+    harness: 'pi',
+    project_id: projectId,
+    model: preset.model,
+    provider: 'test-provider',
+    delivery_ready: row.state === 'live',
+    delivery_reason: null,
+    idle_seconds: null,
+    worker: {
+      session_id: row.session_id,
+      name: row.name,
+      role: row.role,
+      model: preset.model,
+      tmux_session: null,
+      state: row.state,
+      attach_hint: `golem agent attach ${row.name}`,
+      team_id: row.team_id ?? null,
+      team_label: null,
+      host,
+      herdr_state: null,
+    },
+    worker_name: row.name,
+    worker_role: row.role,
+    worker_model: preset.model,
+    worker_tmux_session: null,
+    worker_state: row.state,
+    worker_attach_hint: `golem agent attach ${row.name}`,
+    team_id: row.team_id ?? null,
+    team_label: null,
+    host,
+    herdr_state: null,
+  };
+}
+const EXTERNAL = {
+  session_id: 'sess-external-1',
+  name: 'field-lead',
+  label: 'field-lead',
+  status: 'idle',
+  role: 'lead',
+  harness: 'claudecode',
+  project_id: projectId,
+  model: 'ext-model',
+  provider: 'ext-provider',
+  delivery_ready: true,
+  delivery_reason: null,
+  idle_seconds: null,
+  worker: null,
+  worker_name: null,
+  worker_role: null,
+  worker_model: null,
+  worker_tmux_session: null,
+  worker_state: null,
+  worker_attach_hint: null,
+  team_id: null,
+  team_label: null,
+  host: 'external',
+  herdr_state: null,
+};
 const stubManager = {
-  async listWorkerViews({ includeDead = false } = {}) {
+  async listAgentRoster({ includeDead = false } = {}) {
     const { listWorkers } = await import('../lib/worker-registry.js');
-    return listWorkers({ projectId })
-      .filter((row) => includeDead || ['spawning', 'live', 'failed'].includes(String(row.state || '').toLowerCase()))
-      .map((row) => viewFor(row));
+    const rows = listWorkers({ projectId });
+    const live = rows
+      .filter((row) => ['spawning', 'live', 'failed'].includes(String(row.state || '').toLowerCase()))
+      .map((row) => enrichedView(row));
+    const ended = includeDead
+      ? rows.filter((row) => ['dead', 'failed'].includes(String(row.state || '').toLowerCase()) && row.state === 'dead')
+        .map((row) => enrichedView(row, { host: 'legacy' }))
+      : [];
+    return { roster: [...live, { ...EXTERNAL }], ended, projectId };
   },
   async spawnWorker(input) {
     calls.push(['spawn', input]);
@@ -95,7 +166,7 @@ const stubManager = {
 const leadContext = () => ({ sessionId: 'lead-A', projectId });
 const unboundContext = () => null;
 
-async function run(args, { resolveContext = leadContext, manager = stubManager } = {}) {
+async function run(args, { resolveContext = leadContext, manager = stubManager, client = null } = {}) {
   const out = [];
   const exit = await runAgent('agent', args, {
     stdout: (text) => out.push(text),
@@ -103,6 +174,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager }
     cwd: projectDir,
     resolveContext,
     manager,
+    ...(client ? { client } : {}),
   });
   return { exit, text: out.join('\n') };
 }
@@ -133,6 +205,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager }
   assert.equal(rows.length, 1, 'lead-A default list holds only the alpha team');
   assert.equal(rows[0].session_id, 'sess-alpha-1');
   assert.equal(rows[0].team, 'alpha-team');
+  assert.equal(rows[0].host, 'herdr');
 
   const team = await run(['list', '--scope', 'team', '--json']);
   assert.deepEqual(JSON.parse(team.text).map((row) => row.session_id), ['sess-alpha-1']);
@@ -140,15 +213,48 @@ async function run(args, { resolveContext = leadContext, manager = stubManager }
   const project = await run(['list', '--scope', 'project', '--json']);
   assert.equal(project.exit, 0, project.text);
   const ids = JSON.parse(project.text).map((row) => row.session_id).sort();
-  assert.deepEqual(ids, ['sess-alpha-1', 'sess-beta-1'], '--scope project shows other teams agents');
+  assert.deepEqual(ids, ['sess-alpha-1', 'sess-beta-1', 'sess-external-1'], '--scope project shows other teams agents and external sessions');
+  const external = JSON.parse(project.text).find((row) => row.session_id === 'sess-external-1');
+  assert.equal(external.host, 'external');
+  assert.equal(external.team, null);
+  assert.equal(external.name, 'field-lead');
+  assert.equal(external.delivery, 'ready');
 
   const unbound = await run(['list', '--json'], { resolveContext: unboundContext });
-  assert.deepEqual(JSON.parse(unbound.text).map((row) => row.session_id).sort(), ['sess-alpha-1', 'sess-beta-1'],
+  assert.deepEqual(JSON.parse(unbound.text).map((row) => row.session_id).sort(), ['sess-alpha-1', 'sess-beta-1', 'sess-external-1'],
     'an unbound shell lists the project scope without caller binding');
 
   const ended = await run(['list', '--scope', 'project', '--ended', '--json']);
-  assert.ok(JSON.parse(ended.text).some((row) => row.session_id === 'sess-beta-9'), '--ended adds retired rows');
+  const endedRows = JSON.parse(ended.text);
+  assert.ok(endedRows.some((row) => row.session_id === 'sess-beta-9'), '--ended adds retired rows');
+  assert.equal(endedRows.find((row) => row.session_id === 'sess-beta-9').host, 'legacy');
   assert.ok(!JSON.parse(project.text).some((row) => row.session_id === 'sess-beta-9'), 'retired rows hidden by default');
+
+  // An external session shows under team scope only when it leads the team.
+  const { createTeam: createTeamInScope, setTeamLead: setLeadInScope } = await import('../lib/team-registry.js');
+  const gamma = createTeamInScope({ label: 'Gamma Team', projectId, herdrSession: 'agent-cli-test' });
+  setLeadInScope(gamma.team_id, 'sess-external-1');
+  const externalLead = await run(['list', '--json'], { resolveContext: () => ({ sessionId: 'sess-external-1', projectId }) });
+  assert.deepEqual(JSON.parse(externalLead.text).map((row) => row.session_id), ['sess-external-1'],
+    'a lead with no managed agents still sees its own external session');
+
+  // The discovered external id is usable with agent notify.
+  const sent = [];
+  const notifyClient = {
+    async request() {
+      return { notification_protocol: 1, idempotency: true, scheduling: true };
+    },
+    async notifySession(body) {
+      sent.push(body);
+      return { operation_id: body.operation_id, receipt: { kind: 'message', id: body.operation_id, state: 'accepted' } };
+    },
+  };
+  const notified = await run(['notify', '--to', 'sess-external-1', '--message', 'hello field', '--human', '--json'], {
+    resolveContext: unboundContext,
+    client: notifyClient,
+  });
+  assert.equal(notified.exit, 0, notified.text);
+  assert.equal(sent[0].session_id, 'sess-external-1');
 
   const badScope = await run(['list', '--scope', 'bogus']);
   assert.equal(badScope.exit, 2);

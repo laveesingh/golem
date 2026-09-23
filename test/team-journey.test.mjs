@@ -25,9 +25,13 @@ fs.mkdirSync(bin, { recursive: true });
 fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# journey project\n');
 
 const herdrSession = `golem-test-${process.pid}-journey`;
-const envKeys = ['GOLEM_HOME', 'GOLEM_HERDR_SESSION', 'XDG_CONFIG_HOME'];
+const envKeys = ['GOLEM_HOME', 'GOLEM_HERDR_SESSION', 'GOLEM_DASHBOARD_URL', 'XDG_CONFIG_HOME'];
 const originalEnv = {};
 for (const key of envKeys) originalEnv[key] = process.env[key];
+// No dashboard here: the roster fetch fails and agent list serves the
+// registry fallback. The dead port (not the live dashboard) keeps this
+// suite hermetic.
+process.env.GOLEM_DASHBOARD_URL = 'http://127.0.0.1:1';
 process.env.GOLEM_HOME = home;
 process.env.GOLEM_HERDR_SESSION = herdrSession;
 delete process.env.XDG_CONFIG_HOME;

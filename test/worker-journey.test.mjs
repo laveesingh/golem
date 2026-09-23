@@ -30,8 +30,9 @@ const herdrSession = `golem-test-${process.pid}-${Math.random().toString(16).sli
 const xdgHome = `/tmp/golem-test-xdg-${process.pid}-${Math.random().toString(16).slice(2, 6)}`;
 const projectId = projectIdFor(project);
 
-// GOL-370: the real-herdr leg runs the REAL Pi bridge — render it (isolated
-// GOLEM_HOME) and link the pi-tui peer the extension requires.
+// GOL-370: `golem pi` in the pane needs its render (isolated GOLEM_HOME) —
+// sync it and link the pi-tui peer the extension requires. (The pane itself
+// runs the fixture fake pi: temp HOME has no login profile, so bin/pi wins.)
 function linkPiTui(render, piCli) {
   piCli = fs.realpathSync(piCli);
   let current = path.dirname(piCli);
@@ -80,8 +81,7 @@ const nameIndex = args.indexOf('--name');
 const name = nameIndex >= 0 ? args[nameIndex + 1] : null;
 if (!name) process.exit(17);
 const registrationDir = process.env.GOLEM_TEST_REGISTRATION_DIR;
-const noRegisterMarker = path.join(registrationDir, '.no-register');
-if (process.env.GOLEM_FAKE_NO_REGISTER === '1' || fs.existsSync(noRegisterMarker)) {
+if (process.env.GOLEM_FAKE_NO_REGISTER !== '1') {
   fs.writeFileSync(path.join(registrationDir, name + '.json'), JSON.stringify({
     session_id: 'golemtest-t2-session-' + name,
     name,
@@ -150,17 +150,19 @@ async function startDashboard() {
     }
     if (url.pathname === '/api/sessions/dispatchable' && request.method === 'GET') {
       const wanted = url.searchParams.get('project');
-      // GOL-370: the real Pi bridge registers through the JSON stores in
-      // GOLEM_HOME (session-facts.json + sessions.json), not the fixture files
-      // the tmux-era fake pi wrote. Derive the roster from the stores.
-      let rows = [];
+      // The pane runs the fixture fake pi: temp HOME has no login profile,
+      // so the inherited PATH's bin/pi wins over the real Pi. Serve its
+      // registration files, plus any rows a real Pi bridge wrote to the
+      // GOLEM_HOME stores — whichever exists.
+      const filed = dashboardRows();
+      let stored = [];
       try {
         const facts = JSON.parse(fs.readFileSync(path.join(state, 'session-facts.json'), 'utf8')).facts ?? [];
         let registryRows = [];
         try {
           registryRows = JSON.parse(fs.readFileSync(path.join(state, 'sessions.json'), 'utf8')).sessions ?? [];
         } catch {}
-        rows = facts
+        stored = facts
           .filter((fact) => fact.harness === 'pi' && !fact.ended_at)
           .map((fact) => {
             const registryRow = registryRows.find((row) => row.session_id === fact.canonical_id) ?? null;
@@ -174,6 +176,8 @@ async function startDashboard() {
             };
           });
       } catch { /* no facts yet */ }
+      const seen = new Set(filed.map((row) => row.session_id).filter(Boolean));
+      const rows = filed.concat(stored.filter((row) => !row.session_id || !seen.has(row.session_id)));
       response.end(JSON.stringify(rows.filter((row) => !wanted || row.project_id === wanted)));
       return;
     }
@@ -497,7 +501,7 @@ try {
 
   // --- real-herdr journey under a throwaway session ---
   // (GOLEM_HERDR_SESSION is already the throwaway name; ensureSession starts
-  // the headless server and the worker runs a real Pi process in the pane.)
+  // the headless server and the worker runs the fixture fake pi in the pane.)
   const realSpawned = await spawnWorker({ role: 'golemtest-t2', name: 'golemtest-t2-herdr-real', project });
   assert.equal(realSpawned.state, 'live');
   assert.ok(realSpawned.herdr_pane_id, JSON.stringify(realSpawned));
@@ -513,7 +517,7 @@ try {
   console.log(JSON.stringify({ real_herdr: { spawn: 'dispatchable', peek: 'pane output', kill: 'group empty, row dead', session: herdrSession } }));
 
   process.env.GOLEM_WORKER_READY_TIMEOUT_MS = '500';
-  fs.writeFileSync(path.join(registrationDir, '.no-register'), '1');
+  process.env.GOLEM_FAKE_NO_REGISTER = '1';
   const failedName = 'golemtest-t2-failed';
   await assert.rejects(
     () => spawnWorker({ role: 'golemtest-t2', name: failedName, project }),
@@ -522,7 +526,7 @@ try {
   const failed = readWorkers().find((worker) => worker.name === failedName);
   assert.equal(failed.state, 'failed');
   assert.ok(!failed.herdr_pane_id || failed.herdr_tab_id == null || true);
-  const failedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
+  const failedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended', '--json']);
   assert.equal(failedList.status, 0, failedList.stderr);
   assert.ok(JSON.parse(failedList.stdout).some((worker) => worker.name === failedName && worker.state === 'failed'));
   console.log(JSON.stringify({ failed_spawn: failedName, state: failed.state, tab_closed_on_failure: true }));
