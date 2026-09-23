@@ -24,7 +24,10 @@ const project = path.join(temp, 'project');
 const state = path.join(temp, 'state');
 const registrationDir = path.join(temp, 'registrations');
 const lockState = path.join(temp, 'lock-state');
-const herdrSession = `gol370-${Math.random().toString(16).slice(2, 8)}`;
+const herdrSession = `golem-test-${process.pid}-${Math.random().toString(16).slice(2, 8)}`;
+// Short xdg root for the herdr socket (see below); kept outside temp and
+// removed only after the session is stopped.
+const xdgHome = `/tmp/golem-test-xdg-${process.pid}-${Math.random().toString(16).slice(2, 6)}`;
 const projectId = projectIdFor(project);
 
 // GOL-370: the real-herdr leg runs the REAL Pi bridge — render it (isolated
@@ -58,6 +61,7 @@ for (const key of envKeys) originalEnv[key] = process.env[key];
 
 fs.mkdirSync(bin, { recursive: true });
 fs.mkdirSync(project, { recursive: true });
+fs.mkdirSync(path.join(temp, 'home'), { recursive: true });
 fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# GOL-370 worker-journey fixture\n');
 fs.mkdirSync(registrationDir, { recursive: true });
 fs.mkdirSync(lockState, { recursive: true });
@@ -76,12 +80,6 @@ const nameIndex = args.indexOf('--name');
 const name = nameIndex >= 0 ? args[nameIndex + 1] : null;
 if (!name) process.exit(17);
 const registrationDir = process.env.GOLEM_TEST_REGISTRATION_DIR;
-fs.writeFileSync('/tmp/gol370-fakepi-env-probe.txt', JSON.stringify({
-  registrationDir, registration_exists: fs.existsSync(registrationDir ?? ''),
-  golem_home: process.env.GOLEM_HOME ?? null,
-  dashboard_url: process.env.GOLEM_DASHBOARD_URL ?? null,
-  no_register: process.env.GOLEM_FAKE_NO_REGISTER ?? null,
-}));
 const noRegisterMarker = path.join(registrationDir, '.no-register');
 if (process.env.GOLEM_FAKE_NO_REGISTER === '1' || fs.existsSync(noRegisterMarker)) {
   fs.writeFileSync(path.join(registrationDir, name + '.json'), JSON.stringify({
@@ -108,8 +106,9 @@ Object.assign(process.env, {
   GOLEM_WORKER_POLL_MS: '1000',
   GOLEM_WORKER_REQUEST_TIMEOUT_MS: '500',
   // GOL-370: herdr's unix socket must stay under sun_path's 104-byte limit —
-  // use a short xdg root instead of the long /var/folders temp path.
-  XDG_CONFIG_HOME: `/tmp/gol370-xdg-${process.pid}`,
+  // use a short xdg root OUTSIDE the temp dir so removing temp never deletes
+  // the socket mid-run; the session is stopped (below) before this dir goes.
+  XDG_CONFIG_HOME: xdgHome,
   GOLEM_HERDR_SESSION: herdrSession,
   GOLEM_HERDR_LOG_DIR: path.join(temp, 'herdr-logs'),
 });
@@ -228,9 +227,11 @@ console.log(JSON.stringify({ name: row.name, herdr_session: row.herdr_session, t
 
 try {
   await startDashboard();
-  execFileSync(process.execPath, [cli, 'sync', '--target', 'pi'], {
-    cwd: repo, env: { ...process.env }, stdio: 'pipe',
+  const syncResult = spawnSync(process.execPath, [cli, 'sync', '--target', 'pi'], {
+    cwd: repo, env: { ...process.env }, encoding: 'utf8',
   });
+  if (syncResult.status !== 0) throw new Error(`sync --target pi failed: ${syncResult.stderr}`);
+  console.log(`pi render synced: ${syncResult.stdout.split('\n').filter((l) => l.includes('out:')).join(' ')}`);
   const piRender = path.join(state, 'renders', 'pi');
   // Resolve the pi-tui peer from the REAL pi on the original PATH (the test's
   // bin dir holds the fake pi stub).
@@ -282,13 +283,21 @@ try {
   assert.ok(claimedRows.every((row) => row.herdr_agent_name === row.name), 'new rows carry the herdr agent name');
   console.log(JSON.stringify({ lock_claims: claimedNames.sort() }));
 
-  const cliSpawnTable = await runCli(['spawn', 'golemtest-t2', '--name', 'golemtest-t2-cli-table', '--project', project]);
+  // GOL-363 G8: spawn requires a team — create one and spawn into it.
+  const { createTeam } = await import('../lib/team-registry.js');
+  const journeyTeam = createTeam({
+    label: 'Journey Team',
+    projectId,
+    leadSessionId: null,
+    herdrSession,
+  });
+  const cliSpawnTable = await runCli(['spawn', 'golemtest-t2', '--name', 'golemtest-t2-cli-table', '--project', project, '--team', journeyTeam.slug]);
   assert.equal(cliSpawnTable.status, 0, cliSpawnTable.stderr);
   assert.match(cliSpawnTable.stdout, /^NAME\s+PROJECT\s+ROLE\s+STATE\s+MODEL\s+STATUS\s+IDLE\s+ATTACH HINT/m);
   assert.match(cliSpawnTable.stdout, /golemtest-t2-cli-table/);
   const cliSpawnedTable = readWorkers().find((worker) => worker.name === 'golemtest-t2-cli-table');
   assert.equal(cliSpawnedTable.state, 'live');
-  const cliSpawnJson = await runCli(['spawn', 'golemtest-t2', '--name', 'golemtest-t2-cli-json', '--project', project, '--json']);
+  const cliSpawnJson = await runCli(['spawn', 'golemtest-t2', '--name', 'golemtest-t2-cli-json', '--project', project, '--team', journeyTeam.slug, '--json']);
   assert.equal(cliSpawnJson.status, 0, cliSpawnJson.stderr);
   const cliSpawned = JSON.parse(cliSpawnJson.stdout);
   assert.equal(JSON.stringify(cliSpawned, null, 2) + '\n', cliSpawnJson.stdout);
@@ -296,7 +305,7 @@ try {
   assert.equal(cliSpawned.name, 'golemtest-t2-cli-json');
   console.log(JSON.stringify({ cli_spawn: ['golemtest-t2-cli-table', 'golemtest-t2-cli-json'], herdr_columns: true }));
 
-  const spawned = await Promise.all(Array.from({ length: 5 }, () => spawnWorker({ role: 'golemtest-t2', project })));
+  const spawned = await Promise.all(Array.from({ length: 5 }, () => spawnWorker({ role: 'golemtest-t2', project, teamId: journeyTeam.team_id })));
   const names = spawned.map((worker) => worker.name);
   const panes = spawned.map((worker) => worker.herdr_pane_id);
   assert.equal(new Set(names).size, 5, JSON.stringify(names));
@@ -489,9 +498,8 @@ try {
   }
 
   // --- real-herdr journey under a throwaway session ---
-  // (GOLEM_HERDR_SESSION is already the throwaway name; ensureSession spawns
-  // the detached server and the worker runs a real Pi process in the pane.)
-  const herdrSession = process.env.GOLEM_HERDR_SESSION;
+  // (GOLEM_HERDR_SESSION is already the throwaway name; ensureSession starts
+  // the headless server and the worker runs a real Pi process in the pane.)
   const realSpawned = await spawnWorker({ role: 'golemtest-t2', name: 'golemtest-t2-herdr-real', project });
   assert.equal(realSpawned.state, 'live');
   assert.ok(realSpawned.herdr_pane_id, JSON.stringify(realSpawned));
@@ -532,16 +540,10 @@ try {
     } catch {}
   }
   recycled = null;
-  // Cleanup: stop and verify the throwaway herdr session is gone.
-  const { sessionStop, sessionDelete, sessionList } = await import('../lib/herdr-driver.js').catch(() => ({ sessionStop: null, sessionList: null }));
-  const throwaway = process.env.GOLEM_HERDR_SESSION;
-  if (sessionStop && sessionDelete && throwaway && throwaway.startsWith('golem-test-')) {
-    try { await sessionStop(throwaway); } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    try { await sessionDelete(throwaway); } catch {}
-    const remaining = sessionList().filter((row) => String(row?.name ?? row ?? '').startsWith('golem-test-'));
-    assert.equal(remaining.length, 0, `no golem-test-* herdr sessions remain: ${JSON.stringify(remaining)}`);
-  }
+  // Cleanup order matters: the herdr server does NOT die on its own, and
+  // removing the session dir (temp HOME/XDG) orphans it unreachable. So:
+  // kill live workers first (needs the server), then `session stop` BEFORE
+  // removing any dir, then verify zero sessions and zero server processes.
   const { killWorker: cleanupKill } = await import('../lib/worker-manager.js').catch(() => ({ killWorker: null }));
   if (cleanupKill) {
     try {
@@ -551,9 +553,22 @@ try {
       }
     } catch {}
   }
+  const { sessionStop, sessionDelete, sessionList } = await import('../lib/herdr-driver.js').catch(() => ({ sessionStop: null, sessionList: null }));
+  const throwaway = process.env.GOLEM_HERDR_SESSION;
+  if (sessionStop && sessionDelete && throwaway && throwaway.startsWith('golem-test-')) {
+    try { sessionStop(throwaway); } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try { sessionDelete(throwaway); } catch {}
+    const remaining = sessionList().filter((row) => String(row?.name ?? row ?? '').startsWith('golem-test-'));
+    assert.equal(remaining.length, 0, `no golem-test-* herdr sessions remain: ${JSON.stringify(remaining)}`);
+    const pgrep = spawnSync('pgrep', ['-f', 'herdr --session golem-test-'], { encoding: 'utf8' });
+    assert.equal(String(pgrep.stdout || '').trim(), '', `no golem-test-* herdr server processes remain: ${pgrep.stdout}`);
+  }
   if (server) await new Promise((resolve) => server.close(resolve));
   for (const [key, value] of Object.entries(originalEnv)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
-  }  fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+  fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  fs.rmSync(xdgHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

@@ -12,7 +12,7 @@
 //   claude / cc  Open Claude Code as a Golem channel consumer, optionally via Ollama.
 //   pi           Open native Pi with Golem's rendered bridge extension.
 //   spawn/list/attach/peek/kill
-//                Manage detached Pi workers in the Golem tmux namespace.
+//                Manage detached Pi workers in the project's herdr session.
 //   doctor       Sanity-check the environment.
 //   status       Dashboard health + canonical URL.
 //   help         Show this message.
@@ -39,11 +39,12 @@ import { resolveRolePreset } from '../lib/role-preset.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
 import { listTeams } from '../lib/team-registry.js';
+import { HERDR_SUPPORTED_VERSION, herdrVersion } from '../lib/herdr-driver.js';
 import { findWorkerBySession } from '../lib/worker-registry.js';
 import { resolveCallerTeam, resolveListTeam } from '../lib/team-context.js';
 import {
-  attachSwarm,
   attachWorker,
+  namelessAttachHint,
   killWorker,
   listWorkerViews,
   peekWorker,
@@ -462,9 +463,9 @@ async function cmdSpawn(args) {
   if (!args.length || args[0] === '-h' || args[0] === '--help') {
     log(`Usage: golem spawn <role> [--name <name>] [--profile <name>] [--team <team>] ${workerProjectHelp()} [--json]
 
-Create one Pi worker in a detached tmux pty. The worker is registered and
+Create one Pi worker in a herdr pane. The worker is registered and
 role-assigned before this command returns. A failed readiness wait leaves the
-worker's tmux session available for peek/inspection. With --profile, the named
+worker's herdr tab available for peek/inspection. With --profile, the named
 model profile overrides the role's default (resolution: --profile > role
 default > role exec). The worker joins --team, or the caller's team (the team
 the caller leads, else the team on the caller's own worker row); an unbound
@@ -592,8 +593,8 @@ async function cmdAttachWorker(args) {
   if (!args.length || args[0] === '-h' || args[0] === '--help') {
     log(`Usage: golem attach [<name>] ${workerProjectHelp()}
 
-Attach the current terminal to a worker's real tmux TUI. Without a name,
-attach the project's whole swarm — its dedicated tmux server tree.`);
+Attach the current terminal to a worker's herdr agent. Without a name,
+print the project's herdr session for a direct herdr attach.`);
     return;
   }
   let name = null;
@@ -613,10 +614,9 @@ attach the project's whole swarm — its dedicated tmux server tree.`);
   }
   try {
     if (name == null) {
-      // No worker named: attach the project's whole swarm (its tmux server).
+      // GOL-370: a nameless attach points at the project's herdr session.
       const { projectId } = await resolveWorkerProject(project);
-      const status = attachSwarm(projectId);
-      if (status) process.exitCode = status;
+      log(namelessAttachHint(projectId));
       return;
     }
     const { projectId } = await resolveWorkerProject(project);
@@ -666,7 +666,7 @@ async function cmdKillWorker(args) {
   if (!args.length || args[0] === '-h' || args[0] === '--help') {
     log(`Usage: golem kill <name> ${workerProjectHelp()} [--json]
 
-Kill one worker: tmux kill-session, TERM the recorded process group, KILL
+Kill one worker: close its herdr pane, TERM the recorded process group, KILL
 survivors, verify the group is empty, then mark the worker dead.`);
     return;
   }
@@ -1138,6 +1138,17 @@ async function cmdDoctor() {
   }
 
   log('');
+  log('Managed workers (herdr)');
+  try {
+    const version = herdrVersion();
+    if (version == null) skip('herdr not found on PATH — managed workers need herdr');
+    else if (version === HERDR_SUPPORTED_VERSION) ok(`herdr ${version} on PATH`);
+    else log(`  ⚠ herdr ${version} on PATH — supported version is ${HERDR_SUPPORTED_VERSION}`);
+  } catch (e) {
+    skip(`herdr version not checked — ${e.message}`);
+  }
+
+  log('');
   log('Dashboard');
   existsSync(DASHBOARD_DIR) ? ok(`dashboard dir exists (${DASHBOARD_DIR})`) : fail('dashboard dir exists');
   existsSync(resolve(GOLEM_ROOT, 'node_modules')) ? ok('root node_modules') : fail('root node_modules — npm install (from the repo root)');
@@ -1294,7 +1305,7 @@ Run:
                        selects a reusable model config; Pi keeps its own
                        profile, providers, and sessions.
   spawn <role> [--name X] [--profile <name>] [--team T] [--project P] [--json]
-                       Spawn one named Pi worker in detached tmux. The worker
+                       Spawn one named Pi worker in a herdr pane. The worker
                        joins --team or the caller's team; an unbound shell
                        must pass --team.
   list [--project P] [--all] [--json]
@@ -1305,7 +1316,7 @@ Run:
                        Lead-owned teams: create a team and its herdr
                        workspace, list teams, take a team's lead, or close
                        a team and stop only its agents.
-  attach <name>       Attach to a worker's real tmux TUI.
+  attach <name>       Attach to a worker's herdr agent.
   peek <name> [--lines N]
                        Read worker scrollback without attaching.
   kill <name> [--json] Kill one worker and verify its process group is empty.

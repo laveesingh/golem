@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // GOL-370 herdr driver — unit tests against a fake GOLEM_HERDR_BIN script
-// (same style as the tmux fakes). The driver must put `--session` first on
+// (same style as the old host fakes). The driver must put `--session` first on
 // every call, parse the JSON envelopes, and throw on `error` payloads.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

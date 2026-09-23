@@ -71,7 +71,7 @@ consultation remains advisory; it does not transfer work ownership.
 - Retire when I ask, or for known-broken-worker recovery per § Reminders.
   Never retire workers merely for being idle.
 - Check `golem list --project .` first; killing a busy worker abandons its dispatch.
-- Only `golem kill`; raw tmux leaves orphans. Never kill yourself.
+- Only `golem kill`; closing the pane directly leaves orphans. Never kill yourself.
 
 ## When a command fails
 

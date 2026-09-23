@@ -1,7 +1,8 @@
 // golem team — lead-owned teams (GOL-363 R2, R3, R9; GOL-371).
 //
 // Flag parser and help style follow cli/collaboration.js. Herdr workspace
-// calls go through the lib/team-herdr.js seam until GOL-370's driver lands.
+// calls go through the lib/team-herdr.js seam, which delegates to
+// lib/herdr-driver.js (GOL-370).
 
 import path from 'node:path';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
@@ -184,7 +185,7 @@ export async function runTeam(family, args, {
         herdrSession: session,
       });
       try {
-        herdr.ensureProjectSession(session);
+        await herdr.ensureProjectSession(session);
         const workspaceId = herdr.createTeamWorkspace(session, team.label);
         const updated = setTeamWorkspace(team.team_id, workspaceId);
         if (json) {

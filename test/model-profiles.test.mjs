@@ -18,11 +18,14 @@ const state = path.join(temp, 'state');
 const captureDir = path.join(temp, 'pi-captures');
 const registrationDir = path.join(temp, 'registrations');
 const render = path.join(state, 'renders', 'pi', 'golem.ts');
-const socket = `golemtest-t3-${process.pid}`;
+const herdrSession = `golem-test-${process.pid}-profiles`;
+// Short xdg root for the herdr socket, OUTSIDE temp so removing temp never
+// deletes the socket mid-run; removed only after the session is stopped.
+const xdgHome = `/tmp/golem-test-xdg-${process.pid}-profiles`;
 const projectId = projectIdFor(project);
 const originalEnv = {};
 const envKeys = [
-  'GOLEM_HOME', 'HOME', 'PATH', 'GOLEM_DASHBOARD_URL', 'GOLEM_TMUX_SOCKET',
+  'GOLEM_HOME', 'HOME', 'PATH', 'GOLEM_DASHBOARD_URL', 'GOLEM_HERDR_SESSION',
   'GOLEM_TEST_REGISTRATION_DIR', 'GOLEM_TEST_PROJECT_ID', 'GOLEM_TEST_PI_CAPTURE_DIR',
   'GOLEM_WORKER_READY_TIMEOUT_MS', 'GOLEM_WORKER_POLL_MS', 'GOLEM_WORKER_REQUEST_TIMEOUT_MS',
   'GOLEM_WORKER_CLI', 'GOLEM_BIN', 'XDG_CONFIG_HOME',
@@ -31,6 +34,7 @@ for (const key of envKeys) originalEnv[key] = process.env[key];
 
 fs.mkdirSync(bin, { recursive: true });
 fs.mkdirSync(project, { recursive: true });
+fs.mkdirSync(path.join(temp, 'home'), { recursive: true });
 fs.mkdirSync(captureDir, { recursive: true });
 fs.mkdirSync(registrationDir, { recursive: true });
 fs.mkdirSync(path.dirname(render), { recursive: true });
@@ -73,14 +77,14 @@ Object.assign(process.env, {
   HOME: path.join(temp, 'home'),
   PATH: `${bin}${path.delimiter}${originalEnv.PATH ?? ''}`,
   GOLEM_DASHBOARD_URL: 'http://127.0.0.1:1',
-  GOLEM_TMUX_SOCKET: socket,
+  GOLEM_HERDR_SESSION: herdrSession,
   GOLEM_TEST_REGISTRATION_DIR: registrationDir,
   GOLEM_TEST_PI_CAPTURE_DIR: captureDir,
   GOLEM_TEST_PROJECT_ID: projectId,
-  GOLEM_WORKER_READY_TIMEOUT_MS: '1200',
+  GOLEM_WORKER_READY_TIMEOUT_MS: '30000',
   GOLEM_WORKER_POLL_MS: '50',
   GOLEM_WORKER_REQUEST_TIMEOUT_MS: '500',
-  XDG_CONFIG_HOME: path.join(temp, 'xdg'),
+  XDG_CONFIG_HOME: xdgHome,
 });
 delete process.env.GOLEM_WORKER_CLI;
 delete process.env.GOLEM_BIN;
@@ -329,8 +333,8 @@ try {
   // '.' through the real /private cwd, which hashes differently from the
   // /var symlink form the test computes projectIdFor() from.
   // GOL-371: spawns join a team. Seed the row directly (no herdr workspace —
-  // this suite exercises the tmux host, not the team workspace).
-  createTeam({ label: 'Model Team', projectId, herdrSession: 'model-profiles-test' });
+  // this suite exercises the herdr host, not the team workspace).
+  createTeam({ label: 'Model Team', projectId, herdrSession });
   const spawnedDefault = await runCollecting(['spawn', 'reviewer', '--name', 'golemtest-t3-default', '--team', 'model-team', '--project', project]);
   assert.equal(spawnedDefault.status, 0, spawnedDefault.stderr);
   const spawnedOverride = await runCollecting(['spawn', 'reviewer', '--profile', 'luna-max', '--name', 'golemtest-t3-override', '--team', 'model-team', '--project', project]);
@@ -344,7 +348,7 @@ try {
   assert.equal(overrideRow.preset.model, 'gpt-5.6-luna', 'worker preset records the RESOLVED override, not the role default');
   assert.equal(overrideRow.preset.thinking, 'max');
 
-  // The child `golem pi` inside tmux: default worker resolves without flags;
+  // The child `golem pi` inside the herdr pane: default worker resolves without flags;
   // override worker receives --profile and emits the resolved exec itself.
   // (--role is consumed by the child golem wrapper — pi only sees the resolved
   // preset + --name.)
@@ -379,11 +383,32 @@ try {
 
   console.log('Model profiles journey passed: deduped seed, idempotent first-load, precedence --profile > default > exec, raw overrides win, spawn preset honesty, forwarded --profile');
 } finally {
+  // Best-effort kill of leaked workers first (needs the server), then stop
+  // the throwaway session BEFORE removing any dir — the server does not die
+  // on its own and dir removal would orphan it unreachable.
+  try {
+    const { readWorkers: readRows } = await import('../lib/worker-registry.js');
+    const { killWorker: killRow } = await import('../lib/worker-manager.js');
+    for (const row of readRows().filter((worker) => ['spawning', 'live', 'failed'].includes(worker.state) && !worker.tmux_session)) {
+      await killRow(row.name, { projectId: row.project_id }).catch(() => {});
+    }
+  } catch {}
+  const { sessionStop, sessionDelete, sessionList } = await import('../lib/herdr-driver.js');
+  const throwaway = process.env.GOLEM_HERDR_SESSION;
+  if (throwaway && throwaway.startsWith('golem-test-')) {
+    try { sessionStop(throwaway); } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try { sessionDelete(throwaway); } catch {}
+    const remaining = sessionList().filter((row) => String(row?.name ?? row ?? '').startsWith('golem-test-'));
+    assert.equal(remaining.length, 0, `no golem-test-* herdr sessions remain: ${JSON.stringify(remaining)}`);
+    const pgrep = spawnSync('pgrep', ['-f', 'herdr --session golem-test-'], { encoding: 'utf8' });
+    assert.equal(String(pgrep.stdout || '').trim(), '', `no golem-test-* herdr server processes remain: ${pgrep.stdout}`);
+  }
   for (const [key, value] of Object.entries(originalEnv)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
   if (server) await new Promise((resolve) => server.close(resolve));
-  try { spawnSync('tmux', ['-L', socket, 'kill-server'], { encoding: 'utf8' }); } catch {}
   fs.rmSync(temp, { recursive: true, force: true });
+  fs.rmSync(xdgHome, { recursive: true, force: true });
 }

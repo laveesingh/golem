@@ -25,25 +25,19 @@ fs.mkdirSync(bin, { recursive: true });
 fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# journey project\n');
 
 const herdrSession = `golem-test-${process.pid}-journey`;
-const envKeys = ['GOLEM_HOME', 'GOLEM_HERDR_SESSION', 'GOLEM_TMUX_BIN', 'XDG_CONFIG_HOME'];
+const envKeys = ['GOLEM_HOME', 'GOLEM_HERDR_SESSION', 'XDG_CONFIG_HOME'];
 const originalEnv = {};
 for (const key of envKeys) originalEnv[key] = process.env[key];
 process.env.GOLEM_HOME = home;
 process.env.GOLEM_HERDR_SESSION = herdrSession;
 delete process.env.XDG_CONFIG_HOME;
 
-// Fake tmux: kill-session is a no-op so team close exercises the process-group
-// stop path without a tmux server.
-const fakeTmux = path.join(bin, 'fake-tmux');
-fs.writeFileSync(fakeTmux, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
-process.env.GOLEM_TMUX_BIN = fakeTmux;
-
 const { projectIdFor } = await import('../lib/project-id.js');
 const { claimWorker, updateWorker, findWorker } = await import('../lib/worker-registry.js');
 const { listTeams, setTeamLead } = await import('../lib/team-registry.js');
 const { resolveCallerTeam } = await import('../lib/team-context.js');
 const { listHerdrWorkspaces, stopAndDeleteSession, projectHerdrSession } = await import('../lib/team-herdr.js');
-const { processIdsInGroup } = await import('../lib/tmux-driver.js');
+const { processIdsInGroup } = await import('../lib/process-group.js');
 const { runTeam } = await import('../cli/team.js');
 
 const projectId = projectIdFor(project);
@@ -157,7 +151,7 @@ async function main() {
   assert.equal(findWorker('builder1', { projectId, teamId: alpha.team_id }).state, 'dead');
   assert.equal(findWorker('builder1', { projectId, teamId: beta.team_id }).state, 'live');
 
-  const workspaces = listHerdrWorkspaces(herdrSession);
+  const workspaces = await listHerdrWorkspaces(herdrSession);
   assert.ok(!workspaces.some((row) => row.workspace_id === alpha.herdr_workspace_id), 'alpha workspace closed');
   assert.ok(workspaces.some((row) => row.workspace_id === beta.herdr_workspace_id), 'beta workspace kept');
 
