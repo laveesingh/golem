@@ -80,14 +80,11 @@ raw equivalent is:
 claude --dangerously-load-development-channels plugin:golem@golem-workspace
 ```
 
-The launch flag is required for a Claude session to consume pushes. The rendered
-plugin sets `GOLEM_TOOL_SURFACE=cli-first`, so a Claude boot advertises the
-CLI-first surface — `ack`, tracker tools, `ticket_dispatch`, `session_role`, and
-`project_context`; returns and recipient discovery go through `golem session
-notify` / `golem session list` (`golem:team-ops`), and direct calls to the
-omitted outbound tools reject with that guidance. A boot without that selection
-serves the
-`sessions_dispatchable`. The dashboard remains the tracker database's single
+The launch flag is required for a Claude session to consume pushes. The
+rendered plugin advertises the one shared tool surface — `ack`, tracker tools,
+`ticket_dispatch`, `session_role`, and `project_context`; returns and recipient
+discovery go through `golem session notify` / `golem session list`
+(`golem:team-ops`). The dashboard remains the tracker database's single
 writer. Ticket lifecycle is the `state` field: `todo`, `in_progress`,
 `blocked`, `review`, `done`, or `archived`.
 
