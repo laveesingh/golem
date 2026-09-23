@@ -37,6 +37,10 @@ import { dashboardUrl, probeDashboard, startDashboardDetached, stopDashboard } f
 import { MIN_PI_NODE, SUPPORTED_PI_VERSION, piNodeSupported } from '../lib/pi-compatibility.js';
 import { resolveRolePreset } from '../lib/role-preset.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
+import { resolveCliSessionContext } from '../lib/cli-session-context.js';
+import { listTeams } from '../lib/team-registry.js';
+import { findWorkerBySession } from '../lib/worker-registry.js';
+import { resolveCallerTeam, resolveListTeam } from '../lib/team-context.js';
 import {
   attachSwarm,
   attachWorker,
@@ -388,6 +392,7 @@ const WORKER_TABLE_COLUMNS = [
   { key: 'status', label: 'STATUS', max: 12 },
   { key: 'idle', label: 'IDLE', max: 10 },
   { key: 'attach_hint', label: 'ATTACH HINT', max: 32 },
+  { key: 'team', label: 'TEAM', max: 24 },
 ];
 
 function formatIdle(value) {
@@ -432,6 +437,18 @@ function formatWorkerTable(workers) {
   return [header, divider, ...body].join('\n');
 }
 
+/** Attach the team slug for the TEAM table column; null renders as '-'. */
+function attachTeamSlugs(workers) {
+  const rows = Array.isArray(workers) ? workers : [workers];
+  if (!rows.length) return workers;
+  let teams = [];
+  try { teams = listTeams({}); } catch { teams = []; }
+  return rows.map((view) => ({
+    ...view,
+    team: teams.find((row) => row.team_id === view?.team_id)?.slug ?? null,
+  }));
+}
+
 function emitWorkerOutput(value, { json = false } = {}) {
   if (json) {
     // Keep the pre-table JSON representation byte-compatible for machine users.
@@ -443,13 +460,15 @@ function emitWorkerOutput(value, { json = false } = {}) {
 
 async function cmdSpawn(args) {
   if (!args.length || args[0] === '-h' || args[0] === '--help') {
-    log(`Usage: golem spawn <role> [--name <name>] [--profile <name>] ${workerProjectHelp()} [--json]
+    log(`Usage: golem spawn <role> [--name <name>] [--profile <name>] [--team <team>] ${workerProjectHelp()} [--json]
 
 Create one Pi worker in a detached tmux pty. The worker is registered and
 role-assigned before this command returns. A failed readiness wait leaves the
 worker's tmux session available for peek/inspection. With --profile, the named
 model profile overrides the role's default (resolution: --profile > role
-default > role exec).`);
+default > role exec). The worker joins --team, or the caller's team (the team
+the caller leads, else the team on the caller's own worker row); an unbound
+shell must pass --team.`);
     return;
   }
   const role = args[0];
@@ -457,6 +476,7 @@ default > role exec).`);
   let name = null;
   let project = null;
   let profile = null;
+  let teamFlag = null;
   for (let index = 1; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--json') {
@@ -478,12 +498,34 @@ default > role exec).`);
       if (!project || project.startsWith('-')) fatal(2, 'golem spawn --project requires a value');
     } else if (arg.startsWith('--project=')) {
       project = arg.slice('--project='.length);
+    } else if (arg === '--team') {
+      teamFlag = args[++index] ?? null;
+      if (!teamFlag || teamFlag.startsWith('-')) fatal(2, 'golem spawn --team requires a value');
+    } else if (arg.startsWith('--team=')) {
+      teamFlag = arg.slice('--team='.length);
+      if (!teamFlag) fatal(2, 'golem spawn --team requires a value');
     } else {
       fatal(2, `unknown spawn option: ${arg}`);
     }
   }
   try {
-    const worker = await spawnWorker({ role, name, project, profile });
+    // GOL-363 G8: every spawn belongs to a team. spawnWorker ignores teamId
+    // until GOL-370 wires the herdr workspace move; resolving (and refusing)
+    // here keeps the CLI contract in place on top of either host.
+    const { projectId } = await resolveWorkerProject(project);
+    let caller = null;
+    try { caller = resolveCliSessionContext()?.sessionId ?? null; } catch { caller = null; }
+    let workerRow = null;
+    if (caller) {
+      try { workerRow = findWorkerBySession(caller, { projectId }); } catch { workerRow = null; }
+    }
+    let team;
+    try {
+      team = resolveCallerTeam({ teamRef: teamFlag, projectId, callerSessionId: caller, teams: listTeams({ projectId }), workerRow });
+    } catch (error) {
+      fatal(2, `golem spawn: ${error.message}`);
+    }
+    const worker = await spawnWorker({ role, name, project, profile, teamId: team.team_id });
     emitWorkerOutput(worker, { json: wantJson });
   } catch (error) {
     fatal(1, `golem spawn: ${error.message}`);
@@ -523,7 +565,24 @@ project's workers. The PROJECT column shows which project each belongs to.`);
     }
   }
   try {
-    emitWorkerOutput(await listWorkerViews({ project: allProjects ? null : (project ?? '.'), includeDead }), { json: wantJson });
+    const views = await listWorkerViews({ project: allProjects ? null : (project ?? '.'), includeDead });
+    // GOL-363 G8/D2: the list defaults to the caller's team when it has one;
+    // --all-projects (and an explicit --project) keep the wider scope.
+    let team = null;
+    if (!allProjects && project == null) {
+      try {
+        const { projectId } = await resolveWorkerProject('.');
+        let caller = null;
+        try { caller = resolveCliSessionContext()?.sessionId ?? null; } catch { caller = null; }
+        let workerRow = null;
+        if (caller) {
+          try { workerRow = findWorkerBySession(caller, { projectId }); } catch { workerRow = null; }
+        }
+        team = resolveListTeam({ projectId, callerSessionId: caller, teams: listTeams({ projectId }), workerRow });
+      } catch { team = null; }
+    }
+    const scopedViews = team ? views.filter((view) => view.team_id === team.team_id) : views;
+    emitWorkerOutput(attachTeamSlugs(scopedViews), { json: wantJson });
   } catch (error) {
     fatal(1, `golem list: ${error.message}`);
   }
@@ -1234,10 +1293,18 @@ Run:
                        --role applies a validated role preset and --profile
                        selects a reusable model config; Pi keeps its own
                        profile, providers, and sessions.
-  spawn <role> [--name X] [--profile <name>] [--project P] [--json]
-                       Spawn one named Pi worker in detached tmux.
+  spawn <role> [--name X] [--profile <name>] [--team T] [--project P] [--json]
+                       Spawn one named Pi worker in detached tmux. The worker
+                       joins --team or the caller's team; an unbound shell
+                       must pass --team.
   list [--project P] [--all] [--json]
                        List worker records as a table; --all includes dead rows.
+                       Defaults to the caller's team; --all-projects (below)
+                       keeps the wider scope.
+  team create|list|lead|close [--help]
+                       Lead-owned teams: create a team and its herdr
+                       workspace, list teams, take a team's lead, or close
+                       a team and stop only its agents.
   attach <name>       Attach to a worker's real tmux TUI.
   peek <name> [--lines N]
                        Read worker scrollback without attaching.
@@ -1698,6 +1765,11 @@ async function main() {
     case 'message': {
       const { runCollaboration } = await import('./collaboration.js');
       process.exitCode = await runCollaboration(cmd, rest);
+      break;
+    }
+    case 'team': {
+      const { runTeam } = await import('./team.js');
+      process.exitCode = await runTeam(cmd, rest);
       break;
     }
     case 'ticket': {
