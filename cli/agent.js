@@ -34,6 +34,7 @@ import { listHerdrAgentStates, projectHerdrSession } from '../lib/team-herdr.js'
 import {
   attachWorker,
   killWorker,
+  listAgentRoster,
   listWorkerViews,
   peekWorker,
   resolveWorkerProject,
@@ -49,6 +50,7 @@ const commands = {
       '',
       'Usage: list agents: id, name, role, team, host, status, herdr state, model, delivery. One roster for managed and external agents.',
       `Scope: ${AGENT_SCOPE_HELP}. --project picks a project. --ended adds stopped and failed agents. An unbound shell lists the project scope without caller binding.`,
+      'The roster comes from the dashboard; external sessions appear with host external so a lead can find peer ids for notify. Without a reachable dashboard it lists managed agents from the local registry.',
       'Receipts: --json is the stable contract. Exit codes: 0 listed, 1 operational failure, 2 invalid input/context.',
       'Examples:',
       '  golem agent list --json                    # your team, machine-readable',
@@ -228,6 +230,38 @@ function formatAgentTable(rows) {
   const divider = widths.map((width) => '-'.repeat(width)).join('  ');
   const body = values.map((row) => row.map((value, index) => fitTableCell(value, widths[index])).join('  '));
   return [header, divider, ...body].join('\n');
+}
+
+/**
+ * Build the agent list rows from enriched roster entries (G9): managed rows
+ * carry worker identity, external rows carry the roster session. Both shapes
+ * converge on the same --json contract.
+ */
+export function buildRosterRows(entries, { teams = [] } = {}) {
+  const slugFor = (teamId) => (Array.isArray(teams) ? teams : []).find((team) => team?.team_id === teamId)?.slug ?? null;
+  const labelFor = (teamId) => (Array.isArray(teams) ? teams : []).find((team) => team?.team_id === teamId)?.label ?? null;
+  return (Array.isArray(entries) ? entries : []).map((row) => {
+    const managed = row?.worker != null;
+    const teamId = row?.team_id ?? null;
+    const deliveryReady = row?.delivery_ready ?? row?.dispatchable ?? false;
+    return {
+      session_id: row?.session_id ?? null,
+      name: row?.worker_name ?? row?.name ?? row?.label ?? null,
+      role: row?.worker_role ?? row?.role ?? null,
+      team_id: teamId,
+      team: slugFor(teamId),
+      team_label: labelFor(teamId) ?? row?.team_label ?? null,
+      host: row?.host ?? (managed ? 'legacy' : 'external'),
+      state: row?.worker_state ?? null,
+      status: row?.status ?? row?.worker_state ?? null,
+      herdr_state: row?.herdr_state ?? null,
+      model: row?.worker_model ?? row?.model ?? null,
+      provider: row?.provider ?? null,
+      dispatchable: deliveryReady,
+      delivery: deliveryReady ? 'ready' : (row?.delivery_reason || 'not ready'),
+      idle_seconds: row?.idle_seconds ?? null,
+    };
+  });
 }
 
 /**
@@ -456,6 +490,14 @@ async function runNotify(o, { stdout, stdin, context, client, operationId, onMut
 
 // --- verb implementations -----------------------------------------------------
 
+function readTeamsSafe(projectId) {
+  try {
+    return listTeams(projectId == null ? {} : { projectId });
+  } catch {
+    return [];
+  }
+}
+
 async function cmdAgentList(o, { stdout, cwd, resolveContext, manager }) {
   const hasExplicitProject = o['--project'] != null;
   const allProjects = o['--scope'] === 'all';
@@ -483,7 +525,7 @@ async function cmdAgentList(o, { stdout, cwd, resolveContext, manager }) {
       projectInput = '.';
     }
   }
-  const teams = effectiveProject == null ? [] : listTeams({ projectId: effectiveProject });
+  const teams = readTeamsSafe(effectiveProject);
   const workerRow = effectiveProject == null ? null : callerWorkerRow(caller, effectiveProject);
   const scope = resolveAgentScope({
     scope: o['--scope'],
@@ -493,25 +535,28 @@ async function cmdAgentList(o, { stdout, cwd, resolveContext, manager }) {
     workerRow,
   });
   // --scope project/all keep the wider scope even for a caller with a team.
-  const views = await manager.listWorkerViews({
-    project: scope.projectId == null ? null : projectInput,
-    includeDead: Boolean(o['--ended']),
-  });
-  const inScope = views.filter((view) => (
-    (effectiveProject == null || view.project_id === effectiveProject)
-    && (scope.teamId == null || view.team_id === scope.teamId)
-  ));
-  let teamsForRows = teams;
-  if (effectiveProject == null || teamsForRows.length === 0) {
-    try { teamsForRows = listTeams({}); } catch { teamsForRows = []; }
-  }
+  // herdr_state stays on the CLI path: one agent-list fetch per project
+  // session per request (multi-project scope skips it).
   let herdrStates = new Map();
-  if (effectiveProject != null) {
+  if (scope.projectId != null) {
     try {
-      herdrStates = listHerdrAgentStates(projectHerdrSession(effectiveProject));
+      herdrStates = listHerdrAgentStates(projectHerdrSession(scope.projectId));
     } catch { herdrStates = new Map(); }
   }
-  const rows = buildAgentRows(inScope, { teams: teamsForRows, herdrStates });
+  const { roster, ended } = await manager.listAgentRoster({
+    project: scope.projectId == null ? null : projectInput,
+    includeDead: Boolean(o['--ended']),
+    herdrStates,
+  });
+  const inScope = (row) => {
+    if (scope.projectId != null && row?.project_id !== scope.projectId) return false;
+    if (scope.teamId == null) return true;
+    if (row?.team_id != null) return row.team_id === scope.teamId;
+    // An external session shows under team scope only when it leads the team.
+    if (row?.session_id == null) return false;
+    return teams.find((team) => team?.team_id === scope.teamId)?.lead_session_id === row.session_id;
+  };
+  const rows = buildRosterRows(roster.filter(inScope).concat(ended.filter(inScope)), { teams });
   stdout(o['--json'] ? JSON.stringify(rows) : formatAgentTable(rows));
 }
 
@@ -655,7 +700,7 @@ export async function runAgent(family, args, {
   cwd = process.cwd(),
   resolveContext = resolveCliSessionContext,
   client: injectedClient,
-  manager = { spawnWorker, listWorkerViews, peekWorker, attachWorker, killWorker },
+  manager = { spawnWorker, listWorkerViews, listAgentRoster, peekWorker, attachWorker, killWorker },
 } = {}) {
   let operationId = null;
   let mutationStarted = false;

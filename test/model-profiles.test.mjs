@@ -369,6 +369,23 @@ try {
   assert.match(listOutput.stdout, /golemtest-t3-default/);
   assert.match(listOutput.stdout, /grok-4\.6/);
   assert.match(listOutput.stdout, /gpt-5\.6-luna/, 'agent list shows the resolved override model');
+  // An external session on the stub roster (no worker record) appears with
+  // host external through the real roster path.
+  fs.writeFileSync(path.join(registrationDir, 'external-lead.json'), JSON.stringify({
+    session_id: 'golemtest-t3-external',
+    name: 'external-lead',
+    role: 'lead',
+    harness: 'pi',
+    project_id: process.env.GOLEM_TEST_PROJECT_ID,
+    status: 'idle',
+  }));
+  const listJson = await runCollecting(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
+  assert.equal(listJson.status, 0, listJson.stderr);
+  const listRows = JSON.parse(listJson.stdout);
+  const externalRow = listRows.find((row) => row.session_id === 'golemtest-t3-external');
+  assert.ok(externalRow, 'external roster session is listed');
+  assert.equal(externalRow.host, 'external');
+  assert.equal(externalRow.team, null);
   console.log(JSON.stringify({ spawn: 'default + override workers live', list_shows: ['grok-4.6', 'gpt-5.6-luna'] }));
 
   for (const row of [defaultRow, overrideRow]) {
