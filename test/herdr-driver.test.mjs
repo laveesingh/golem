@@ -137,6 +137,27 @@ check('pane read returns the text payload', String(driver.paneRead({ session, pa
 setResponse(['session', 'stop', 'gol370-driver-unit'], { type: 'session_stopped' });
 check('sessionStop returns true on success', driver.sessionStop('gol370-driver-unit') === true);
 
+// 6b. GOL-379: agent get by pane id or live name
+setResponse(['agent', 'get', 'w1:p2'], { type: 'agent_info', agent: { name: 'builder1', pane_id: 'w1:p2', agent_status: 'idle' } });
+const gotten = driver.agentGet({ session, target: 'w1:p2' });
+check('agent get returns the agent payload', gotten?.name === 'builder1' && gotten?.pane_id === 'w1:p2');
+argv = fs.readFileSync(capture, 'utf8').split('\u0000');
+check('agent get targets the pane id', argv.slice(-2).join(' ') === `get w1:p2`, argv.join(' '));
+setResponse(['agent', 'get', 'missing-name'], { __error: { code: 'agent_not_found', message: 'agent target missing-name not found' } });
+assert.throws(() => driver.agentGet({ session, target: 'missing-name' }), /agent target missing-name not found/);
+check('agent get throws the herdr not-found message', true);
+
+// 6c. GOL-379: herdr states key by pane id and live name
+setResponse(['agent', 'list'], { type: 'agent_list', agents: [
+  { name: 'a-team-builder1', pane_id: 'w1:p2', agent_status: 'working' },
+  { pane_id: 'w1:p3', agent_status: 'idle' },
+]});
+const { listHerdrAgentStates: listStates } = await import('../lib/team-herdr.js');
+const states = listStates(session);
+check('states carry the pane id key', states.get('w1:p2') === 'working');
+check('states carry the live name key', states.get('a-team-builder1') === 'working');
+check('unnamed agents still resolve by pane', states.get('w1:p3') === 'idle');
+
 // 7. herdrVersion strips the binary name
 fs.writeFileSync(path.join(bin, 'herdr-version'), `#!/usr/bin/env node
 process.stdout.write('herdr 0.9.1\\n');

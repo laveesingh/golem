@@ -365,6 +365,17 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   assert.equal(rows[0].delivery, 'ready');
 }
 
+// --- row builder reads pane-keyed states (GOL-379) -------------------------------------
+{
+  // The name key is absent (rename never stuck), yet the pane id resolves.
+  const rows = buildAgentRows(
+    [{ session_id: 's2', name: 'explorer1', role: 'explorer', team_id: beta.team_id, state: 'live', status: 'idle', model: 'm', dispatchable: true, herdr_session: 'h', herdr_pane_id: 'w1:p7', herdr_agent_name: 'beta-team-explorer1' }],
+    { teams: [alpha, beta], herdrStates: new Map([['w1:p7', 'blocked']]) },
+  );
+  assert.equal(rows[0].team, 'beta-team');
+  assert.equal(rows[0].herdr_state, 'blocked');
+}
+
 // --- enrichDispatchableRows keeps the roster's delivery_ready ---
 {
   const { enrichDispatchableRows } = await import('../lib/worker-manager.js');

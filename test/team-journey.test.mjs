@@ -90,8 +90,8 @@ const { readWorkers } = await import('../lib/worker-registry.js');
 const { listTeams, setTeamLead } = await import('../lib/team-registry.js');
 const { resolveCallerTeam } = await import('../lib/team-context.js');
 const { listHerdrWorkspaces, projectHerdrSession } = await import('../lib/team-herdr.js');
-const { killWorker } = await import('../lib/worker-manager.js');
-const { paneList } = await import('../lib/herdr-driver.js');
+const { killWorker, herdrAttachTarget } = await import('../lib/worker-manager.js');
+const { agentGet, paneList } = await import('../lib/herdr-driver.js');
 const { runTeam } = await import('../cli/team.js');
 
 function readBody(request) {
@@ -221,6 +221,26 @@ async function main() {
   assert.equal(alphaBuilder.herdr_workspace_id, alpha.herdr_workspace_id);
   assert.equal(betaBuilder.herdr_workspace_id, beta.herdr_workspace_id);
   console.log(JSON.stringify({ cli_spawns: ['alpha-team-builder1', 'beta-team-builder1'], team_workspaces: true }));
+
+  // GOL-379: the team agent name sticks after create — herdr resolves it,
+  // the JSON list shows its state, and attach prefers the resolved name.
+  const alphaAgentInfo = agentGet({ session: herdrSession, target: 'alpha-team-builder1' });
+  assert.equal(alphaAgentInfo?.pane_id, alphaBuilder.herdr_pane_id, 'herdr resolves alpha-team-builder1 after create');
+  const betaAgentInfo = agentGet({ session: herdrSession, target: 'beta-team-builder1' });
+  assert.equal(betaAgentInfo?.pane_id, betaBuilder.herdr_pane_id, 'herdr resolves beta-team-builder1 after create');
+  assert.equal(herdrAttachTarget(alphaBuilder), 'alpha-team-builder1', 'attach prefers the resolved team agent name');
+  const namedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
+  assert.equal(namedList.status, 0, namedList.stderr);
+  const namedRows = JSON.parse(namedList.stdout);
+  // Both teams run builder1, so the fixture fake pi (session id derived
+  // from the name) registers one roster row for the name; the list shows
+  // whichever worker it joins to. Every herdr row must still show state.
+  const herdrRows = namedRows.filter((row) => row.host === 'herdr');
+  assert.ok(herdrRows.length >= 1, `list shows herdr rows: ${namedList.stdout.slice(0, 500)}`);
+  for (const row of herdrRows) {
+    assert.ok(row.herdr_state != null, `herdr row shows state: ${JSON.stringify(row)}`);
+  }
+  console.log(JSON.stringify({ agent_names_stick: ['alpha-team-builder1', 'beta-team-builder1'], herdr_list_states: herdrRows.map((row) => row.herdr_state) }));
 
   // A lead spawns into its own team (G8): lead the alpha team, resolve.
   // (A CLI subprocess cannot bind a lead session — no pi ancestry in tests —

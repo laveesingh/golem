@@ -81,7 +81,17 @@ const nameIndex = args.indexOf('--name');
 const name = nameIndex >= 0 ? args[nameIndex + 1] : null;
 if (!name) process.exit(17);
 const registrationDir = process.env.GOLEM_TEST_REGISTRATION_DIR;
-if (process.env.GOLEM_FAKE_NO_REGISTER !== '1') {
+// The pane inherits the herdr server's env (frozen at server start), so a
+// late process.env flag never reaches the fake pi. The NO_REGISTER sentinel
+// file in the shared registration dir suppresses registration deterministically
+// (GOL-379: the spawn path now waits for agent detection before the
+// registration window, so the old 500ms boot race no longer holds).
+let suppressRegistration = process.env.GOLEM_FAKE_NO_REGISTER === '1';
+try {
+  fs.accessSync(path.join(registrationDir, 'NO_REGISTER'));
+  suppressRegistration = true;
+} catch {}
+if (!suppressRegistration) {
   fs.writeFileSync(path.join(registrationDir, name + '.json'), JSON.stringify({
     session_id: 'golemtest-t2-session-' + name,
     name,
@@ -277,6 +287,7 @@ try {
   const {
     attachWorker,
     enrichDispatchableRows,
+    herdrAttachTarget,
     killWorker,
     listWorkerViews,
     peekWorker,
@@ -526,6 +537,11 @@ try {
   const realSpawned = await spawnWorker({ role: 'golemtest-t2', name: 'golemtest-t2-herdr-real', project });
   assert.equal(realSpawned.state, 'live');
   assert.ok(realSpawned.herdr_pane_id, JSON.stringify(realSpawned));
+  // GOL-379: the agent name sticks after create, so attach resolves it.
+  const { agentGet: realAgentGet } = await import('../lib/herdr-driver.js');
+  const realAgentInfo = realAgentGet({ session: herdrSession, target: realSpawned.herdr_agent_name });
+  assert.equal(realAgentInfo?.pane_id, realSpawned.herdr_pane_id, 'herdr resolves the worker agent name after create');
+  assert.equal(herdrAttachTarget(realSpawned), realSpawned.herdr_agent_name, 'attach resolves the stored agent name');
   const realListed = await listWorkerViews({ project });
   assert.ok(realListed.find((worker) => worker.name === 'golemtest-t2-herdr-real')?.dispatchable, 'real-herdr worker becomes dispatchable');
 
@@ -544,6 +560,7 @@ try {
 
   process.env.GOLEM_WORKER_READY_TIMEOUT_MS = '500';
   process.env.GOLEM_FAKE_NO_REGISTER = '1';
+  fs.writeFileSync(path.join(registrationDir, 'NO_REGISTER'), '');
   const failedName = 'golemtest-t2-failed';
   await assert.rejects(
     () => spawnWorker({ role: 'golemtest-t2', name: failedName, project }),

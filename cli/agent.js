@@ -30,7 +30,7 @@ import { listTeams } from '../lib/team-registry.js';
 import { findWorkerBySession, listWorkers } from '../lib/worker-registry.js';
 import { resolveCallerTeam } from '../lib/team-context.js';
 import { callerTeamId, resolveAgentRef, resolveAgentScope } from '../lib/agent-resolve.js';
-import { listHerdrAgentStates, projectHerdrSession } from '../lib/team-herdr.js';
+import { herdrStateFor, listHerdrAgentStates, projectHerdrSession } from '../lib/team-herdr.js';
 import {
   attachWorker,
   killWorker,
@@ -286,7 +286,7 @@ export function buildAgentRows(views, { teams = [], herdrStates = new Map() } = 
       host: view.herdr_session || view.herdr_workspace_id ? 'herdr' : 'legacy',
       state: view.state,
       status: view.status,
-      herdr_state: states.get(view.herdr_agent_name ?? view.name) ?? null,
+      herdr_state: herdrStateFor(states, view),
       model: view.model ?? null,
       provider: view.provider ?? null,
       dispatchable: view.dispatchable,
