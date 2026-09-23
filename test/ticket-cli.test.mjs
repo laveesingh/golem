@@ -181,14 +181,89 @@ try {
     md.exit === 0 && !('body' in md.json) && md.json.body_format === 'markdown'
       && md.json.body_revision === 1);
 
-  // Markdown unsupported block operations.
+  // GOL-369 T3: Markdown outline and patches are supported (no stored ids);
+  // a positional block id on Markdown is rejected (nothing to address).
   const mdOutline = await run(['get-outline', md.json.id]);
-  const mdPatch = await run(['patch-blocks', md.json.id, '--expected-revision', '1', '--operations-file', opsFile]);
+  check('T3 markdown get-outline works with no ids', mdOutline.exit === 0
+    && mdOutline.json.body_format === 'markdown'
+    && mdOutline.json.blocks.every((b) => !('id' in b) && !('hash' in b)));
+  const mdOpsFile = path.join(tmp, 'md-ops.json');
+  fs.writeFileSync(mdOpsFile, JSON.stringify({ operations: [
+    { op: 'replace', anchor: { text: 'plain markdown body' }, content: 'replaced via batch' },
+  ] }));
+  const mdPatch = await run(['patch-blocks', md.json.id, '--expected-revision', '1', '--operations-file', mdOpsFile]);
+  check('T3 markdown batch patch via anchor commits', mdPatch.exit === 0
+    && mdPatch.json.body_revision === 2 && mdPatch.json.body_format === 'markdown');
   const mdBlock = await run(['get-block', md.json.id, 'b-000000000000']);
-  check('Markdown unsupported block operations exit 2 unsupported_format',
-    mdOutline.exit === 2 && mdOutline.json.code === 'unsupported_format'
-      && mdPatch.exit === 2 && mdPatch.json.code === 'unsupported_format'
-      && mdBlock.exit === 2 && mdBlock.json.code === 'unsupported_format');
+  check('T3 positional block id on markdown exits 2 invalid_target',
+    mdBlock.exit === 2 && mdBlock.json.code === 'invalid_target');
+
+  // GOL-369 D6: single-op form — flags name the op and anchor, stdin carries
+  // raw content. One edit, one call, no file, no JSON.
+  const single = await run(['create', '--project', projectId, '--kind', 'spec', '--title', 'Single-op md', '--body-file', '-'],
+    { stdin: Readable.from(['# Single\n\nAlpha para.\n\n## Beta\n\nBeta body.\n']) });
+  const singleId = single.json.id;
+  check('single-op ticket created', single.exit === 0 && single.json.body_revision === 1);
+  const ins = await run(['patch-blocks', singleId, '--expected-revision', '1',
+    '--op', 'insert_after', '--anchor', 'Alpha para.'],
+    { stdin: Readable.from(['Inserted via flags.\n']) });
+  check('single-op insert_after with stdin content commits', ins.exit === 0
+    && ins.json.body_revision === 2 && !('mermaid_errors' in ins.json), ins.err);
+  const gb = await run(['get-block', singleId, '--anchor', 'Inserted via flags.']);
+  check('get-block --anchor reads the block source', gb.exit === 0
+    && gb.json.source === 'Inserted via flags.\n\n');
+  const gbs = await run(['get-block', singleId, '--anchor', '## Beta', '--section']);
+  check('get-block --anchor --section reads the whole section', gbs.exit === 0
+    && gbs.json.source.includes('Beta body.') && !gbs.json.source.includes('Alpha para.'));
+  const ed = await run(['patch-blocks', singleId, '--expected-revision', '2',
+    '--op', 'edit', '--old', 'Alpha para.'],
+    { stdin: Readable.from(['Alpha PARA.']) });
+  check('single-op edit takes the new text from stdin', ed.exit === 0
+    && ed.json.body_revision === 3
+    && (await run(['get-block', singleId, '--anchor', 'Alpha PARA.'])).exit === 0);
+  // Stdin newlines: exactly one final newline goes, everything else stays.
+  // Body at this point holds 'Alpha PARA.'; old 'PARA' sits before a '.'.
+  const nl = await run(['patch-blocks', singleId, '--expected-revision', '3',
+    '--op', 'edit', '--old', 'PARA'],
+    { stdin: Readable.from(['PARA\n\n']) });
+  const nlBody = (await run(['get', singleId])).json.body;
+  check('stdin keeps everything but one final newline', nl.exit === 0
+    && /Alpha PARA\n\./.test(nlBody),
+    JSON.stringify(nlBody.slice(nlBody.indexOf('Alpha'), nlBody.indexOf('Alpha') + 30)));
+  // remove and move_* never read stdin (poisoned stdin would hang or flag).
+  let stdinTouched = false;
+  const poison = { [Symbol.asyncIterator]() { return { next: async () => { stdinTouched = true; return { done: true }; } }; } };
+  const rm = await run(['patch-blocks', singleId, '--expected-revision', '4',
+    '--op', 'remove', '--anchor', 'Inserted via flags.'], { stdin: poison });
+  check('remove never reads stdin', rm.exit === 0 && rm.json.body_revision === 5 && !stdinTouched);
+  stdinTouched = false;
+  const mv = await run(['patch-blocks', singleId, '--expected-revision', '5',
+    '--op', 'move_after', '--anchor', 'Beta body.', '--to-anchor', 'Alpha PARA'], { stdin: poison });
+  check('move_* never reads stdin', mv.exit === 0 && mv.json.body_revision === 6 && !stdinTouched);
+  const mex = await run(['patch-blocks', singleId, '--expected-revision', '6',
+    '--op', 'remove', '--anchor', 'x', '--operations-file', opsFile]);
+  check('single-op and --operations-file are mutually exclusive', mex.exit === 2
+    && mex.json.code === 'invalid_input' && /mutually exclusive/.test(mex.err));
+  const bothTargets = await run(['patch-blocks', singleId, '--expected-revision', '6',
+    '--op', 'remove', '--anchor', 'x', '--block-id', 'b-1']);
+  check('--block-id and --anchor together exit 2', bothTargets.exit === 2
+    && bothTargets.json.code === 'invalid_input');
+  // mermaid_errors ride the compact output on create and replace-body.
+  const brokenCreate = await run(['create', '--project', projectId, '--kind', 'spec', '--title', 'Broken fence', '--body-file', '-'],
+    { stdin: Readable.from(['# B\n\n```mermaid\nflowchart LR\n  A[a (b)]\n```\n']) });
+  check('create passes mermaid_errors through the compact output', brokenCreate.exit === 0
+    && brokenCreate.json.mermaid_errors?.length === 1
+    && brokenCreate.json.mermaid_errors[0].first_line === 'flowchart LR'
+    && !('body' in brokenCreate.json));
+  const singleRev = (await run(['get', singleId])).json.body_revision;
+  const brokenReplace = await run(['replace-body', singleId, '--body-file', '-', '--expected-revision', String(singleRev)],
+    { stdin: Readable.from(['# Single\n\n```mermaid\nflowchart LR\n  A[a (b)]\n```\n']) });
+  check('replace-body passes mermaid_errors through the compact output', brokenReplace.exit === 0
+    && brokenReplace.json.mermaid_errors?.length === 1 && !('body' in brokenReplace.json));
+  const patchHelp = await run(['patch-blocks', '--help']);
+  check('patch-blocks help leads with the single-op heredoc form', patchHelp.exit === 0
+    && patchHelp.out.indexOf('--op insert_after') !== -1
+    && patchHelp.out.indexOf('--op insert_after') < patchHelp.out.indexOf('--operations-file ops.json'));
 
   // replace-body: deliberate full-rewrite escape hatch, compact output.
   const mdTicketRow = (await run(['get', md.json.id])).json;
