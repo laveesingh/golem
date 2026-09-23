@@ -37,7 +37,7 @@ const session = (overrides = {}) => ({
   hook_ppid: worker.pid,
   boot_time: threeHoursAgo,
   last_seen_at: now,
-  harness: 'codex',
+  harness: 'pi',
   model: 'gpt-5.6-fixture',
   ...overrides,
 });
@@ -63,7 +63,7 @@ const sessionRows = [
 writeFileSync(path.join(home, 'sessions.json'), JSON.stringify({ sessions: sessionRows }));
 writeFileSync(path.join(home, 'session-facts.json'), JSON.stringify({ version: 1, facts: [
   {
-    canonical_id: 'waiting-ack', harness: 'codex', revision: 1, observed_at: now,
+    canonical_id: 'waiting-ack', harness: 'pi', revision: 1, observed_at: now,
     status: 'waiting', waiting_for: 'await ack', name: 'H1 Waiting Acknowledgement',
     model: 'gpt-5.6-fixture', project_path: alpha, locator: { raw_session_id: 'waiting-ack' },
   },
@@ -90,8 +90,8 @@ const channelServer = http.createServer((req, res) => {
 await new Promise((resolve) => channelServer.listen(0, '127.0.0.1', resolve));
 const channelPort = channelServer.address().port;
 writeFileSync(path.join(home, 'channels.json'), JSON.stringify({ channels: [
-  { session_id: 'busy-empty', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'codex', updated_at: now },
-  { session_id: 'controls-long', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'codex', updated_at: now },
+  { session_id: 'busy-empty', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'pi', updated_at: now },
+  { session_id: 'controls-long', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'pi', updated_at: now },
 ] }));
 
 const portSocket = net.createServer();

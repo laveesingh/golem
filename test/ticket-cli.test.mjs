@@ -318,20 +318,17 @@ try {
   });
   check('reads work without caller binding', unboundRead === 0);
 
-  // Codex/OpenCode: stable unsupported-caller result naming compatibility limits.
-  const codexError = Object.assign(new Error('this native harness does not yet support CLI caller binding; use its advertised compatibility tools'), { code: 'INVALID_CALLER_CONTEXT' });
-  const codexRun = await runTicket(['create', '--project', projectId, '--title', 'x'], {
-    stdout: () => {}, stderr: () => {}, client, resolveContext: () => { throw codexError; },
+  // Unbound callers: stable unsupported-caller result naming compatibility limits.
+  const unboundError = Object.assign(new Error('this native harness was removed in GOL-365; golem runs only Pi and Claude'), { code: 'INVALID_CALLER_CONTEXT' });
+  const unboundRun = await runTicket(['create', '--project', projectId, '--title', 'x'], {
+    stdout: () => {}, stderr: () => {}, client, resolveContext: () => { throw unboundError; },
   });
-  check('codex/opencode ancestry gets the stable unsupported_caller exit code', codexRun === 2);
-  const codexPayloadRun = await run(['create', '--project', projectId, '--title', 'x'], {
-    resolveContext: () => { throw codexError; },
+  check('unbound caller gets the stable unsupported_caller exit code', unboundRun === 2);
+  const unboundPayloadRun = await run(['create', '--project', projectId, '--title', 'x'], {
+    resolveContext: () => { throw unboundError; },
   });
-  check('unsupported_caller payload names the compatibility limits', codexPayloadRun.exit === 2
-    && codexPayloadRun.json.code === 'unsupported_caller'
-    && /does not yet support CLI caller binding/.test(codexPayloadRun.json.message)
-    && /ticket_update/.test(codexPayloadRun.json.message)
-    && /block operations/.test(codexPayloadRun.json.message));
+  check('unsupported_caller payload names the CLI binding path', unboundPayloadRun.exit === 2
+    && unboundPayloadRun.json.code === 'unsupported_caller');
 
   // Transport failure exits 1 (operational), not input-class.
   const deadClient = createGolemClient({ baseUrl: 'http://127.0.0.1:1', callerSessionId: CALLER });

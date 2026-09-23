@@ -33,16 +33,17 @@ const idleOlder = new Date(Date.now() - 60_000).toISOString();
 const idleNewer = new Date(Date.now() - 30_000).toISOString();
 const legacyRecent = new Date(Date.now() - 45_000).toISOString();
 const sessionRows = [
-  { session_id: 'idle-fixture-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'busy', name: 'Fixture Builder', harness: 'opencode', model: 'gpt-5.6-fixture', updated_at: now, last_seen_at: now },
-  { session_id: 'waiting-fixture-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'waiting', name: 'Waiting Reviewer', harness: 'opencode', model: 'gpt-5.6-fixture', updated_at: waitingRecent, last_seen_at: waitingRecent },
-  { session_id: 'idle-older-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'idle', name: 'Idle Older', harness: 'codex', model: 'claude-fixture', updated_at: idleOlder, last_seen_at: idleOlder },
-  { session_id: 'idle-newer-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'idle', name: 'Idle Newer', harness: 'opencode', model: 'gpt-5.6-fixture', updated_at: idleNewer, last_seen_at: idleNewer },
-  { session_id: 'legacy-fixture-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'legacy', name: 'Legacy Status', harness: 'codex', model: 'claude-fixture', updated_at: legacyRecent, last_seen_at: legacyRecent },
-  { session_id: 'cross-project-session', project_id: betaId, project_path: beta, pid: worker.pid, hook_ppid: worker.pid, status: 'busy', name: 'Beta Builder', harness: 'opencode', model: 'gpt-5.6-fixture', updated_at: now, last_seen_at: now },
+  { session_id: 'idle-fixture-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'busy', name: 'Fixture Builder', harness: 'pi', model: 'gpt-5.6-fixture', updated_at: now, last_seen_at: now },
+  { session_id: 'waiting-fixture-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'waiting', name: 'Waiting Reviewer', harness: 'pi', model: 'gpt-5.6-fixture', updated_at: waitingRecent, last_seen_at: waitingRecent },
+  { session_id: 'idle-older-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'idle', name: 'Idle Older', harness: 'pi', model: 'claude-fixture', updated_at: idleOlder, last_seen_at: idleOlder },
+  { session_id: 'idle-newer-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'idle', name: 'Idle Newer', harness: 'pi', model: 'gpt-5.6-fixture', updated_at: idleNewer, last_seen_at: idleNewer },
+  { session_id: 'legacy-fixture-session', project_id: alphaId, project_path: alpha, pid: worker.pid, hook_ppid: worker.pid, status: 'legacy', name: 'Legacy Status', harness: 'pi', model: 'claude-fixture', updated_at: legacyRecent, last_seen_at: legacyRecent },
+  { session_id: 'cross-project-session', project_id: betaId, project_path: beta, pid: worker.pid, hook_ppid: worker.pid, status: 'busy', name: 'Beta Builder', harness: 'pi', model: 'gpt-5.6-fixture', updated_at: now, last_seen_at: now },
   { session_id: 'stale-fixture-session', project_id: alphaId, project_path: alpha, pid: 2147483647, hook_ppid: 2147483647, status: 'idle', name: 'Stale Ghost', harness: 'claudecode', updated_at: '2020-01-01T00:00:00.000Z' },
 ] ;
 writeFileSync(path.join(home, 'sessions.json'), JSON.stringify({ sessions: sessionRows }));
 const delivered = [];
+let busyHold = true; // the fixture worker starts busy; flipping to idle flips readiness
 const channelServer = http.createServer((req, res) => {
   const requestUrl = new URL(req.url, 'http://127.0.0.1');
   if (requestUrl.pathname === '/healthz') {
@@ -51,32 +52,48 @@ const channelServer = http.createServer((req, res) => {
       canonical_id: requestUrl.searchParams.get('session_id'),
       owner_token: requestUrl.searchParams.get('owner_token'),
       protocol_version: 1,
-      kind: 'codex-supervisor',
-      delivery_ready: false,
+      kind: 'typed-worker',
+      delivery_ready: !busyHold,
     }));
     return;
   }
   let body = '';
   req.on('data', (chunk) => { body += chunk; });
-  req.on('end', () => { delivered.push({ url: req.url, body }); res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}'); });
+  req.on('end', () => {
+    delivered.push({ url: req.url, body });
+    if (req.url === '/brief') {
+      try {
+        const posted = JSON.parse(body);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({
+          accepted: true, envelope_id: posted.envelope_id, attempt_id: 'browser-fixture-attempt',
+          accepted_attempt_id: 'browser-fixture-attempt', delivery_state: 'settled',
+        }));
+        return;
+      } catch { /* fall through to the generic ack */ }
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"ok":true}');
+  });
 });
 await new Promise((resolve) => channelServer.listen(0, '127.0.0.1', resolve));
 const channelPort = channelServer.address().port;
 writeFileSync(path.join(home, 'channels.json'), JSON.stringify({ channels: [
-  { session_id: 'idle-fixture-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'opencode', updated_at: now },
-  { session_id: 'waiting-fixture-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'opencode', updated_at: waitingRecent },
-  { session_id: 'idle-older-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'codex', updated_at: idleOlder },
-  { session_id: 'idle-newer-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'opencode', updated_at: idleNewer },
-  { session_id: 'cross-project-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'opencode', updated_at: now },
+  { session_id: 'healthy-working-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'pi', kind: 'typed-worker', delivery_ready: true, updated_at: now },
+  { session_id: 'idle-fixture-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'pi', consumer_ready: true, delivery_ready: true, updated_at: now },
+  { session_id: 'waiting-fixture-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'pi', updated_at: waitingRecent },
+  { session_id: 'idle-older-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'pi', updated_at: idleOlder },
+  { session_id: 'idle-newer-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'pi', updated_at: idleNewer },
+  { session_id: 'cross-project-session', pid: worker.pid, host: '127.0.0.1', port: channelPort, harness: 'pi', updated_at: now },
 ] }));
 writeFileSync(path.join(home, 'session-facts.json'), JSON.stringify({ version: 1, facts: [{
-  canonical_id: 'healthy-working-session', harness: 'codex', revision: 1,
-  observed_at: now, status: 'busy', name: 'Healthy Working Codex', model: 'gpt-5.6-fixture',
+  canonical_id: 'healthy-working-session', harness: 'pi', revision: 1,
+  observed_at: now, status: 'busy', name: 'Healthy Working Pi', model: 'gpt-5.6-fixture',
   project_path: alpha, locator: { raw_session_id: 'healthy-working-session' },
 }] }));
 writeFileSync(path.join(home, 'endpoint-leases.json'), JSON.stringify({ version: 1, leases: [{
   canonical_id: 'healthy-working-session', owner_token: 'browser-fixture-owner',
-  host: '127.0.0.1', port: channelPort, harness: 'codex', kind: 'codex-supervisor',
+  host: '127.0.0.1', port: channelPort, harness: 'pi', kind: 'typed-worker',
   renewed_at: now, expires_at: new Date(Date.now() + 60_000).toISOString(),
 }] }));
 
@@ -117,7 +134,7 @@ try {
   ok(!dispatchable.some((s) => s.session_id === 'stale-fixture-session'), 'stale session is not dispatchable');
   ok(dispatchable.some((s) => s.session_id === 'idle-fixture-session'), 'live fixture session exposes canonical agent facts');
   const healthyWorking = dispatchable.find((s) => s.session_id === 'healthy-working-session');
-  ok(healthyWorking?.channel_present === true && healthyWorking?.endpoint_health === 'healthy' && healthyWorking?.delivery_ready === false && healthyWorking?.delivery_reason === 'busy' && healthyWorking?.reachable === false, 'healthy working managed Codex remains dispatchable with distinct channel and delivery facts');
+  ok(healthyWorking?.channel_present === true && healthyWorking?.endpoint_health === 'healthy' && healthyWorking?.delivery_ready === false && healthyWorking?.delivery_reason === 'busy' && healthyWorking?.reachable === false, 'healthy working typed Pi remains dispatchable with distinct channel and delivery facts');
   const missingChannel = dispatchable.find((s) => s.session_id === 'legacy-fixture-session');
   ok(missingChannel?.channel_present === false && missingChannel?.delivery_reason === 'missing_channel' && missingChannel?.reachable === false, 'genuine missing-channel fixture retains unreachable compatibility facts');
   const queued = await json(`/api/tickets/${hostile.id}/dispatch`, { method: 'POST', body: JSON.stringify({ session_id: 'idle-fixture-session', mode: 'when_idle' }) });
@@ -135,7 +152,7 @@ try {
   ok(await page.locator('.app > .main[inert][aria-hidden="true"]').count() === 1, 'open drawer makes background inert');
   const dispatchPicker = page.locator('.td-prop-dispatch').filter({ has: page.locator('.td-prop-label', { hasText: 'Dispatch to' }) }).locator('.ps-trigger');
   await dispatchPicker.click();
-  const healthyWorkingOption = page.locator('.ps-option').filter({ hasText: 'Healthy Working Codex' });
+  const healthyWorkingOption = page.locator('.ps-option').filter({ hasText: 'Healthy Working Pi' });
   ok((await healthyWorkingOption.innerText()).includes('working · will queue'), 'dispatch picker labels a healthy busy target as working and queueable');
   await healthyWorkingOption.click();
   await page.waitForFunction(() => [...document.querySelectorAll('.td-dispatch-mode-btn.active')].some((button) => button.textContent === 'When idle'));
@@ -212,12 +229,12 @@ try {
   const projectSessions = page.locator('.pv-section').filter({ hasText: 'Sessions in this project' }).locator('.native-session-card');
   const projectSessionNames = await projectSessions.locator('.agent-card-name').allTextContents();
   ok(await page.locator('.project-hero-meta').getByText('6 live sessions', { exact: true }).count() === 1 && projectSessionNames.length === 6, 'project hero count matches six alive project-session cards');
-  ok(projectSessionNames.join('|') === 'Fixture Builder|Healthy Working Codex|Waiting Reviewer|Idle Newer|Legacy Status|Idle Older', 'project sessions include healthy busy, missing-channel, waiting, idle, and legacy rows in last-seen order');
+  ok(projectSessionNames.join('|') === 'Fixture Builder|Healthy Working Pi|Waiting Reviewer|Idle Newer|Legacy Status|Idle Older', 'project sessions include healthy busy, missing-channel, waiting, idle, and legacy rows in last-seen order');
   const busyCard = projectSessions.filter({ hasText: 'Fixture Builder' });
   const waitingCard = projectSessions.filter({ hasText: 'Waiting Reviewer' });
   ok(await busyCard.locator('.agent-status-badge').count() === 0 && await busyCard.locator('.agent-card-orb').count() === 1 && await busyCard.locator('.agent-card-harness-mark .agent-harness-icon').count() === 1, 'busy project card uses the H1 model orb plus a raw harness mark instead of an obsolete Working badge');
   ok(await waitingCard.locator('.agent-status-badge').count() === 0 && await waitingCard.locator('.agent-card-orb').count() === 1 && await waitingCard.locator('.agent-card-harness-mark .agent-harness-icon').count() === 1, 'waiting project card also keeps lifecycle state in its model orb and raw harness mark');
-  ok(await projectSessions.filter({ hasText: 'Healthy Working Codex' }).locator('.native-session-nochannel').count() === 0, 'healthy working card never renders a no-channel warning');
+  ok(await projectSessions.filter({ hasText: 'Healthy Working Pi' }).locator('.native-session-nochannel').count() === 0, 'healthy working card never renders a no-channel warning');
   ok((await projectSessions.filter({ hasText: 'Legacy Status' }).locator('.agent-card-communication').innerText()).includes('Channel offline'), 'genuine missing-channel card retains visible offline communication');
   ok(!projectSessionNames.includes('Stale Ghost') && !projectSessionNames.includes('Beta Builder'), 'project sessions exclude dead and cross-project rows');
   const selectorNames = await page.evaluate((projectId) => {
@@ -240,13 +257,18 @@ try {
   const harnessIcons = projectSessions.locator('.agent-harness-icon[role="img"]');
   ok(await harnessIcons.count() === 6 && await harnessIcons.evaluateAll((icons) => icons.every((icon) => icon.getAttribute('aria-label')?.startsWith('Harness: ') && !icon.querySelector(':scope > span'))), 'six harness SVG icons retain accessible names without text-initial fallbacks');
   await page.goto(`${base}/agents`, { waitUntil: 'networkidle' });
-  const agentCard = page.locator('.native-session-card').filter({ hasText: 'Healthy Working Codex' });
+  const agentCard = page.locator('.native-session-card').filter({ hasText: 'Healthy Working Pi' });
   const agentSurface = agentCard.locator('.agent-card-surface');
   await agentSurface.focus();
   await page.keyboard.press('Enter');
   await page.waitForSelector('[role="dialog"]');
+  // The H1 drawer tabs: metadata rows live on the Activity & Events tab.
+  await page.locator('.nsd-tab-btn', { hasText: 'Activity & Events' }).click();
+  await page.waitForSelector('.nsd-meta-row, [role="dialog"] .drawer-body');
   const agentText = await page.locator('[role="dialog"]').innerText();
-  for (const fact of ['session_id', 'harness', 'last seen', 'endpoint', 'delivery', 'Healthy Working Codex']) ok(agentText.toLowerCase().includes(fact.toLowerCase()), `agent detail shows canonical ${fact} fact`);
+  for (const fact of ['session_id', 'harness', 'last seen', 'endpoint', 'delivery', 'Healthy Working Pi']) {
+    ok(agentText.toLowerCase().includes(fact.toLowerCase()), `agent detail shows canonical ${fact} fact`);
+  }
   ok(agentText.toLowerCase().includes('healthy') && !agentText.toLowerCase().includes('no channel'), 'healthy working drawer shows a healthy endpoint without a missing-channel badge');
   await page.evaluate((id) => window.Router.openTicket(id), hostile.id);
   await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 2);
@@ -272,6 +294,7 @@ try {
   // Move the seeded session from busy to idle and require the drainer to POST
   // the queued envelope to its isolated fake channel, then remove the queue row.
   sessionRows[0] = { ...sessionRows[0], status: 'idle', updated_at: new Date().toISOString(), last_seen_at: new Date().toISOString() };
+  busyHold = false;
   writeFileSync(path.join(home, 'sessions.json'), JSON.stringify({ sessions: sessionRows }));
   for (let i = 0; i < 60 && !delivered.some((entry) => entry.url === '/brief'); i++) await new Promise((resolve) => setTimeout(resolve, 250));
   ok(delivered.some((entry) => entry.url === '/brief'), 'queued envelope is delivered when the agent becomes idle');

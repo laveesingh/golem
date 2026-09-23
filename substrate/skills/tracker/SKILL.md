@@ -6,17 +6,17 @@ description: The tracker tools and model — spec, task, doc; one state lifecycl
 # Tracker
 
 The dashboard owns work records; never direct database writes. These MCP tools are the
-Codex/OpenCode compatibility surface (reads, revision-gated full replacement); Pi and Claude
+shared read surface; Pi and Claude
 author through `golem ticket` (§ Ticket CLI).
 
-## Compatibility tools
+## Tools
 
 | Tool | Use |
 |---|---|
 | `ticket_list({mine:true})` | work assigned to you; filters: state, kind, assignee, project |
 | `ticket_get({id})` | body, comments, children, events |
 | `ticket_create({title, kind, body, parent_id?})` | new ticket; kind defaults to `task`; fill the kind's template |
-| `ticket_update({id, ...})` | metadata and state; `body` is the Markdown/compatibility full-body path — html needs expected_revision via `golem ticket` |
+| `ticket_update({id, ...})` | metadata and state; `body` is the Markdown full-body path — html needs expected_revision via `golem ticket` |
 | `ticket_comment({id, body, ...})` | progress and evidence; anchor with a quote, prefix and suffix, or a section |
 | `ticket_comment_reply`, `ticket_comment_update` | thread a reply; resolve, reopen, or edit |
 | `ticket_dispatch` | team transport — discovery, recipients and returns per `golem:team-ops` |
@@ -52,7 +52,8 @@ Every edit costs tokens twice, sent and read back. Keep both small.
 - One change, one `patch-blocks` call: `--expected-revision`, `--op`, `--anchor` (unique text;
   add `--prefix` or `--suffix` if it repeats), content on a quoted heredoc. Never put a body
   in a file.
-- Do not re-read after a write; its `body_revision` is the next expected revision. `replace-body` only for conversion or a rewrite I ask for.
+- Do not re-read after a write; its `body_revision` is the next expected revision.
+  `replace-body` only for conversion or a rewrite I ask for.
 - Broken Mermaid still saves; fix each `mermaid_errors` entry with one `edit`. Never render.
 
 ## Body format

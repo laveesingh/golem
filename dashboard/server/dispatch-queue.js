@@ -384,7 +384,7 @@ export function initDispatchDrainer({
     let channelsBySession = new Map();
     let allChannels = [];
     try {
-      // A managed Codex supervisor can keep a healthy loopback lease while it
+      // A typed worker can keep a healthy loopback lease while it
       // is busy/recovering. Treat delivery_ready:false exactly like an absent
       // channel here so a queued envelope is held, never burned on a 409.
       // Legacy CC/OC rows remain eligible by their established presence rule.

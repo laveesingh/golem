@@ -751,7 +751,7 @@ function roleTargetForSession(reg, sessionId) {
 
   // Only materialize a sessions.json row when identity evidence already exists
   // (fact, live/known channel, or lease). Never invent rows for unknown ids —
-  // that resurfaced zombie Codex cards and extended their recency TTL.
+  // that resurfaced zombie cards and extended their recency TTL.
   if (!canonicalFact && !channel && !canonicalLease && !parent) {
     throw new Error(`session not found: ${sessionId}`);
   }
@@ -831,22 +831,6 @@ export async function pushRoleBriefDirect(sessionId, role, row = {}) {
   const content = roleChangeBrief(role, { session_id: sessionId, ...row });
   if (!sessionId || !content) return { ok: false, skipped: true };
   const ch = readChannels().find((c) => c.session_id === sessionId && pidAlive(c.pid));
-  const managedCodex = readEndpointLeases().find((lease) => (
-    lease.canonical_id === sessionId && lease.harness === 'codex'
-  ));
-  if (!ch && managedCodex) {
-    // A role is persisted above, but a managed App Server must never receive
-    // an uncorrelated generic /role event. An explicit ticket dispatch is the
-    // supported activation path; an operator may also stop/restart the
-    // supervisor after changing its role context.
-    return {
-      ok: false,
-      gated: true,
-      status: 409,
-      error: 'managed Codex role activation is gated: the role was saved, but no generic /role is injected into an App Server thread. Use an explicit ticket dispatch to activate work, or restart the managed Codex supervisor before its next dispatch.',
-      target: `http://${managedCodex.host}:${managedCodex.port}`,
-    };
-  }
   const baseUrl = ch?.url || (ch?.host && ch?.port ? `http://${ch.host}:${ch.port}` : null);
   if (!baseUrl) return { ok: false, skipped: true };
   const ctl = new AbortController();

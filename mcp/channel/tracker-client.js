@@ -14,7 +14,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { managedCodexBinding, resolveCallerSessionId, sessionsForParent } from './identity.js';
+import { resolveCallerSessionId, sessionsForParent } from './identity.js';
 import { createGolemClient, GolemClientError } from '../../lib/golem-client.js';
 import { readClaudeSessionRecord } from '../../lib/claude-session-context.js';
 
@@ -77,31 +77,11 @@ export function dashboardBaseUrl() {
  * @returns {string|null}
  */
 export function currentSessionId(injectedId) {
-  // GOL-474: a supervisor-owned Codex MCP child has exactly one actor. Never
-  // let model-supplied metadata override that process binding. The request
-  // handler reports malformed/conflicting bound-mode calls precisely; this
-  // helper remains null-safe for callers outside the handler.
-  const managed = managedCodexBinding();
-  if (managed.enabled) return managed.sessionId || null;
   // A launcher override or parent session file is process-owned. Keep this in
   // lockstep with index.js deriveSessionId() so ticket actor ids match the
   // channel registry and the dashboard.
   if (process.env.GOLEM_CEO_SESSION_ID) return process.env.GOLEM_CEO_SESSION_ID;
-  try {
-    const j = readClaudeSessionRecord(process.ppid);
-    if (j && typeof j.sessionId === 'string' && j.sessionId) return j.sessionId;
-  } catch { /* missing / unreadable — fall through */ }
-  if (process.env.CLAUDE_CODE_SESSION_ID) return process.env.CLAUDE_CODE_SESSION_ID;
-  // Only the OpenCode shim has a trusted per-call boundary. Require a live
-  // bridge row before accepting its injected id; an arbitrary tool argument is
-  // not an actor identity.
-  if (typeof injectedId === 'string' && injectedId.trim()) {
-    const injected = injectedId.trim();
-    if (sessionsForParent({ home: golemHome() }).some((bridge) => bridge.session_id === injected)) return injected;
-  }
-  const opencode = resolveCallerSessionId({ home: golemHome() });
-  if (opencode.sessionId) return opencode.sessionId;
-  return null;
+  return resolveCallerSessionId({ home: golemHome() }).sessionId;
 }
 
 /**
@@ -279,7 +259,7 @@ export function notifySession({ session_id, text, sender_id, project_id } = {}) 
 }
 
 // Durable non-ticket control handoff. The dashboard selects the typed
-// envelope adapter for a managed Codex target and preserves the legacy route
+// envelope adapter and preserves the legacy route
 // for CC/OC. The MCP client never manufactures an envelope id locally.
 export function deliverControlMessage({ session_id, sender_id, project_id, kind, content, metadata, legacy } = {}) {
   return request('POST', '/api/messages/control', {

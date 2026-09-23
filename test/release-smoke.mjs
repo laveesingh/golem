@@ -56,8 +56,6 @@ try {
   run(process.execPath, [cli, 'help'], installDir);
   run(process.execPath, [cli, 'sync', '--target', 'cc'], installDir);
   run(process.execPath, [cli, 'sync', '--target', 'cc-marketplace'], installDir);
-  run(process.execPath, [cli, 'sync', '--target', 'opencode'], installDir);
-  run(process.execPath, [cli, 'sync', '--target', 'codex'], installDir);
   run(process.execPath, [cli, 'sync', '--target', 'pi'], installDir);
 
   const renderedChannel = path.join(env.GOLEM_HOME, 'renders', 'cc-plugin', 'mcp', 'channel');
@@ -66,11 +64,6 @@ try {
   const sdk = channelRequire.resolve('@modelcontextprotocol/sdk/server/index.js');
   assert.ok(realpathSync(sdk).startsWith(realpathSync(renderedChannel)), 'rendered channel SDK must be self-contained');
   assert.equal(JSON.parse(readFileSync(path.join(env.GOLEM_HOME, 'renders', 'cc-plugin', '.claude-plugin', 'plugin.json'))).name, 'golem');
-  const codexRoot = path.join(env.GOLEM_HOME, 'renders', 'codex');
-  assert.equal(JSON.parse(readFileSync(path.join(codexRoot, 'plugins', 'golem', '.codex-plugin', 'plugin.json'))).name, 'golem');
-  assert.equal(JSON.parse(readFileSync(path.join(codexRoot, 'plugins', 'golem', 'capabilities.json'))).push_delivery, false);
-  assert.deepEqual(JSON.parse(readFileSync(path.join(codexRoot, 'plugins', 'golem', 'capabilities.json'))).delivery, ['pull']);
-  assert.ok(readFileSync(path.join(codexRoot, 'plugins', 'golem', 'lib', 'session-facts.js'), 'utf8').includes('withRegistryLock'));
   const piRoot = path.join(env.GOLEM_HOME, 'renders', 'pi');
   assert.equal(JSON.parse(readFileSync(path.join(piRoot, 'capabilities.json'))).tier, 'A');
   const sourceModels = `${JSON.stringify({ providers: {

@@ -7,7 +7,6 @@
 // bodies never belong in shell arguments.
 //
 // Caller binding: mutations resolve the same trusted CLI session context as
-// `golem session notify`. Codex/OpenCode ancestry gets a stable
 // unsupported-caller result naming their compatibility limits; model-supplied
 // author/actor ids are never accepted. Unbound human shells must pass --human.
 //
@@ -350,26 +349,20 @@ export async function runTicket(args, {
     try {
       context = resolveContext();
     } catch (cause) {
-      // Codex/OpenCode ancestry on a MUTATION: a stable unsupported-caller
-      // result naming the reviewed compatibility limits (GOL-326 D5); no
-      // identity fallback. Reads degrade to unbound — compatibility harnesses
-      // may read without CLI caller binding.
-      if (/does not yet support CLI caller binding/.test(cause?.message ?? '')) {
-        if (spec.mutation) {
-          return fail('unsupported_caller', {
-            error: 'golem ticket mutations require Pi/Claude CLI caller binding',
-            code: 'unsupported_caller',
-            message: 'this native harness does not yet support CLI caller binding. Compatibility limits: reads and revision-gated full replacement through ticket_update work over the advertised MCP tools; block operations and golem ticket mutations do not.',
-          }, cause);
-        }
-        context = null;
-      } else if (!spec.mutation) {
-        // Reads stay unbound when the ambient context cannot resolve (e.g. a
-        // foreign ancestry); an explicit --project still scopes the read.
-        context = null;
-      } else {
-        throw cause;
+      // A caller context that cannot resolve on a MUTATION: a stable
+      // unsupported-caller result naming the binding requirement (GOL-326 D5);
+      // no identity fallback. Reads degrade to unbound — reads work without a
+      // CLI caller binding.
+      if (spec.mutation) {
+        return fail('unsupported_caller', {
+          error: 'golem ticket mutations require Pi/Claude CLI caller binding',
+          code: 'unsupported_caller',
+          message: 'caller binding is unavailable. Reads work without binding; mutations require a trusted Pi/Claude session.',
+        }, cause);
       }
+      // Reads stay unbound when the ambient context cannot resolve (e.g. a
+      // foreign ancestry); an explicit --project still scopes the read.
+      context = null;
     }
     if (!spec.mutation) {
       // Reads are safe unbound; callers still pass --human harmlessly.

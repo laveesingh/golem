@@ -35,10 +35,10 @@ for (const file of ['session-facts.json', 'endpoint-leases.json']) {
 const corruptFacts = path.join(process.env.GOLEM_HOME, 'corrupt-facts.json');
 fs.writeFileSync(corruptFacts, '{"version":1,"facts":[');
 const corruptBytes = fs.readFileSync(corruptFacts);
-assert.throws(() => upsertSessionFact({ canonical_id: 'must-not-write', harness: 'opencode', locator: { raw_session_id: 'raw' } }, { file: corruptFacts }), /cannot read facts registry/);
+assert.throws(() => upsertSessionFact({ canonical_id: 'must-not-write', harness: 'pi', locator: { raw_session_id: 'raw' } }, { file: corruptFacts }), /cannot read facts registry/);
 assert.deepEqual(fs.readFileSync(corruptFacts), corruptBytes, 'malformed registry is preserved byte-for-byte');
 
-const projected = upsertSessionFact({ canonical_id: 'unprobed', harness: 'opencode', locator: { raw_session_id: 'unprobed' }, project_path: process.cwd(), status: 'idle' });
+const projected = upsertSessionFact({ canonical_id: 'unprobed', harness: 'pi', locator: { raw_session_id: 'unprobed' }, project_path: process.cwd(), status: 'idle' });
 renewEndpointLease({ canonical_id: projected.canonical_id, owner_token: 'unprobed-owner', host: '127.0.0.1', port: 9 });
 const { readNativeSessions } = await import('../dashboard/server/native-sessions.js');
 const backgroundProjection = (await readNativeSessions(() => true, [], { cliRaw: [{
@@ -73,7 +73,7 @@ const hbStatusFlip = upsertSessionFact({ ...hbInput(new Date(210_000).toISOStrin
 assert.equal(hbStatusFlip.status, 'busy', 'a real status flip under reassert still writes');
 assert.equal(hbStatusFlip.observed_at, new Date(210_000).toISOString(), 'a real status flip refreshes observed_at');
 
-// GOL-109 reader side: with heartbeat re-stamps gone, a live opencode session's
+// GOL-109 reader side: with heartbeat re-stamps gone, a live shim-backed session's
 // fact legitimately ages past the recency window. A verified authenticated
 // endpoint alone keeps it alive, and projection recency is the max of fact
 // activity and hook-driven registry recency — in BOTH directions.
@@ -82,25 +82,26 @@ const staleFactAt = recencyNow - 20 * 60_000;
 const freshRegistryAt = recencyNow - 60_000;
 const freshFactAt = recencyNow - 2 * 60_000;
 const staleRegistryAt = recencyNow - 25 * 60_000;
-upsertSessionFact({ canonical_id: 'oc-recency', harness: 'opencode', locator: { raw_session_id: 'oc-recency' }, continuation_key: 'oc-recency', project_path: process.cwd(), name: 'oc-recency', status: 'idle', observed_at: new Date(staleFactAt).toISOString() });
-upsertSessionFact({ canonical_id: 'oc-recency2', harness: 'opencode', locator: { raw_session_id: 'oc-recency2' }, continuation_key: 'oc-recency2', project_path: process.cwd(), name: 'oc-recency2', status: 'idle', observed_at: new Date(freshFactAt).toISOString() });
+upsertSessionFact({ canonical_id: 'pi-recency', harness: 'pi', locator: { raw_session_id: 'pi-recency' }, continuation_key: 'pi-recency', project_path: process.cwd(), name: 'pi-recency', status: 'idle', observed_at: new Date(staleFactAt).toISOString() });
+upsertSessionFact({ canonical_id: 'pi-recency2', harness: 'pi', locator: { raw_session_id: 'pi-recency2' }, continuation_key: 'pi-recency2', project_path: process.cwd(), name: 'pi-recency2', status: 'idle', observed_at: new Date(freshFactAt).toISOString() });
 // Wholesale write of the shared registry fixture — keep every row this block
 // needs in this single write; the earlier scenarios above do not read it.
 fs.writeFileSync(path.join(process.env.GOLEM_HOME, 'sessions.json'), JSON.stringify({
   sessions: [
-    { session_id: 'oc-recency', harness: 'opencode', project_path: process.cwd(), name: 'oc-recency', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(freshRegistryAt).toISOString() },
-    { session_id: 'oc-recency2', harness: 'opencode', project_path: process.cwd(), name: 'oc-recency2', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(staleRegistryAt).toISOString() },
+    { session_id: 'pi-recency', harness: 'pi', project_path: process.cwd(), name: 'pi-recency', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(freshRegistryAt).toISOString() },
+    { session_id: 'pi-recency2', harness: 'pi', project_path: process.cwd(), name: 'pi-recency2', status: 'idle', boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(staleRegistryAt).toISOString() },
+    { session_id: 'legacy-harness-row', harness: 'mystery-harness', project_path: process.cwd(), name: 'Legacy Harness', status: 'idle', pid: process.pid, boot_time: new Date(recencyNow - 3_600_000).toISOString(), last_seen_at: new Date(freshRegistryAt).toISOString() },
   ],
 }, null, 2));
 const recencyRows = await readNativeSessions(() => true, [
-  { session_id: 'oc-recency', endpoint_health: 'healthy' },
-  { session_id: 'oc-recency2', endpoint_health: 'healthy' },
+  { session_id: 'pi-recency', endpoint_health: 'healthy', kind: 'typed-worker', delivery_ready: true },
+  { session_id: 'pi-recency2', endpoint_health: 'healthy', kind: 'typed-worker', delivery_ready: true },
 ]);
-const ocRow = recencyRows.find((row) => row.session_id === 'oc-recency');
-assert.equal(ocRow?.alive, true, 'verified healthy endpoint keeps an idle opencode session alive past the fact recency window');
-assert.equal(ocRow?.updated_at, freshRegistryAt, 'registry recency wins when the fact is older');
-const ocRow2 = recencyRows.find((row) => row.session_id === 'oc-recency2');
-assert.equal(ocRow2?.updated_at, freshFactAt, 'fact recency wins when the registry is older');
+const piRow = recencyRows.find((row) => row.session_id === 'pi-recency');
+assert.equal(piRow?.alive, true, 'verified healthy endpoint keeps an idle session alive past the fact recency window');
+assert.equal(piRow?.updated_at, freshRegistryAt, 'registry recency wins when the fact is older');
+const piRow2 = recencyRows.find((row) => row.session_id === 'pi-recency2');
+assert.equal(piRow2?.updated_at, freshFactAt, 'fact recency wins when the registry is older');
 
 // GOL-129: a verified typed-worker lease is endpoint liveness, not activity.
 // It keeps a quiet Pi visible without forging a newer observed_at, while the
@@ -154,6 +155,14 @@ upsertSessionFact({
 });
 assert.equal((await readNativeSessions(() => true, [])).some((row) => row.session_id === 'pi-terminal-fact'), false, 'fact-only terminal Pi worker is absent from the native-session projection');
 
+// GOL-365 R8: a historical row whose harness is an unknown string (leftover
+// rows until the scrub) renders generically — recency liveness, no crash,
+// no mis-route.
+const legacyRow = (await readNativeSessions(() => true, [])).find((row) => row.session_id === 'legacy-harness-row');
+assert.ok(legacyRow, 'an unknown-harness registry row projects instead of crashing');
+assert.equal(legacyRow?.harness, 'mystery-harness', 'the unknown harness value survives projection verbatim');
+assert.equal(typeof legacyRow?.alive, 'boolean', 'unknown-harness liveness resolves to a plain boolean');
+
 // GOL-109 merge overlay: the CLI row's updated_at is fabricated (= startedAt;
 // `claude agents --json` emits no updatedAt), so overlaying it must never
 // regress the golem registry's hook-driven recency — the shape that occurs in
@@ -171,7 +180,7 @@ assert.equal(mergedCc?.updated_at, freshRegistryAt, 'CLI overlay must not regres
 // Harnesses whose shim/supervisor maintains fact.status stay fact-first.
 assert.equal(factPresentationField('claudecode', 'idle', 'busy'), 'busy', 'live CC status wins over a frozen fact status');
 assert.equal(factPresentationField('claudecode', 'idle', null), 'idle', 'CC fact status fills only when no live source exists');
-assert.equal(factPresentationField('opencode', 'busy', 'idle'), 'busy', 'opencode fact status leads');
-assert.equal(factPresentationField('codex', 'active', null), 'active', 'codex fact status leads');
+assert.equal(factPresentationField('pi', 'busy', 'idle'), 'busy', 'pi fact status leads');
+assert.equal(factPresentationField('unknown-harness', 'active', null), 'active', 'an unknown harness fact status leads');
 
 console.log('canonical session facts + endpoint leases journey passed (36 assertions)');

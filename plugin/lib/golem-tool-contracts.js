@@ -87,74 +87,20 @@ const contracts = [
   },
   {
     name: 'ticket_dispatch',
-    description: 'Golem tracker — dispatch a ticket to a live session: assigns the ticket and pushes a brief to it over the channel. Use sessions_dispatchable to find live session ids (each carries a status: idle|busy|waiting, and a pending_count of queued dispatches). The target session must be a channel consumer (golemc) to receive the push. By default the brief is pushed immediately (mode "now"); pass when_idle:true to queue it until the target is idle — use this when the session is busy/waiting so the brief is not buried mid-turn.',
-    inputSchema: object({ id: string('Display ticket id to dispatch, e.g. GOL-244. Legacy TKT refs still resolve.'), session_id: string('Live session id to dispatch to (from sessions_dispatchable).'), note: string('Optional note to include with the dispatch.'), when_idle: { type: 'boolean', description: 'Queue the dispatch until the target session is idle instead of pushing immediately. Use when the target is busy/waiting so the brief is delivered when it can be acted on.' }, workspace: string("Optional workspace directive. Pass 'worktree' to instruct the builder to use a git worktree (branch + dir derived from ticket id/title). Only valid when the project has worktrees enabled.") }, ['id', 'session_id']),
-  },
-  {
-    name: 'sessions_dispatchable',
-    description: 'Golem tracker — list live cross-harness sessions that are currently eligible to receive a dispatched ticket, in your current project (or pass project for another). Returns session ids + labels for use with ticket_dispatch. Each entry carries a status (idle|busy|waiting) and a pending_count of queued dispatches — spawned workers also carry worker_tmux_session, worker_state, and worker_attach_hint fields.',
-    inputSchema: object({ project: string('Canonical project_id, registry id, or unique dashboard project name. Ambiguous human names fail explicitly. Defaults to your current project.') }),
-  },
-  {
-    name: 'session_notify',
-    description: 'Push an active notification to ANOTHER live session over the dashboard channel. Use it for delegated returns, milestones, review-ready/blocker pings, and consultations. This is not a ticket comment or assignment: keep the durable report/audit in the tracker, then notify the exact captured session_id. Never route by label/name or rediscover a return target.',
-    inputSchema: object({ to: string('Target exact immutable session_id from sessions_dispatchable or the original authenticated handoff envelope. Labels/names are not accepted.'), text: string('The notification text. For large delegated reports, put the report in the tracker first and send a concise pointer plus next action.'), ticket: string('Optional ticket id (e.g. "GOL-267") prefixed to the message for context.') }, ['to', 'text']),
+    description: 'Golem tracker — dispatch a ticket to a live session: assigns the ticket and pushes a brief to it over the channel. The target session must be a channel consumer (golemc) to receive the push. By default the brief is pushed immediately (mode "now"); pass when_idle:true to queue it until the target is idle — use this when the session is busy/waiting so the brief is not buried mid-turn.',
+    inputSchema: object({ id: string('Display ticket id to dispatch, e.g. GOL-244. Legacy TKT refs still resolve.'), session_id: string('Live session id to dispatch to.'), note: string('Optional note to include with the dispatch.'), when_idle: { type: 'boolean', description: 'Queue the dispatch until the target session is idle instead of pushing immediately. Use when the target is busy/waiting so the brief is delivered when it can be acted on.' }, workspace: string("Optional workspace directive. Pass 'worktree' to instruct the builder to use a git worktree (branch + dir derived from ticket id/title). Only valid when the project has worktrees enabled.") }, ['id', 'session_id']),
   },
   {
     name: 'project_context',
-    description: 'Re-render this session\'s ambient project context — role card, LSP, recently closed work as id+title pointers, and the last 40 commits. Live recipients are intentionally not boot context: call sessions_dispatchable immediately before a new handoff. Returns pointers, never ticket bodies: pull those with ticket_get.',
+    description: 'Re-render this session\'s ambient project context — role card, LSP, recently closed work as id+title pointers, and the last 40 commits. Live recipients are intentionally not boot context: call `golem session list` immediately before a new handoff. Returns pointers, never ticket bodies: pull those with ticket_get.',
     inputSchema: object({}),
   },
 ];
 
-// Outbound tool surfaces. The full shared contract list is frozen compatibility
-// behavior; a launch/config-time selection may hide the outbound delivery and
-// discovery tools in favor of the golem CLI on harnesses that bind CLI caller
-// identity (Pi registration, Claude's rendered MCP launch). Selection comes
-// only from trusted launch configuration (GOLEM_TOOL_SURFACE / Pi registration),
-// never from model-authored arguments; absent selection stays compatibility.
-export const TOOL_SURFACES = Object.freeze({
-  compatibility: Object.freeze({ name: 'compatibility', omitted: Object.freeze([]) }),
-  'cli-first': Object.freeze({ name: 'cli-first', omitted: Object.freeze(['session_notify', 'sessions_dispatchable']) }),
-});
-
-export function resolveToolSurface(selection) {
-  if (selection == null || String(selection).trim() === '') return TOOL_SURFACES.compatibility;
-  const key = String(selection).trim();
-  const surface = TOOL_SURFACES[key];
-  if (!surface) {
-    throw new Error(`unknown Golem tool surface "${key}"; expected "compatibility" (default) or "cli-first" (GOLEM_TOOL_SURFACE)`);
-  }
-  return surface;
-}
-
-// CLI-first descriptions for contracts whose text or schema fields point at a
-// tool the surface omits; those references name `golem session list` instead.
-const CLI_FIRST_DESCRIPTIONS = Object.freeze({
-  ticket_dispatch: 'Golem tracker — dispatch a ticket to a live session: assigns the ticket and pushes a brief to it over the channel. Find live session ids with `golem session list` (see golem:team-ops). The target session must be a channel consumer (golemc) to receive the push. By default the brief is pushed immediately (mode "now"); pass when_idle:true to queue it until the target is idle — use this when the session is busy/waiting so the brief is not buried mid-turn.',
-  project_context: 'Re-render this session\'s ambient project context — role card, LSP, recently closed work as id+title pointers, and the last 40 commits. Live recipients are intentionally not boot context: run `golem session list` immediately before a new handoff. Returns pointers, never ticket bodies: pull those with ticket_get.',
-});
-
-export function toolsForSurface(surface) {
-  if (surface.name === 'compatibility') return GOLEM_TOOL_CONTRACTS;
-  const omitted = new Set(surface.omitted);
-  return GOLEM_TOOL_CONTRACTS
-    .filter((contract) => !omitted.has(contract.name))
-    .map((contract) => {
-      const description = CLI_FIRST_DESCRIPTIONS[contract.name] ?? contract.description;
-      const inputSchema = JSON.parse(JSON.stringify(contract.inputSchema, (key, value) => {
-        if (key === 'description' && typeof value === 'string') {
-          return value.replace(/\(from sessions_dispatchable\)/g, '(from `golem session list`)')
-            .replace(/Use sessions_dispatchable to find live session ids/g, 'Find live session ids with `golem session list`');
-        }
-        return value;
-      }));
-      return { ...contract, description, inputSchema };
-    });
-}
-
+// GOL-365: Pi and Claude are the only harnesses — the full shared contract
+// list is the only tool surface. No launch/config-time selection switch exists.
 export const RETIRED_GOLEM_TOOL_CONTRACTS = Object.freeze({
-  subscriptions: 'Retired with passive handoffs; active delivery uses exact session_notify and tracker-backed dispatch.',
+  subscriptions: 'Retired with passive handoffs; active delivery uses tracker-backed dispatch.',
   dedicated_gate_tools: 'Gate decisions arrive as correlated channel envelopes and are acknowledged through ack.',
   ticket_transition: 'Retired with the phase machine (GOL-150); ticket_update({state}) is the only ticket lifecycle API.',
   streams: 'Retired with the doc-model lean-down (GOL-151); parent_id is the only grouping — hang tasks and supporting docs under their spec.',

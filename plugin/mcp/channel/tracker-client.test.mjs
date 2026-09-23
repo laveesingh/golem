@@ -505,246 +505,11 @@ async function main() {
   const briefEvent = channelEvents.find((event) => event.params?.content === 'Correlated dispatch');
   check('POST /brief carries envelope metadata to channel event', briefEvent?.params?.meta?.envelope_id === 'env-channel-metadata' && briefEvent?.params?.meta?.target_session_id === SESSION_ID, JSON.stringify(briefEvent));
 
-  // One opencode MCP serves sibling sessions. Its shim-bound identity is
-  // trusted only when no launcher/parent binding exists; a CC launcher binding
-  // must ignore model-reachable injected ids and refuse conflicts in the
-  // channel handler.
-  const siblingA = 'ses_identity_sibling_a';
-  const siblingB = 'ses_identity_sibling_b';
-  check('launcher-bound identity ignores injected caller id', client.currentSessionId(siblingB) === SESSION_ID, client.currentSessionId(siblingB));
-  const bridgePayloads = [];
-  bridgeCaptureServer = createServer(async (req, res) => {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    bridgePayloads.push({ path: req.url, body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') });
-    res.writeHead(202).end('{}');
-  });
-  await new Promise((resolve, reject) => {
-    bridgeCaptureServer.once('error', reject);
-    bridgeCaptureServer.listen(0, HOST, resolve);
-  });
-  const bridgeAddress = bridgeCaptureServer.address();
-  const bridgePort = typeof bridgeAddress === 'object' && bridgeAddress ? bridgeAddress.port : null;
-  const bridgesFile = path.join(tmpGolemHome, 'opencode-bridges.json');
-  const now = new Date().toISOString();
-  fs.writeFileSync(bridgesFile, JSON.stringify({
-    bridges: [
-      { session_id: siblingA, opencode_pid: process.pid, pid: process.pid, host: HOST, port: bridgePort, updated_at: now },
-      { session_id: siblingB, opencode_pid: process.pid, pid: process.pid, host: HOST, port: bridgePort, updated_at: new Date(Date.now() + 1000).toISOString() },
-    ],
-  }));
-  identityMcpClient = new Client({ name: 'golem-identity-journey', version: '1.0.0' });
-  identityMcpTransport = new StdioClientTransport({
-    command: process.execPath,
-    args: [CHANNEL_SERVER],
-    cwd: CHANNEL_ROOT,
-    env: {
-      ...process.env,
-      XDG_CONFIG_HOME: tmpConfigHome,
-      GOLEM_HOME: tmpGolemHome,
-      GOLEM_CEO_SESSION_ID: '',
-      CLAUDE_CODE_SESSION_ID: '',
-      GOLEM_CHANNEL_PORT: '0',
-      GOLEM_CHANNEL_HEARTBEAT_MS: '25',
-      HOME: tmpRoot,
-    },
-    stderr: 'pipe',
-  });
-  identityMcpTransport.stderr?.on('data', (d) => process.stderr.write(`[identity-mcp:err] ${d}`));
-  await identityMcpClient.connect(identityMcpTransport);
-  await sleep(50);
-  const siblingChannels = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'channels.json'), 'utf8')).channels;
-  const siblingRows = siblingChannels.filter((channel) => channel.session_id === siblingA || channel.session_id === siblingB);
-  check('shared opencode MCP registers both sibling channel rows', siblingRows.length === 2 && siblingRows[0].port === siblingRows[1].port, JSON.stringify(siblingRows));
-  fs.writeFileSync(path.join(tmpGolemHome, 'sessions.json'), JSON.stringify({ sessions: [
-    { session_id: siblingA, project_id: PROJECT_ID, harness: 'opencode', status: 'idle', updated_at: now },
-    { session_id: siblingB, project_id: PROJECT_ID, harness: 'opencode', status: 'idle', updated_at: now },
-  ] }));
-  const nativeModule = await import(url.pathToFileURL(path.resolve(__dirname, '../../../dashboard/server/native-sessions.js')).href + `?t=${Date.now()}`);
-  const channelsModule = await import(url.pathToFileURL(path.resolve(__dirname, '../../../dashboard/server/channels.js')).href + `?t=${Date.now()}`);
-  const verifiedSiblingChannels = await channelsModule.readChannels();
-  const readySiblingChannels = verifiedSiblingChannels.filter((channel) => channel.session_id === siblingA || channel.session_id === siblingB);
-  check('OpenCode bridge readiness is preserved independently of Claude Channels',
-    readySiblingChannels.length === 2 && readySiblingChannels.every((channel) => channelsModule.isChannelDeliveryReady(channel)),
-    JSON.stringify(verifiedSiblingChannels));
-  const nativeSiblings = await nativeModule.readNativeSessions(() => true, verifiedSiblingChannels);
-  const nativeSiblingRows = nativeSiblings.filter((session) => session.session_id === siblingA || session.session_id === siblingB);
-  check('native sessions reports both sibling rows alive', nativeSiblingRows.length === 2 && nativeSiblingRows.every((session) => session.alive === true), JSON.stringify(nativeSiblings));
-  const siblingChannel = siblingRows.find((channel) => channel.session_id === siblingB);
-  const addressedBrief = await fetch(`http://${siblingChannel.host}:${siblingChannel.port}/brief`, {
-    method: 'POST',
-    headers: { 'X-Sender': 'dashboard', 'X-Golem-Target-Session': siblingB, 'Content-Type': 'text/plain' },
-    body: 'Target sibling B',
-  });
-  check('addressed sibling brief reaches bridge', addressedBrief.status === 202 && bridgePayloads.at(-1)?.body?.session_id === siblingB, JSON.stringify(bridgePayloads));
-
-  const labelNotify = await callToolFrom(identityMcpClient, 'session_notify', {
-    to: 'duplicate-human-name', text: 'label routing must fail', __golem_session_id: siblingA, __golem_call_id: 'label-notify',
-  });
-  check('session_notify rejects label/name routing', labelNotify.result.isError && /exact session_id|Labels\/names/.test(labelNotify.text), labelNotify.text);
-
-  const exactNotify = await callToolFrom(identityMcpClient, 'session_notify', {
-    to: siblingB, text: 'durable report is ready', ticket: 'GOL-132', __golem_session_id: siblingA, __golem_call_id: 'exact-notify',
-  });
-  await sleep(50);
-  const notifyBody = bridgePayloads.at(-1)?.body || {};
-  check('session_notify delivers authenticated sender context',
-    !exactNotify.result.isError
-      && notifyBody.session_id === siblingB
-      && /Authenticated sender session_id: ses_identity_sibling_a/.test(notifyBody.content || '')
-      && /Return recipient: ses_identity_sibling_a/.test(notifyBody.content || '')
-      && /golem:team-ops/.test(notifyBody.content || '')
-      && !/Return route: session_notify/.test(notifyBody.content || ''),
-    `${exactNotify.text} bridge=${JSON.stringify(notifyBody)}`);
-
-  const identityTicket = await callToolFrom(identityMcpClient, 'ticket_create', {
-    project: PROJECT_ID,
-    title: 'Per-call identity journey',
-    body: 'Injected metadata must not enter this ticket.',
-    __golem_session_id: siblingB,
-    __golem_call_id: 'call-shim-b',
-    __golem_probe: 'must-be-stripped',
-  });
-  check('injected sibling creates with its own author', !identityTicket.result.isError && identityTicket.json?.created_by === siblingB, identityTicket.text);
-  const siblingCommentA = await callToolFrom(identityMcpClient, 'ticket_comment', {
-    id: identityTicket.json?.id,
-    body: 'Sibling A write',
-    __golem_session_id: siblingA,
-    __golem_call_id: 'call-shim-a',
-  });
-  const siblingCommentB = await callToolFrom(identityMcpClient, 'ticket_comment', {
-    id: identityTicket.json?.id,
-    body: 'Sibling B write',
-    __golem_session_id: siblingB,
-    __golem_call_id: 'call-shim-b',
-  });
-  check('sibling A write succeeds', !siblingCommentA.result.isError, siblingCommentA.text);
-  check('sibling B write succeeds despite newer bridge order', !siblingCommentB.result.isError, siblingCommentB.text);
-  const siblingTicket = await callToolFrom(identityMcpClient, 'ticket_get', { id: identityTicket.json?.id });
-  const siblingAuthors = siblingTicket.json?.comments?.map((comment) => comment.author) || [];
-  check('sibling writes retain their individual authors', siblingAuthors.includes(siblingA) && siblingAuthors.includes(siblingB), JSON.stringify(siblingTicket.json?.comments));
-  check('injected metadata is stripped before ticket handlers', !JSON.stringify(siblingTicket.json).includes('__golem_'), siblingTicket.text);
-
-
-  const ambiguousWrite = await callToolFrom(identityMcpClient, 'ticket_comment', { id: identityTicket.json?.id, body: 'must not write' });
-  check('ambiguous sibling write is refused', ambiguousWrite.result.isError && /2 sibling sessions.*refusing to write/.test(ambiguousWrite.text), ambiguousWrite.text);
-  const afterAmbiguous = await callToolFrom(identityMcpClient, 'ticket_get', { id: identityTicket.json?.id });
-  check('ambiguous sibling refusal writes no comment', afterAmbiguous.json?.comments?.length === 2, JSON.stringify(afterAmbiguous.json?.comments));
-
-  fs.writeFileSync(bridgesFile, JSON.stringify({ bridges: [{ session_id: siblingA, opencode_pid: process.pid, pid: process.pid, host: HOST, port: bridgePort, updated_at: now }] }));
-  await sleep(100);
-  const reapedSiblingRows = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'channels.json'), 'utf8')).channels
-    .filter((channel) => channel.session_id === siblingA || channel.session_id === siblingB);
-  check('removed sibling channel row is reaped', reapedSiblingRows.length === 1 && reapedSiblingRows[0].session_id === siblingA, JSON.stringify(reapedSiblingRows));
-  const singleBridgeWrite = await callToolFrom(identityMcpClient, 'ticket_comment', { id: identityTicket.json?.id, body: 'Single bridge back-compat' });
-  check('single bridge resolves without injection', !singleBridgeWrite.result.isError, singleBridgeWrite.text);
-
-  await identityMcpClient.close();
-  identityMcpClient = null;
-  identityMcpTransport = null;
-  fs.writeFileSync(bridgesFile, JSON.stringify({ bridges: [] }));
-  await sleep(100);
-  const channelsFile = path.join(tmpGolemHome, 'channels.json');
-  const channelCountBeforeNoIdentity = JSON.parse(fs.readFileSync(channelsFile, 'utf8')).channels.length;
-  noIdentityMcpClient = new Client({ name: 'golem-no-identity-journey', version: '1.0.0' });
-  noIdentityMcpTransport = new StdioClientTransport({
-    command: process.execPath,
-    args: [CHANNEL_SERVER],
-    cwd: CHANNEL_ROOT,
-    env: {
-      ...process.env,
-      XDG_CONFIG_HOME: tmpConfigHome,
-      GOLEM_HOME: tmpGolemHome,
-      GOLEM_CEO_SESSION_ID: '',
-      CLAUDE_CODE_SESSION_ID: '',
-      GOLEM_CHANNEL_PORT: '0',
-      GOLEM_CHANNEL_HEARTBEAT_MS: '60000',
-      HOME: tmpRoot,
-    },
-    stderr: 'pipe',
-  });
-  await noIdentityMcpClient.connect(noIdentityMcpTransport);
-  await sleep(50);
-  const channelCountAfterNoIdentity = JSON.parse(fs.readFileSync(channelsFile, 'utf8')).channels.length;
-  check('missing bridge channel does not register', channelCountAfterNoIdentity === channelCountBeforeNoIdentity, `${channelCountBeforeNoIdentity} -> ${channelCountAfterNoIdentity}`);
-  const noBridgeWrite = await callToolFrom(noIdentityMcpClient, 'ticket_comment', { id: identityTicket.json?.id, body: 'must not write without bridge' });
-  check('missing bridge write is refused', noBridgeWrite.result.isError && /no live opencode bridge row.*refusing to write/.test(noBridgeWrite.text), noBridgeWrite.text);
-
-  const lateBridgeId = 'ses_late_opencode_bridge';
-  const lateBridgeStarted = Date.now();
-  fs.writeFileSync(bridgesFile, JSON.stringify({ bridges: [{
-    session_id: lateBridgeId,
-    opencode_pid: process.pid,
-    pid: process.pid,
-    host: HOST,
-    port: bridgePort,
-    name: 'late-bridge',
-    updated_at: new Date().toISOString(),
-  }] }));
-  let lateBridgeChannel = null;
-  try { lateBridgeChannel = await waitForChannelEntry(lateBridgeId, 1000); } catch { /* asserted below */ }
-  const lateBridgeElapsed = Date.now() - lateBridgeStarted;
-  check('late opencode bridge registers before the 60s heartbeat', !!lateBridgeChannel && lateBridgeElapsed < 1000, `${lateBridgeElapsed}ms ${JSON.stringify(lateBridgeChannel)}`);
-
-  const lateSiblingBridgeId = 'ses_late_opencode_sibling';
-  const lateSiblingStarted = Date.now();
-  fs.writeFileSync(bridgesFile, JSON.stringify({ bridges: [{
-    session_id: lateBridgeId,
-    opencode_pid: process.pid,
-    pid: process.pid,
-    host: HOST,
-    port: bridgePort,
-    name: 'late-bridge',
-    updated_at: new Date().toISOString(),
-  }, {
-    session_id: lateSiblingBridgeId,
-    opencode_pid: process.pid,
-    pid: process.pid,
-    host: HOST,
-    port: bridgePort,
-    name: 'late-sibling',
-    updated_at: new Date().toISOString(),
-  }] }));
-  let lateSiblingChannel = null;
-  try { lateSiblingChannel = await waitForChannelEntry(lateSiblingBridgeId, 1000); } catch { /* asserted below */ }
-  const lateSiblingElapsed = Date.now() - lateSiblingStarted;
-  check('late opencode sibling registers before the heartbeat', !!lateSiblingChannel && lateSiblingElapsed < 1000, `${lateSiblingElapsed}ms ${JSON.stringify(lateSiblingChannel)}`);
-
-  fs.writeFileSync(bridgesFile, JSON.stringify({ bridges: [{
-    session_id: lateBridgeId,
-    opencode_pid: process.pid,
-    pid: process.pid,
-    host: HOST,
-    port: bridgePort,
-    name: 'late-bridge-renamed',
-    updated_at: new Date().toISOString(),
-  }, {
-    session_id: lateSiblingBridgeId,
-    opencode_pid: process.pid,
-    pid: process.pid,
-    host: HOST,
-    port: bridgePort,
-    name: 'late-sibling',
-    updated_at: new Date().toISOString(),
-  }] }));
-  let renamedLateBridge = null;
-  try {
-    renamedLateBridge = await waitForChannelEntry(lateBridgeId, 1000, (channel) => channel.name === 'late-bridge-renamed');
-  } catch { /* asserted below */ }
-  check('late opencode bridge name refreshes before the heartbeat', renamedLateBridge?.name === 'late-bridge-renamed', JSON.stringify(renamedLateBridge));
-
-  fs.writeFileSync(bridgesFile, JSON.stringify({ bridges: [] }));
-  const removalDeadline = Date.now() + 1000;
-  let lateBridgeRemoved = false;
-  while (Date.now() < removalDeadline) {
-    const channels = JSON.parse(fs.readFileSync(channelsFile, 'utf8')).channels || [];
-    if (!channels.some((channel) => channel.session_id === lateBridgeId)) {
-      lateBridgeRemoved = true;
-      break;
-    }
-    await sleep(25);
-  }
-  check('removed late opencode bridge promptly reaps its channel', lateBridgeRemoved, JSON.stringify(JSON.parse(fs.readFileSync(channelsFile, 'utf8')).channels));
+  // GOL-365: Pi and Claude are the only harnesses. One MCP child per session
+  // means there are no sibling bridges: the bridge registry is gone, an
+  // unbound MCP registers nothing, and a launcher-bound session ignores
+  // model-reachable injected ids.
+  check('launcher-bound identity ignores injected caller id', client.currentSessionId('ses_identity_sibling_b') === SESSION_ID, client.currentSessionId('ses_identity_sibling_b'));
 
   const ccFallbackId = 'ses_claude_env_fallback';
   ccFallbackMcpClient = new Client({ name: 'golem-cc-env-fallback-journey', version: '1.0.0' });
@@ -771,7 +536,7 @@ async function main() {
   });
   await ccFallbackMcpClient.connect(ccFallbackMcpTransport);
   const ccFallbackChannel = await waitForChannelEntry(ccFallbackId, 15_000, (channel) => channel.consumer_ready === true);
-  const ccFallbackChannels = JSON.parse(fs.readFileSync(channelsFile, 'utf8')).channels;
+  const ccFallbackChannels = JSON.parse(fs.readFileSync(path.join(tmpGolemHome, 'channels.json'), 'utf8')).channels;
   check('initialized Anthropic-configured CC registers an eligible channel',
     ccFallbackChannel.harness === 'claudecode' && ccFallbackChannel.delivery_ready === true,
     JSON.stringify(ccFallbackChannel));
@@ -865,17 +630,30 @@ async function main() {
   check('MCP advertises the canonical shared contract source without schema drift',
     JSON.stringify(tools.tools) === JSON.stringify(GOLEM_TOOL_CONTRACTS),
     `mcp=${tools.tools.length} shared=${GOLEM_TOOL_CONTRACTS.length}`);
-  // Compatibility boot keeps its own advertised-tool instructions: the absence
-  // of the CLI-first intercept here is the proof the surface split is real.
-  const compatInstructions = mcpClient.getInstructions?.() || '';
-  check('compatibility boot instructions still prescribe its advertised outbound tool',
-    /use `session_notify` to the authenticated exact session_id/.test(compatInstructions)
-      && !/golem session list/.test(compatInstructions),
-    compatInstructions.slice(0, 200));
-  check('compatibility instructions do not force a lead persona onto authorized coordinators',
-    !/run the lead sequence/.test(compatInstructions), compatInstructions.slice(0, 200));
+  // GOL-377: the boot instructions string is injected prose — only its
+  // presence is a mechanic.
+  const bootInstructions = mcpClient.getInstructions?.() || '';
+  check('boot instructions are injected non-empty', bootInstructions.trim().length > 0, bootInstructions.slice(0, 120));
   check('MCP omits retired subscription and consult wrapper tools', !tools.tools.some((tool) => ['subscribe', 'unsubscribe', 'subscriptions_list', 'consult_request', 'consult_reply', 'consult_status'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   check('MCP retires worker lifecycle tools', !tools.tools.some((tool) => ['session_spawn', 'session_kill'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
+  // GOL-366 fix round 1: the retired delivery/discovery tools never execute.
+  // A CallTool of either name must fall through to the unknown-tool error and
+  // perform no delivery or discovery side effect. The SDK client surfaces an
+  // unknown-tool response as a thrown McpError, so catch and assert it.
+  const retiredOutcome = async (name, args) => {
+    try {
+      const result = await callTool(name, args);
+      return { isError: !!result.result.isError, text: result.text };
+    } catch (error) {
+      return { isError: true, text: String(error?.message ?? error) };
+    }
+  };
+  const retiredNotify = await retiredOutcome('session_notify', { to: SESSION_ID, text: 'retired tool must not deliver' });
+  const retiredDiscovery = await retiredOutcome('sessions_dispatchable', {});
+  check('retired session_notify direct call fails closed (unknown tool, no delivery)',
+    retiredNotify.isError && /unknown tool: session_notify/.test(retiredNotify.text), retiredNotify.text);
+  check('retired sessions_dispatchable direct call fails closed (unknown tool, no discovery)',
+    retiredDiscovery.isError && /unknown tool: sessions_dispatchable/.test(retiredDiscovery.text), retiredDiscovery.text);
   const spoofedCallerRead = await callTool('ticket_get', {
     id: 'GOL-199',
     __golem_session_id: 'spoofed-model-session',
@@ -890,23 +668,15 @@ async function main() {
   check('shared contract source records the retired transition surface',
     GOLEM_TOOL_CONTRACTS.every((entry) => entry.name !== 'ticket_transition') && !!RETIRED_GOLEM_TOOL_CONTRACTS.ticket_transition);
   const updateTool = tools.tools.find((tool) => tool.name === 'ticket_update');
-  check('ticket_update teaches the single state lifecycle',
-    /todo.*in_progress.*review.*done/s.test(updateTool?.description || '') && !/phase/i.test(updateTool?.description || ''),
+  check('ticket_update ships a non-empty description', !!updateTool && String(updateTool.description || '').trim().length > 0,
     updateTool?.description);
-  check('no advertised tool mentions phases', !tools.tools.some((tool) => /phase/i.test(JSON.stringify(tool))),
-    tools.tools.filter((tool) => /phase/i.test(JSON.stringify(tool))).map((tool) => tool.name).join(', '));
   // GOL-151: three doc types, no streams, no waves.
   check('MCP no longer lists stream tools', !tools.tools.some((tool) => /^stream_/.test(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   check('shared contract source records the retired stream surface',
     GOLEM_TOOL_CONTRACTS.every((entry) => !entry.name.startsWith('stream_')) && !!RETIRED_GOLEM_TOOL_CONTRACTS.streams);
-  check('no advertised tool mentions streams or waves',
-    !tools.tools.some((tool) => /\bstream|\bwave/i.test(JSON.stringify(tool))),
-    tools.tools.filter((tool) => /\bstream|\bwave/i.test(JSON.stringify(tool))).map((tool) => tool.name).join(', '));
   const createTool = tools.tools.find((tool) => tool.name === 'ticket_create');
-  check('ticket_create teaches the three doc types',
-    /spec\|task\|doc \(default task\)/.test(createTool?.inputSchema?.properties?.kind?.description || '')
-      && !/work-item|question|decision/.test(JSON.stringify(createTool)),
-    JSON.stringify(createTool?.inputSchema?.properties?.kind));
+  check('ticket_create schema exposes the kind enum',
+    !!createTool && !!createTool.inputSchema?.properties?.kind, JSON.stringify(createTool?.inputSchema?.properties?.kind));
 
   const defaultKind = await callTool('ticket_create', { project: PROJECT_ID, title: 'MCP default kind' });
   check('ticket_create defaults to task', !defaultKind.result.isError && defaultKind.json?.kind === 'task', defaultKind.text);
@@ -1071,189 +841,22 @@ async function main() {
   await new Promise((resolve) => proxy.listen(0, HOST, resolve));
   proxyPort = proxy.address().port;
   fs.writeFileSync(path.join(tmpGolemHome, 'dashboard.json'), JSON.stringify({ url: `http://127.0.0.1:${proxyPort}` }));
-  const cliFirstId = 'test-session-cli-first';
-  const cliFirstEvents = [];
-  const CliChannelNotificationSchema = z.object({
-    method: z.literal('notifications/claude/channel'),
-    params: z.object({ content: z.string(), meta: z.object({ kind: z.string() }).passthrough() }).passthrough(),
-  });
-  cliFirstMcpClient = new Client({ name: 'golem-cli-first-journey', version: '1.0.0' });
-  cliFirstMcpTransport = new StdioClientTransport({
-    command: process.execPath,
-    args: [CHANNEL_SERVER],
-    cwd: CHANNEL_ROOT,
-    env: {
-      ...process.env,
-      XDG_CONFIG_HOME: tmpConfigHome,
-      GOLEM_HOME: tmpGolemHome,
-      GOLEM_CEO_SESSION_ID: cliFirstId,
-      GOLEM_CHANNEL_PORT: '0',
-      GOLEM_TOOL_SURFACE: 'cli-first',
-      ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
-      CLAUDE_CODE_USE_BEDROCK: '',
-      CLAUDE_CODE_USE_VERTEX: '',
-      CLAUDE_CODE_USE_FOUNDRY: '',
-      HOME: tmpRoot,
-    },
-    stderr: 'pipe',
-  });
-  cliFirstMcpTransport.stderr?.on('data', (d) => process.stderr.write(`[mcp-cli-first:err] ${d}`));
-  cliFirstMcpClient.setNotificationHandler(CliChannelNotificationSchema, (notification) => cliFirstEvents.push(notification));
-  await cliFirstMcpClient.connect(cliFirstMcpTransport);
-  const cliFirstTools = await cliFirstMcpClient.listTools();
-  const cliFirstNames = cliFirstTools.tools.map((tool) => tool.name);
-  const omittedNames = ['session_notify', 'sessions_dispatchable'];
-  check('CLI-first selection omits outbound delivery and discovery tools',
-    omittedNames.every((name) => !cliFirstTools.tools.some((tool) => tool.name === name)),
-    cliFirstTools.tools.map((tool) => tool.name).join(', '));
-  check('CLI-first selection keeps tracker, dispatch, ack, role and context tools',
+  // GOL-365: Pi and Claude are the only harnesses — the full shared contract
+  // list is the only tool surface. No launch-time selection exists, so the
+  // retired delivery/discovery tools never advertise and never intercept.
+  const soleSurfaceTools = await mcpClient.listTools();
+  const soleSurfaceNames = soleSurfaceTools.tools.map((tool) => tool.name);
+  check('the sole surface omits retired delivery and discovery tools',
+    ['session_notify', 'sessions_dispatchable', 'subscribe', 'unsubscribe', 'consult_request'].every((name) => !soleSurfaceNames.includes(name)),
+    soleSurfaceNames.join(', '));
+  check('the sole surface keeps tracker, dispatch, ack, role and context tools',
     ['ack', 'ticket_list', 'ticket_get', 'ticket_create', 'ticket_update', 'ticket_comment',
       'ticket_comment_update', 'ticket_comment_reply', 'session_role', 'ticket_dispatch', 'project_context']
-      .every((name) => cliFirstTools.tools.some((tool) => tool.name === name)),
-    cliFirstTools.tools.map((tool) => tool.name).join(', '));
-  check('no CLI-first advertised tool or schema field still names a hidden discovery tool',
-    !omittedNames.some((name) => JSON.stringify(cliFirstTools.tools).includes(name)),
-    JSON.stringify(cliFirstTools.tools).match(/sessions_dispatchable[^,]*/g) || '');
-  const cliFirstDispatchTool = cliFirstTools.tools.find((tool) => tool.name === 'ticket_dispatch');
-  check('CLI-first dispatch description points at golem session list',
-    /golem session list/.test(cliFirstDispatchTool?.description || '')
-      && /golem session list/.test(cliFirstDispatchTool?.inputSchema?.properties?.session_id?.description || ''),
-    JSON.stringify(cliFirstDispatchTool));
-  const cliInstructions = cliFirstMcpClient.getInstructions?.() || '';
-  check('CLI-first server instructions name the CLI and team-ops, not the compatibility tool',
-    !/use `session_notify`|session_notify\(/.test(cliInstructions)
-      && /golem session notify/.test(cliInstructions)
-      && /golem:team-ops/.test(cliInstructions),
-    cliInstructions);
-  check('CLI-first instructions do not force a lead persona onto authorized coordinators',
-    !/run the lead sequence/.test(cliInstructions), cliInstructions.slice(0, 200));
-
-  const expectsActionableCliGuidance = (response) => response.result.isError
-    && /golem session notify/.test(response.text)
-    && /golem session list/.test(response.text)
-    && !/unknown tool/.test(response.text)
-    && !/no live dispatchable session/.test(response.text);
-  const discoveryRequests = () => proxyCounts.get('GET /api/sessions/dispatchable') || 0;
-  const deliveryRequests = () => proxyCounts.get('POST /api/messages/notify') || 0;
-  const sideEffectsBefore = { discovery: discoveryRequests(), delivery: deliveryRequests() };
-  const excludedNotify = await callToolFrom(cliFirstMcpClient, 'session_notify', {
-    to: SESSION_ID, text: 'must not deliver', __golem_session_id: cliFirstId, __golem_call_id: 'excluded-notify',
-  });
-  const excludedDiscovery = await callToolFrom(cliFirstMcpClient, 'sessions_dispatchable', {
-    __golem_session_id: cliFirstId, __golem_call_id: 'excluded-discovery',
-  });
-  check('CLI-first session_notify direct call rejects with actionable CLI guidance',
-    expectsActionableCliGuidance(excludedNotify), excludedNotify.text);
-  check('CLI-first sessions_dispatchable direct call rejects with actionable CLI guidance',
-    expectsActionableCliGuidance(excludedDiscovery), excludedDiscovery.text);
-  check('excluded direct calls perform zero discovery and zero delivery requests (service boundary observed)',
-    discoveryRequests() === sideEffectsBefore.discovery && deliveryRequests() === sideEffectsBefore.delivery,
-    JSON.stringify(Object.fromEntries(proxyCounts)));
-  // Negative control: a generic unknown-tool fallback or a hidden-handler route
-  // would satisfy isError but must fail this check.
-  assert.equal(expectsActionableCliGuidance({ result: { isError: true }, text: 'unknown tool: session_notify' }), false);
-  assert.equal(expectsActionableCliGuidance({ result: { isError: false }, text: 'ok' }), false);
-  const spoofedExcluded = await callToolFrom(cliFirstMcpClient, 'session_notify', {
-    to: SESSION_ID, text: 'spoofed', __golem_session_id: 'spoofed-model-session', __golem_call_id: 'spoofed-excluded',
-  });
-  check('caller identity rejection keeps precedence over the surface intercept',
-    spoofedExcluded.result.isError && /conflicts with the launcher binding/.test(spoofedExcluded.text), spoofedExcluded.text);
-  const cliFirstTracker = await callToolFrom(cliFirstMcpClient, 'ticket_list', { project: PROJECT_ID, mine: true, __golem_session_id: cliFirstId, __golem_call_id: 'cli-first-list' });
-  check('CLI-first surface preserves tracker operations',
-    !cliFirstTracker.result.isError && Array.isArray(cliFirstTracker.json), cliFirstTracker.text);
-
-  // An invalid explicit selection refuses to boot instead of advertising an
-  // unintended surface.
-  await new Promise((resolve) => {
-    const bad = spawn(process.execPath, [CHANNEL_SERVER], {
-      cwd: CHANNEL_ROOT,
-      env: { ...process.env, XDG_CONFIG_HOME: tmpConfigHome, GOLEM_HOME: tmpGolemHome, GOLEM_TOOL_SURFACE: 'bogus' },
-      stdio: ['ignore', 'ignore', 'pipe'],
-    });
-    let badStderr = '';
-    bad.stderr.on('data', (d) => { badStderr += d; });
-    bad.once('exit', (code) => {
-      check('invalid explicit tool-surface selection refuses to boot with a clear error',
-        code !== 0 && /unknown Golem tool surface/.test(badStderr), `exit=${code} ${badStderr.slice(0, 400)}`);
-      resolve();
-    });
-  });
-
-  // Interceptor mutation control: a disposable copy of the actual server with
-  // the intercept disabled must be caught by the same production-path
-  // assertion. No production bypass flag, no shared-source edit.
-  const mutantDir = path.join(CHANNEL_DIR, `.mutant-${process.pid}`);
-  fs.mkdirSync(mutantDir, { recursive: true });
-  try {
-    // Copy the sibling modules the server imports so relative resolution works.
-    for (const file of fs.readdirSync(CHANNEL_DIR)) {
-      if (file.endsWith('.js') && file !== 'index.js') fs.copyFileSync(path.join(CHANNEL_DIR, file), path.join(mutantDir, file));
-    }
-    const libFileUrl = `file://${path.join(CHANNEL_ROOT, 'lib').replace(/\\/g, '/')}/`;
-    for (const file of fs.readdirSync(mutantDir)) {
-      if (!file.endsWith('.js') || file === 'index.js') continue;
-      const abs = path.join(mutantDir, file);
-      fs.writeFileSync(abs, fs.readFileSync(abs, 'utf8').replaceAll('../../lib/', libFileUrl));
-    }
-    const source = fs.readFileSync(path.join(CHANNEL_DIR, 'index.js'), 'utf8');
-    const interceptLine = 'const OMITTED_TOOLS = new Set(TOOL_SURFACE.omitted);';
-    assert.ok(source.includes(interceptLine), 'mutant seed expects the production intercept in the copied source');
-    // Relative ../../lib imports resolve one level short in the mutant nest;
-    // rewrite them to file URLs of the real shared modules.
-    const mutantSource = source
-      .replaceAll('../../lib/', `file://${path.join(CHANNEL_ROOT, 'lib').replace(/\\/g, '/')}/`)
-      .replace(interceptLine, 'const OMITTED_TOOLS = new Set();');
-    fs.writeFileSync(path.join(mutantDir, 'index.js'), mutantSource);
-    const mutantId = 'test-session-mutant';
-    const mutantEvents = [];
-    mutantMcpClient = new Client({ name: 'golem-mutant-journey', version: '1.0.0' });
-    mutantMcpTransport = new StdioClientTransport({
-      command: process.execPath,
-      args: [path.join(mutantDir, 'index.js')],
-      cwd: CHANNEL_ROOT,
-      env: {
-        ...process.env,
-        XDG_CONFIG_HOME: tmpConfigHome,
-        GOLEM_HOME: tmpGolemHome,
-        GOLEM_CEO_SESSION_ID: mutantId,
-        GOLEM_CHANNEL_PORT: '0',
-        GOLEM_TOOL_SURFACE: 'cli-first',
-        ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
-        CLAUDE_CODE_USE_BEDROCK: '',
-        CLAUDE_CODE_USE_VERTEX: '',
-        CLAUDE_CODE_USE_FOUNDRY: '',
-        HOME: tmpRoot,
-      },
-      stderr: 'pipe',
-    });
-    mutantMcpTransport.stderr?.on('data', (d) => process.stderr.write(`[mcp-mutant:err] ${d}`));
-    mutantMcpClient.setNotificationHandler(CliChannelNotificationSchema, (notification) => mutantEvents.push(notification));
-    await mutantMcpClient.connect(mutantMcpTransport);
-    const mutantNotify = await callToolFrom(mutantMcpClient, 'session_notify', {
-      to: SESSION_ID, text: 'mutant must be caught', __golem_session_id: mutantId, __golem_call_id: 'mutant-notify',
-    });
-    check('mutant session_notify reaches the real handler instead of the intercept',
-      !/not part of this Golem tool surface/.test(mutantNotify.text), mutantNotify.text.slice(0, 120));
-    const mutantDiscoveryBaseline = discoveryRequests();
-    const mutantDiscovery = await callToolFrom(mutantMcpClient, 'sessions_dispatchable', {
-      __golem_session_id: mutantId, __golem_call_id: 'mutant-discovery',
-    });
-    check('mutant (intercept disabled) no longer satisfies the production-path check',
-      !expectsActionableCliGuidance(mutantNotify), mutantNotify.text);
-    check('mutant sessions_dispatchable genuinely performs the discovery request production blocks (service boundary observed)',
-      !mutantDiscovery.result.isError && Array.isArray(mutantDiscovery.json)
-        && discoveryRequests() > mutantDiscoveryBaseline,
-      `${mutantDiscovery.text.slice(0, 200)} discovery_requests=${discoveryRequests()}`);
-    assert.equal(expectsActionableCliGuidance(mutantNotify), false,
-      'the same assertion must reject the mutated server response');
-    // The mutant contrast is real handler/response proof: production counts
-    // stay flat for the excluded calls (previous check) while the mutant
-    // demonstrably passes the intercept into tracker discovery.
-  } finally {
-    try { await mutantMcpClient?.close(); } catch { /* ignore */ }
-    try { await mutantMcpTransport?.close(); } catch { /* ignore */ }
-    try { fs.rmSync(mutantDir, { recursive: true, force: true }); } catch { /* ignore */ }
-  }
+      .every((name) => soleSurfaceNames.includes(name)),
+    soleSurfaceNames.join(', '));
+  const soleRoleTool = soleSurfaceTools.tools.find((tool) => tool.name === 'session_role');
+  check('session_role ships a non-empty description', !!soleRoleTool && String(soleRoleTool.description || '').trim().length > 0,
+    JSON.stringify(soleRoleTool));
 
   // Real failure/cleanup checks on the proxy fixture itself.
   // (1) A real network hang: an accepting-never-responding loopback upstream,

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Transcript Workflow Review"
-  short_description: "Discover and review AI transcripts for workflow improvements"
-  default_prompt: "Use $transcript-workflow-review to discover my Claude, Codex, and Pi transcript sources, then report evidence-backed workflow improvements."

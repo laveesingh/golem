@@ -13,9 +13,7 @@ single writer; hooks, shims, and MCP tools connect live sessions to it.
 
 | Harness | Current support | Start with |
 | --- | --- | --- |
-| Codex | Tier A through the managed private bridge; a separately launched `codex` is pull-only | `golem codex` |
 | Claude Code | Tier A development-channel delivery; plain `claude` can pull work only | `golem claude` |
-| OpenCode | Tier A checkout-bound shim and bridge; opt-in | `opencode` after sync |
 | Pi | Tier A worker with typed delivery; Node.js 22.19+ and Pi 0.85.1 | `golem pi` |
 | Gemini CLI | Unsupported; no adapter or release contract is shipped | — |
 
@@ -64,50 +62,10 @@ golem claude
 `claude plugin update golem@golem-workspace` and `/reload-plugins` in existing
 sessions.
 
-### Codex
 
-For an ordinary Codex session, render and install the local plugin marketplace,
-then launch Codex:
 
-```sh
-golem sync --target codex
-codex plugin marketplace add ~/.golem/renders/codex
-codex plugin add golem@golem-workspace
-codex
-```
 
-Ordinary `codex` delivery is pull-only. `golem codex` is the managed private
-bridge and is version-gated; see [the Codex contract](docs/codex.md) before
-using its managed delivery. The wrapper owns Codex's remote bridge and working
-directory, so do not pass `--remote` or `-C`/`--cd` to it.
 
-### OpenCode
-
-OpenCode is disabled until enabled in `~/.golem/config.json`:
-
-```json
-{
-  "harnesses": {
-    "opencode": {
-      "enabled": true,
-      "modelMap": {},
-      "testedVersion": null
-    }
-  }
-}
-```
-
-Then render and launch:
-
-```sh
-golem sync --target opencode
-opencode
-```
-
-OpenCode is bound to this source checkout. Sync writes an absolute
-`file://.../shims/opencode/index.js` entry and an absolute MCP path into
-`~/.config/opencode/opencode.jsonc`; keep this checkout in place and re-run sync
-if it moves. There is no portable OpenCode package in this repository.
 
 ### Pi
 
@@ -131,12 +89,10 @@ The tracker is the source of truth for cross-session work. Ticket lifecycle is
 Comments and dispatch preserve planned work. On Pi and interactive Claude,
 `golem session list/notify`, `golem message inspect`, and `golem schedule ...`
 provide direct coordination and agent-managed follow-up. The event ledger is
-audit history, not a message subscription. Other harnesses retain their
-advertised compatibility tools.
+audit history, not a message subscription.
 
-Sessions register their project, harness, role, and delivery capability. Golem
-routes work only through a supported path: managed Codex delivery, Claude's
-development channel, the OpenCode bridge, or Pi's typed-worker endpoint.
+Sessions register their project, harness, role, and delivery capability.
+Golem runs on Pi and Claude Code only.
 
 For architecture and source ownership, use [`REPO-MAP.md`](REPO-MAP.md) rather
 than this README as the repository map.
@@ -160,13 +116,11 @@ golem help
 | `golem dashboard:restart` | Replace the registered dashboard with a detached instance. |
 | `golem status [--json]` | Report dashboard health and its canonical URL. |
 | `golem doctor` | Check dependencies, local state, renders, integrations, and dashboard reachability. |
-| `golem sync ...` | Render or check `cc`, `cc-marketplace`, `opencode`, `codex`, and `pi` outputs. |
 | `golem role <role\|clear>` | Set or clear a session role. Built-ins are `lead`, `builder`, `explorer`, and `reviewer`. |
 | `golem session list\|notify ...` | Discover sessions or send an idempotent immediate/delayed/recurring notification. |
 | `golem message inspect <id>` | Inspect delivery without inferring work completion. |
 | `golem schedule list\|inspect\|cancel ...` | Manage follow-up reminders explicitly. |
 | `golem migrate-home` | Move legacy local state to `~/.golem`, with a backup and rollback. |
-| `golem codex-supervisor ...` | Run or inspect the managed Codex App Server supervisor. |
 
 Use `golem sync --check --all` to inspect render drift. Edit `substrate/`, not
 the generated `plugin/` tree. The committed `plugin/` tree is the generated CC
@@ -181,7 +135,6 @@ Mutable state normally lives in `~/.golem/`:
 - `journals/<project_id>/hook.jsonl` — lifecycle and tool-event history.
 - `renders/` and `substrate.lock` — generated harness output and drift metadata.
 - `dashboard.json`, endpoint leases, and harness bridge registries — live routing.
-- `ticket-assets/`, `logs/`, and Codex supervisor state — supporting local state.
 
 `GOLEM_HOME` overrides the state root. Existing XDG installations can be moved
 explicitly with `golem migrate-home`.

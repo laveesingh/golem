@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-23 @ bb39542 (GOL-369) — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-23 @ MERGE (GOL-365, GOL-369) — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -9,7 +9,7 @@
 - `plugin/` — generated CC rollback copy; never hand-edit.
 - `dashboard/` — Fastify tracker/API, web source, and built UI.
 - `mcp/channel/` — tracker MCP server and REST client.
-- `shims/` — Codex hook, OpenCode bridge, and Pi extension.
+- `shims/` — Pi extension.
 
 ## Key modules & entry points
 
@@ -29,17 +29,17 @@ and ticket CLI guidance; `team-ops/` owns team operations and reminders.
 ### Dashboard
 
 `dashboard/server/index.js` exposes REST/WebSocket routes. `tracker-db.js` owns persistence;
-`html-body.js` owns HTML sanitization and stable `data-block-id`s; `md-body.js` splits Markdown
-into id-less blocks; both patch via strict text anchors (`body-anchor.js`). `mermaid-check.js`
-parses changed diagrams in a worker after commit (reports only, 2s bound).
+`html-body.js` (stable block ids) and `md-body.js` (id-less blocks) patch via strict anchors
+(`body-anchor.js`); `mermaid-check.js` reports broken diagrams after commit, 2s bound.
 `notification-schedules.js` and `notification-schedule-runtime.js` own durable schedules;
-`comment-dispatch.js` routes feedback. Agents use API/CLI/MCP, never SQLite directly. Ticket
-`state` is the lifecycle; explicit `body_format` and monotonic `body_revision` gate block writes.
+`comment-dispatch.js` routes feedback. Agents never touch SQLite directly. `body_revision`
+gates body writes.
 
 ### Compiler and delivery
 
-`lib/compiler/` renders substrate with drift/tamper checks and orphan pruning.
-`lib/typed-worker-endpoint.js` owns the authenticated Codex/Pi envelope protocol.
+`lib/compiler/` renders substrate with drift/tamper checks and orphan pruning; `lint.js` only
+reports the total word count. `lib/typed-worker-endpoint.js` owns the authenticated Pi envelope
+protocol. `lib/dashboard-process.js` owns dashboard stop/start for one checkout.
 
 ## Data flow
 
@@ -50,10 +50,10 @@ registries, owns tracker writes, and dispatches to native channels or typed endp
 
 - Project rules come from `AGENTS.md`; shared rules come from `substrate/`, never renders.
 - Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
-- OpenCode remains checkout-bound through absolute shim/MCP paths.
-- Standalone Codex is pull-only; managed `golem codex` is version-gated.
 - Supported Pi worker version is 0.85.1 with Node.js 22.19+.
 - Runtime state, credentials, and journals stay outside the repository.
+- Pi and Claude Code are the only harnesses. No test or lint check inspects instruction content.
+- `dashboard/scripts/smoke-settings.mjs` writes the real `~/.claude` and renders; run it deliberately.
 
 ## Common tasks
 

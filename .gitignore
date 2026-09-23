@@ -6,7 +6,6 @@ node_modules/
 .claude/settings.local.json
 .claude/settings.local.json.bak
 .claude/scratchpad-brainstorm.md
-.Codex/scratchpad-brainstorm.md
 
 # User projects (own git repos; tracked via ~/.config/golem/projects.json)
 golem-projects/
