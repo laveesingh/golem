@@ -4,8 +4,7 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/channel/index.js"],
       "env": {
-        "NODE_PATH": "${CLAUDE_PLUGIN_ROOT}/mcp/channel/node_modules",
-        "GOLEM_TOOL_SURFACE": "cli-first"
+        "NODE_PATH": "${CLAUDE_PLUGIN_ROOT}/mcp/channel/node_modules"
       }
     }
   }

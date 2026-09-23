@@ -55,7 +55,7 @@ Format is explicit data, never inferred from a body's first character. Markdown 
 (Mermaid, admonitions, `<details>`; blank line after `</summary>`; escape table pipes) — a
 Markdown body starting with an HTML tag is usually a mistake. An HTML spec is a complete safe
 fragment created with `--body-format html` (spec-only): the server sanitizes it and assigns
-stable per-block ids; the editing workflow is `golem:spec-writing` § HTML spec bodies.
+stable per-block ids; the editing workflow is in `golem:spec-writing`.
 Render Mermaid before saving; exit 0 alone is not proof.
 
 ## States

@@ -1010,6 +1010,8 @@ async function cmdSyncCheckAll({ quiet = false } = {}) {
     if (lint.clean) log('  clean');
     for (const f of lint.findings) err(`  ${f.check}: ${f.file} — ${f.detail}`);
   }
+  // GOL-366 addendum 2: an over-cap total is a warning, never drift.
+  for (const w of lint.warnings ?? []) log(`  warning: ${w.check}: ${w.file} — ${w.detail}`);
   drift = drift || !lint.clean;
 
   const ccOut = renderDirFor('cc');

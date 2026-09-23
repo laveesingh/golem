@@ -457,46 +457,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
   }
 
-  // --- Session-to-session notification --------------------------------------
-  // Validate an exact immutable session_id against the current dispatchable
-  // surface. Names and labels are intentionally not routing keys: a rename or
-  // duplicate label must never redirect an active handoff.
-  if (name === 'session_notify') {
-    const to = typeof args.to === 'string' ? args.to.trim() : '';
-    const text = typeof args.text === 'string' ? args.text.trim() : '';
-    if (!to) return { isError: true, content: [{ type: 'text', text: 'session_notify: exact `to` session_id is required.' }] };
-    if (!text) return { isError: true, content: [{ type: 'text', text: 'session_notify: `text` is required.' }] };
-
-    let sessions;
-    try {
-      sessions = await tracker.listDispatchable(); // no project ⇒ all live sessions
-    } catch (err) {
-      return { isError: true, content: [{ type: 'text', text: `session_notify: could not list live sessions — ${err instanceof Error ? err.message : String(err)}` }] };
-    }
-    sessions = Array.isArray(sessions) ? sessions : [];
-
-    const target = sessions.find((s) => s && s.session_id === to);
-    if (!target) return { isError: true, content: [{ type: 'text', text: `session_notify: no live dispatchable session has exact session_id "${to}". Labels/names are not accepted; call sessions_dispatchable before choosing a new recipient.` }] };
-    if (target.reachable === false) {
-      return { isError: true, content: [{ type: 'text', text: `session_notify: target session_id "${target.session_id}" has no live channel (unreachable) — it cannot receive a push right now.` }] };
-    }
-
-    const message = args.ticket ? `${args.ticket}: ${text}` : text;
-    try {
-      const senderId = caller.sessionId;
-      if (!senderId) return { isError: true, content: [{ type: 'text', text: 'session_notify: no trusted caller session id.' }] };
-      const delivery = await tracker.notifySession({ session_id: target.session_id, text: message, sender_id: senderId, project_id: target.project_id || null });
-      return { isError: delivery?.ok === false, content: [{ type: 'text', text: JSON.stringify({ ok: delivery?.ok !== false, session_id: target.session_id, delivery }, null, 2) }] };
-    } catch (err) {
-      return { isError: true, content: [{ type: 'text', text: `session_notify: delivery failed — ${err instanceof Error ? err.message : String(err)}` }] };
-    }
-  }
-
-
   // --- Golem tracker tools ---------------------------------------------------
   // Each delegates to the HTTP client and returns compact JSON the agent can act
   // on. Identity defaults are injected here so the agent rarely passes ids.
-  if (name.startsWith('ticket_') || name === 'sessions_dispatchable') {
+  if (name.startsWith('ticket_')) {
     const displayCache = new Map();
     const displayForRef = async (ref) => {
       if (typeof ref !== 'string' || !/^TKT-/.test(ref)) return ref;
@@ -648,10 +612,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         }));
       }
 
-      if (name === 'sessions_dispatchable') {
-        const proj = args.project || defaultProject || undefined;
-        return await jsonResult(await tracker.listDispatchable(proj));
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { isError: true, content: [{ type: 'text', text: msg }] };

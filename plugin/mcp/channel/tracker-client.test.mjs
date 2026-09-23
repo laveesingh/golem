@@ -638,6 +638,24 @@ async function main() {
     !/run the lead sequence/.test(bootInstructions), bootInstructions.slice(0, 200));
   check('MCP omits retired subscription and consult wrapper tools', !tools.tools.some((tool) => ['subscribe', 'unsubscribe', 'subscriptions_list', 'consult_request', 'consult_reply', 'consult_status'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
   check('MCP retires worker lifecycle tools', !tools.tools.some((tool) => ['session_spawn', 'session_kill'].includes(tool.name)), tools.tools.map((tool) => tool.name).join(', '));
+  // GOL-366 fix round 1: the retired delivery/discovery tools never execute.
+  // A CallTool of either name must fall through to the unknown-tool error and
+  // perform no delivery or discovery side effect. The SDK client surfaces an
+  // unknown-tool response as a thrown McpError, so catch and assert it.
+  const retiredOutcome = async (name, args) => {
+    try {
+      const result = await callTool(name, args);
+      return { isError: !!result.result.isError, text: result.text };
+    } catch (error) {
+      return { isError: true, text: String(error?.message ?? error) };
+    }
+  };
+  const retiredNotify = await retiredOutcome('session_notify', { to: SESSION_ID, text: 'retired tool must not deliver' });
+  const retiredDiscovery = await retiredOutcome('sessions_dispatchable', {});
+  check('retired session_notify direct call fails closed (unknown tool, no delivery)',
+    retiredNotify.isError && /unknown tool: session_notify/.test(retiredNotify.text), retiredNotify.text);
+  check('retired sessions_dispatchable direct call fails closed (unknown tool, no discovery)',
+    retiredDiscovery.isError && /unknown tool: sessions_dispatchable/.test(retiredDiscovery.text), retiredDiscovery.text);
   const spoofedCallerRead = await callTool('ticket_get', {
     id: 'GOL-199',
     __golem_session_id: 'spoofed-model-session',
