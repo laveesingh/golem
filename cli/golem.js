@@ -12,7 +12,7 @@
 //   claude / cc  Open Claude Code as a Golem channel consumer, optionally via Ollama.
 //   pi           Open native Pi with Golem's rendered bridge extension.
 //   spawn/list/attach/peek/kill
-//                Manage detached Pi workers in herdr panes.
+//                Manage detached Pi workers in the Golem tmux namespace.
 //   doctor       Sanity-check the environment.
 //   status       Dashboard health + canonical URL.
 //   help         Show this message.
@@ -34,13 +34,16 @@ import * as ccAdapter from '../lib/compiler/adapters/cc.js';
 import * as piAdapter from '../lib/compiler/adapters/pi.js';
 import { isHarnessEnabled, loadConfig, saveConfig } from '../lib/golem-config.js';
 import { dashboardUrl, probeDashboard, startDashboardDetached, stopDashboard } from '../lib/dashboard-process.js';
-import { HERDR_SUPPORTED_VERSION, herdrVersion } from '../lib/herdr-driver.js';
 import { MIN_PI_NODE, SUPPORTED_PI_VERSION, piNodeSupported } from '../lib/pi-compatibility.js';
 import { resolveRolePreset } from '../lib/role-preset.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
+import { resolveCliSessionContext } from '../lib/cli-session-context.js';
+import { listTeams } from '../lib/team-registry.js';
+import { findWorkerBySession } from '../lib/worker-registry.js';
+import { resolveCallerTeam, resolveListTeam } from '../lib/team-context.js';
 import {
+  attachSwarm,
   attachWorker,
-  namelessAttachHint,
   killWorker,
   listWorkerViews,
   peekWorker,
@@ -389,6 +392,7 @@ const WORKER_TABLE_COLUMNS = [
   { key: 'status', label: 'STATUS', max: 12 },
   { key: 'idle', label: 'IDLE', max: 10 },
   { key: 'attach_hint', label: 'ATTACH HINT', max: 32 },
+  { key: 'team', label: 'TEAM', max: 24 },
 ];
 
 function formatIdle(value) {
@@ -433,6 +437,18 @@ function formatWorkerTable(workers) {
   return [header, divider, ...body].join('\n');
 }
 
+/** Attach the team slug for the TEAM table column; null renders as '-'. */
+function attachTeamSlugs(workers) {
+  const rows = Array.isArray(workers) ? workers : [workers];
+  if (!rows.length) return workers;
+  let teams = [];
+  try { teams = listTeams({}); } catch { teams = []; }
+  return rows.map((view) => ({
+    ...view,
+    team: teams.find((row) => row.team_id === view?.team_id)?.slug ?? null,
+  }));
+}
+
 function emitWorkerOutput(value, { json = false } = {}) {
   if (json) {
     // Keep the pre-table JSON representation byte-compatible for machine users.
@@ -444,13 +460,15 @@ function emitWorkerOutput(value, { json = false } = {}) {
 
 async function cmdSpawn(args) {
   if (!args.length || args[0] === '-h' || args[0] === '--help') {
-    log(`Usage: golem spawn <role> [--name <name>] [--profile <name>] ${workerProjectHelp()} [--json]
+    log(`Usage: golem spawn <role> [--name <name>] [--profile <name>] [--team <team>] ${workerProjectHelp()} [--json]
 
-Create one Pi worker in a herdr pane. The worker is registered and
+Create one Pi worker in a detached tmux pty. The worker is registered and
 role-assigned before this command returns. A failed readiness wait leaves the
-worker's herdr pane available for peek/inspection. With --profile, the named
+worker's tmux session available for peek/inspection. With --profile, the named
 model profile overrides the role's default (resolution: --profile > role
-default > role exec).`);
+default > role exec). The worker joins --team, or the caller's team (the team
+the caller leads, else the team on the caller's own worker row); an unbound
+shell must pass --team.`);
     return;
   }
   const role = args[0];
@@ -458,6 +476,7 @@ default > role exec).`);
   let name = null;
   let project = null;
   let profile = null;
+  let teamFlag = null;
   for (let index = 1; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--json') {
@@ -479,12 +498,34 @@ default > role exec).`);
       if (!project || project.startsWith('-')) fatal(2, 'golem spawn --project requires a value');
     } else if (arg.startsWith('--project=')) {
       project = arg.slice('--project='.length);
+    } else if (arg === '--team') {
+      teamFlag = args[++index] ?? null;
+      if (!teamFlag || teamFlag.startsWith('-')) fatal(2, 'golem spawn --team requires a value');
+    } else if (arg.startsWith('--team=')) {
+      teamFlag = arg.slice('--team='.length);
+      if (!teamFlag) fatal(2, 'golem spawn --team requires a value');
     } else {
       fatal(2, `unknown spawn option: ${arg}`);
     }
   }
   try {
-    const worker = await spawnWorker({ role, name, project, profile });
+    // GOL-363 G8: every spawn belongs to a team. spawnWorker ignores teamId
+    // until GOL-370 wires the herdr workspace move; resolving (and refusing)
+    // here keeps the CLI contract in place on top of either host.
+    const { projectId } = await resolveWorkerProject(project);
+    let caller = null;
+    try { caller = resolveCliSessionContext()?.sessionId ?? null; } catch { caller = null; }
+    let workerRow = null;
+    if (caller) {
+      try { workerRow = findWorkerBySession(caller, { projectId }); } catch { workerRow = null; }
+    }
+    let team;
+    try {
+      team = resolveCallerTeam({ teamRef: teamFlag, projectId, callerSessionId: caller, teams: listTeams({ projectId }), workerRow });
+    } catch (error) {
+      fatal(2, `golem spawn: ${error.message}`);
+    }
+    const worker = await spawnWorker({ role, name, project, profile, teamId: team.team_id });
     emitWorkerOutput(worker, { json: wantJson });
   } catch (error) {
     fatal(1, `golem spawn: ${error.message}`);
@@ -524,7 +565,24 @@ project's workers. The PROJECT column shows which project each belongs to.`);
     }
   }
   try {
-    emitWorkerOutput(await listWorkerViews({ project: allProjects ? null : (project ?? '.'), includeDead }), { json: wantJson });
+    const views = await listWorkerViews({ project: allProjects ? null : (project ?? '.'), includeDead });
+    // GOL-363 G8/D2: the list defaults to the caller's team when it has one;
+    // --all-projects (and an explicit --project) keep the wider scope.
+    let team = null;
+    if (!allProjects && project == null) {
+      try {
+        const { projectId } = await resolveWorkerProject('.');
+        let caller = null;
+        try { caller = resolveCliSessionContext()?.sessionId ?? null; } catch { caller = null; }
+        let workerRow = null;
+        if (caller) {
+          try { workerRow = findWorkerBySession(caller, { projectId }); } catch { workerRow = null; }
+        }
+        team = resolveListTeam({ projectId, callerSessionId: caller, teams: listTeams({ projectId }), workerRow });
+      } catch { team = null; }
+    }
+    const scopedViews = team ? views.filter((view) => view.team_id === team.team_id) : views;
+    emitWorkerOutput(attachTeamSlugs(scopedViews), { json: wantJson });
   } catch (error) {
     fatal(1, `golem list: ${error.message}`);
   }
@@ -534,8 +592,8 @@ async function cmdAttachWorker(args) {
   if (!args.length || args[0] === '-h' || args[0] === '--help') {
     log(`Usage: golem attach [<name>] ${workerProjectHelp()}
 
-Attach the current terminal to a worker's herdr agent. Without a name,
-print the project's herdr session command.`);
+Attach the current terminal to a worker's real tmux TUI. Without a name,
+attach the project's whole swarm — its dedicated tmux server tree.`);
     return;
   }
   let name = null;
@@ -554,14 +612,14 @@ print the project's herdr session command.`);
     }
   }
   try {
-    const { projectId } = await resolveWorkerProject(project);
     if (name == null) {
-      // GOL-370: a nameless attach points at the project's herdr session —
-      // printing the exact command is the whole verb (the terminal is
-      // inherited by `herdr agent attach <agent>`).
-      log(namelessAttachHint(projectId));
+      // No worker named: attach the project's whole swarm (its tmux server).
+      const { projectId } = await resolveWorkerProject(project);
+      const status = attachSwarm(projectId);
+      if (status) process.exitCode = status;
       return;
     }
+    const { projectId } = await resolveWorkerProject(project);
     const status = attachWorker(name, { projectId });
     if (status) process.exitCode = status;
   } catch (error) {
@@ -608,7 +666,7 @@ async function cmdKillWorker(args) {
   if (!args.length || args[0] === '-h' || args[0] === '--help') {
     log(`Usage: golem kill <name> ${workerProjectHelp()} [--json]
 
-Kill one worker: close the herdr pane, TERM the recorded process group, KILL
+Kill one worker: tmux kill-session, TERM the recorded process group, KILL
 survivors, verify the group is empty, then mark the worker dead.`);
     return;
   }
@@ -1066,18 +1124,6 @@ async function cmdDoctor() {
   (await hasCommand('node')) ? ok('node on PATH') : fail('node on PATH');
   (await hasCommand('npm')) ? ok('npm on PATH') : fail('npm on PATH');
 
-  // GOL-370 G12: herdr hosts every managed agent pane.
-  {
-    const version = herdrVersion();
-    if (!version) {
-      err(`  WARN herdr is missing — managed agents need herdr ${HERDR_SUPPORTED_VERSION} on PATH (GOLEM_HERDR_BIN overrides the binary)`);
-    } else if (version !== HERDR_SUPPORTED_VERSION) {
-      err(`  WARN herdr ${version} — managed agents expect herdr ${HERDR_SUPPORTED_VERSION}`);
-    } else {
-      ok(`herdr ${version}`);
-    }
-  }
-
   // The Claude plugin is installed from the workspace render; a stale install
   // means every Claude session runs old skills and hooks (GOL-303 C9).
   try {
@@ -1247,11 +1293,19 @@ Run:
                        --role applies a validated role preset and --profile
                        selects a reusable model config; Pi keeps its own
                        profile, providers, and sessions.
-  spawn <role> [--name X] [--profile <name>] [--project P] [--json]
-                       Spawn one named Pi worker in a herdr pane.
+  spawn <role> [--name X] [--profile <name>] [--team T] [--project P] [--json]
+                       Spawn one named Pi worker in detached tmux. The worker
+                       joins --team or the caller's team; an unbound shell
+                       must pass --team.
   list [--project P] [--all] [--json]
                        List worker records as a table; --all includes dead rows.
-  attach <name>       Attach to a worker's herdr agent.
+                       Defaults to the caller's team; --all-projects (below)
+                       keeps the wider scope.
+  team create|list|lead|close [--help]
+                       Lead-owned teams: create a team and its herdr
+                       workspace, list teams, take a team's lead, or close
+                       a team and stop only its agents.
+  attach <name>       Attach to a worker's real tmux TUI.
   peek <name> [--lines N]
                        Read worker scrollback without attaching.
   kill <name> [--json] Kill one worker and verify its process group is empty.
@@ -1711,6 +1765,11 @@ async function main() {
     case 'message': {
       const { runCollaboration } = await import('./collaboration.js');
       process.exitCode = await runCollaboration(cmd, rest);
+      break;
+    }
+    case 'team': {
+      const { runTeam } = await import('./team.js');
+      process.exitCode = await runTeam(cmd, rest);
       break;
     }
     case 'ticket': {
