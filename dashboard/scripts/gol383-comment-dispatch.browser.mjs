@@ -202,14 +202,14 @@ try {
   const chipText = (cid) => page.evaluate((id) =>
     document.querySelector(`.anno-card[data-id="${id}"] .anno-dispatch-chip`)?.textContent ?? null, cid);
   const dispatchBtn = (cid) => card(cid).locator('button.act-dispatch');
-  const setTheme = async (theme) => {
+  const setTheme = async (theme, waitCid = cidReply) => {
     await page.evaluate((t) => { localStorage.setItem('golem.tweaks.theme', t); }, theme);
     await page.goto(`${origin}/dashboard`, { waitUntil: 'networkidle' });
     await openRail(ticketId);
-    await card(cidReply).waitFor();
+    await card(waitCid).waitFor();
     // The Dispatch action renders once the async dispatchable roster marks
     // the assignee live — the card alone is not enough.
-    await dispatchBtn(cidReply).waitFor({ timeout: 15000 });
+    await dispatchBtn(waitCid).waitFor({ timeout: 15000 });
   };
   const contrastOf = (cid) => page.evaluate((id) => {
     const btn = document.querySelector(`.anno-card[data-id="${id}"] button.act-dispatch`);
@@ -409,9 +409,7 @@ try {
   // Pending contrast, loam leg: the pending label keeps the unfaded fill,
   // so it must measure the resting ratio. Dispatch reply2 for real here;
   // the failure path below uses a fresh third reply.
-  await setTheme('loam');
-  await card(cidReply2).waitFor();
-  await dispatchBtn(cidReply2).waitFor({ timeout: 15000 });
+  await setTheme('loam', cidReply2);
   deliveryDelayMs = 800;
   await dispatchBtn(cidReply2).click();
   let sawLoamPending = false;
