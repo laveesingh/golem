@@ -14,7 +14,7 @@
 //    the transport lets the same retry succeed.
 //  - contrast: the Dispatch pill is legible (ratio >= 4.5) in loam and dark.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -27,7 +27,32 @@ import { projectIdFor } from '../server/project-id.js';
 import { upsertSessionFact, renewEndpointLease } from '../../lib/session-facts.js';
 import * as typed from '../../lib/typed-worker-endpoint.js';
 
-const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+// GOL-383 round 2: the fixture must pass from a clean checkout regardless of
+// the checkout's tracked dashboard/dist (feature commits never rebuild it,
+// so serving it would test stale code). The tested commit (HEAD unless
+// GOL383_COMMIT names one) is extracted into an isolated temp root,
+// node_modules is symlinked in for read-only use, dashboard:build runs
+// there, and the fixture dashboard serves that fresh dist. The shared
+// checkout's dist and the shared server are never touched. Harness libs
+// (_chrome, _scratch, project-id, session-facts, typed-worker-endpoint)
+// stay checkout-relative: they are test tooling, not the code under test.
+const testedCommit = (process.env.GOL383_COMMIT
+  || execFileSync('git', ['-C', checkout, 'rev-parse', 'HEAD'], { encoding: 'utf8' })).trim();
+const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gol383-src-'));
+{
+  const archive = execFileSync('git', ['-C', checkout, 'archive', testedCommit], { maxBuffer: 512 * 1024 * 1024 });
+  execFileSync('tar', ['-x', '-C', fixtureRoot], { input: archive });
+  fs.symlinkSync(path.join(checkout, 'node_modules'), path.join(fixtureRoot, 'node_modules'));
+  try {
+    execFileSync('npm', ['run', 'dashboard:build'], { cwd: fixtureRoot, stdio: 'pipe' });
+  } catch (err) {
+    console.log(`fixture build failed for ${testedCommit}: ${(err.stdout || err.stderr || err.message || '').toString().slice(-2000)}`);
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    process.exit(2);
+  }
+}
+console.log(`GOL-383 fixture serving commit ${testedCommit} from isolated root`);
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gol383-dispatch-'));
 const home = path.join(temp, 'home');
 const project = path.join(temp, 'project');
@@ -114,7 +139,7 @@ async function api(method, url, body) {
 
 const port = await unusedPort();
 const dashboard = spawn(process.execPath, ['dashboard/server/index.js'], {
-  cwd: repo,
+  cwd: fixtureRoot,
   env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), GOLEM_HOME: home, GOLEM_TRACKER_DB: db,
     GOLEM_PROJECTS_ROOT: path.join(temp, 'projects'), GOLEM_IDEAS_ROOT: path.join(temp, 'ideas'),
     XDG_CONFIG_HOME: path.join(temp, 'xdg'), HOME: path.join(temp, 'home'), LOG_LEVEL: 'error' },
@@ -373,4 +398,5 @@ try {
   await stop(dashboard);
   await typed.closeTypedWorkerEndpoint(endpoint.server).catch(() => {});
   fs.rmSync(temp, { recursive: true, force: true });
+  fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }
