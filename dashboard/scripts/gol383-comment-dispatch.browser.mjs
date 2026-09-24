@@ -403,31 +403,64 @@ try {
     { author: 'human', body: 'second reply for the failure path' });
   assert.equal(reply2.status, 201, `second reply: ${JSON.stringify(reply2.json)}`);
   const cidReply2 = reply2.json.id;
+  // Pending contrast, loam leg: the pending label keeps the unfaded fill,
+  // so it must measure the resting ratio. Dispatch reply2 for real here;
+  // the failure path below uses a fresh third reply.
+  await setTheme('loam');
+  await card(cidReply2).waitFor();
+  await dispatchBtn(cidReply2).waitFor({ timeout: 15000 });
+  deliveryDelayMs = 800;
+  await dispatchBtn(cidReply2).click();
+  let sawLoamPending = false;
+  let loamPendingContrast = null;
+  const loamPendingDeadline = Date.now() + 5_000;
+  while (Date.now() < loamPendingDeadline) {
+    try {
+      const label = await dispatchBtn(cidReply2).innerText();
+      if ((await dispatchBtn(cidReply2).isDisabled()) && /dispatching/i.test(label)) {
+        sawLoamPending = true;
+        loamPendingContrast = await contrastOf(cidReply2);
+        break;
+      }
+    } catch { break; } // button unmounted = already succeeded
+    await pause(10);
+  }
+  check('loam: reply Dispatch enters a pending, disabled state while in flight', sawLoamPending);
+  check(`contrast: pending Dispatch label legible in loam (ratio ${loamPendingContrast?.ratio})`,
+    !!loamPendingContrast && loamPendingContrast.ratio >= 4.5, JSON.stringify(loamPendingContrast));
+  await waitFor(async () => {
+    try { return (await chipText(cidReply2)) === 'dispatched'; } catch { return false; }
+  }, 'loam reply dispatch succeeds');
+  deliveryDelayMs = 0;
+  const reply3 = await api('POST', `${origin}/api/tickets/${ticketId}/comments/${cidRoot}/reply`,
+    { author: 'human', body: 'third reply for the failure path' });
+  assert.equal(reply3.status, 201, `third reply: ${JSON.stringify(reply3.json)}`);
+  const cidReply3 = reply3.json.id;
   await page.goto(`${origin}/dashboard`, { waitUntil: 'networkidle' });
   await openRail(ticketId);
-  await card(cidReply2).waitFor();
+  await card(cidReply3).waitFor();
   await page.evaluate(() => {
     window.__gol383RealDispatch = window.SubstrateAPI.dispatchComment;
     window.SubstrateAPI.dispatchComment = () => Promise.reject(
       Object.assign(new Error('simulated delivery failure'), { payload: { error: 'simulated delivery failure' } }));
   });
-  await dispatchBtn(cidReply2).click();
-  await card(cidReply2).locator('.anno-dispatch-error').waitFor({ timeout: 8000 }).catch(() => {});
-  const errText = await card(cidReply2).locator('.anno-dispatch-error').innerText().catch(() => '');
+  await dispatchBtn(cidReply3).click();
+  await card(cidReply3).locator('.anno-dispatch-error').waitFor({ timeout: 8000 }).catch(() => {});
+  const errText = await card(cidReply3).locator('.anno-dispatch-error').innerText().catch(() => '');
   check('failure shows the error at the clicked reply',
     /simulated delivery failure/i.test(errText), errText.slice(0, 120));
   check('failure keeps the chip undispatched (no false success)',
-    (await chipText(cidReply2)) === 'undispatched');
-  check('failure restores retry on the same card', (await dispatchBtn(cidReply2).count()) === 1);
+    (await chipText(cidReply3)) === 'undispatched');
+  check('failure restores retry on the same card', (await dispatchBtn(cidReply3).count()) === 1);
   // The same retry succeeds once the transport is back.
   await page.evaluate(() => { window.SubstrateAPI.dispatchComment = window.__gol383RealDispatch; });
-  await dispatchBtn(cidReply2).click();
+  await dispatchBtn(cidReply3).click();
   await waitFor(async () => {
-    try { return (await chipText(cidReply2)) === 'dispatched'; } catch { return false; }
+    try { return (await chipText(cidReply3)) === 'dispatched'; } catch { return false; }
   }, 'retry after failure dispatches');
   check('retry after failure dispatches the reply',
-    (await dispatchBtn(cidReply2).count()) === 0
-      && (await card(cidReply2).locator('.anno-dispatch-error').count()) === 0);
+    (await dispatchBtn(cidReply3).count()) === 0
+      && (await card(cidReply3).locator('.anno-dispatch-error').count()) === 0);
 
   check('no uncaught page errors during the journey', pageErrors.length === 0, JSON.stringify(pageErrors));
   console.log(failures === 0
