@@ -97,7 +97,10 @@ upsertSessionFact({
 renewEndpointLease({
   canonical_id: LIVE_ID, owner_token: LIVE_TOKEN, host: endpoint.host, port: endpoint.port,
   kind: 'typed-worker', harness: 'pi', delivery_ready: true,
-});
+// The journey runs for minutes; the default 45s lease would expire mid-run
+// and drop the target from the dispatchable roster (no Dispatch action).
+// Fixture-only temp state — the endpoint really is live throughout.
+}, { ttlMs: 30 * 60_000 });
 fs.writeFileSync(path.join(home, 'projects.json'), JSON.stringify({ projects: [
   { id: projectId, name: 'GOL-383 dispatch fixture', path: project, kind: 'auto' },
 ] }));
