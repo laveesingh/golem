@@ -29,6 +29,7 @@ const envKeys = [
   'GOLEM_TEST_REGISTRATION_DIR', 'GOLEM_TEST_PROJECT_ID', 'GOLEM_TEST_PI_CAPTURE_DIR',
   'GOLEM_WORKER_READY_TIMEOUT_MS', 'GOLEM_WORKER_POLL_MS', 'GOLEM_WORKER_REQUEST_TIMEOUT_MS',
   'GOLEM_WORKER_CLI', 'GOLEM_BIN', 'XDG_CONFIG_HOME',
+  'CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID',
 ];
 for (const key of envKeys) originalEnv[key] = process.env[key];
 
@@ -84,9 +85,14 @@ const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 
 const name = flag('--name');
 const sessionId = flag('--session-id');
 if (!name || !sessionId) process.exit(0);
+// Like real Claude: the dev-channel prompt blocks until someone confirms.
+const channels = args[args.indexOf('--dangerously-load-development-channels') + 1];
+process.stdout.write('\\n  WARNING: Loading development channels\\n\\n  Channels: ' + channels + '\\n\\n  ❯ 1. I am using this for local development\\n    2. Exit\\n\\n  Enter to confirm · Esc to cancel\\n');
+process.stdin.once('data', () => {
 fs.mkdirSync(process.env.GOLEM_TEST_PI_CAPTURE_DIR, { recursive: true });
 fs.writeFileSync(path.join(process.env.GOLEM_TEST_PI_CAPTURE_DIR, 'claude-' + name + '.json'), JSON.stringify({
   args, role: process.env.GOLEM_ROLE || null, ceo: process.env.GOLEM_CEO_SESSION_ID || null,
+  inherited: ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID'].filter((key) => process.env[key] != null),
 }, null, 2));
 fs.writeFileSync(path.join(process.env.GOLEM_TEST_REGISTRATION_DIR, 'claude-' + name + '.json'), JSON.stringify({
   session_id: sessionId,
@@ -96,6 +102,7 @@ fs.writeFileSync(path.join(process.env.GOLEM_TEST_REGISTRATION_DIR, 'claude-' + 
   project_id: process.env.GOLEM_TEST_PROJECT_ID,
   status: 'idle',
 }));
+});
 for (const signal of ['SIGTERM', 'SIGHUP']) process.once(signal, () => process.exit(0));
 setInterval(() => {}, 1000);
 `, { mode: 0o700 });
@@ -113,6 +120,11 @@ Object.assign(process.env, {
   GOLEM_WORKER_POLL_MS: '50',
   GOLEM_WORKER_REQUEST_TIMEOUT_MS: '500',
   XDG_CONFIG_HOME: xdgHome,
+  // GOL-382: as if this test ran inside a Claude session; none of it may reach
+  // an agent pane (the herdr server and each launch clear it).
+  CLAUDECODE: '1',
+  CLAUDE_CODE_CHILD_SESSION: '1',
+  CLAUDE_CODE_SESSION_ID: 'outer-claude-session',
 });
 delete process.env.GOLEM_WORKER_CLI;
 delete process.env.GOLEM_BIN;
@@ -431,6 +443,13 @@ try {
   assert.equal(piWithClaude.status, 2, 'golem pi refuses a claude profile');
   assert.match(piWithClaude.stderr, /runs on claude, not pi/);
 
+  // Human decision 1a: golem answers the dev-channel prompt only for its own channel.
+  const { isGolemDevChannelPrompt } = await import('../lib/claude-channel.js');
+  const promptScreen = '  WARNING: Loading development\n  channels\n  Channels: plugin:golem@golem-work\nspace\n  ❯ 1. I am using this for local\n development\n    2. Exit';
+  assert.equal(isGolemDevChannelPrompt(promptScreen), true, 'wrapped golem prompt matches');
+  assert.equal(isGolemDevChannelPrompt(promptScreen.replace('golem@golem-work', 'evil@golem-work')), false, 'another channel is not answered');
+  assert.equal(isGolemDevChannelPrompt(promptScreen.replace('space\n', 'space, plugin:evil@x\n')), false, 'a second channel is not answered');
+  assert.equal(isGolemDevChannelPrompt(promptScreen.replace('❯ 1.', '  1.').replace('    2. Exit', '  ❯ 2. Exit')), false, 'option 2 selected is not answered');
   const spawnedClaude = await runCollecting(['agent', 'create', 'reviewer', '--profile', 'claude-test', '--name', 'golemtest-t3-claude', '--team', 'model-team', '--project', project]);
   assert.equal(spawnedClaude.status, 0, spawnedClaude.stderr);
   const claudeRow = readWorkers().find((worker) => worker.name === 'golemtest-t3-claude');
@@ -441,6 +460,7 @@ try {
   assert.equal(claudeRow.session_id, launchFlag('--session-id'), 'the row binds exactly the session id golem chose');
   assert.equal(claudeLaunch.ceo, claudeRow.session_id, 'GOLEM_CEO_SESSION_ID carries the same id for the channel');
   assert.equal(claudeLaunch.role, 'reviewer', 'GOLEM_ROLE reaches the pane for the boot card');
+  assert.deepEqual(claudeLaunch.inherited, [], 'no outer Claude session identity reaches the agent');
   assert.equal(launchFlag('--model'), 'claude-test-model');
   assert.equal(launchFlag('--effort'), 'high');
   assert.ok(claudeLaunch.args.includes('--dangerously-load-development-channels'), 'the golem claude wrapper loads the channel');

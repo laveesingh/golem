@@ -34,6 +34,7 @@ import { isHarnessEnabled, loadConfig, saveConfig } from '../lib/golem-config.js
 import { dashboardUrl, probeDashboard, startDashboardDetached, stopDashboard } from '../lib/dashboard-process.js';
 import { MIN_PI_NODE, SUPPORTED_PI_VERSION, piNodeSupported } from '../lib/pi-compatibility.js';
 import { resolveRolePreset } from '../lib/role-preset.js';
+import { CLAUDE_CHANNEL_FLAG, GOLEM_CLAUDE_CHANNEL } from '../lib/claude-channel.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
 import { HERDR_SUPPORTED_VERSION, herdrSessionForProject, herdrVersion } from '../lib/herdr-driver.js';
 
@@ -805,8 +806,6 @@ function cmdRemoved(name) {
   fatal(2, `Error: \`${name}\` is a v3 subcommand that has been removed in golem v4.\n\nRun \`golem help\` for the surviving commands.`);
 }
 
-const CLAUDE_CHANNEL_FLAG = '--dangerously-load-development-channels';
-const GOLEM_CLAUDE_CHANNEL = 'plugin:golem@golem-workspace';
 
 function claudeLauncherHelp() {
   log(`Usage: golem claude [--backend native|ollama] [--model <id>] [-- <claude args...>]
