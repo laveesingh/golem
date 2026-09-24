@@ -4013,9 +4013,11 @@ mark.anno.anno-tail::after {
 /* GOL-383: theme-aware dispatch pill. The old rule fixed dark text on
    `var(--text-0)` — in loam `--text-0` is #29281f, so the pill rendered
    near-black on dark. A solid accent fill with surface text stays legible
-   in every theme (measured text/bg ratios: dark 10.8, loam 4.7, graphite
-   5.0, nocturne 6.2) and marks Dispatch as the primary action next to the
-   ghost-style Reply pill. */
+   in every theme (resting text/bg ratios: dark 10.8, loam 4.7, graphite
+   5.0, nocturne 6.2). Hover keeps the same fill — the generic acts hover
+   would otherwise paint `var(--bg-3)` behind this text — with a lift as
+   its affordance; the pending label keeps the fill unfaded, so hover and
+   disabled measure exactly the resting ratio. */
 .anno-card .acts button.act-dispatch {
   color: var(--bg-1);
   background: var(--accent);
@@ -4023,12 +4025,12 @@ mark.anno.anno-tail::after {
   font-weight: 700;
 }
 .anno-card .acts button.act-dispatch:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--accent);
   color: var(--bg-1);
   border-color: var(--accent);
+  transform: translateY(-1px);
 }
 .anno-card .acts button.act-dispatch:disabled {
-  opacity: .65;
   cursor: wait;
 }
 /* GOL-383: per-card dispatch failure — rendered under the actions of the

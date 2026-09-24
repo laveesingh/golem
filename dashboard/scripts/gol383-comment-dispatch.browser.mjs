@@ -281,6 +281,11 @@ try {
     const c = await contrastOf(cidReply);
     check(`contrast: Dispatch pill legible in ${theme} (ratio ${c?.ratio})`,
       !!c && c.ratio >= 4.5, JSON.stringify(c));
+    await dispatchBtn(cidReply).hover();
+    const h = await contrastOf(cidReply);
+    check(`contrast: Dispatch pill legible on hover in ${theme} (ratio ${h?.ratio})`,
+      !!h && h.ratio >= 4.5, JSON.stringify(h));
+    await card(cidReply).hover(); // move off the button before screenshotting
     await card(cidReply).screenshot({ path: path.join(shots, `gol383-dispatch-${theme}.png`) });
   }
   await setTheme('dark');
@@ -294,15 +299,22 @@ try {
   await dispatchBtn(cidReply).click();
   // Pending label + disabled while in flight (fast poll — 800ms window).
   let sawPending = false;
+  let disabledContrast = null;
   const pendingDeadline = Date.now() + 5_000;
   while (Date.now() < pendingDeadline) {
     try {
       const label = await dispatchBtn(cidReply).innerText();
-      if ((await dispatchBtn(cidReply).isDisabled()) && /dispatching/i.test(label)) { sawPending = true; break; }
+      if ((await dispatchBtn(cidReply).isDisabled()) && /dispatching/i.test(label)) {
+        sawPending = true;
+        disabledContrast = await contrastOf(cidReply);
+        break;
+      }
     } catch { break; } // button unmounted = already succeeded
     await pause(10);
   }
   check('reply Dispatch enters a pending, disabled state while in flight', sawPending);
+  check(`contrast: pending Dispatch label stays legible (ratio ${disabledContrast?.ratio})`,
+    !!disabledContrast && disabledContrast.ratio >= 4.5, JSON.stringify(disabledContrast));
   // Duplicate clicks while pending deliver exactly once.
   await page.evaluate((cid) => {
     const btn = document.querySelector(`.anno-card[data-id="${cid}"] button.act-dispatch`);
@@ -355,6 +367,36 @@ try {
     railText.includes('other ticket marker comment')
       && !railText.includes('reply feedback dispatched from its card'));
   if (created2.json.id && base()) await archiveTicket(created2.json.id).catch(() => {});
+
+  // ── Composer reply: one real card, dispatched, no ghost ──────────────────
+  // The rail creates the reply optimistically as author `you`; the server
+  // persists `human`. The echo must replace the optimistic card, never sit
+  // beside it (ghost), and the single send must deliver exactly once.
+  const composerBody = 'composer reply body GOL383C';
+  await page.goto(`${origin}/dashboard`, { waitUntil: 'networkidle' });
+  await openRail(ticketId);
+  await card(cidRoot).waitFor();
+  await card(cidRoot).locator('button.act-reply').click();
+  await page.locator('.anno-attachment-pill').first().waitFor();
+  await page.locator('.anno-rail-composer textarea').fill(composerBody);
+  const receivedBeforeComposer = received.length;
+  await page.locator('.anno-rail-composer .send.secondary').click();
+  const composerCard = () => page.evaluate((body) => {
+    const cards = [...document.querySelectorAll('.thread-replies .anno-card')].filter((el) =>
+      (el.querySelector('.body')?.textContent ?? '').includes(body));
+    return { count: cards.length, chips: cards.map((el) => el.querySelector('.anno-dispatch-chip')?.textContent ?? null) };
+  }, composerBody);
+  const settled = await waitFor(async () => {
+    const state = await composerCard();
+    return state.count === 1 && state.chips[0] === 'dispatched' ? state : false;
+  }, 'composer reply settles to one dispatched card');
+  check('composer reply renders exactly one card (no ghost duplicate)',
+    settled.count === 1, JSON.stringify(settled));
+  check('composer reply dispatches to the live target exactly once',
+    settled.chips[0] === 'dispatched' && received.length === receivedBeforeComposer + 1,
+    `chips=${JSON.stringify(settled.chips)} received+${received.length - receivedBeforeComposer}`);
+  check('composer reply shows no dispatch error',
+    (await page.locator('.anno-dispatch-error').count()) === 0);
 
   // ── Failure: rejected dispatch keeps retry + shows the error ──────────────
   const reply2 = await api('POST', `${origin}/api/tickets/${ticketId}/comments/${cidRoot}/reply`,

@@ -1082,7 +1082,13 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
         }
       }
       const echoPool = new Map();
-      const echoKey = (parentId, author, body) => `${parentId || ''}|${author || ''}|${body}`;
+      // GOL-383 round 3: the composer creates replies as author `you`
+      // (currentAuthor), but the server persists them as `human`, so an
+      // exact author+body key never pairs a composer reply with its echo.
+      // Canonicalize the local human identities (TA_AUTHORS treats them as
+      // one author) — agent session ids pass through untouched.
+      const echoAuthorOf = (author) => (author === 'you' || author === 'human:dashboard' ? 'human' : (author || ''));
+      const echoKey = (parentId, author, body) => `${parentId || ''}|${echoAuthorOf(author)}|${body}`;
       for (const annotation of next) {
         if (!prevIds.has(annotation.id)) {
           const key = echoKey('', annotation.author, annotationBodyOf(annotation));
@@ -1667,6 +1673,9 @@ React.useEffect(() => {
         canDispatch={canDispatchComments}
         dispatching={!!dispatchPending[annotation.id]}
         dispatchError={dispatchErrors[annotation.id] || null}
+        // GOL-383 round 3: an optimistic card has no server id yet —
+        // dispatching it would 404. Its Dispatch action appears with the echo.
+        isOptimistic={optimisticIdsRef.current.has(annotation.id)}
       />
       {annotation.replies?.length > 0 && (
         <CommentThread
@@ -1683,6 +1692,7 @@ React.useEffect(() => {
           canDispatch={canDispatchComments}
           dispatchPending={dispatchPending}
           dispatchErrors={dispatchErrors}
+          optimisticIds={optimisticIdsRef.current}
         />
       )}
     </React.Fragment>
@@ -1906,7 +1916,7 @@ function openImageLightbox(url, alt = 'Image preview') {
   });
 }
 
-function CommentThread({ parentId, replies = [], showResolved = false, activeId, onFocus, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false, dispatchPending = {}, dispatchErrors = {} }) {
+function CommentThread({ parentId, replies = [], showResolved = false, activeId, onFocus, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false, dispatchPending = {}, dispatchErrors = {}, optimisticIds = new Set() }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const visibleReplies = replies.filter((reply) => (
     reply.status !== 'deleted' && (showResolved || reply.status !== 'resolved')
@@ -1947,6 +1957,7 @@ function CommentThread({ parentId, replies = [], showResolved = false, activeId,
                 canDispatch={canDispatch}
                 dispatching={!!dispatchPending[annotation.id]}
                 dispatchError={dispatchErrors[annotation.id] || null}
+                isOptimistic={optimisticIds.has(annotation.id)}
               />
             );
           })}
@@ -1956,7 +1967,7 @@ function CommentThread({ parentId, replies = [], showResolved = false, activeId,
   );
 }
 
-function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false, dispatching = false, dispatchError = null }) {
+function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false, dispatching = false, dispatchError = null, isOptimistic = false }) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   const [editUploads, setEditUploads] = React.useState([]);
@@ -2155,7 +2166,7 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
             <div className="row">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
                 <button className="cancel" onClick={cancelEdit}>esc</button>
-                {dispatchState === 'undispatched' && canDispatch && (
+                {dispatchState === 'undispatched' && canDispatch && !isOptimistic && (
                   <button className="send secondary" onClick={saveEditAndDispatch} disabled={!draft.trim() || isEditUploading || dispatching}>{dispatching ? 'Dispatching…' : 'Dispatch'}</button>
                 )}
                 <button className="send" onClick={saveEdit} disabled={!draft.trim() || isEditUploading}>Save</button>
@@ -2198,7 +2209,7 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
         <button type="button" className="act-edit" onClick={(e) => { e.stopPropagation(); startEdit(e); }}>
           <span aria-hidden="true">✎</span> Edit
         </button>
-        {dispatchState === 'undispatched' && canDispatch && (
+        {dispatchState === 'undispatched' && canDispatch && !isOptimistic && (
           <button type="button" className={`act-dispatch${dispatching ? ' is-pending' : ''}`} onClick={dispatchComment} disabled={dispatching}>
             <span aria-hidden="true">↗</span> {dispatching ? 'Dispatching…' : 'Dispatch'}
           </button>
