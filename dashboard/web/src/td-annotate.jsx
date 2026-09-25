@@ -1026,15 +1026,161 @@ function TdAnnotate({ body, comments, currentAuthor = 'you', onCreate, onCreateA
     [body, bodyFormat],
   );
 
+  // GOL-383: dispatch-aware props→annotations sync. The old comparison
+  // (top-level id/status/updated_at only) missed dispatch_state flips on
+  // replies — the server stamps only the dispatched row, so its parent row
+  // compared equal and the card sat on `undispatched` after a delivered
+  // dispatch. The signature covers dispatch_state, body text, and nested
+  // replies; the merge keeps object identity for unchanged entries so their
+  // cards never remount. Optimistic cards (local uid() ids the server
+  // payload does not contain yet) are retained until the server echo
+  // arrives, then reconciled away by author+body pairing so they never
+  // duplicate the echoed row.
+  const annotationBodyOf = (comment) => comment.body ?? comment.text ?? '';
+  const annotationSignature = (annotation) => {
+    const replySignature = (reply) => [
+      reply.id, reply.status, reply.dispatch_state, reply.updated_at,
+      annotationBodyOf(reply),
+    ].join('|');
+    return [
+      annotation.id, annotation.status, annotation.dispatch_state,
+      annotation.updated_at, annotationBodyOf(annotation),
+      (annotation.replies || []).map(replySignature).join('~'),
+    ].join('#');
+  };
+  const optimisticIdsRef = React.useRef(new Set());
+  const trackOptimistic = React.useCallback((id) => {
+    if (id != null) optimisticIdsRef.current.add(id);
+  }, []);
+  // Switching tickets resets the rail: retention below is only ever for
+  // optimistic cards of the current document.
+  const annotationsDocKeyRef = React.useRef(documentKey);
   React.useEffect(() => {
     const next = comments || [];
+    if (annotationsDocKeyRef.current !== documentKey) {
+      annotationsDocKeyRef.current = documentKey;
+      optimisticIdsRef.current.clear();
+      dispatchInflightRef.current.clear();
+      setDispatchPending({});
+      setDispatchErrors({});
+      setAnnotations(next);
+      return;
+    }
     setAnnotations((prev) => {
-      if (prev.length === next.length && prev.every((a, i) => a.id === next[i]?.id && a.status === next[i]?.status && a.updated_at === next[i]?.updated_at)) {
-        return prev;
+      const prevById = new Map(prev.map((annotation) => [annotation.id, annotation]));
+      const nextById = new Map(next.map((annotation) => [annotation.id, annotation]));
+      // Pair optimistic cards with their server echo (same parent, author,
+      // body) so the echo replaces them instead of duplicating them. Rows
+      // already known by id are continuations, never echoes.
+      const prevIds = new Set();
+      const prevReplyParent = new Map();
+      for (const annotation of prev) {
+        prevIds.add(annotation.id);
+        for (const reply of annotation.replies || []) {
+          prevIds.add(reply.id);
+          prevReplyParent.set(reply.id, annotation.id);
+        }
       }
-      return next;
+      const echoPool = new Map();
+      // GOL-383 round 3: the composer creates replies as author `you`
+      // (currentAuthor), but the server persists them as `human`, so an
+      // exact author+body key never pairs a composer reply with its echo.
+      // Canonicalize the local human identities (TA_AUTHORS treats them as
+      // one author) — agent session ids pass through untouched.
+      const echoAuthorOf = (author) => (author === 'you' || author === 'human:dashboard' ? 'human' : (author || ''));
+      const echoKey = (parentId, author, body) => `${parentId || ''}|${echoAuthorOf(author)}|${body}`;
+      for (const annotation of next) {
+        if (!prevIds.has(annotation.id)) {
+          const key = echoKey('', annotation.author, annotationBodyOf(annotation));
+          echoPool.set(key, (echoPool.get(key) || 0) + 1);
+        }
+        for (const reply of annotation.replies || []) {
+          if (!prevIds.has(reply.id)) {
+            const key = echoKey(annotation.id, reply.author, annotationBodyOf(reply));
+            echoPool.set(key, (echoPool.get(key) || 0) + 1);
+          }
+        }
+      }
+      const echoed = new Set();
+      const nextReplyIds = new Set();
+      for (const annotation of next) {
+        for (const reply of annotation.replies || []) nextReplyIds.add(reply.id);
+      }
+      for (const id of optimisticIdsRef.current) {
+        // Defensive: a tracked id the server payload now contains needs no
+        // echo pairing (server ids never collide with local uid()s).
+        if (nextById.has(id) || nextReplyIds.has(id)) {
+          echoed.add(id);
+          continue;
+        }
+        const optimistic = prevById.get(id);
+        if (optimistic) {
+          const key = echoKey('', optimistic.author, annotationBodyOf(optimistic));
+          if ((echoPool.get(key) || 0) > 0) {
+            echoPool.set(key, echoPool.get(key) - 1);
+            echoed.add(id);
+          }
+          continue;
+        }
+        const parentId = prevReplyParent.get(id);
+        if (parentId != null) {
+          const parent = prevById.get(parentId);
+          const reply = (parent?.replies || []).find((candidate) => candidate.id === id);
+          if (reply) {
+            const key = echoKey(parentId, reply.author, annotationBodyOf(reply));
+            if ((echoPool.get(key) || 0) > 0) {
+              echoPool.set(key, echoPool.get(key) - 1);
+              echoed.add(id);
+            }
+          } else {
+            echoed.add(id);
+          }
+        } else {
+          echoed.add(id);
+        }
+      }
+      echoed.forEach((id) => optimisticIdsRef.current.delete(id));
+      // Only tracked optimistic cards with no server echo yet stay mounted.
+      // Anything else the server payload omits is gone (including a previous
+      // ticket's comments — the document-key guard above already resets on
+      // ticket switch, this is belt-and-braces for same-document shrinks).
+      const tracked = optimisticIdsRef.current;
+      const retained = prev.filter((annotation) => {
+        if (nextById.has(annotation.id) || echoed.has(annotation.id)) return false;
+        if (tracked.has(annotation.id)) return true;
+        return (annotation.replies || []).some((reply) => tracked.has(reply.id) && !echoed.has(reply.id));
+      });
+      // A retained optimistic reply whose parent arrived from the server
+      // without it is still echoed if its key was consumed above; drop the
+      // consumed reply ids from retained parents so the echo wins.
+      const retainedMapped = retained.map((annotation) => {
+        const kept = (annotation.replies || []).filter((reply) => !echoed.has(reply.id));
+        return kept.length === (annotation.replies || []).length
+          ? annotation
+          : { ...annotation, replies: kept };
+      });
+      let changed = retainedMapped.length > 0;
+      const merged = next.map((item) => {
+        const existing = prevById.get(item.id);
+        // Carry tracked optimistic replies with no echo yet onto the server
+        // parent so an unrelated update does not drop them mid-flight.
+        const carryReplies = (existing?.replies || []).filter((reply) =>
+          tracked.has(reply.id) && !echoed.has(reply.id)
+            && !(item.replies || []).some((candidate) => candidate.id === reply.id));
+        if (carryReplies.length === 0) {
+          if (existing && annotationSignature(existing) === annotationSignature(item)) return existing;
+          changed = true;
+          return item;
+        }
+        changed = true;
+        return { ...item, replies: [...(item.replies || []), ...carryReplies] };
+      });
+      const result = [...merged, ...retainedMapped];
+      if (!changed && result.length !== prev.length) changed = true;
+      if (!changed) return prev;
+      return result;
     });
-  }, [comments]);
+  }, [comments, documentKey]);
 
   // Track the reader's position before updates. New comments should only move
   // the rail when the reader was already near its bottom edge.
@@ -1225,11 +1371,12 @@ React.useEffect(() => {
 
   const createComment = React.useCallback((input) => {
     const ann = { id: uid(), ...input, status: input.status || 'open', replies: input.replies || [], created_at: nowISO(), updated_at: nowISO() };
+    trackOptimistic(ann.id);
     setAnnotations((prev) => [ann, ...prev]);
     flashSaved();
     if (onCreate) onCreate(ann);
     return ann;
-  }, [onCreate, flashSaved]);
+  }, [onCreate, flashSaved, trackOptimistic]);
 
   // GOL-101: the dispatch half used to be fired and forgotten — no await, no
   // catch — so a rejected dispatch became an unhandled rejection while the
@@ -1240,6 +1387,7 @@ React.useEffect(() => {
   // — and the drawer reports the delivery failure.
   const createCommentAndDispatch = React.useCallback((input) => {
     const ann = { id: uid(), ...input, status: input.status || 'open', replies: input.replies || [], created_at: nowISO(), updated_at: nowISO() };
+    trackOptimistic(ann.id);
     setAnnotations((prev) => [ann, ...prev]);
     flashSaved();
     if (!onCreateAndDispatch) return Promise.resolve(ann);
@@ -1250,7 +1398,7 @@ React.useEffect(() => {
         throw err;
       },
     );
-  }, [onCreateAndDispatch, flashSaved]);
+  }, [onCreateAndDispatch, flashSaved, trackOptimistic]);
 
   const updateComment = React.useCallback((id, patch) => {
     setAnnotations((prev) => prev.map((annotation) => {
@@ -1289,13 +1437,15 @@ React.useEffect(() => {
 
   const addReply = React.useCallback((parentId, text, author) => {
     const reply = makeReply(parentId, text, author);
+    trackOptimistic(reply.id);
     appendReply(parentId, reply);
     flashSaved();
     if (onReply) onReply(parentId, reply);
-  }, [appendReply, onReply, flashSaved]);
+  }, [appendReply, onReply, flashSaved, trackOptimistic]);
 
   const addReplyAndDispatch = React.useCallback((parentId, text, author) => {
     const reply = makeReply(parentId, text, author);
+    trackOptimistic(reply.id);
     appendReply(parentId, reply);
     flashSaved();
     if (!onReplyAndDispatch) return Promise.resolve(reply);
@@ -1311,7 +1461,46 @@ React.useEffect(() => {
         throw err;
       },
     );
-  }, [appendReply, flashSaved, onReplyAndDispatch]);
+  }, [appendReply, flashSaved, onReplyAndDispatch, trackOptimistic]);
+
+  // GOL-383: per-card dispatch state. The card Dispatch action enters a
+  // pending label immediately, duplicate clicks are dropped while the
+  // request is in flight (the ref guard is synchronous — React state alone
+  // would still let a second click through before the re-render), success
+  // surfaces through the status chip once the server echo lands in the
+  // sync effect above, and failure restores retry with the error rendered
+  // at the clicked card. The drawer-level onDispatchComment rejects on
+  // failure (it still writes the draft-queue note for compatibility).
+  const [dispatchPending, setDispatchPending] = React.useState({});
+  const [dispatchErrors, setDispatchErrors] = React.useState({});
+  const dispatchInflightRef = React.useRef(new Set());
+  const handleDispatchComment = React.useCallback(async (commentId) => {
+    if (!commentId || !onDispatchComment) return;
+    if (dispatchInflightRef.current.has(commentId)) return;
+    dispatchInflightRef.current.add(commentId);
+    setDispatchPending((prev) => ({ ...prev, [commentId]: true }));
+    setDispatchErrors((prev) => {
+      if (!(commentId in prev)) return prev;
+      const nextErrors = { ...prev };
+      delete nextErrors[commentId];
+      return nextErrors;
+    });
+    try {
+      await onDispatchComment(commentId);
+    } catch (err) {
+      setDispatchErrors((prev) => ({
+        ...prev,
+        [commentId]: err?.payload?.error || err?.message || 'Dispatch failed — retry available',
+      }));
+    } finally {
+      dispatchInflightRef.current.delete(commentId);
+      setDispatchPending((prev) => {
+        const nextPending = { ...prev };
+        delete nextPending[commentId];
+        return nextPending;
+      });
+    }
+  }, [onDispatchComment]);
 
   const deleteComment = React.useCallback((id) => {
     setAnnotations((prev) => prev
@@ -1480,8 +1669,13 @@ React.useEffect(() => {
         onDelete={() => deleteComment(annotation.id)}
         onStartReply={startReply}
         onEditBody={(text) => updateComment(annotation.id, { body: text })}
-        onDispatch={onDispatchComment}
+        onDispatch={handleDispatchComment}
         canDispatch={canDispatchComments}
+        dispatching={!!dispatchPending[annotation.id]}
+        dispatchError={dispatchErrors[annotation.id] || null}
+        // GOL-383 round 3: an optimistic card has no server id yet —
+        // dispatching it would 404. Its Dispatch action appears with the echo.
+        isOptimistic={optimisticIdsRef.current.has(annotation.id)}
       />
       {annotation.replies?.length > 0 && (
         <CommentThread
@@ -1494,8 +1688,11 @@ React.useEffect(() => {
           onDelete={deleteComment}
           onStartReply={startReply}
           onEditBody={updateComment}
-          onDispatch={onDispatchComment}
+          onDispatch={handleDispatchComment}
           canDispatch={canDispatchComments}
+          dispatchPending={dispatchPending}
+          dispatchErrors={dispatchErrors}
+          optimisticIds={optimisticIdsRef.current}
         />
       )}
     </React.Fragment>
@@ -1719,7 +1916,7 @@ function openImageLightbox(url, alt = 'Image preview') {
   });
 }
 
-function CommentThread({ parentId, replies = [], showResolved = false, activeId, onFocus, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false }) {
+function CommentThread({ parentId, replies = [], showResolved = false, activeId, onFocus, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false, dispatchPending = {}, dispatchErrors = {}, optimisticIds = new Set() }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const visibleReplies = replies.filter((reply) => (
     reply.status !== 'deleted' && (showResolved || reply.status !== 'resolved')
@@ -1758,6 +1955,9 @@ function CommentThread({ parentId, replies = [], showResolved = false, activeId,
                 onEditBody={(text) => onEditBody(annotation.id, { body: text })}
                 onDispatch={onDispatch}
                 canDispatch={canDispatch}
+                dispatching={!!dispatchPending[annotation.id]}
+                dispatchError={dispatchErrors[annotation.id] || null}
+                isOptimistic={optimisticIds.has(annotation.id)}
               />
             );
           })}
@@ -1767,7 +1967,7 @@ function CommentThread({ parentId, replies = [], showResolved = false, activeId,
   );
 }
 
-function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false }) {
+function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStartReply, onEditBody, onDispatch, canDispatch = false, dispatching = false, dispatchError = null, isOptimistic = false }) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   const [editUploads, setEditUploads] = React.useState([]);
@@ -1858,16 +2058,19 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
   const cancelEdit = () => { setEditing(false); setDraft(''); setEditUploads([]); };
   const dispatchComment = (e) => {
     e.stopPropagation();
+    if (dispatching) return;
     if (onDispatch) onDispatch(ann.id);
   };
   // Editing-phase dispatch: persist the edited body first, then dispatch the
-  // comment so the target receives the latest text.
+  // comment so the target receives the latest text. The per-card pending
+  // guard covers this path too; a dispatch failure keeps the (saved) card
+  // with its error below the actions.
   const saveEditAndDispatch = async () => {
     const t = draft.trim();
-    if (!t || isEditUploading) return;
+    if (!t || isEditUploading || dispatching) return;
     setEditing(false);
     await onEditBody(t);
-    if (onDispatch) onDispatch(ann.id);
+    if (onDispatch) await onDispatch(ann.id);
   };
 
   // Card clicks only focus the card. Expansion is owned by the in-flow divider
@@ -1963,8 +2166,8 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
             <div className="row">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
                 <button className="cancel" onClick={cancelEdit}>esc</button>
-                {dispatchState === 'undispatched' && canDispatch && (
-                  <button className="send secondary" onClick={saveEditAndDispatch} disabled={!draft.trim() || isEditUploading}>Dispatch</button>
+                {dispatchState === 'undispatched' && canDispatch && !isOptimistic && (
+                  <button className="send secondary" onClick={saveEditAndDispatch} disabled={!draft.trim() || isEditUploading || dispatching}>{dispatching ? 'Dispatching…' : 'Dispatch'}</button>
                 )}
                 <button className="send" onClick={saveEdit} disabled={!draft.trim() || isEditUploading}>Save</button>
               </div>
@@ -2006,9 +2209,9 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
         <button type="button" className="act-edit" onClick={(e) => { e.stopPropagation(); startEdit(e); }}>
           <span aria-hidden="true">✎</span> Edit
         </button>
-        {dispatchState === 'undispatched' && canDispatch && (
-          <button type="button" className="act-dispatch" onClick={dispatchComment}>
-            <span aria-hidden="true">↗</span> Dispatch
+        {dispatchState === 'undispatched' && canDispatch && !isOptimistic && (
+          <button type="button" className={`act-dispatch${dispatching ? ' is-pending' : ''}`} onClick={dispatchComment} disabled={dispatching}>
+            <span aria-hidden="true">↗</span> {dispatching ? 'Dispatching…' : 'Dispatch'}
           </button>
         )}
         <button type="button" className="act-resolve" onClick={(e) => { e.stopPropagation(); onResolve(); }}>
@@ -2018,6 +2221,9 @@ function CommentCard({ ann, active, onFocus, onJump, onResolve, onDelete, onStar
           <span aria-hidden="true">🗑</span> Delete
         </button>
       </div>
+      {dispatchError && (
+        <div className="anno-dispatch-error" role="alert">{dispatchError}</div>
+      )}
     </div>
   );
 }
