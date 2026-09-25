@@ -19,6 +19,7 @@ const tag = crypto.randomBytes(6).toString('hex');
 const state = fs.mkdtempSync(path.join(os.tmpdir(), `golem-model-profiles-${tag}-`));
 const screenshotModal = path.join(os.tmpdir(), `golem-model-profiles-${tag}-modal.png`);
 const screenshotAssigned = path.join(os.tmpdir(), `golem-model-profiles-${tag}-assigned.png`);
+const screenshotClaude = path.join(os.tmpdir(), `golem-model-profiles-${tag}-claude.png`);
 let child;
 let chrome;
 let failures = 0;
@@ -118,6 +119,26 @@ try {
   await card.getByRole('button', { name: 'Delete' }).click();
   await page.waitForTimeout(400);
   check('unreferenced profile delete succeeds', await page.locator('[data-testid="model-profile-card-Browser Profile"]').count() === 0);
+
+  // GOL-382 R11: a Claude profile — no provider, a free model id, effort levels.
+  await page.locator('[data-testid="model-profile-add"]').click();
+  await page.waitForSelector('[data-testid="model-profile-save"]');
+  await page.locator('[data-testid="model-profile-name"]').fill('Claude Profile');
+  await page.locator('[data-testid="model-profile-harness"]').selectOption('claude');
+  check('claude hides the provider field', await page.locator('#model-profile-provider').count() === 0 && await page.locator('[data-testid="model-profile-provider-input"]').count() === 0);
+  const effortOptions = await page.locator('[data-testid="model-profile-thinking"] option').allTextContents();
+  check('claude offers default plus effort levels', JSON.stringify(effortOptions) === JSON.stringify(['default', 'low', 'medium', 'high', 'xhigh', 'max']), JSON.stringify(effortOptions));
+  await page.locator('[data-testid="model-profile-model-input"]').fill('claude-opus-5-5');
+  await page.locator('[data-testid="model-profile-thinking"]').selectOption('high');
+  await page.screenshot({ path: screenshotClaude, fullPage: true });
+  await page.locator('[data-testid="model-profile-save"]').click();
+  await page.waitForSelector('[data-testid="model-profile-card-Claude Profile"]');
+  const claudeCard = page.locator('[data-testid="model-profile-card-Claude Profile"]');
+  const claudeText = await claudeCard.innerText();
+  check('claude profile card shows harness, model and effort', /claude/.test(claudeText) && claudeText.includes('claude-opus-5-5') && claudeText.includes('effort · high'), claudeText);
+  const stored = await fetch(`${base}/api/model-profiles`).then((response) => response.json());
+  const storedClaude = (stored.profiles ?? stored).find?.((row) => row.name === 'Claude Profile');
+  check('claude profile persists with harness claude and no provider', storedClaude?.harness === 'claude' && storedClaude?.provider == null, JSON.stringify(storedClaude));
 } catch (error) {
   failures++;
   console.log(`[FAIL] unexpected browser journey error — ${error?.stack || error}`);
@@ -128,6 +149,6 @@ try {
     await new Promise((resolve) => child.once('exit', resolve));
   }
   fs.rmSync(state, { recursive: true, force: true });
-  console.log(`screenshots: ${screenshotModal} ${screenshotAssigned}`);
+  console.log(`screenshots: ${screenshotModal} ${screenshotAssigned} ${screenshotClaude}`);
   process.exit(failures === 0 ? 0 : 1);
 }

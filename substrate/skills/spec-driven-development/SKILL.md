@@ -5,7 +5,8 @@ description: Load when the human authorizes you to coordinate a named spec throu
 
 # Spec-driven development
 
-The reusable spec workflow for an authorized coordinator. Lead normally fills that role; a role
+The reusable spec workflow for an authorized coordinator. Usually the lead plans (gates 1–4) and
+hands the locked spec to an orchestrator (gates 5–7); a standalone session runs all of it; a role
 the human explicitly authorizes runs this method without adopting the lead persona. What counts
 as authorization, and its limits, are Global Rules § Delegation. Within it, `golem:team-ops`
 holds supported team operations.

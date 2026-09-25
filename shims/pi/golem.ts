@@ -9,10 +9,9 @@ import { createGolemClient, resolveGolemDashboardBaseUrl } from './lib/golem-cli
 import { GOLEM_TOOL_CONTRACTS } from './lib/golem-tool-contracts.js';
 import { createGolemToolRuntime } from './lib/golem-tool-runtime.js';
 import { PiNativeAdapter } from './lib/pi-native-adapter.js';
-import { readRoleCard, sessionsJsonPath, setSessionRole, validateSessionRole } from './lib/session-role.js';
+import { defaultSessionRole, readRoleCard, sessionsJsonPath, setSessionRole, validateSessionRole } from './lib/session-role.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PI_ROLES = new Set(['builder', 'explorer', 'reviewer', 'lead']);
 
 function formatTokens(count) {
   if (count == null) return '?';
@@ -269,10 +268,11 @@ export default function golem(pi) {
   pi.on('resources_discover', () => ({ skillPaths: [path.join(ROOT, 'skills')] }));
   pi.on('before_agent_start', (event, ctx) => {
     const sessionId = adapter.canonicalId || ctx.sessionManager.getSessionId();
-    const role = sessionRole(sessionId);
+    // An unassigned session boots with the configured default role (GOL-382 R3).
+    const role = sessionRole(sessionId) ?? defaultSessionRole();
     const instructions = fs.readFileSync(path.join(ROOT, 'instructions', 'AGENTS.md'), 'utf8').trim();
-    // No role assigned means lead (Global Rules § First, every session).
-    const roleCard = readRoleCard(PI_ROLES.has(role) ? role : 'lead');
+    let roleCard = null;
+    try { roleCard = role ? readRoleCard(role) : null; } catch { roleCard = null; }
     let ambient = '';
     try { ambient = projectContext(sessionId, ctx.cwd); } catch {}
     const boundary = 'Pi integration: follow the assigned role card, not every role supported by this harness. Golem teammates are separate sessions managed through golem CLI and team tools; Pi-native in-session subagents are unavailable.';

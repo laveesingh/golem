@@ -1,6 +1,6 @@
 {
   "name": "@laveesingh/golem",
-  "version": "5.23.2",
+  "version": "5.24.0",
   "description": "Golem — substrate compiler, dashboard/tracker, and CLI for the agentic harness.",
   "license": "MIT",
   "repository": {
@@ -43,7 +43,7 @@
   "scripts": {
     "check": "node --check cli/golem.js && npm run audit:skills && node cli/golem.js sync --check --all",
     "audit:skills": "node scripts/audit-skills.mjs && node scripts/audit-skills.mjs .claude/skills",
-    "test": "node test/claude-cli.test.mjs && node test/pi-cli.test.mjs && node test/role-preset.test.mjs && node test/model-profiles.test.mjs && node test/model-catalog.test.mjs && node test/dashboard-model-profiles.test.mjs && node test/worker-journey.test.mjs && node test/state-watcher.test.mjs && node test/dashboard-lifecycle.test.mjs && node test/instruction-block.test.mjs && node test/instruction-workflow.test.mjs && node test/session-facts.test.mjs && node test/session-project-pinning.test.mjs && node test/pi-journey.test.mjs && node test/pi-tools-journey.test.mjs && node test/pi-tracker-integration.test.mjs && node test/model-providers.test.mjs && node test/substrate-api.test.mjs && node test/scrub-legacy-harnesses.test.mjs && node mcp/channel/tracker-client.test.mjs && npm run test:collaboration",
+    "test": "node test/claude-cli.test.mjs && node test/pi-cli.test.mjs && node test/role-preset.test.mjs && node test/session-start-role.test.mjs && node test/intake-suggestion.test.mjs && node test/model-profiles.test.mjs && node test/model-catalog.test.mjs && node test/dashboard-model-profiles.test.mjs && node test/worker-journey.test.mjs && node test/state-watcher.test.mjs && node test/dashboard-lifecycle.test.mjs && node test/instruction-block.test.mjs && node test/instruction-workflow.test.mjs && node test/session-facts.test.mjs && node test/session-project-pinning.test.mjs && node test/pi-journey.test.mjs && node test/pi-tools-journey.test.mjs && node test/pi-tracker-integration.test.mjs && node test/model-providers.test.mjs && node test/substrate-api.test.mjs && node test/scrub-legacy-harnesses.test.mjs && node mcp/channel/tracker-client.test.mjs && npm run test:collaboration",
     "test:collaboration": "node test/cross-harness-matrix.test.mjs && node test/notification-cli.test.mjs && node test/notification-schedule.test.mjs && node test/pi-delivery-failures.test.mjs && node test/notification-delivery.test.mjs && node test/typed-immediate-retry.test.mjs && node test/typed-worker-endpoint.test.mjs",
     "postinstall": "npm ci --omit=dev --prefix mcp/channel",
     "test:release": "node test/release-smoke.mjs",

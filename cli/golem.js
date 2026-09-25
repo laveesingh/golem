@@ -34,6 +34,7 @@ import { isHarnessEnabled, loadConfig, saveConfig } from '../lib/golem-config.js
 import { dashboardUrl, probeDashboard, startDashboardDetached, stopDashboard } from '../lib/dashboard-process.js';
 import { MIN_PI_NODE, SUPPORTED_PI_VERSION, piNodeSupported } from '../lib/pi-compatibility.js';
 import { resolveRolePreset } from '../lib/role-preset.js';
+import { CLAUDE_CHANNEL_FLAG, GOLEM_CLAUDE_CHANNEL } from '../lib/claude-channel.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
 import { HERDR_SUPPORTED_VERSION, herdrSessionForProject, herdrVersion } from '../lib/herdr-driver.js';
 
@@ -744,9 +745,9 @@ Run:
                        terminal, stop it, notify a session, set a role, or
                        clean up duplicate session rows.
                        See golem agent --help.
-  team create|list|lead|close [--help]
-                       Lead-owned teams: create a team and its herdr
-                       workspace, list teams, take a team's lead, or close
+  team create|list|join|close [--help]
+                       Teams: create a team and its herdr workspace, list
+                       teams, join a team (or own it with --owner), or close
                        a team and stop only its agents.
   ticket <operation> [args] [flags]
                        Flat agent authoring family over the tracker REST API:
@@ -805,8 +806,6 @@ function cmdRemoved(name) {
   fatal(2, `Error: \`${name}\` is a v3 subcommand that has been removed in golem v4.\n\nRun \`golem help\` for the surviving commands.`);
 }
 
-const CLAUDE_CHANNEL_FLAG = '--dangerously-load-development-channels';
-const GOLEM_CLAUDE_CHANNEL = 'plugin:golem@golem-workspace';
 
 function claudeLauncherHelp() {
   log(`Usage: golem claude [--backend native|ollama] [--model <id>] [-- <claude args...>]
@@ -1038,6 +1037,9 @@ async function cmdPi(args) {
     if (!profileExec) {
       fatal(2, `golem pi: unknown model profile "${profile}"; expected one of: ${listProfileNames().join(', ') || '(none)'}`);
     }
+    if ((profileExec.harness ?? 'pi') !== 'pi') {
+      fatal(2, `golem pi: model profile "${profile}" runs on ${profileExec.harness}, not pi`);
+    }
   }
   const effectiveProvider = provider ?? profileExec?.provider ?? null;
   const effectiveModel = model ?? profileExec?.model ?? null;
@@ -1088,7 +1090,8 @@ async function cmdPi(args) {
   if (!dashboard.ok) err(`golem pi: dashboard unavailable (${dashboard.error}); starting in degraded mode and tracker tools will fail until it returns`);
 
   Object.assign(childEnv, {
-    GOLEM_PI_LAUNCH_NONCE: randomUUID(),
+    // A managed spawn passes its worker id as the nonce and waits for it (GOL-382 R5).
+    GOLEM_PI_LAUNCH_NONCE: process.env.GOLEM_PI_LAUNCH_NONCE || randomUUID(),
     GOLEM_PI_VERSION: piVersion,
     GOLEM_PI_EXTENSION_VERSION: readPackageVersion(),
     // Skip Pi's boot-time pi.dev catalog refresh: it hangs ~15s when pi.dev is

@@ -152,7 +152,7 @@ try {
   assert.equal(readRoleRegistry().find((row) => row.name === 'preset').exec.thinking, 'high');
   assert.throws(() => updateRoleExec('preset', { thinking: 'invalid' }), /thinking must be one of/);
   assert.equal(resolveRoleExecution('preset').thinking, 'high', 'invalid writes do not reach the registry');
-  assert.throws(() => updateRoleMeta('preset', { exec: { harness: 'claude' } }), /harness must be "pi"/);
+  assert.throws(() => updateRoleMeta('preset', { exec: { harness: 'codex' } }), /harness must be one of pi, claude/);
   assert.throws(() => createRole({
     name: 'bad-preset',
     exec: { provider: 'p', model: 'm', thinking: 'invalid' },
@@ -204,7 +204,13 @@ try {
     thinking: 'medium',
     name: null,
   });
-  assert.throws(() => validateRolePreset({ harness: 'claude', provider: 'p', model: 'm', thinking: 'medium' }, { applyDefaults: false }), /harness must be "pi"/);
+  // GOL-382 R11: claude is a managed harness; it needs a model and takes an optional effort.
+  assert.deepEqual(validateRolePreset({ harness: 'claude', provider: 'p', model: 'm', thinking: 'medium' }, { applyDefaults: false }),
+    { harness: 'claude', provider: null, model: 'm', thinking: 'medium', name: null });
+  assert.deepEqual(validateRolePreset({ harness: 'claude', model: 'm' }, { applyDefaults: false }),
+    { harness: 'claude', provider: null, model: 'm', thinking: null, name: null });
+  assert.throws(() => validateRolePreset({ harness: 'claude', model: 'm', thinking: 'minimal' }, { applyDefaults: false }), /thinking must be one of low/);
+  assert.throws(() => validateRolePreset({ harness: 'codex', provider: 'p', model: 'm', thinking: 'medium' }, { applyDefaults: false }), /harness must be one of pi, claude/);
   assert.throws(() => validateRolePreset({ harness: 'pi', provider: 'p', model: 'm', thinking: 'invalid' }, { applyDefaults: false }), /thinking must be one of/);
   assert.throws(() => validateRolePreset({ harness: 'pi', provider: null, model: 'm', thinking: 'medium' }, { applyDefaults: false }), /provider is required/);
   assert.throws(() => validateRolePreset({ harness: 'pi', provider: 'p', model: null, thinking: 'medium' }, { applyDefaults: false }), /model is required/);
@@ -258,6 +264,31 @@ try {
   assert.match(noPreset.stderr, /no execution preset/);
   assert.match(noPreset.stderr, /builder, designer, explorer, reviewer/);
   assert.doesNotMatch(noPreset.stderr, /model is required/);
+
+  // GOL-382 R1/R2: every packaged card is a registered role, and old aliases
+  // such as planner are no longer rewritten to another role.
+  const { seedRoles, setSessionRole, sessionsJsonPath } = await import('../lib/session-role.js');
+  // Check against the source card files, not the seed function's own output:
+  // a stale plugin/ copy must not hide a card that exists in substrate/.
+  const substrateCards = fs.readdirSync(path.join(repo, 'substrate', 'roles'))
+    .filter((file) => file.endsWith('.md')).map((file) => file.slice(0, -3));
+  assert.ok(substrateCards.length > 0, 'substrate has role cards');
+  const registered = readRoleRegistry().map((role) => role.name);
+  for (const name of substrateCards) {
+    assert.ok(registered.includes(name), `substrate role card ${name} is a registered role`);
+    assert.ok(seedRoles().some((role) => role.name === name), `substrate role card ${name} is seeded`);
+  }
+  createRole({ name: 'planner', body: '# Role: planner\n' });
+  assert.ok(readRoleRegistry().some((role) => role.name === 'planner'), 'planner is a role of its own');
+  const sessionsFile = sessionsJsonPath();
+  const sessionsReg = fs.existsSync(sessionsFile) ? JSON.parse(fs.readFileSync(sessionsFile, 'utf8')) : { version: 1, sessions: [] };
+  sessionsReg.sessions.push({ session_id: 'alias-session', harness: 'claudecode', name: 'alias' });
+  fs.mkdirSync(path.dirname(sessionsFile), { recursive: true });
+  fs.writeFileSync(sessionsFile, JSON.stringify(sessionsReg));
+  setSessionRole('alias-session', 'planner', { by: 'human:cli' });
+  readRoleRegistry();
+  const aliasRow = JSON.parse(fs.readFileSync(sessionsJsonPath(), 'utf8')).sessions.find((row) => row.session_id === 'alias-session');
+  assert.equal(aliasRow?.role, 'planner', 'a planner session keeps its role across registry reloads');
 
   const modelWithoutProvider = run(['pi', '--model', 'model-only']);
   assert.equal(modelWithoutProvider.status, 2);

@@ -282,6 +282,25 @@ async function main() {
   assert.ok(prompt.systemPrompt.includes(renderedInstructions), 'Golem instructions are injected without a Pi profile file');
   const builderRoleCard = fs.readFileSync(path.join(render, 'roles', 'builder.md'), 'utf8').trim();
   assert.ok(builderRoleCard.length > 0 && prompt.systemPrompt.includes(builderRoleCard), 'the assigned role card is injected at the safe turn boundary');
+  // GOL-382 R1/R3: any registered role gets its own card (designer used to get
+  // the lead card), and an unassigned session gets the configured default.
+  const renderedCard = (role) => fs.readFileSync(path.join(render, 'roles', `${role}.md`), 'utf8').trim();
+  const promptFor = async () => (await harness.emit('before_agent_start', { prompt: 'role check', systemPrompt: 'Pi base prompt' })).systemPrompt;
+  assert.equal((await harness.tools.get('session_role').execute('tool-role-designer', { role: 'designer' }, undefined, undefined, harness.ctx)).details.ok, true);
+  let rolePrompt = await promptFor();
+  assert.ok(rolePrompt.includes(renderedCard('designer')) && !rolePrompt.includes(renderedCard('lead')), 'a role outside the old fixed list gets its own card');
+  assert.equal((await harness.tools.get('session_role').execute('tool-role-clear', { role: 'clear' }, undefined, undefined, harness.ctx)).details.ok, true);
+  rolePrompt = await promptFor();
+  assert.ok(rolePrompt.includes(renderedCard('lead')), 'with no roles.default key an unassigned session boots as lead');
+  const configPath = path.join(env.GOLEM_HOME, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({ roles: { default: 'reviewer' } }));
+  rolePrompt = await promptFor();
+  assert.ok(rolePrompt.includes(renderedCard('reviewer')) && !rolePrompt.includes(renderedCard('lead')), 'roles.default picks the unassigned card');
+  fs.writeFileSync(configPath, JSON.stringify({ roles: { default: null } }));
+  rolePrompt = await promptFor();
+  for (const role of ['lead', 'reviewer', 'builder', 'designer']) assert.ok(!rolePrompt.includes(renderedCard(role)), `roles.default null injects no card (${role})`);
+  fs.rmSync(configPath);
+  assert.equal((await harness.tools.get('session_role').execute('tool-role-builder', { role: 'builder' }, undefined, undefined, harness.ctx)).details.ok, true);
   assert.ok(prompt.systemPrompt.includes(execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()), 'L4 includes a real recent commit, not only a heading');
   assert.ok(fs.existsSync(path.join(discovered.skillPaths[0], 'spec-writing', 'SKILL.md')), 'the discovered skill pool includes spec-writing');
   let lease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === sessionId);

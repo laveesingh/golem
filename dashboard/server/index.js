@@ -30,8 +30,9 @@ import { listIdeas, createIdea, popIdea, readIdea } from './ideas.js';
 import { initDispatchDrainer } from './dispatch-queue.js';
 import { registerSubstrateRoutes } from './substrate.js';
 import { teamAssists } from './team-assist.js';
-import { golemHome, dashboardJsonPath, journalDirFor, sessionsJsonPath } from '../../lib/golem-home.js';
-import { createRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.js';
+import { golemHome, dashboardJsonPath, journalDirFor, projectsJsonPath, sessionsJsonPath } from '../../lib/golem-home.js';
+import { projectIdFor } from '../../lib/project-id.js';
+import { createRole, defaultSessionRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.js';
 import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../../lib/worker-manager.js';
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
 import { recordTypedEnvelopeOutcome } from './typed-delivery.js';
@@ -183,60 +184,58 @@ function ticketSlug(title) {
     .slice(0, 48);
 }
 
-function workspaceBlock(ticket) {
-  const id = ticket.display_id || ticket.id;
-  const slug = ticketSlug(ticket.title);
-  const branch = `feat/${id.toLowerCase()}-${slug}`;
-  const dir = `.worktrees/${id}-${slug}/`;
-  return [
-    '',
-    '## Workspace: worktree',
-    `Branch: \`${branch}\``,
-    `Worktree dir: \`${dir}\``,
-    '',
-    '### Setup',
-    '```bash',
-    `git worktree add ${dir} -b ${branch} main`,
-    `cp -Rc node_modules ${dir}node_modules`,
-    `cp -Rc mcp/channel/node_modules ${dir}mcp/channel/node_modules`,
-    '```',
-    '',
-    '### Rules',
-    '- Build inside the worktree; commit conventional commits on the branch.',
-    '- Rebase on main before handing off for review.',
-    '- **Prohibited inside the worktree:** `golem sync`, restarting the dashboard, editing the main checkout, claiming shared runtimes (port 7420, docker stacks).',
-    '- Self-contained checks only: unit tests, `node --check`, temp-DB scripts.',
-    '',
-    '### Hand-off',
-    `- Closing brief MUST include \`branch: ${branch}\` line.`,
-    '- Ticket → review when done; the orchestrator reconciles via `git merge --no-ff` on main.',
-  ].join('\n');
+// GOL-382 R7: briefs carry facts. What a session does with a dispatch — state
+// moves, worktree setup, merge ownership, return routing — is workflow and
+// lives in the instructions. A project may add its own text in
+// .agents/briefs/dispatch.md; it is appended verbatim with {{ticket_id}},
+// {{ticket_slug}}, {{ticket_title}} and {{workspace}} filled in.
+function projectBriefTemplate(ticket, workspace) {
+  let root = null;
+  try {
+    const registry = JSON.parse(fs.readFileSync(projectsJsonPath(), 'utf8'));
+    root = (registry.projects ?? []).find((entry) => entry?.path && (
+      entry.id === ticket.project_id || projectIdFor(path.resolve(entry.path)) === ticket.project_id
+    ))?.path ?? null;
+  } catch {
+    root = null;
+  }
+  if (!root) return null;
+  let template = null;
+  try {
+    template = fs.readFileSync(path.join(root, '.agents', 'briefs', 'dispatch.md'), 'utf8').trim();
+  } catch {
+    return null;
+  }
+  if (!template) return null;
+  const values = {
+    ticket_id: ticket.display_id || ticket.id,
+    ticket_slug: ticketSlug(ticket.title),
+    ticket_title: ticket.title ?? '',
+    workspace: workspace || '',
+  };
+  return template.replace(/\{\{(ticket_id|ticket_slug|ticket_title|workspace)\}\}/g, (_match, key) => values[key]);
 }
 
-function authenticatedReturnBlock(senderSessionId, ticketId) {
-  if (!senderSessionId) return [];
+function briefFacts(ticket, { messageId = null, senderSessionId = null, workspace = null } = {}) {
   return [
-    '',
-    '## Return route',
-    `Authenticated delegating session_id: ${senderSessionId}`,
-    `Return notification: notify that exact recipient id (ticket ${ticketId} context) using golem:team-ops for your harness; keep the durable report in the tracker.`,
-    'This immutable session id came from the trusted handoff envelope. Do not route by a label/name, rediscover a peer, or choose a different lead.',
-  ];
+    messageId ? `Dispatch message_id: ${messageId} (pass it as envelope_id when you ack this dispatch)` : null,
+    senderSessionId ? `Authenticated delegating session_id: ${senderSessionId}` : null,
+    workspace ? `Workspace: ${workspace}` : null,
+  ].filter(Boolean);
 }
 
 function buildDispatchBrief(ticket, note, workspace, messageId = null, senderSessionId = null) {
   if (ticket?.kind === 'spec') return buildSpecBrief(ticket, note, workspace, messageId, senderSessionId);
   const id = ticket.display_id || ticket.id;
-  let brief = [
-    `You've been assigned tracker ticket ${id}: "${ticket.title}" (project ${ticket.project_id}, kind ${ticket.kind}).\n\n` +
-    `${note ? note + '\n\n' : ''}` +
-    `Load it with the golem tracker tools (ticket_get ${id}) to read the full body, acceptance criteria, and comment thread, then pick it up: move it to in_progress, do the work, comment progress, and move it to review/done when complete. ` +
-    `If something blocks you, comment the blocker on the ticket, move it to blocked, and notify the delegating session.` +
-    (messageId ? `\n\nDispatch message_id: ${messageId}\nAcknowledge this dispatch first with ack({ kind: 'brief', summary: '<one sentence>', envelope_id: '${messageId}' }).` : ''),
-    ...authenticatedReturnBlock(senderSessionId, id),
-  ].join('\n');
-  if (workspace === 'worktree') brief += workspaceBlock(ticket);
-  return brief;
+  const lines = [
+    `Ticket dispatch: ${id} "${ticket.title}" (project ${ticket.project_id}, kind ${ticket.kind}, state ${ticket.state ?? 'unknown'}).`,
+    note ? `\nNote:\n${note}` : null,
+    '',
+    ...briefFacts(ticket, { messageId, senderSessionId, workspace }),
+    `Read it with ticket_get ${id} (or golem ticket get ${id}).`,
+    projectBriefTemplate(ticket, workspace),
+  ];
+  return lines.filter((line) => line != null).join('\n');
 }
 
 function buildSpecBrief(ticket, note, workspace, messageId = null, senderSessionId = null) {
@@ -258,13 +257,10 @@ function buildSpecBrief(ticket, note, workspace, messageId = null, senderSession
     ? children.map((c) => `- ${c.display_id || c.id}: ${c.title} — ${c.state}`).join('\n')
     : 'No children.';
   const lines = [
-    `You've been assigned spec ticket ${id}: "${ticket.title}" (project ${ticket.project_id}).`,
+    `Spec dispatch: ${id} "${ticket.title}" (project ${ticket.project_id}, state ${ticket.state}).`,
+    note ? `\nNote:\n${note}` : null,
     '',
-    note || null,
-    'This is a full-context spec dispatch. Re-read the spec, the active comment feedback, and the child summaries before proceeding.',
-    '',
-    `Spec: ${id}`,
-    `State: ${ticket.state}`,
+    ...briefFacts(ticket, { messageId, senderSessionId, workspace }),
     '',
     '## Spec Body',
     ticket.body || '(empty)',
@@ -274,13 +270,8 @@ function buildSpecBrief(ticket, note, workspace, messageId = null, senderSession
     '',
     '## Children',
     childSection,
-    '',
-    `Load it with the golem tracker tools (ticket_get ${id}) to read the full body, comment thread, and links, then pick it up: move it to in_progress, do the work, comment progress, and move it to review/done when complete.`,
-    'If something blocks you, comment the blocker on the spec, move it to blocked, and notify the delegating session.',
-    messageId ? `Dispatch message_id: ${messageId}\nAcknowledge this dispatch first with ack({ kind: 'brief', summary: '<one sentence>', envelope_id: '${messageId}' }).` : null,
-    ...authenticatedReturnBlock(senderSessionId, id),
+    projectBriefTemplate(ticket, workspace),
   ];
-  if (workspace === 'worktree') lines.push(workspaceBlock(ticket));
   return lines.filter((line) => line != null).join('\n');
 }
 
@@ -356,93 +347,28 @@ function firstClosingBriefLine(comment) {
   return line || 'Closing brief posted.';
 }
 
-function specRetroBody(tracker, spec) {
-  const children = (spec.children || []).filter((child) => child.kind !== 'spec');
-  const shipped = children.map((child) => {
-    const full = tracker.getTicket(child.id);
-    const closing = (full?.comments || []).reverse().find((c) => /closing brief/i.test(c.body || ''));
-    return `- ${child.display_id || child.id}: ${child.title} - ${closing ? firstClosingBriefLine(closing) : 'No closing brief found.'}`;
-  });
-  return [
-    '## What shipped',
-    shipped.length ? shipped.join('\n') : '- No child tickets found.',
-    '',
-    '## Lessons',
-    '- ',
-    '',
-    '## Proposed doc deltas',
-    '- CLAUDE.md: ',
-    '- AGENTS.md: ',
-    '- REPO-MAP.md: ',
-  ].join('\n');
+// GOL-382 R9: closing a spec records a milestone in the project journal. It
+// no longer posts a retro template; a retro is a workflow step for the
+// instructions to ask for.
+function recordSpecClosedMilestone(existing, ticket, actor = 'system') {
+  if (!existing || !ticket || existing.kind !== 'spec' || ticket.kind !== 'spec' || existing.state === 'done' || ticket.state !== 'done') return;
+  try {
+    const journalDir = journalDirFor(ticket.project_id);
+    fs.mkdirSync(journalDir, { recursive: true });
+    fs.appendFileSync(path.join(journalDir, 'hook.jsonl'), `${JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'milestone',
+      session_id: actor,
+      project_id: ticket.project_id,
+      text: `Spec ${ticket.display_id || ticket.id} closed: ${ticket.title}`,
+    })}\n`, 'utf8');
+  } catch { /* the journal is best-effort */ }
 }
 
-function handleSpecClosed(tracker, existing, ticket, actor = 'system') {
-  if (!existing || !ticket || existing.kind !== 'spec' || ticket.kind !== 'spec' || existing.state === 'done' || ticket.state !== 'done') return null;
-  const fresh = tracker.getTicket(ticket.id);
-  if ((fresh.comments || []).some((c) => c.block_id === 'retro')) return null;
-
-  const text = `Spec ${fresh.display_id || fresh.id} closed: ${fresh.title}`;
-  const journalDir = journalDirFor(fresh.project_id);
-  fs.mkdirSync(journalDir, { recursive: true });
-  const line = JSON.stringify({
-    ts: new Date().toISOString(),
-    event: 'milestone',
-    session_id: actor,
-    project_id: fresh.project_id,
-    text,
-  });
-  fs.appendFileSync(path.join(journalDir, 'hook.jsonl'), `${line}\n`, 'utf8');
-
-  const comment = tracker.addComment(fresh.id, {
-    author: 'system:spec-close',
-    body: specRetroBody(tracker, fresh),
-    tag: 'note',
-    status: 'open',
-    block_id: 'retro',
-  });
-  return { ticket: tracker.getTicket(fresh.id), comment, milestone: JSON.parse(line) };
-}
-
+// GOL-382 R9: a promoted idea keeps the raw text as the spec body; the spec
+// shape comes from the instructions, not from a server template.
 function ideaSpecBody(body) {
-  return [
-    '# Spec: Promoted idea',
-    '',
-    '<!-- Authoring: golem:spec-writing. Keep only the blocks needed at the current stage. -->',
-    '',
-    '## Summary',
-    '',
-    'Requirements discussion. Ground the intent and surface the next human choices before design.',
-    '',
-    '## Intent (raw thoughts, preserved)',
-    '',
-    String(body || '').trim() || '(empty idea)',
-    '',
-    '## Grounding',
-    '',
-    '<relevant concepts, owners, dependencies, evidence, and unknowns>',
-    '',
-    '## Choices',
-    '',
-    '| Decision | Scope or design | Open or agreed | Detail |',
-    '|----------|-----------------|----------------|--------|',
-    '| <label> | <kind> | <status> | <link to the explanation> |',
-    '',
-    '## Requirements and scope',
-    '',
-    '- In: <scope>',
-    '- Out: <non-goal>',
-    '',
-    '## Design',
-    '',
-    '<after the human\'s go-ahead: approach, boundaries, consumers, removals, transition>',
-    '',
-    '## Acceptance',
-    '',
-    '- [ ] <observable behavior or outcome>',
-    '',
-    '<record actual evidence when checks run; a placeholder is not a passing check>',
-  ].join('\n');
+  return String(body || '').trim() || '(empty idea)';
 }
 
 function gateIdFromBlock(blockId) {
@@ -1511,12 +1437,7 @@ async function main() {
       if (attribution) return attribution;
       if (Object.prototype.hasOwnProperty.call(patch, 'parent_id')) patch.parent_id = resolveTicketIdField(patch.parent_id);
       const ticket = tracker.updateTicket(existing.id, patch);
-      const closeResult = handleSpecClosed(tracker, existing, ticket, patch.actor || 'human');
-      if (closeResult) {
-        broadcastWS({ type: 'ticket-comment', ticket_id: closeResult.ticket.id, comment: closeResult.comment });
-        broadcastWS({ type: 'ticket-updated', ticket: closeResult.ticket });
-        return closeResult.ticket;
-      }
+      recordSpecClosedMilestone(existing, ticket, patch.actor || 'human');
       broadcastWS({ type: 'ticket-updated', ticket });
       return ticket;
     } catch (err) {
@@ -1543,12 +1464,7 @@ async function main() {
       if (Object.prototype.hasOwnProperty.call(patch, 'before_id')) patch.before_id = resolveTicketIdField(patch.before_id);
       if (Object.prototype.hasOwnProperty.call(patch, 'after_id')) patch.after_id = resolveTicketIdField(patch.after_id);
       const ticket = tracker.moveTicket(existing.id, patch);
-      const closeResult = handleSpecClosed(tracker, existing, ticket, patch.actor || 'human');
-      if (closeResult) {
-        broadcastWS({ type: 'ticket-comment', ticket_id: closeResult.ticket.id, comment: closeResult.comment });
-        broadcastWS({ type: 'ticket-updated', ticket: closeResult.ticket });
-        return closeResult.ticket;
-      }
+      recordSpecClosedMilestone(existing, ticket, patch.actor || 'human');
       broadcastWS({ type: 'ticket-updated', ticket });
       return ticket;
     } catch (err) {
@@ -2422,8 +2338,8 @@ async function main() {
       });
     }
     const enriched = enrichDispatchableRows(out, { projectId: wanted });
-    const assists = teamAssists(enriched);
-    return enriched.map((row) => ({ ...row, suggested: row.session_id === assists.suggested_manager?.session_id ? 'lead' : null }));
+    const assists = teamAssists(enriched, { intakeRole: defaultSessionRole() });
+    return enriched.map((row) => ({ ...row, suggested: row.session_id === assists.suggested_intake?.session_id ? 'intake' : null }));
   });
 
   fastify.get('/api/roles', async () => roleCardsWithDefaults());
@@ -2705,7 +2621,8 @@ async function main() {
     try {
       const idea = await readIdea(req.params.id);
       const b = req.body ?? {};
-      const projectId = resolveProjectId(b.project_id || b.project || 'golem-1eba80');
+      // Ideas are global; without an explicit project the dashboard's own checkout is the home project.
+      const projectId = resolveProjectId(b.project_id || b.project || projectIdFor(REPO_ROOT));
       const title = String(b.title || idea.body.split('\n')[0] || 'Promoted idea').trim().slice(0, 120) || 'Promoted idea';
       const ticket = tracker.createTicket({
         project_id: projectId,

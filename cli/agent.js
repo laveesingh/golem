@@ -29,6 +29,7 @@ import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../lib/sessi
 import { listTeams } from '../lib/team-registry.js';
 import { findWorkerBySession, listWorkers } from '../lib/worker-registry.js';
 import { resolveCallerTeam } from '../lib/team-context.js';
+import { teamHasSession } from '../lib/team-registry.js';
 import { callerTeamId, resolveAgentRef, resolveAgentScope } from '../lib/agent-resolve.js';
 import { herdrStateFor, listHerdrAgentStates, projectHerdrSession } from '../lib/team-herdr.js';
 import {
@@ -552,9 +553,9 @@ async function cmdAgentList(o, { stdout, cwd, resolveContext, manager }) {
     if (scope.projectId != null && row?.project_id !== scope.projectId) return false;
     if (scope.teamId == null) return true;
     if (row?.team_id != null) return row.team_id === scope.teamId;
-    // An external session shows under team scope only when it leads the team.
+    // An external session shows under team scope when it owns or joined the team.
     if (row?.session_id == null) return false;
-    return teams.find((team) => team?.team_id === scope.teamId)?.lead_session_id === row.session_id;
+    return teamHasSession(teams.find((team) => team?.team_id === scope.teamId), row.session_id);
   };
   const rows = buildRosterRows(roster.filter(inScope).concat(ended.filter(inScope)), { teams });
   stdout(o['--json'] ? JSON.stringify(rows) : formatAgentTable(rows));

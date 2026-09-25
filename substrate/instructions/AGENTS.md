@@ -44,11 +44,13 @@ every project and every harness.
 
 | Role | Skill |
 |---|---|
-| lead | `golem:lead` |
+| lead (planner) | `golem:lead` |
+| orchestrator | `golem:orchestrating` |
 | builder | `golem:building` |
 | explorer | `golem:exploring` |
 | reviewer | `golem:reviewing` |
 | designer | `golem:designing` |
+| standalone | its role card |
 
 - Your role card is the contract; the skill is the method. Authorized spec coordination:
   `golem:spec-driven-development`.
