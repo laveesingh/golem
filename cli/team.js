@@ -31,14 +31,15 @@ const commands = {
       'Examples:',
       '  golem team create "Blue team" --json   # machine-readable team record',
     ].join('\n') },
-  'team list': { flags: { '--project': 'value', '--json': 'bool' }, args: 0,
+  'team list': { flags: { '--all': 'bool', '--project': 'value', '--json': 'bool' }, args: 0,
     help: [
-      'golem team list [--project <id-or-path>] [--json]',
+      'golem team list [--all] [--project <id-or-path>] [--json]',
       '',
-      'Usage: list the project teams with owner, members, agent count, state and workspace.',
+      'Usage: list the open project teams with owner, members, agent count, state and workspace. --all includes closed teams.',
       'Input: defaults to the caller project. Exit codes: 0 listed, 1 operational failure, 2 invalid input/context.',
       'Examples:',
       '  golem team list --json   # this project, machine-readable',
+      '  golem team list --all    # include closed teams',
     ].join('\n') },
   'team join': { flags: { '--owner': 'bool', '--project': 'value', '--json': 'bool' }, args: 1,
     help: [
@@ -165,7 +166,7 @@ export async function runTeam(family, args, {
     const projectId = await resolveTeamProject(o['--project'], { cwd, resolveContext });
 
     if (key === 'team list') {
-      const teams = listTeams({ projectId });
+      const teams = listTeams({ projectId, includeClosed: Boolean(o['--all']) });
       const views = teams.map((team) => teamView(team, agentCountFor(team.team_id, projectId)));
       if (json) {
         stdout(JSON.stringify(views));
