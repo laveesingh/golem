@@ -97,7 +97,7 @@ export function endpointLeasesJsonPath() {
 export function workersJsonPath() {
   return path.join(golemHome(), 'workers.json');
 }
-// One durable record per lead-owned team (GOL-363 G7). Each team is a
+// One durable record per team (GOL-363 G7, GOL-382 R4). Each team is a
 // workspace-owning unit inside one project: worker rows point at it through
 // team_id. Same lock and atomic writer pattern as the worker registry.
 export function teamsJsonPath() {

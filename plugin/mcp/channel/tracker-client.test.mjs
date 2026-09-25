@@ -742,6 +742,14 @@ async function main() {
   check('human REST PATCH repairs a wrong bridge source_ref',
     humanRepair.ok && afterRepair.json?.source_ref === 'github:example/repo#99',
     `${humanRepair.status} ${afterRepair.text}`);
+  // GOL-382 R9: closing a spec posts no server-authored retro template.
+  const specClosed = await callTool('ticket_update', { id: specCreated.json?.id, state: 'done' });
+  const specAfterClose = await callTool('ticket_get', { id: specCreated.json?.id });
+  check('closing a spec posts no retro comment',
+    !specClosed.result.isError && specAfterClose.json?.state === 'done'
+      && !(specAfterClose.json?.comments ?? []).some((comment) => comment.block_id === 'retro' || comment.author === 'system:spec-close'),
+    specAfterClose.text);
+  await callTool('ticket_update', { id: specCreated.json?.id, state: 'todo' });
   const scopedSpecs = await callTool('ticket_list', { project: PROJECT_ID, kind: 'spec' });
   check('MCP project-scoped spec list does not widen across projects',
     !scopedSpecs.result.isError
@@ -768,12 +776,29 @@ async function main() {
   const dispatched = await callTool('ticket_dispatch', { id: walk.id, session_id: SESSION_ID, note: 'verification routing' });
   check('review work still dispatches for verification', !dispatched.result.isError, dispatched.text);
   const dispatchBody = channelEvents.filter((event) => event.params?.meta?.kind === 'brief').at(-1)?.params?.content || '';
-  check('ticket dispatch carries authenticated return route',
+  check('ticket dispatch carries the authenticated delegating session id',
     dispatchBody.includes(`Authenticated delegating session_id: ${SESSION_ID}`)
-      && dispatchBody.includes('Return notification: notify that exact recipient id')
-      && dispatchBody.includes('golem:team-ops')
       && !/session_notify\(/.test(dispatchBody),
     dispatchBody);
+  // GOL-382 R7: the brief carries facts, not workflow steps.
+  check('ticket dispatch carries no workflow prose',
+    !/move it to in_progress|Return notification|git worktree add|merge --no-ff/.test(dispatchBody)
+      && dispatchBody.includes(walk.display_id || walk.id),
+    dispatchBody);
+  // A project's own .agents/briefs/dispatch.md is appended with placeholders filled.
+  fs.mkdirSync(path.join(uniqueProjectRoot, '.agents', 'briefs'), { recursive: true });
+  fs.writeFileSync(path.join(uniqueProjectRoot, '.agents', 'briefs', 'dispatch.md'),
+    'PROJECT-BRIEF id={{ticket_id}} slug={{ticket_slug}} ws={{workspace}}\n');
+  const templated = await callTool('ticket_create', { project: uniqueProjectId, title: 'Brief Template Probe', kind: 'task', assignee: SESSION_ID });
+  check('ticket_create in the registered project succeeds', !templated.result.isError && !!templated.json?.id, templated.text);
+  const templatedDispatch = await callTool('ticket_dispatch', { id: templated.json?.id, session_id: SESSION_ID, workspace: 'worktree' });
+  check('templated ticket dispatches', !templatedDispatch.result.isError, templatedDispatch.text);
+  const templatedBody = channelEvents.filter((event) => event.params?.meta?.kind === 'brief').at(-1)?.params?.content || '';
+  const templatedId = templated.json?.display_id || templated.json?.id;
+  check('project brief template is appended with placeholders filled',
+    templatedBody.includes(`PROJECT-BRIEF id=${templatedId} slug=brief-template-probe ws=worktree`)
+      && templatedBody.includes('Workspace: worktree'),
+    templatedBody);
 
   const closed = await callTool('ticket_update', { id: walk.id, state: 'done' });
   check('ticket_update closes review -> done through MCP alone', !closed.result.isError && closed.json?.state === 'done', closed.text);
