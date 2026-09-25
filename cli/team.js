@@ -8,6 +8,7 @@ import path from 'node:path';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
 import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import { NotificationError } from '../lib/notification-contract.js';
+import { formatTable } from '../lib/cli-table.js';
 import { createTeam, findTeam, joinTeam, listTeams, setTeamWorkspace, closeTeam } from '../lib/team-registry.js';
 import { activeWorkerStates, listWorkers } from '../lib/worker-registry.js';
 import { killWorker } from '../lib/worker-manager.js';
@@ -143,6 +144,28 @@ function teamView(team, workerCount) {
   };
 }
 
+const TEAM_TABLE_COLUMNS = [
+  { key: 'slug', label: 'TEAM', max: 24 },
+  { key: 'label', label: 'LABEL', max: 24 },
+  { key: 'owner', label: 'OWNER', max: 40 },
+  { key: 'members', label: 'MEMBERS', max: 7 },
+  { key: 'agents', label: 'AGENTS', max: 6 },
+  { key: 'state', label: 'STATE', max: 6 },
+  { key: 'workspace', label: 'WORKSPACE', max: 9 },
+];
+
+function teamTableRow(view) {
+  return {
+    slug: view.slug,
+    label: view.label,
+    owner: view.owner?.session_id,
+    members: view.members.length,
+    agents: view.agent_count,
+    state: view.state,
+    workspace: view.herdr_workspace_id,
+  };
+}
+
 function agentCountFor(teamId, projectId) {
   const active = activeWorkerStates();
   return listWorkers({ projectId }).filter((row) => (
@@ -172,9 +195,7 @@ export async function runTeam(family, args, {
         stdout(JSON.stringify(views));
         return 0;
       }
-      stdout(views.length
-        ? views.map((view) => [view.slug, view.label, view.owner ? view.owner.session_id : '-', `${view.members.length} members`, `${view.agent_count} agents`, view.state, view.herdr_workspace_id ?? '-'].join('  ')).join('\n')
-        : 'No teams.');
+      stdout(views.length ? formatTable(TEAM_TABLE_COLUMNS, views.map(teamTableRow)) : 'No teams.');
       return 0;
     }
 
