@@ -58,11 +58,17 @@ const nameIndex = args.indexOf('--name');
 const name = nameIndex >= 0 ? args[nameIndex + 1] : null;
 if (!name) process.exit(17);
 const registrationDir = process.env.GOLEM_TEST_REGISTRATION_DIR;
-fs.writeFileSync(path.join(registrationDir, name + '.json'), JSON.stringify({
-  session_id: 'golemtest-team-session-' + name,
+// One session per launch (GOL-382 R5): both teams run builder1, and each
+// launch must bind its own session through the launch nonce.
+const nonce = process.env.GOLEM_PI_LAUNCH_NONCE || 'none';
+// The time prefix keeps registration order, so the older builder1 is listed
+// first — the row a name match would wrongly take.
+fs.writeFileSync(path.join(registrationDir, String(Date.now()).padStart(15, '0') + '-' + name + '-' + nonce + '.json'), JSON.stringify({
+  session_id: 'golemtest-team-session-' + name + '-' + nonce.slice(0, 8),
   name,
   role: null,
   harness: 'pi',
+  launch_nonce: nonce,
   project_id: process.env.GOLEM_TEST_PROJECT_ID,
   status: 'idle',
 }));
@@ -87,11 +93,11 @@ Object.assign(process.env, {
 });
 
 const { readWorkers } = await import('../lib/worker-registry.js');
-const { listTeams, setTeamLead } = await import('../lib/team-registry.js');
+const { listTeams, joinTeam } = await import('../lib/team-registry.js');
 const { resolveCallerTeam } = await import('../lib/team-context.js');
 const { listHerdrWorkspaces, projectHerdrSession } = await import('../lib/team-herdr.js');
 const { killWorker, herdrAttachTarget } = await import('../lib/worker-manager.js');
-const { agentGet, paneList } = await import('../lib/herdr-driver.js');
+const { agentGet, paneList, paneRun, tabCreate } = await import('../lib/herdr-driver.js');
 const { runTeam } = await import('../cli/team.js');
 
 function readBody(request) {
@@ -178,12 +184,13 @@ async function main() {
   const syncResult = spawnSync(process.execPath, [cli, 'sync', '--target', 'pi'], { cwd: repo, env: { ...process.env }, encoding: 'utf8' });
   assert.equal(syncResult.status, 0, `sync --target pi failed: ${syncResult.stderr}`);
 
-  // Two teams, created from an unbound shell: no lead, own workspaces.
+  // Two teams, created from an unbound shell: no owner, own workspaces.
   const alphaCreated = await runCli(['team', 'create', 'Alpha Team', '--project', project, '--json']);
   assert.equal(alphaCreated.status, 0, alphaCreated.stderr);
   const alpha = JSON.parse(alphaCreated.stdout);
   assert.equal(alpha.slug, 'alpha-team');
-  assert.equal(alpha.lead, null);
+  assert.equal(alpha.owner, null);
+  assert.deepEqual(alpha.members, []);
   assert.ok(alpha.herdr_workspace_id, 'workspace created');
 
   const betaCreated = await runCli(['team', 'create', 'Beta Team', '--project', project, '--json']);
@@ -219,6 +226,10 @@ async function main() {
   assert.equal(alphaBuilder.herdr_agent_name, 'alpha-team-builder1');
   assert.equal(betaBuilder.herdr_agent_name, 'beta-team-builder1');
   assert.equal(alphaBuilder.herdr_workspace_id, alpha.herdr_workspace_id);
+  // GOL-382 R5: same name in two teams, two sessions — binding is by launch
+  // nonce, never by name.
+  assert.ok(alphaBuilder.session_id && betaBuilder.session_id, 'both builders bound a session');
+  assert.notEqual(alphaBuilder.session_id, betaBuilder.session_id, 'builder1 in two teams binds two distinct sessions');
   assert.equal(betaBuilder.herdr_workspace_id, beta.herdr_workspace_id);
   console.log(JSON.stringify({ cli_spawns: ['alpha-team-builder1', 'beta-team-builder1'], team_workspaces: true }));
 
@@ -232,21 +243,19 @@ async function main() {
   const namedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(namedList.status, 0, namedList.stderr);
   const namedRows = JSON.parse(namedList.stdout);
-  // Both teams run builder1, so the fixture fake pi (session id derived
-  // from the name) registers one roster row for the name; the list shows
-  // whichever worker it joins to. Every herdr row must still show state.
+  // Both teams run builder1 with their own sessions: the list shows both.
   const herdrRows = namedRows.filter((row) => row.host === 'herdr');
-  assert.ok(herdrRows.length >= 1, `list shows herdr rows: ${namedList.stdout.slice(0, 500)}`);
+  assert.equal(new Set(herdrRows.map((row) => row.session_id)).size, 2, `list shows both builder1 sessions: ${namedList.stdout.slice(0, 500)}`);
   for (const row of herdrRows) {
     assert.ok(row.herdr_state != null, `herdr row shows state: ${JSON.stringify(row)}`);
   }
   console.log(JSON.stringify({ agent_names_stick: ['alpha-team-builder1', 'beta-team-builder1'], herdr_list_states: herdrRows.map((row) => row.herdr_state) }));
 
-  // A lead spawns into its own team (G8): lead the alpha team, resolve.
-  // (A CLI subprocess cannot bind a lead session — no pi ancestry in tests —
-  // so the lead default stays covered at the resolveCallerTeam unit level,
+  // An owner spawns into its own team (G8): own the alpha team, resolve.
+  // (A CLI subprocess cannot bind a session — no pi ancestry in tests —
+  // so the owner default stays covered at the resolveCallerTeam unit level,
   // while everything around it goes through the real CLI.)
-  setTeamLead(alpha.team_id, 'lead-A');
+  joinTeam(alpha.team_id, 'lead-A', { owner: true });
   const teams = listTeams({ projectId });
   const resolved = resolveCallerTeam({
     projectId,
@@ -256,9 +265,9 @@ async function main() {
   });
   assert.equal(resolved.team_id, alpha.team_id, 'lead-A spawns into alpha');
 
-  // team lead moves the lead: lead-A takes beta, alpha is cleared.
+  // team join moves the session: lead-A joins beta as a member and leaves alpha.
   const leadStdout = [];
-  const leadCode = await runTeam('team', ['lead', 'beta-team', '--project', projectId], {
+  const leadCode = await runTeam('team', ['join', 'beta-team', '--project', projectId], {
     stdout: (text) => leadStdout.push(text),
     stderr: () => {},
     cwd: project,
@@ -266,8 +275,11 @@ async function main() {
   });
   assert.equal(leadCode, 0, leadStdout.join('\n'));
   const afterMove = listTeams({ projectId });
-  assert.equal(afterMove.find((row) => row.team_id === beta.team_id).lead_session_id, 'lead-A');
-  assert.equal(afterMove.find((row) => row.team_id === alpha.team_id).lead_session_id, null);
+  assert.deepEqual(afterMove.find((row) => row.team_id === beta.team_id).member_session_ids, ['lead-A']);
+  assert.equal(afterMove.find((row) => row.team_id === alpha.team_id).owner_session_id, null, 'joining beta leaves alpha');
+  const teamsFile = JSON.parse(fs.readFileSync(path.join(state, 'teams.json'), 'utf8'));
+  assert.ok(teamsFile.teams.every((row) => Object.hasOwn(row, 'lead_session_id') && row.lead_session_id === row.owner_session_id),
+    'writes mirror lead_session_id = owner for an old dashboard');
   assert.equal(
     resolveCallerTeam({ projectId, callerSessionId: 'lead-A', teams: afterMove }).team_id,
     beta.team_id,
@@ -277,7 +289,7 @@ async function main() {
   // An unbound spawn without --team refuses.
   const refused = await runCli(['agent', 'create', 'builder', '--project', project]);
   assert.equal(refused.status, 2, 'unbound spawn without --team refuses');
-  assert.match(refused.stderr, /no team: pass --team or run golem team lead <team>/);
+  assert.match(refused.stderr, /no team: pass --team or run golem team join <team>/);
 
   // team close retires only its own team: the CLI-spawned agents are live.
   const panesBefore = new Map(paneList(herdrSession).map((pane) => [pane.pane_id, pane]));
@@ -307,15 +319,36 @@ async function main() {
   assert.ok(!workspaces.some((row) => row.workspace_id === alpha.herdr_workspace_id), 'alpha workspace closed');
   assert.ok(workspaces.some((row) => row.workspace_id === beta.herdr_workspace_id), 'beta workspace kept');
 
-  const listed = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
+  // GOL-382 R4: a pane running an agent golem did not start (an owner started
+  // by hand) keeps the workspace open when the team closes.
+  const { pane: handPane } = tabCreate({ session: herdrSession, workspaceId: beta.herdr_workspace_id, label: 'hand', cwd: project });
+  paneRun({ session: herdrSession, paneId: handPane.pane_id, command: ['pi', '--name', 'hand-started'] });
+  const detected = await (async () => {
+    for (let i = 0; i < 60; i += 1) {
+      if (paneList(herdrSession).some((pane) => pane.pane_id === handPane.pane_id && pane.agent)) return true;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return false;
+  })();
+  assert.ok(detected, 'herdr detects the hand-started agent');
+  const betaClosed = await runCli(['team', 'close', 'beta-team', '--project', project, '--json']);
+  assert.equal(betaClosed.status, 0, betaClosed.stderr);
+  const betaResult = JSON.parse(betaClosed.stdout);
+  assert.deepEqual(betaResult.stopped, ['builder1']);
+  assert.equal(betaResult.workspace_closed, false, 'workspace stays open for the unmanaged agent');
+  assert.deepEqual(betaResult.workspace_kept_for, [handPane.pane_id]);
+  assert.ok(paneList(herdrSession).some((pane) => pane.pane_id === handPane.pane_id), 'the hand-started pane survives the close');
+  assert.ok(!paneList(herdrSession).some((pane) => pane.pane_id === betaBuilder.herdr_pane_id), 'the team agent pane is gone');
+
+  const listed = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json', '--ended']);
   assert.equal(listed.status, 0, listed.stderr);
   const rows = JSON.parse(listed.stdout);
-  assert.ok(rows.some((row) => row.team_id === beta.team_id), 'list shows team rows');
-  const tabled = await runCli(['agent', 'list', '--scope', 'project', '--project', project]);
+  assert.ok(rows.some((row) => row.team_id === beta.team_id), 'list shows team rows (ended included)');
+  const tabled = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended']);
   assert.match(tabled.stdout, /TEAM/, 'table carries the TEAM column');
 
   console.log(JSON.stringify({ teams: ['alpha-team', 'beta-team'], builder1_per_team: true, close_isolated: true }));
-  console.log('team journey passed: per-team builder1 via CLI, lead resolution, unbound refusal, lead move, isolated close');
+  console.log('team journey passed: per-team builder1 via CLI with distinct sessions, owner resolution, unbound refusal, team join move, isolated close, unmanaged pane keeps workspace');
 }
 
 let failed = null;

@@ -246,12 +246,12 @@ function profileProvider(provider, model) {
 
 function ProfileMark({ provider, model, harness = false }) {
   const entry = harness
-    ? window.ModelProviders?.harnessForId?.(provider || 'pi')
+    ? window.ModelProviders?.harnessForId?.(provider === 'claude' ? 'claudecode' : (provider || 'pi'))
     : profileProvider(provider, model);
   const src = entry?.iconIdleSrc || entry?.iconSrc || null;
   return (
     <span className={`model-profile-mark ${harness ? 'harness-mark' : `provider-mark provider-${entry?.id || 'fallback'}`}`} title={entry?.label || provider || 'Unknown'} aria-hidden="true">
-      {src ? <img src={src} alt=""/> : <span className="model-profile-mark-fallback">{harness ? 'π' : '·'}</span>}
+      {src ? <img src={src} alt=""/> : <span className="model-profile-mark-fallback">{harness ? (provider === 'claude' ? 'C' : 'π') : '·'}</span>}
     </span>
   );
 }
@@ -368,21 +368,30 @@ function catalogModels(catalog, provider, current) {
   return values;
 }
 
+// GOL-382 R11: a profile runs on pi (provider, model, thinking) or on claude
+// (model, optional effort). Mirrors lib/session-role.js validateExecFields.
+const PROFILE_HARNESSES = ['pi', 'claude'];
+const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
 function ModelProfileEditor({ profile, catalog, onCancel, onSave, saving, error }) {
-  const [draft, setDraft] = React.useState(() => ({
+  const initialDraft = () => ({
     name: profile?.name || '',
+    harness: profile?.harness || 'pi',
     provider: profile?.provider || '',
     model: profile?.model || '',
-    thinking: profile?.thinking || 'medium',
-  }));
+    thinking: profile?.thinking || (profile?.harness === 'claude' ? '' : 'medium'),
+  });
+  const [draft, setDraft] = React.useState(initialDraft);
   React.useEffect(() => {
-    setDraft({
-      name: profile?.name || '',
-      provider: profile?.provider || '',
-      model: profile?.model || '',
-      thinking: profile?.thinking || 'medium',
-    });
-  }, [profile?.name, profile?.provider, profile?.model, profile?.thinking]);
+    setDraft(initialDraft());
+  }, [profile?.name, profile?.harness, profile?.provider, profile?.model, profile?.thinking]); // eslint-disable-line
+  const claude = draft.harness === 'claude';
+  const setHarness = (harness) => setDraft({
+    ...draft,
+    harness,
+    provider: harness === 'claude' ? '' : draft.provider,
+    thinking: harness === 'claude' ? (CLAUDE_EFFORT_LEVELS.includes(draft.thinking) ? draft.thinking : '') : (draft.thinking || 'medium'),
+  });
 
   const providers = catalogProviders(catalog, draft.provider);
   const models = catalogModels(catalog, draft.provider, draft.model);
@@ -398,7 +407,7 @@ function ModelProfileEditor({ profile, catalog, onCancel, onSave, saving, error 
     provider: draft.provider,
     model,
   }));
-  const catalogReady = Array.isArray(catalog?.providers) && catalog.providers.length > 0;
+  const catalogReady = !claude && Array.isArray(catalog?.providers) && catalog.providers.length > 0;
   const setProvider = (provider) => {
     const nextModels = catalogModels(catalog, provider, '');
     const nextModel = nextModels.includes(draft.model) ? draft.model : (nextModels[0] || draft.model);
@@ -406,7 +415,9 @@ function ModelProfileEditor({ profile, catalog, onCancel, onSave, saving, error 
   };
   const submit = (event) => {
     event.preventDefault();
-    onSave({ ...draft, name: draft.name.trim(), provider: draft.provider.trim(), model: draft.model.trim() });
+    onSave(claude
+      ? { name: draft.name.trim(), harness: 'claude', model: draft.model.trim(), thinking: draft.thinking || null }
+      : { ...draft, name: draft.name.trim(), provider: draft.provider.trim(), model: draft.model.trim() });
   };
   return (
     <div className="model-profile-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
@@ -414,7 +425,7 @@ function ModelProfileEditor({ profile, catalog, onCancel, onSave, saving, error 
         <div className="model-profile-modal-head">
           <div>
             <div id="model-profile-editor-title" className="model-profile-modal-title">{profile ? 'Edit Model Profile' : 'Add Model Profile'}</div>
-            <div className="roles-save-state">Named Pi execution config shared by roles.</div>
+            <div className="roles-save-state">Named execution config (Pi or Claude) shared by roles.</div>
           </div>
           <button className="orch-btn ghost" type="button" onClick={onCancel} aria-label="Close model profile editor">×</button>
         </div>
@@ -426,9 +437,11 @@ function ModelProfileEditor({ profile, catalog, onCancel, onSave, saving, error 
             </label>
             <label className="model-profile-field">
               <span>Harness</span>
-              <input className="mono" value="pi" disabled aria-label="Harness"/>
+              <select data-testid="model-profile-harness" className="mono" value={draft.harness} onChange={(event) => setHarness(event.target.value)} aria-label="Harness">
+                {PROFILE_HARNESSES.map((harness) => <option key={harness} value={harness}>{harness}</option>)}
+              </select>
             </label>
-            <div className="model-profile-field">
+            {!claude && <div className="model-profile-field">
               <span>Provider</span>
               {catalogReady ? (
                 <ProfileChoice
@@ -442,7 +455,7 @@ function ModelProfileEditor({ profile, catalog, onCancel, onSave, saving, error 
               ) : (
                 <input data-testid="model-profile-provider-input" className="mono" value={draft.provider} onChange={(event) => setDraft({ ...draft, provider: event.target.value })} placeholder="provider (catalog unavailable)" required/>
               )}
-            </div>
+            </div>}
             <div className="model-profile-field model-profile-field-wide">
               <span>Model</span>
               {catalogReady ? (
@@ -456,25 +469,26 @@ function ModelProfileEditor({ profile, catalog, onCancel, onSave, saving, error 
                   placeholder={draft.provider ? 'Select model' : 'Select provider first'}
                 />
               ) : (
-                <input data-testid="model-profile-model-input" className="mono" value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })} placeholder="model (catalog unavailable)" required/>
+                <input data-testid="model-profile-model-input" className="mono" value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })} placeholder={claude ? 'Claude model id, e.g. claude-opus-5-5' : 'model (catalog unavailable)'} required/>
               )}
             </div>
             <label className="model-profile-field">
-              <span>Thinking</span>
+              <span>{claude ? 'Effort' : 'Thinking'}</span>
               <select data-testid="model-profile-thinking" className="mono" value={draft.thinking} onChange={(event) => setDraft({ ...draft, thinking: event.target.value })}>
-                {ROLE_THINKING_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
+                {claude && <option value="">default</option>}
+                {(claude ? CLAUDE_EFFORT_LEVELS : ROLE_THINKING_LEVELS).map((level) => <option key={level} value={level}>{level}</option>)}
               </select>
             </label>
           </div>
           <div className="model-profile-catalog-note">
             {catalog?.error
               ? `Catalog unavailable — saved values remain editable. ${catalog.error}`
-              : 'Provider and model choices come from Pi’s offline catalog.'}
+              : claude ? 'Claude agents start through golem claude in herdr.' : 'Provider and model choices come from Pi’s offline catalog.'}
           </div>
           {error && <div className="roles-inline-error" role="alert">{error}</div>}
           <div className="model-profile-modal-actions">
             <button className="orch-btn ghost" type="button" onClick={onCancel}>Cancel</button>
-            <button className="orch-btn" data-testid="model-profile-save" type="submit" disabled={saving || !draft.name.trim() || !draft.provider.trim() || !draft.model.trim()}>{saving ? 'Saving…' : 'Save profile'}</button>
+            <button className="orch-btn" data-testid="model-profile-save" type="submit" disabled={saving || !draft.name.trim() || (!claude && !draft.provider.trim()) || !draft.model.trim()}>{saving ? 'Saving…' : 'Save profile'}</button>
           </div>
         </form>
       </div>
@@ -527,7 +541,7 @@ function ModelProfilesPanel({ rev, onChanged }) {
   const openNew = () => {
     setEditorError(null);
     setPanelError(null);
-    setEditor({ name: '', provider: '', model: '', thinking: 'medium' });
+    setEditor({ name: '', harness: 'pi', provider: '', model: '', thinking: 'medium' });
   };
   const openExisting = (profile) => {
     setEditorError(null);
@@ -595,17 +609,17 @@ function ModelProfilesPanel({ rev, onChanged }) {
             <article className="model-profile-card" data-testid={`model-profile-card-${profile.name}`} key={profile.name}>
               <div className="model-profile-card-head">
                 <div className="model-profile-card-name" title={profile.name}>{profile.name}</div>
-                <span className="model-profile-harness-chip"><ProfileMark provider="pi" harness/> pi</span>
+                <span className="model-profile-harness-chip"><ProfileMark provider={profile.harness || 'pi'} harness/> {profile.harness || 'pi'}</span>
               </div>
               <div className="model-profile-card-model">
                 <ProfileMark provider={profile.provider} model={profile.model}/>
                 <span className="model-profile-card-model-text">
                   <strong>{profile.model}</strong>
-                  <span className="mono">{profile.provider}</span>
+                  {profile.provider && <span className="mono">{profile.provider}</span>}
                 </span>
               </div>
               <div className="model-profile-card-meta">
-                <span className="model-profile-thinking-chip">thinking · {profile.thinking}</span>
+                <span className="model-profile-thinking-chip">{profile.harness === 'claude' ? 'effort' : 'thinking'} · {profile.thinking || 'default'}</span>
                 <span title={assigned.length ? `Default for ${assigned.join(', ')}` : 'Not assigned to a role'}>{assigned.length ? `default · ${assigned.join(', ')}` : 'unassigned'}</span>
               </div>
               <div className="model-profile-card-actions">

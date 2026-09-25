@@ -28,7 +28,7 @@ fs.writeFileSync(path.join(binDir, 'herdr-stub'), '#!/bin/sh\nexit 1\n', { mode:
 process.env.GOLEM_HERDR_BIN = path.join(binDir, 'herdr-stub');
 
 const { runAgent, buildAgentRows } = await import('../cli/agent.js');
-const { createTeam, setTeamLead } = await import('../lib/team-registry.js');
+const { createTeam, joinTeam } = await import('../lib/team-registry.js');
 const { claimWorker, updateWorker } = await import('../lib/worker-registry.js');
 const { projectIdFor } = await import('../lib/project-id.js');
 const projectId = projectIdFor(projectDir);
@@ -36,7 +36,7 @@ const preset = { harness: 'pi', model: 'agent-cli-model' };
 
 const alpha = createTeam({ label: 'Alpha Team', projectId, herdrSession: 'agent-cli-test' });
 const beta = createTeam({ label: 'Beta Team', projectId, herdrSession: 'agent-cli-test' });
-setTeamLead(alpha.team_id, 'lead-A');
+joinTeam(alpha.team_id, 'lead-A', { owner: true });
 
 const alphaBuilder = claimWorker({ role: 'builder', projectId, preset, teamId: alpha.team_id });
 updateWorker(alphaBuilder.worker_id, { session_id: 'sess-alpha-1', state: 'live' });
@@ -230,10 +230,10 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   assert.equal(endedRows.find((row) => row.session_id === 'sess-beta-9').host, 'legacy');
   assert.ok(!JSON.parse(project.text).some((row) => row.session_id === 'sess-beta-9'), 'retired rows hidden by default');
 
-  // An external session shows under team scope only when it leads the team.
-  const { createTeam: createTeamInScope, setTeamLead: setLeadInScope } = await import('../lib/team-registry.js');
+  // An external session shows under team scope when it owns or joined the team.
+  const { createTeam: createTeamInScope, joinTeam: joinInScope } = await import('../lib/team-registry.js');
   const gamma = createTeamInScope({ label: 'Gamma Team', projectId, herdrSession: 'agent-cli-test' });
-  setLeadInScope(gamma.team_id, 'sess-external-1');
+  joinInScope(gamma.team_id, 'sess-external-1');
   const externalLead = await run(['list', '--json'], { resolveContext: () => ({ sessionId: 'sess-external-1', projectId }) });
   assert.deepEqual(JSON.parse(externalLead.text).map((row) => row.session_id), ['sess-external-1'],
     'a lead with no managed agents still sees its own external session');
@@ -292,13 +292,22 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   const attach = await run(['attach', 'sess-alpha-1']);
   assert.equal(attach.exit, 0, attach.text);
   assert.deepEqual(calls.at(-1), ['attach', 'builder1', { projectId, teamId: alpha.team_id }]);
+
+  // GOL-382 R6: an exact session id on two rows (a stale shared binding)
+  // resolves to the live row instead of failing as ambiguous.
+  const { resolveAgentRef } = await import('../lib/agent-resolve.js');
+  const liveRow = { worker_id: 'w-live', session_id: 'sess-shared', name: 'builder1', state: 'live', project_id: projectId, team_id: alpha.team_id };
+  const deadRow = { worker_id: 'w-dead', session_id: 'sess-shared', name: 'builder1', state: 'dead', project_id: projectId, team_id: beta.team_id };
+  assert.equal(resolveAgentRef('sess-shared', { workers: [deadRow, liveRow], projectId }).worker_id, 'w-live', 'exact id picks the live row');
+  assert.equal(resolveAgentRef('sess-shared', { workers: [liveRow, deadRow], projectId }).worker_id, 'w-live', 'row order does not matter');
+  assert.throws(() => resolveAgentRef('sess-shared', { workers: [liveRow, { ...deadRow, state: 'live' }], projectId }), /ambiguous/, 'two live rows still refuse');
 }
 
 // --- create ----------------------------------------------------------------------
 {
   const refused = await run(['create', 'builder'], { resolveContext: unboundContext });
   assert.equal(refused.exit, 2);
-  assert.match(refused.text, /no team: pass --team or run golem team lead <team>/);
+  assert.match(refused.text, /no team: pass --team or run golem team join <team>/);
 
   const created = await run(['create', 'explorer', '--team', 'beta-team', '--json']);
   assert.equal(created.exit, 0, created.text);

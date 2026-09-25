@@ -37,3 +37,8 @@ reset that at every human turn.
 Setting a reminder: `golem session notify --to self...`
 Reminder duration for agent return: 25 minutes
 Reminder interval for human return: 55 minutes in claude, 25 minutes in pi
+
+The reminder should run for maximum 4 times, after which you are allowed to go idle. Meaning, if 
+the reminder runs N<4 times, and I or the agents repond by then, the reminder gets reset, but if it
+has run N=4 times, and no response from me or the agent you were waiting for, then you can cancel any
+follow up and go idle.
