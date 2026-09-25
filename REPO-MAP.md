@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-23 @ af90a61 (GOL-363/365/369) — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-25 @ bda674d — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -15,11 +15,8 @@
 
 ### CLI and collaboration
 
-`cli/golem.js` owns launch, agent/team, dashboard, sync, and diagnostic verbs.
-`cli/agent.js` owns the agent toolkit (list, create, read, attach, stop, notify,
-role, dedup); `cli/team.js` owns team create, list, lead, and close.
-`cli/collaboration.js` owns inspection, schedules, and messages.
-`cli/ticket.js` owns flat `golem ticket` authoring over tracker REST.
+`cli/golem.js` dispatches verbs; `cli/agent.js` and `cli/team.js` own managed workers/teams.
+`cli/collaboration.js` owns schedules/messages; `cli/ticket.js` authors via tracker REST.
 `lib/session-role.js` owns role definitions; retired names are migration input only.
 
 ### Instructions
@@ -29,10 +26,11 @@ role, dedup); `cli/team.js` owns team create, list, lead, and close.
 
 ### Dashboard
 
-`dashboard/server/index.js` exposes REST/WebSocket routes. `tracker-db.js` owns persistence;
-`html-body.js` (stable block ids) and `md-body.js` (id-less blocks) patch via strict anchors
-(`body-anchor.js`); `mermaid-check.js` reports broken diagrams after commit, 2s bound.
-`notification-schedule*.js` own durable schedules; `comment-dispatch.js` routes feedback.
+`dashboard/server/index.js` owns admin REST/WS; `tracker-db.js` owns SQLite tickets and
+share grants. `share-public.js` serves only token documents on a separate loopback listener;
+`share-tunnel.js` bounds/verifies cloudflared reuse via `~/.golem/share-tunnel.json` (never :7420).
+`html-body.js`/`md-body.js` patch strict anchors via `body-anchor.js`; `mermaid-check.js`
+validates diagrams. `notification-schedule*.js` schedules; `comment-dispatch.js` routes feedback.
 Agents never touch SQLite directly.
 
 ### Compiler and delivery
@@ -43,8 +41,8 @@ agents (one herdr session per project); `lib/team-registry.js` owns `teams.json`
 
 ## Data flow
 
-Hooks/shims register projects and sessions under `~/.golem/`. The dashboard reads those
-registries, owns tracker writes, and dispatches to native channels or typed endpoints.
+Hooks/shims register sessions under `~/.golem/`. The dashboard owns tracker writes and
+native/typed dispatch. Sharing issues a per-document grant; only the public listener is tunneled.
 
 ## Constraints & gotchas
 
