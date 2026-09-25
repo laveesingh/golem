@@ -1,4 +1,4 @@
-// golem session — list herdr sessions and attach to one.
+// golem session — list herdr sessions, attach to one, or close one.
 //
 // A herdr session is the server that holds a project's team workspaces
 // (lib/herdr-driver.js herdrSessionForProject). Flag parser and help style
@@ -10,8 +10,16 @@ import { projectsJsonPath } from '../lib/golem-home.js';
 import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import { NotificationError } from '../lib/notification-contract.js';
 import { formatTable } from '../lib/cli-table.js';
-import { listTeams } from '../lib/team-registry.js';
-import { herdrSessionForProject, sessionAttach, sessionList } from '../lib/herdr-driver.js';
+import { closeTeam, listTeams } from '../lib/team-registry.js';
+import { activeWorkerStates, listWorkers } from '../lib/worker-registry.js';
+import { killWorker } from '../lib/worker-manager.js';
+import {
+  herdrSessionForProject,
+  sessionAttach,
+  sessionDelete,
+  sessionList,
+  sessionStop,
+} from '../lib/herdr-driver.js';
 
 const commands = {
   'session list': { flags: { '--json': 'bool' }, args: [0, 0],
@@ -33,6 +41,16 @@ const commands = {
       'Examples:',
       '  golem session attach          # this project\'s session',
       '  golem session attach golem    # a named session',
+    ].join('\n') },
+  'session close': { flags: { '--force': 'bool', '--json': 'bool' }, args: [1, 1],
+    help: [
+      'golem session close <session> [--force] [--json]',
+      '',
+      'Usage: stop every live golem agent in one herdr session, close its open teams, then stop and delete the herdr session. It no longer shows in golem session list.',
+      'Input: <session> must be listed by golem session list. Closing the session this terminal runs in is refused without --force, since it ends this terminal. If any agent fails to stop, nothing else is closed.',
+      'Exit codes: 0 closed, 1 operational failure, 2 invalid input.',
+      'Examples:',
+      '  golem session close alpha   # retire the alpha session and its teams',
     ].join('\n') },
 };
 
@@ -120,7 +138,10 @@ export async function runSession(family, args, {
   stdout = (text) => process.stdout.write(`${text}\n`),
   stderr = (text) => process.stderr.write(`${text}\n`),
   cwd = process.cwd(),
-  herdr = { sessionList, sessionAttach },
+  herdr = { sessionList, sessionAttach, sessionStop, sessionDelete },
+  workers = { listWorkers, killWorker },
+  env = process.env,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 } = {}) {
   let json = args.includes('--json');
   try {
@@ -139,6 +160,43 @@ export async function runSession(family, args, {
       const name = positional[0] ?? await projectSession(o['--project'], cwd);
       requireKnown(name, herdr.sessionList());
       return herdr.sessionAttach(name);
+    }
+
+    if (key === 'session close') {
+      const name = positional[0];
+      requireKnown(name, herdr.sessionList());
+      if (env.HERDR_SESSION === name && !o['--force']) {
+        throw new NotificationError(`refusing to close ${name}: this terminal runs inside it (pass --force to close it anyway)`);
+      }
+      const active = activeWorkerStates();
+      const live = workers.listWorkers()
+        .filter((row) => row.herdr_session === name && active.has(String(row.state || '').toLowerCase()));
+      const stopped = [];
+      const failed = [];
+      for (const row of live) {
+        try {
+          await workers.killWorker(row.name, { projectId: row.project_id, teamId: row.team_id ?? null });
+          stopped.push(row.name);
+        } catch (error) {
+          failed.push(`${row.name}: ${error.message}`);
+        }
+      }
+      if (failed.length) throw new Error(`session ${name} left open; agents failed to stop: ${failed.join('; ')}`);
+      const teams = listTeams({ includeClosed: false }).filter((team) => team.herdr_session === name);
+      for (const team of teams) closeTeam(team.team_id);
+      herdr.sessionStop(name);
+      // herdr deletes only a stopped session; the server takes a moment to exit.
+      let deleted = false;
+      for (let attempt = 0; attempt < 20 && !deleted; attempt += 1) {
+        deleted = herdr.sessionDelete(name);
+        if (!deleted) await sleep(250);
+      }
+      if (!deleted) throw new Error(`herdr session ${name} stopped but could not be deleted`);
+      const result = { session: name, stopped, teams_closed: teams.map((team) => team.slug) };
+      stdout(json
+        ? JSON.stringify(result)
+        : `session ${name} closed (${stopped.length} agents stopped, ${teams.length} teams closed)`);
+      return 0;
     }
 
     throw new NotificationError(`unknown command: ${key}`);

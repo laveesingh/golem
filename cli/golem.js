@@ -805,10 +805,11 @@ ${helpDashboardRestart()}
                        Teams: create a team and its herdr workspace, list
                        teams, join a team (or own it with --owner), or close
                        a team and stop only its agents.
-  session list|attach [--help]
+  session list|attach|close [--help]
                        herdr sessions: list them with their project and open
-                       teams, or attach this terminal to one (default: the
-                       current project's session).
+                       teams, attach this terminal to one (default: the
+                       current project's session), or close one with its
+                       agents and teams.
   ticket <operation> [args] [flags]
                        Flat agent authoring family over the tracker REST API:
                        list, get, create, update, replace-body, get-outline,

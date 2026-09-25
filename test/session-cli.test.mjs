@@ -17,7 +17,7 @@ fs.mkdirSync(process.env.GOLEM_HOME, { recursive: true });
 const projectId = 'demo-proj-abcdef';
 fs.writeFileSync(path.join(process.env.GOLEM_HOME, 'projects.json'), JSON.stringify({ projects: [{ project_id: projectId, name: 'Demo Proj' }] }));
 
-const { createTeam, closeTeam } = await import('../lib/team-registry.js');
+const { createTeam, closeTeam, listTeams } = await import('../lib/team-registry.js');
 const { runSession } = await import('../cli/session.js');
 
 createTeam({ projectId, label: 'Open one', herdrSession: 'demo-proj' });
@@ -36,7 +36,7 @@ const herdr = {
 async function run(args, extra = {}) {
   const out = [];
   const err = [];
-  const exit = await runSession('session', args, { stdout: (t) => out.push(t), stderr: (t) => err.push(t), cwd: temp, herdr, ...extra });
+  const exit = await runSession('session', args, { stdout: (t) => out.push(t), stderr: (t) => err.push(t), cwd: temp, herdr, env: {}, ...extra });
   return { exit, text: out.join('\n'), err: err.join('\n') };
 }
 
@@ -70,5 +70,51 @@ async function run(args, extra = {}) {
   assert.equal((await run(['bogus'])).exit, 2);
 }
 
+// close: stops live agents in the session, closes its open teams, then
+// stops and deletes the herdr session. Other sessions are untouched.
+{
+  const calls = [];
+  const workerRows = [
+    { name: 'builder1', project_id: projectId, team_id: 't1', herdr_session: 'demo-proj', state: 'live' },
+    { name: 'old', project_id: projectId, team_id: 't1', herdr_session: 'demo-proj', state: 'dead' },
+    { name: 'other', project_id: projectId, team_id: 't2', herdr_session: 'idle', state: 'live' },
+  ];
+  let deleteTries = 0;
+  const closeHerdr = {
+    ...herdr,
+    sessionStop: (name) => { calls.push(`stop ${name}`); return true; },
+    sessionDelete: (name) => { deleteTries += 1; if (deleteTries < 2) return false; calls.push(`delete ${name}`); return true; },
+  };
+  const workers = {
+    listWorkers: () => workerRows,
+    killWorker: async (name, scope) => { calls.push(`kill ${name} ${scope.projectId} ${scope.teamId}`); },
+  };
+  const extra = { herdr: closeHerdr, workers, sleep: async () => {} };
+
+  const self = await run(['close', 'demo-proj'], { ...extra, env: { HERDR_SESSION: 'demo-proj' } });
+  assert.equal(self.exit, 2);
+  assert.match(self.err, /refusing to close demo-proj: this terminal runs inside it/);
+  assert.deepEqual(calls, [], 'self-close refusal touches nothing');
+
+  const failing = await run(['close', 'demo-proj'], { ...extra, workers: { ...workers, killWorker: async () => { throw new Error('identity mismatch'); } } });
+  assert.equal(failing.exit, 1);
+  assert.match(failing.err, /session demo-proj left open; agents failed to stop: builder1: identity mismatch/);
+  assert.deepEqual(calls, [], 'a failed agent stop leaves the session and teams alone');
+  assert.equal(listTeams({ includeClosed: false }).filter((t) => t.herdr_session === 'demo-proj').length, 1);
+
+  const closed = await run(['close', 'demo-proj', '--json'], extra);
+  assert.equal(closed.exit, 0, closed.err);
+  assert.deepEqual(JSON.parse(closed.text), { session: 'demo-proj', stopped: ['builder1'], teams_closed: ['open-one'] });
+  assert.deepEqual(calls, [`kill builder1 ${projectId} t1`, 'stop demo-proj', 'delete demo-proj']);
+  assert.equal(listTeams({ includeClosed: false }).filter((t) => t.herdr_session === 'demo-proj').length, 0);
+
+  const forced = await run(['close', 'idle', '--force'], { ...extra, env: { HERDR_SESSION: 'idle' } });
+  assert.equal(forced.exit, 0, forced.err);
+  assert.match(forced.text, /^session idle closed \(1 agents stopped, 0 teams closed\)$/);
+
+  assert.equal((await run(['close', 'nope'], extra)).exit, 2);
+  assert.equal((await run(['close'], extra)).exit, 2);
+}
+
 fs.rmSync(temp, { recursive: true, force: true });
-console.log('session CLI passed: list table + JSON, project mapping, open-team count, attach by name and by project, unknown refusal');
+console.log('session CLI passed: list table + JSON, project mapping, open-team count, attach by name and by project, unknown refusal, close with self-guard and fail-closed agent stop');
