@@ -354,12 +354,8 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   const spawn = spawnSync(process.execPath, [cli, 'spawn', 'builder'], { encoding: 'utf8' });
   assert.equal(spawn.status, 2);
   assert.match(spawn.stderr, /Unknown command: spawn/);
-  const session = spawnSync(process.execPath, [cli, 'session', 'list'], { encoding: 'utf8' });
-  assert.equal(session.status, 2);
-  assert.match(session.stderr, /Unknown command: session/);
   console.log('--- unknown-command pastes ---');
   console.log(`$ node cli/golem.js spawn builder\n${spawn.stderr.trim()}`);
-  console.log(`$ node cli/golem.js session list\n${session.stderr.trim()}`);
 }
 
 // --- row builder -----------------------------------------------------------------------

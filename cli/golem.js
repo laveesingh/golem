@@ -805,6 +805,10 @@ ${helpDashboardRestart()}
                        Teams: create a team and its herdr workspace, list
                        teams, join a team (or own it with --owner), or close
                        a team and stop only its agents.
+  session list|attach [--help]
+                       herdr sessions: list them with their project and open
+                       teams, or attach this terminal to one (default: the
+                       current project's session).
   ticket <operation> [args] [flags]
                        Flat agent authoring family over the tracker REST API:
                        list, get, create, update, replace-body, get-outline,
@@ -827,7 +831,7 @@ ${helpStatus()}
   help                 Show this message.
 
 Removed in v4 (no longer supported):
-  install, cleanup, reinstall, session, project, dispatch, ack
+  install, cleanup, reinstall, project, dispatch, ack
 
 Environment:
   GOLEM_ROOT           Workspace anchor (default: repo containing cli/golem.js).
@@ -1232,6 +1236,11 @@ async function main() {
     case 'message': {
       const { runCollaboration } = await import('./collaboration.js');
       process.exitCode = await runCollaboration(cmd, rest);
+      break;
+    }
+    case 'session': {
+      const { runSession } = await import('./session.js');
+      process.exitCode = await runSession(cmd, rest);
       break;
     }
     case 'team': {
