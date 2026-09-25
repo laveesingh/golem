@@ -85,13 +85,18 @@ async function fetchJson(url, timeoutMs, fetchFn) {
   return { status, text, json };
 }
 
-// Run a synchronous subprocess with a hard timeout. Injected fakes receive
-// the timeout in opts (mirroring node semantics); fakes that ignore it model
-// pre-fix unbounded behavior. ETIMEDOUT surfaces as a throw → callers fail
-// closed via their existing try/catch.
+// Run a synchronous subprocess with a hard timeout. Real node spawnSync
+// never throws for timeouts/spawn failures — it RETURNS { error } — so the
+// wrapper normalizes any result-carried error into a throw (GOL-390 fix
+// round 1: without this, a timed-out ps looked like clean empty output and
+// the unsafe-admin guard failed open). Injected fakes receive the timeout in
+// opts (mirroring node semantics); fakes that ignore it model pre-fix
+// unbounded behavior. Callers fail closed via their existing try/catch.
 function runSyncBounded(spawnSyncFn, bin, args, opts = {}) {
   const run = spawnSyncFn || nodeSpawnSync;
-  return run(bin, args, { ...opts, timeout: SPAWN_SYNC_TIMEOUT_MS });
+  const res = run(bin, args, { ...opts, timeout: SPAWN_SYNC_TIMEOUT_MS });
+  if (res && res.error) throw res.error;
+  return res;
 }
 
 export function parseHostname(value) {
@@ -202,7 +207,12 @@ export function defaultPsCommand(pid, { spawnSyncFn = null } = {}) {
   try {
     const res = runSyncBounded(spawnSyncFn, 'ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
     return String(res.stdout || '').trim();
-  } catch { return ''; }
+  } catch (err) {
+    // A hung enumeration is indeterminate (never clean-empty): callers that
+    // gate destructive or security decisions must fail closed on it.
+    if (err && err.code === 'ETIMEDOUT') throw err;
+    return '';
+  }
 }
 
 // Validate a registry candidate against the expected public origin. Returns
@@ -277,25 +287,35 @@ export async function detectUnsafeAdminTunnel(adminOrigin, { fetchFn = null, psF
     } catch { /* not a tunnel */ }
   }
   // Fallback: scan process commands for cloudflared --url pointing at admin.
-  try {
-    let output = '';
-    if (psFn) {
-      output = String(await psFn() || '');
-    } else {
+  // Fail-closed contract (GOL-390 fix round 1): a hung enumeration is
+  // INDETERMINATE and propagates — callers answer 502/omit rather than
+  // minting or emitting bearer URLs. A missing ps tool degrades to the
+  // metrics verdict above (refused/unreachable metrics + no ps still means
+  // nothing was found, not hidden evidence).
+  let output = '';
+  if (psFn) {
+    output = String(await psFn() || '');
+  } else {
+    try {
       const res = runSyncBounded(spawnSyncFn, 'ps', ['-ax', '-o', 'command='], { encoding: 'utf8' });
       output = String(res.stdout || '');
-    }
-    const adminPort = (/:(\d+)$/.exec(String(adminOrigin)) || [])[1] || '';
-    for (const line of output.split('\n')) {
-      if (!/cloudflared/i.test(line) || !/tunnel/i.test(line)) continue;
-      if (!line.includes('--url')) continue;
-      const hasAdminHost = variants.size === 0 ? false : [...variants].some((v) => line.includes(v));
-      const hasAdminPort = adminPort && line.includes(`:${adminPort}`) && /127\.0\.0\.1|localhost/.test(line);
-      if (hasAdminHost || hasAdminPort) {
-        return { unsafe: true, detail: `cloudflared process targets dashboard (${line.trim().slice(0, 160)})` };
+    } catch (err) {
+      if (err && err.code === 'ETIMEDOUT') {
+        throw new Error(`unsafe-admin check indeterminate: process listing timed out (${err.message || 'ETIMEDOUT'})`);
       }
+      return { unsafe: false, detail: '' };
     }
-  } catch { /* ps unavailable: metadata probe above already ran */ }
+  }
+  const adminPort = (/:(\d+)$/.exec(String(adminOrigin)) || [])[1] || '';
+  for (const line of output.split('\n')) {
+    if (!/cloudflared/i.test(line) || !/tunnel/i.test(line)) continue;
+    if (!line.includes('--url')) continue;
+    const hasAdminHost = variants.size === 0 ? false : [...variants].some((v) => line.includes(v));
+    const hasAdminPort = adminPort && line.includes(`:${adminPort}`) && /127\.0\.0\.1|localhost/.test(line);
+    if (hasAdminHost || hasAdminPort) {
+      return { unsafe: true, detail: `cloudflared process targets dashboard (${line.trim().slice(0, 160)})` };
+    }
+  }
   return { unsafe: false, detail: '' };
 }
 
@@ -325,7 +345,11 @@ export async function registryOwnsLiveTunnel(registry, publicOrigin, { fetchFn =
   try {
     const cmd = psCommandFn ? String(await psCommandFn(registry.pid) ?? '') : defaultPsCommand(registry.pid, { spawnSyncFn });
     if (cmd && !isCloudflaredTunnelForOrigin(cmd, publicOrigin)) return false;
-  } catch { /* ps unavailable: metrics proof above suffices */ }
+  } catch (err) {
+    // Hung enumeration is indeterminate: refuse the kill (fail closed).
+    // Other ps failures keep the long-standing metrics-suffice behavior.
+    if (err && err.code === 'ETIMEDOUT') return false;
+  }
   return true;
 }
 
@@ -389,13 +413,14 @@ export async function ensureShareTunnel({
     state.phase = name;
     try { onPhase?.(name, Date.now() - t0); } catch {} // seam must never break recovery
   };
-  // Bound one flight (owner or joiner) by the end-to-end budget. Joiners
-  // share the flight's state/child tracking, so a timeout kills only the
-  // flight-owned child once and every waiter gets the same actionable
-  // error. budget <= 0 disables the race (phase budgets still apply).
-  // Joiners share the owner's tracking so a timeout reports the real phase,
-  // kills the one flight-owned child once, and gates late registry writes
-  // consistently no matter which waiter times out first.
+  // Bound one flight by the end-to-end budget. The FIRST bounded waiter
+  // establishes exactly one timer from flight start (normally the owner);
+  // every later bounded joiner shares that same raced promise, so staggered
+  // waiters observe one absolute deadline, one owned-child kill, and one
+  // actionable error — never a fresh budget per waiter. A caller with
+  // budget <= 0 opts out and awaits the raw flight (phase budgets only).
+  // Joiners share the owner's tracking so a timeout reports the real phase
+  // and gates late registry writes consistently.
   const raceWithBudget = (target, st = state) => {
     const budget = Number(overallTimeoutMs);
     const cleanupFlight = () => { if (flightByHome.get(key) === target) flightByHome.delete(key); };
@@ -445,9 +470,18 @@ export async function ensureShareTunnel({
   // in timeout errors. Exported for lifecycle tests (see __ seam below).
   const drainStderr = (proc) => __drainChildStderr(proc, ring);
   const stderrTail = () => ring.text.slice(-300).replace(/\s+/g, ' ').trim();
+  // One absolute deadline per flight: the first bounded waiter establishes
+  // the single raced promise (normally the owner at flight start); later
+  // bounded joiners share it instead of starting fresh budgets. A caller
+  // with budget <= 0 opts out and awaits the raw flight.
+  const boundedFor = (targetFlight, st) => {
+    if (!(Number(overallTimeoutMs) > 0)) return raceWithBudget(targetFlight, st);
+    if (!targetFlight.boundedRace) targetFlight.boundedRace = raceWithBudget(targetFlight, st);
+    return targetFlight.boundedRace;
+  };
   if (flightByHome.has(key)) {
     const owner = flightByHome.get(key);
-    return raceWithBudget(owner, owner.shareState ?? state);
+    return boundedFor(owner, owner.shareState ?? state);
   }
   const flight = (async () => {
     const registry = readShareRegistry(homeDir) || {};
@@ -577,11 +611,10 @@ export async function ensureShareTunnel({
   })();
   flight.shareState = state;
   flightByHome.set(key, flight);
-  // Owner and joiners share the deadline: the timer cannot rescue a
-  // synchronously blocked loop (spawnSync hard timeouts cover that), but it
-  // bounds every awaited path so one dead-registry Share settles in
-  // ~budget, never minutes.
-  return raceWithBudget(flight);
+  // The timer cannot rescue a synchronously blocked loop (spawnSync hard
+  // timeouts cover that), but it bounds every awaited path so one
+  // dead-registry Share settles in ~budget, never minutes.
+  return boundedFor(flight, state);
 }
 
 export function __clearTunnelFlights() {

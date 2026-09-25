@@ -151,6 +151,19 @@ try {
   const getBtn = await page.$('[data-testid="share-control"] .td-share-pop .orch-btn.small');
   ok(getBtn && await getBtn.isDisabled(), 'URL generation disabled while unsafe');
   await page.unroute('**/api/tickets/*/share');
+  // Indeterminate safety check: distinct honest message, still no link.
+  await page.route('**/api/tickets/*/share', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ shared: true, shareable: true, unsafe: true, uncertain: true, url: null }) });
+  });
+  await page.goto(`${base}/read/${encodeURIComponent(spec.id)}`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-testid="share-control"] .td-share-btn', { timeout: 15000 });
+  await page.click('[data-testid="share-control"] .td-share-btn');
+  await page.waitForSelector('[data-testid="share-control"] .td-share-pop', { timeout: 15000 });
+  await pause(800);
+  ok((await page.$('[data-testid="share-control"] .td-share-link')) === null, 'indeterminate check renders no bearer link');
+  const uncertainText = await page.textContent('[data-testid="share-control"] .td-share-pop');
+  ok(/safety check failed/.test(uncertainText || ''), 'indeterminate shows honest retry text, not pause text');
+  await page.unroute('**/api/tickets/*/share');
 
   // Public reader isolation: direct grant + loopback public server (no tunnel).
   const { openTrackerDb } = await import('../server/tracker-db.js');

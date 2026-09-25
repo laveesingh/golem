@@ -1287,11 +1287,12 @@ async function main() {
     if (!ticket) return reply.code(404).send({ error: 'not_found' });
     const shareable = ticket.kind === 'spec' || ticket.kind === 'doc';
     const grant = tracker.getShareGrant(ticket.id);
-    const unsafe = await shareUnsafeDetail().catch(() => ({ unsafe: false, detail: '' }));
+    const unsafe = await shareUnsafeDetail().catch(() => ({ unsafe: true, uncertain: true, detail: 'tunnel safety check failed; retry Share' }));
     // GOL-388: while an admin-targeting tunnel is discoverable, never emit
     // the bearer URL from this GET — the flags alone carry UI state.
+    // GOL-390 fix round 1: an INDETERMINATE check omits too (fail closed).
     if (unsafe.unsafe) {
-      return { shared: !!grant && shareable, shareable, unsafe: true, url: null };
+      return { shared: !!grant && shareable, shareable, unsafe: true, uncertain: !!unsafe.uncertain, url: null };
     }
     let url = null;
     if (grant && shareable) {
@@ -1307,7 +1308,7 @@ async function main() {
         }
       } catch { url = null; }
     }
-    return { shared: !!grant && shareable, shareable, unsafe: !!unsafe.unsafe, url };
+    return { shared: !!grant && shareable, shareable, unsafe: !!unsafe.unsafe, uncertain: !!unsafe.uncertain, url };
   });
   fastify.post('/api/tickets/:id/share', async (req, reply) => {
     try {

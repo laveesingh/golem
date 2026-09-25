@@ -141,7 +141,8 @@ function ShareControl({ ticket }) {
         <div className="td-share-pop" role="dialog" aria-label="Share document">
           {busy && <div className="td-share-busy">working\u2026</div>}
           {error && <div className="ct-error" role="alert">{error}</div>}
-          {unsafe && !error && <div className="ct-error" role="alert">Sharing is paused while the old dashboard tunnel runs. Retire it, then try again.</div>}
+          {unsafe && !error && !status?.uncertain && <div className="ct-error" role="alert">Sharing is paused while the old dashboard tunnel runs. Retire it, then try again.</div>}
+          {unsafe && !error && status?.uncertain && <div className="ct-error" role="alert">Sharing safety check failed — no link shown. Retry in a moment.</div>}
           {showLink ? (
             <>
               <input className="td-share-link" readOnly value={link} onFocus={(e) => e.target.select()} aria-label="Shared link" />

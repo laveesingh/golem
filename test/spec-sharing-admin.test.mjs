@@ -252,6 +252,82 @@ try {
       if (dashboard2.exitCode === null) dashboard2.kill('SIGKILL');
     }
   }
+
+  // ---- Phase 3 (GOL-390 fix round 1): wedged process listing fails closed.
+  // PATH carries a fake `ps` that sleeps 40s (real spawnSync return-shape
+  // path: timeout kill → {error:ETIMEDOUT}, never a throw). No lsof,
+  // cloudflared, or real ps on PATH. Pre-seeded grant + registry; the guard
+  // can never complete its fallback scan, so POST must 502 (not mint) and
+  // GET must omit the bearer URL (not leak) — both bounded ~5s, not 40s+.
+  const home3 = path.join(tmp, 'home3');
+  const dbPath3 = path.join(tmp, 'tracker3.db');
+  const fakebin = path.join(tmp, 'fakebin');
+  for (const d of [home3, fakebin, path.join(tmp, 'xdg3'), path.join(tmp, 'projects3'), path.join(tmp, 'ideas3')]) fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(fakebin, 'ps'), '#!/bin/sh\n/bin/sleep 40\n');
+  fs.chmodSync(path.join(fakebin, 'ps'), 0o755);
+  const { openTrackerDb: openDb3 } = await import('../dashboard/server/tracker-db.js');
+  const seedDb3 = openDb3(dbPath3);
+  const spec3 = seedDb3.createTicket({ project_id: proj, kind: 'spec', title: 'Wedged ps Doc', body: '# Wedged', state: 'todo' });
+  const grant3 = seedDb3.createShareGrant(spec3.id);
+  seedDb3.close();
+  const publicPort3 = await freePort();
+  const publicOrigin3 = `http://127.0.0.1:${publicPort3}`;
+  const host3 = 'wedged-ps-9.trycloudflare.com';
+  const fake3 = http.createServer((req, res3) => {
+    const url = String(req.url || '').split('?')[0];
+    if (url === '/quicktunnel') { res3.writeHead(200, { 'Content-Type': 'application/json' }); res3.end(JSON.stringify({ hostname: host3 })); return; }
+    if (url === '/config') { res3.writeHead(200, { 'Content-Type': 'application/json' }); res3.end(JSON.stringify({ ingress: [{ service: publicOrigin3 }] })); return; }
+    if (url === '/metrics') { res3.writeHead(200, { 'Content-Type': 'text/plain' }); res3.end('cloudflared_tunnel_ha_connections 1\n'); return; }
+    res3.writeHead(404, {}); res3.end('{}');
+  });
+  await new Promise((r) => fake3.listen(0, '127.0.0.1', r));
+  extraServers.push(fake3);
+  const metrics3 = fake3.address().port;
+  fs.writeFileSync(path.join(home3, 'share-tunnel.json'), JSON.stringify({
+    publicPort: publicPort3, metricsPort: metrics3, hostname: host3, pid: null, updated_at: new Date().toISOString(),
+  }));
+  const port3 = await freePort();
+  const base3 = `http://127.0.0.1:${port3}`;
+  let dashboard3 = spawn(process.execPath, [path.join(repo, 'dashboard/server/index.js')], {
+    cwd: repo,
+    env: { ...env, PORT: String(port3), GOLEM_HOME: home3, GOLEM_TRACKER_DB: dbPath3, XDG_CONFIG_HOME: path.join(tmp, 'xdg3'), HOME: home3, GOLEM_PROJECTS_ROOT: path.join(tmp, 'projects3'), GOLEM_IDEAS_ROOT: path.join(tmp, 'ideas3'), PATH: fakebin },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  try {
+    const deadline3 = Date.now() + 25000;
+    while (Date.now() < deadline3) {
+      try { if ((await fetch(`${base3}/api/health`)).ok) break; } catch { /* retry */ }
+      if (dashboard3.exitCode !== null) throw new Error('dashboard3 exited during wedged-ps test');
+      await sleep(150);
+    }
+    check('wedged-ps dashboard healthy (rebind needs no ps)', true, base3);
+    const reg3 = JSON.parse(fs.readFileSync(path.join(home3, 'share-tunnel.json'), 'utf8'));
+    reg3.pid = dashboard3.pid;
+    fs.writeFileSync(path.join(home3, 'share-tunnel.json'), JSON.stringify(reg3));
+    const api3 = async (method, q, body = null) => {
+      const t = Date.now();
+      const r3 = await fetch(`${base3}${q}`, {
+        method, headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return { status: r3.status, json: await r3.json().catch(() => null), elapsed: Date.now() - t };
+    };
+    res = await api3('GET', `/api/tickets/${spec3.id}/share`);
+    check('wedged ps: GET omits bearer URL as indeterminate', res.status === 200 && res.json?.url === null
+      && res.json?.unsafe === true && res.json?.uncertain === true && res.json?.shared === true, JSON.stringify(res.json)?.slice(0, 140));
+    check('wedged ps: GET bounded, not 40s+', res.elapsed < 30000, `${res.elapsed}ms`);
+    res = await api3('POST', `/api/tickets/${spec3.id}/share`, {});
+    check('wedged ps: POST fails closed 502, never mints', res.status === 502 && res.json?.code === 'TUNNEL_CHECK_FAILED', JSON.stringify(res.json)?.slice(0, 140));
+    check('wedged ps: POST bounded, not 40s+', res.elapsed < 30000, `${res.elapsed}ms`);
+    res = await api3('DELETE', `/api/tickets/${spec3.id}/share`, {});
+    check('wedged ps: DELETE fails closed 502, never revokes blind', res.status === 502 && res.json?.code === 'TUNNEL_CHECK_FAILED', JSON.stringify(res.json)?.slice(0, 140));
+  } finally {
+    if (dashboard3 && dashboard3.exitCode === null) {
+      dashboard3.kill('SIGTERM');
+      await new Promise((r) => setTimeout(r, 800));
+      if (dashboard3.exitCode === null) dashboard3.kill('SIGKILL');
+    }
+  }
 } finally {
   for (const s of extraServers) { try { await new Promise((r) => s.close(r)); } catch {} }
   if (dashboard && dashboard.exitCode === null) {

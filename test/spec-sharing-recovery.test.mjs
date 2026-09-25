@@ -71,16 +71,19 @@ function hangingServer() {
   });
 }
 
-// Wedged subprocess seam: honors opts.timeout exactly like node spawnSync
-// (sleep the lesser, then throw ETIMEDOUT). Pre-fix call sites pass NO
-// timeout, so the wedge runs full duration; post-fix sites pass 5000ms.
+// Wedged subprocess seam with the REAL node return shape: sleep, then
+// RETURN { error } — real spawnSync never throws for timeouts. Pre-fix call
+// sites pass NO timeout (full 65s wedge, then read empty stdout); post-fix
+// the wrapper throws on res.error (bounded ~5s, same fail-closed outcomes).
+// (A throwing fake is also covered via psFn-throw below.)
 function honoringWedge(ms) {
   return (bin, args, opts = {}) => {
     const budget = Number(opts?.timeout) > 0 ? Math.min(ms, Number(opts.timeout)) : ms;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, budget);
     const err = new Error(`spawnSync ${bin} timed out after ${budget}ms`);
     err.code = 'ETIMEDOUT';
-    throw err;
+    err.signal = 'SIGTERM';
+    return { error: err, status: null, signal: 'SIGTERM', stdout: '', stderr: '' };
   };
 }
 
@@ -98,7 +101,9 @@ try {
   }
 
   // 1. Wedged ps/lsof: direct unit. Pre-fix hangs the full 65s wedge;
-  // post-fix fails closed in ~5s via the hard timeout.
+  // post-fix normalizes the real return shape ({error:ETIMEDOUT}) into a
+  // throw: lsof resolves null fast, ps surfaces the timeout (never masked
+  // as clean-empty), and the kill path refuses on indeterminate ps.
   {
     const wedge = honoringWedge(65000);
     let t = Date.now();
@@ -106,9 +111,32 @@ try {
     let elapsed = Date.now() - t;
     check('wedged lsof bounded, fails closed', pid === null && elapsed < 30000, `pid=${pid} ${elapsed}ms`);
     t = Date.now();
-    const cmd = tunnel.defaultPsCommand(999999, { spawnSyncFn: wedge });
+    let psErr = null;
+    try {
+      tunnel.defaultPsCommand(999999, { spawnSyncFn: wedge });
+    } catch (e) { psErr = e; }
     elapsed = Date.now() - t;
-    check('wedged ps bounded, fails closed', cmd === '' && elapsed < 30000, `${elapsed}ms`);
+    check('wedged ps surfaces timeout, never clean-empty', !!psErr && psErr.code === 'ETIMEDOUT' && elapsed < 30000,
+      `${psErr?.code} ${elapsed}ms`);
+    // Kill path with live pid + validating metrics but wedged ps: refuse.
+    const liveSrv = http.createServer((req, res) => {
+      const url = String(req.url || '').split('?')[0];
+      if (url === '/quicktunnel') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hostname: 'owned-proof.trycloudflare.com' })); return; }
+      if (url === '/config') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ingress: [{ service: 'http://127.0.0.1:61999' }] })); return; }
+      if (url === '/metrics') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('cloudflared_tunnel_ha_connections 1\n'); return; }
+      res.writeHead(404, {}); res.end('{}');
+    });
+    await new Promise((r) => liveSrv.listen(0, '127.0.0.1', r));
+    serversToClose.push(liveSrv);
+    const liveMetrics = liveSrv.address().port;
+    t = Date.now();
+    const owned = await tunnel.registryOwnsLiveTunnel(
+      { metricsPort: liveMetrics, hostname: 'owned-proof.trycloudflare.com', pid: 424242 },
+      'http://127.0.0.1:61999',
+      { isProcessAlive: () => true, spawnSyncFn: wedge },
+    );
+    elapsed = Date.now() - t;
+    check('kill path refuses on indeterminate ps', owned === false && elapsed < 30000, `${owned} ${elapsed}ms`);
   }
 
   // 2. Abort regression (real hanging body, real undici): rejects ~budget.
@@ -157,6 +185,79 @@ try {
       `${outcome.settled} ${elapsed}ms`);
     check('timeout error names the POST retry mapping', /share recovery timed out after/.test(outcome.message || ''),
       (outcome.message || '').slice(0, 80));
+  }
+
+  // 3b. Lead repro (GOL-390 fix round 1): real spawnSync timeout RETURNS
+  // {error:ETIMEDOUT} — with metrics unreachable the guard must throw
+  // indeterminate, never resolve unsafe:false (pre-fix fail-open).
+  {
+    const realShapeTimeout = () => {
+      const err = new Error('spawnSync ps timed out after 5000ms');
+      err.code = 'ETIMEDOUT';
+      err.signal = 'SIGTERM';
+      return { error: err, status: null, signal: 'SIGTERM', stdout: '', stderr: '' };
+    };
+    const throwingFetch = async () => { throw new Error('metrics unavailable'); };
+    let rejected = null;
+    try {
+      await tunnel.detectUnsafeAdminTunnel('http://127.0.0.1:7420', {
+        fetchFn: throwingFetch, spawnSyncFn: realShapeTimeout,
+      });
+    } catch (e) { rejected = e; }
+    check('guard indeterminate (not safe) on ps timeout + dead metrics', !!rejected && /indeterminate|timed out/i.test(String(rejected.message)),
+      rejected ? String(rejected.message).slice(0, 90) : 'resolved unsafe:false');
+    let rejectedPsFn = null;
+    try {
+      await tunnel.detectUnsafeAdminTunnel('http://127.0.0.1:7420', {
+        fetchFn: throwingFetch, psFn: async () => { throw new Error('ps blew up'); },
+      });
+    } catch (e) { rejectedPsFn = e; }
+    check('guard indeterminate on throwing ps seam', !!rejectedPsFn, rejectedPsFn ? 'threw' : 'resolved unsafe:false');
+    // Clean ps output with dead metrics still resolves safe (metrics-only
+    // verdict for a missing tool, not hidden evidence).
+    const calm = await tunnel.detectUnsafeAdminTunnel('http://127.0.0.1:7420', {
+      fetchFn: throwingFetch, psFn: async () => '  123 /usr/bin/node server.js\n',
+    });
+    check('clean ps + dead metrics resolves safe', calm.unsafe === false, JSON.stringify(calm));
+  }
+
+  // 3c. Staggered joiners share ONE absolute deadline from flight start: the
+  // owner establishes it; a joiner arriving at +5s with a 45s budget must
+  // still settle at ~8s, not joiner-start + 45s. Same error object for both.
+  {
+    tunnel.__clearTunnelFlights();
+    const home = path.join(tmp, 'home-stagger');
+    fs.mkdirSync(home, { recursive: true });
+    const publicPort = await freePort();
+    const origin = `http://127.0.0.1:${publicPort}`;
+    const neverFetch = () => new Promise(() => {});
+    const ownerOpts = {
+      publicPort, publicOrigin: origin, adminOrigin: SAFE_ADMIN,
+      homeDir: home, fetchFn: neverFetch, isProcessAlive: () => false,
+      spawnFn: () => { throw new Error('must not spawn while discovery hangs'); },
+      pickMetricsPort: async () => { throw new Error('must not reach launch'); },
+      timeoutMs: 2000, overallTimeoutMs: 8000,
+    };
+    // Per-promise settle stamps (post-Promise.all diffs would blame the
+    // owner for the joiner's wait).
+    const stamp = (p, t) => p.then(
+      () => ({ settled: 'resolved', at: Date.now() - t }),
+      (e) => ({ settled: 'rejected', message: String(e?.message ?? e), at: Date.now() - t }),
+    );
+    const tOwner = Date.now();
+    const ownerP = stamp(tunnel.ensureShareTunnel(ownerOpts), tOwner);
+    await sleep(5000); // join late into the hung flight
+    const joinerOpts = { ...ownerOpts, overallTimeoutMs: 45000 };
+    const tJoiner = Date.now();
+    const joinerP = stamp(tunnel.ensureShareTunnel(joinerOpts), tJoiner);
+    const [ownerOut, joinerOut] = await Promise.all([ownerP, joinerP]);
+    const ownerElapsed = ownerOut.at;
+    const joinerElapsed = joinerOut.at;
+    check('staggered joiner bounded by flight deadline, not its own', ownerOut.settled === 'rejected'
+      && joinerOut.settled === 'rejected' && ownerElapsed < 15000 && joinerElapsed < 8000,
+      `owner ${ownerElapsed}ms joiner ${joinerElapsed}ms`);
+    check('shared deadline yields the same actionable error', ownerOut.message === joinerOut.message
+      && /share recovery timed out after 8000ms/.test(joinerOut.message || ''), (joinerOut.message || '').slice(0, 60));
   }
 
   // 4. Phase trace seam order on a dead-registry short run.
