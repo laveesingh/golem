@@ -1340,7 +1340,12 @@ async function main() {
         homeDir: golemHome(),
       });
     } catch (err) {
-      return reply.code(502).send({ error: String(err?.message ?? err), code: 'TUNNEL_FAILED' });
+      const message = String(err?.message ?? err);
+      // GOL-390: end-to-end recovery timeout is actionable and retryable —
+      // name it distinctly from other launch failures. No grant is minted
+      // on any of these paths (creation happens only after ensure returns).
+      const code = /share recovery timed out after/.test(message) ? 'SHARE_TIMEOUT' : 'TUNNEL_FAILED';
+      return reply.code(502).send({ error: message, code });
     }
     // Failure atomicity: no grant is issued as success before tunnel
     // validation — the tunnel above validated before we mint below.

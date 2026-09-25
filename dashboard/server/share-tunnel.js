@@ -13,6 +13,21 @@ export const SHARE_REGISTRY_NAME = 'share-tunnel.json';
 export const SHARE_METRICS_CANDIDATES = [20241, 20242, 20243, 20244, 20245];
 export const SHARE_TUNNEL_BUDGET_MS = 30_000;
 export const SHARE_HOSTNAME_PATTERN = /^[a-z0-9-]+\.trycloudflare\.com$/;
+// GOL-390: every synchronous subprocess call in the Share path carries a
+// hard timeout (same convention as model-catalog.js). A wedged ps/lsof must
+// fail closed in seconds, never freeze the dashboard event loop for minutes.
+export const SPAWN_SYNC_TIMEOUT_MS = 5000;
+// GOL-390: declared end-to-end recovery budget for one ensureShareTunnel
+// pass (reuse + discovery + unsafe guard + launch). The launch phase keeps
+// its >=30s provisioning budget from its own start; this race caps the SUM
+// so a dead-registry Share returns a verified URL or an actionable timeout
+// well under 60s. Worst legitimate path ≈ 30s launch + ~9s phase overhead
+// (a dripping registry port re-probed at 2s per abort plus the 5s sync
+// bound), hence 45s: inside the ~30s+small-tolerance intent with margin,
+// 25% under the 60s acceptance line. Injectable via overallTimeoutMs.
+export const SHARE_RECOVERY_BUDGET_MS = 45_000;
+// Bounded stderr retained from a spawned child for failure diagnostics.
+export const SHARE_STDERR_RING_MAX = 32 * 1024;
 
 const flightByHome = new Map();
 
@@ -68,6 +83,15 @@ async function fetchJson(url, timeoutMs, fetchFn) {
   let json = null;
   try { json = JSON.parse(text); } catch { json = null; }
   return { status, text, json };
+}
+
+// Run a synchronous subprocess with a hard timeout. Injected fakes receive
+// the timeout in opts (mirroring node semantics); fakes that ignore it model
+// pre-fix unbounded behavior. ETIMEDOUT surfaces as a throw → callers fail
+// closed via their existing try/catch.
+function runSyncBounded(spawnSyncFn, bin, args, opts = {}) {
+  const run = spawnSyncFn || nodeSpawnSync;
+  return run(bin, args, { ...opts, timeout: SPAWN_SYNC_TIMEOUT_MS });
 }
 
 export function parseHostname(value) {
@@ -143,8 +167,7 @@ export function isCloudflaredTunnelForOrigin(command, publicOrigin) {
 // when unresolvable — callers fail closed on null.
 export function findMetricsListenerPid(port, { spawnSyncFn = null } = {}) {
   try {
-    const run = spawnSyncFn || nodeSpawnSync;
-    const res = run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-FpcL'], { encoding: 'utf8' });
+    const res = runSyncBounded(spawnSyncFn, 'lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-FpcL'], { encoding: 'utf8' });
     for (const line of String(res.stdout || '').split('\n')) {
       if (line.startsWith('p')) {
         const pid = Number(line.slice(1));
@@ -177,8 +200,7 @@ export async function verifyMetricsListener(metricsPort, publicOrigin, { findPid
 
 export function defaultPsCommand(pid, { spawnSyncFn = null } = {}) {
   try {
-    const run = spawnSyncFn || nodeSpawnSync;
-    const res = run('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
+    const res = runSyncBounded(spawnSyncFn, 'ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
     return String(res.stdout || '').trim();
   } catch { return ''; }
 }
@@ -260,8 +282,7 @@ export async function detectUnsafeAdminTunnel(adminOrigin, { fetchFn = null, psF
     if (psFn) {
       output = String(await psFn() || '');
     } else {
-      const run = spawnSyncFn || nodeSpawnSync;
-      const res = run('ps', ['-ax', '-o', 'command='], { encoding: 'utf8' });
+      const res = runSyncBounded(spawnSyncFn, 'ps', ['-ax', '-o', 'command='], { encoding: 'utf8' });
       output = String(res.stdout || '');
     }
     const adminPort = (/:(\d+)$/.exec(String(adminOrigin)) || [])[1] || '';
@@ -352,27 +373,101 @@ export async function ensureShareTunnel({
   findPidFn = null,
   psCommandFn = null,
   spawnSyncFn = null,
+  // GOL-390: end-to-end recovery budget (ms) across reuse + discovery +
+  // guard + launch. <=0 disables the race (phase budgets still apply).
+  overallTimeoutMs = SHARE_RECOVERY_BUDGET_MS,
+  // GOL-390: timestamped instrumentation seam — onPhase(name, elapsedMs).
+  onPhase = null,
 } = {}) {
   if (!Number.isInteger(publicPort)) throw new Error('publicPort is required');
   const origin = publicOrigin || `http://127.0.0.1:${publicPort}`;
   const key = `${homeDir}::${publicPort}`;
-  if (flightByHome.has(key)) return flightByHome.get(key);
+  const t0 = Date.now();
+  const state = { phase: 'start', timedOut: false, child: null };
+  const ring = { text: '' };
+  const mark = (name) => {
+    state.phase = name;
+    try { onPhase?.(name, Date.now() - t0); } catch {} // seam must never break recovery
+  };
+  // Bound one flight (owner or joiner) by the end-to-end budget. Joiners
+  // share the flight's state/child tracking, so a timeout kills only the
+  // flight-owned child once and every waiter gets the same actionable
+  // error. budget <= 0 disables the race (phase budgets still apply).
+  // Joiners share the owner's tracking so a timeout reports the real phase,
+  // kills the one flight-owned child once, and gates late registry writes
+  // consistently no matter which waiter times out first.
+  const raceWithBudget = (target, st = state) => {
+    const budget = Number(overallTimeoutMs);
+    const cleanupFlight = () => { if (flightByHome.get(key) === target) flightByHome.delete(key); };
+    if (!(budget > 0)) {
+      try {
+        return target;
+      } finally {
+        // Attach cleanup without altering the shared promise identity.
+        Promise.resolve(target).then(cleanupFlight, cleanupFlight);
+      }
+    }
+    let timer = null;
+    const timeoutRace = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        st.timedOut = true;
+        cleanupFlight();
+        const c = st.child;
+        st.child = null;
+        killSpawned(c);
+        reject(new Error(`share recovery timed out after ${budget}ms in ${st.phase} (end-to-end budget ${SHARE_RECOVERY_BUDGET_MS}ms); retry Share — a stale tunnel is replaced, never reused`));
+      }, budget);
+      if (timer.unref) timer.unref();
+    });
+    return (async () => {
+      try {
+        return await Promise.race([target, timeoutRace]);
+      } finally {
+        if (timer) clearTimeout(timer);
+        cleanupFlight();
+      }
+    })();
+  };
+  // Best-effort kill of ONLY the child this flight spawned. Safe to call on
+  // an exited child (ESRCH ignored) and safe to call twice.
+  const killSpawned = (proc) => {
+    try {
+      if (!proc) return;
+      if (typeof killFn === 'function') { Promise.resolve(killFn(proc.pid)).catch(() => {}); return; }
+      if (typeof proc.kill === 'function') { try { proc.kill('SIGTERM'); } catch { /* already gone */ } return; }
+      try { process.kill(proc.pid, 'SIGTERM'); } catch { /* already gone */ }
+    } catch { /* never throw from cleanup */ }
+  };
+  // Drain stderr so a chatty sustained child can never block on a full pipe.
+  // Attached synchronously at spawn, before any output is possible. The ring
+  // holds only cloudflared's own logs (hostname/edge lines) — bearer tokens
+  // are never passed to or through the child, so the tail is safe to quote
+  // in timeout errors. Exported for lifecycle tests (see __ seam below).
+  const drainStderr = (proc) => __drainChildStderr(proc, ring);
+  const stderrTail = () => ring.text.slice(-300).replace(/\s+/g, ' ').trim();
+  if (flightByHome.has(key)) {
+    const owner = flightByHome.get(key);
+    return raceWithBudget(owner, owner.shareState ?? state);
+  }
   const flight = (async () => {
     const registry = readShareRegistry(homeDir) || {};
     const verifyOpts = { fetchFn, isProcessAlive, findPidFn, psCommandFn, spawnSyncFn };
     // 1. Reuse the recorded tunnel when it still validates.
+    mark('validate');
     if (Number.isInteger(registry.metricsPort) && registry.hostname) {
       const check = await validateRegistryTunnel(registry, origin, verifyOpts);
       if (check.ok) {
-        if (check.hostname !== registry.hostname) {
+        if (check.hostname !== registry.hostname && !state.timedOut) {
           writeShareRegistry(homeDir, { ...registry, publicPort, hostname: check.hostname, updated_at: new Date().toISOString() });
         }
+        mark('reused');
         return { hostname: check.hostname, metricsPort: registry.metricsPort, pid: registry.pid ?? null, reused: true };
       }
     }
     // 2. Adopt a locally discoverable tunnel targeting our public origin
     // (registry stale). Never adopt an admin-targeting tunnel: discovery
     // requires exact publicOrigin equality PLUS listener PID/command proof.
+    mark('discover');
     const discovered = await discoverPublicTunnel(origin, {
       fetchFn,
       extraPorts: Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [],
@@ -383,26 +478,32 @@ export async function ensureShareTunnel({
     if (discovered) {
       // The discovered listener PID is verified cloudflared-for-origin
       // (discoverPublicTunnel proves it); record it for future ownership.
-      const next = {
-        publicPort,
-        metricsPort: discovered.metricsPort,
-        hostname: discovered.hostname,
-        pid: Number.isInteger(discovered.pid) ? discovered.pid : null,
-        updated_at: new Date().toISOString(),
-      };
-      writeShareRegistry(homeDir, next);
-      return { hostname: discovered.hostname, metricsPort: discovered.metricsPort, pid: next.pid, reused: true };
+      // Skipped after a global timeout (a retry owns the registry then).
+      if (!state.timedOut) {
+        const next = {
+          publicPort,
+          metricsPort: discovered.metricsPort,
+          hostname: discovered.hostname,
+          pid: Number.isInteger(discovered.pid) ? discovered.pid : null,
+          updated_at: new Date().toISOString(),
+        };
+        writeShareRegistry(homeDir, next);
+      }
+      mark('adopted');
+      return { hostname: discovered.hostname, metricsPort: discovered.metricsPort, pid: Number.isInteger(discovered.pid) ? discovered.pid : null, reused: true };
     }
     // 2b. Never spawn a new public tunnel while an admin-targeting tunnel
     // is discoverable (GOL-388: the admin route already 409s; this keeps a
     // direct ensureShareTunnel caller from launching into the cutover hole).
     // Reuse above stays available — it spawns nothing new.
+    mark('guard');
     if (adminOrigin) {
       const guardPorts = Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [];
       const guard = await detectUnsafeAdminTunnel(adminOrigin, { fetchFn, metricsPorts: guardPorts, spawnSyncFn }).catch(() => ({ unsafe: false }));
       if (guard.unsafe) throw new Error(`refusing to launch a public tunnel while an admin-targeting tunnel exists (${guard.detail})`);
     }
     // 3. Launch a new child. Explicit loopback --metrics, >=30s budget.
+    mark('launch');
     const metricsPort = pickMetricsPort ? await pickMetricsPort() : await pickFreePort();
     const args = ['tunnel', '--url', origin, '--metrics', `127.0.0.1:${metricsPort}`];
     const runSpawn = spawnFn || ((bin, a, opts) => nodeSpawn(bin, a, opts));
@@ -421,6 +522,8 @@ export async function ensureShareTunnel({
       child.on('exit', onExit);
       child.on('error', onError);
     }
+    drainStderr(child);
+    if (child && Number.isInteger(child.pid)) state.child = child;
     if (!child || child.pid == null) {
       // Give a sync-throwing fake or an ENOENT child one tick to report.
       await sleep(50);
@@ -428,10 +531,11 @@ export async function ensureShareTunnel({
       throw new Error(`cloudflared launch failed${cause} (is cloudflared installed?)`);
     }
     const killChild = async () => {
+      const c = child;
+      state.child = null;
       try {
-        if (killFn) await killFn(child.pid);
-        else if (typeof child.kill === 'function') child.kill('SIGTERM');
-        else process.kill(child.pid, 'SIGTERM');
+        if (typeof killFn === 'function') await killFn(c.pid);
+        else killSpawned(c);
       } catch { /* already gone */ }
     };
     const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || SHARE_TUNNEL_BUDGET_MS);
@@ -446,12 +550,19 @@ export async function ensureShareTunnel({
         const facts = await readTunnelFacts(metricsPort, { fetchFn });
         lastFacts = facts;
         if (facts.hostname && facts.service === origin && facts.haConnections > 0) {
-          const next = { publicPort, metricsPort, hostname: facts.hostname, pid: child.pid, updated_at: new Date().toISOString() };
-          writeShareRegistry(homeDir, next);
+          state.child = null;
+          // Skipped after a global timeout (a retry owns the registry then);
+          // validation gates any later reuse, so a skipped write only costs
+          // one extra relaunch, never a stale success.
+          if (!state.timedOut) {
+            const next = { publicPort, metricsPort, hostname: facts.hostname, pid: child.pid, updated_at: new Date().toISOString() };
+            writeShareRegistry(homeDir, next);
+          }
           if (typeof child.removeListener === 'function') {
             child.removeListener('exit', onExit);
             child.removeListener('error', onError);
           }
+          mark('done');
           return { hostname: facts.hostname, metricsPort, pid: child.pid, reused: false };
         }
       } catch { /* still provisioning: connection refused / empty hostname */ }
@@ -459,17 +570,36 @@ export async function ensureShareTunnel({
     }
     // Timeout: kill ONLY the child this attempt spawned.
     await killChild().catch(() => {});
+    mark('launch-timeout');
     const hint = lastFacts ? ` (last state: hostname=${lastFacts.hostname || 'none'} service=${lastFacts.service || 'none'} ha=${lastFacts.haConnections || 0})` : '';
-    throw new Error(`cloudflared provisioning timed out after ${Math.round((Number(timeoutMs) || SHARE_TUNNEL_BUDGET_MS) / 1000)}s${hint}`);
+    const tail = stderrTail();
+    throw new Error(`cloudflared provisioning timed out after ${Math.round((Number(timeoutMs) || SHARE_TUNNEL_BUDGET_MS) / 1000)}s${hint}${tail ? ` (child log tail: ${tail})` : ''}`);
   })();
+  flight.shareState = state;
   flightByHome.set(key, flight);
-  try {
-    return await flight;
-  } finally {
-    if (flightByHome.get(key) === flight) flightByHome.delete(key);
-  }
+  // Owner and joiners share the deadline: the timer cannot rescue a
+  // synchronously blocked loop (spawnSync hard timeouts cover that), but it
+  // bounds every awaited path so one dead-registry Share settles in
+  // ~budget, never minutes.
+  return raceWithBudget(flight);
 }
 
 export function __clearTunnelFlights() {
   flightByHome.clear();
+}
+
+// GOL-390 seam: drain a spawned child's stderr into a bounded ring so pipe
+// backpressure can never stall it. Test-only export (same convention as
+// __clearTunnelFlights); production calls it synchronously at spawn.
+export function __drainChildStderr(proc, ring) {
+  try {
+    const s = proc && proc.stderr;
+    if (!s || typeof s.on !== 'function') return;
+    s.on('data', (chunk) => {
+      ring.text += String(chunk);
+      if (ring.text.length > SHARE_STDERR_RING_MAX) ring.text = ring.text.slice(-SHARE_STDERR_RING_MAX);
+    });
+    s.on('error', () => {});
+    if (typeof s.resume === 'function') s.resume();
+  } catch { /* diagnostics must never break recovery */ }
 }
