@@ -3,6 +3,10 @@
 //   GET /s/:token                 — shared spec/doc reader (title/body only)
 //   GET /s/:token/assets/:name    — token-scoped referenced ticket images
 //   GET /s/assets/reader.css      — fixed reader stylesheet
+//   GET /s/assets/reader.js       — fixed tiny loader (fetches the diagram
+//                                   bundle only when div.mermaid exists)
+//   GET /s/assets/share-mermaid.mjs — fixed isolated diagram bundle (built
+//                                   via dashboard/vite.share.config.js)
 // Everything else (including /api/*, /ws, /read/:id and all mutations) 404s.
 // No dashboard bundle, no comments/children/assignee/state, no token logging.
 
@@ -14,11 +18,44 @@ import { parseAndNormalizeDoc, serializeNodes } from './html-body.js';
 
 export const SHARE_ASSET_NAME_PATTERN = /^[a-f0-9]{64}\.(png|jpg|gif|webp)$/;
 const TICKET_ASSET_SRC_PATTERN = /\/api\/ticket-assets\/([a-f0-9]{64}\.(?:png|jpg|gif|webp))/;
+// Hosts that must never be navigable from a public document: loopback and the
+// dashboard's own canonical host. Everything else absolute-http(s)/mailto and
+// same-page fragments may stay (external author links within CSP).
+const PUBLIC_LINK_INTERNAL_HOSTS = new Set(['127.0.0.1', 'localhost', 'dashboard.golem.localhost']);
 
 function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
+}
+
+// Mirror dashboard/web/src/format.js: ```mermaid fences become
+// <div class="mermaid"> (rendered client-side by the isolated bundle) and
+// GitHub-style admonitions become styled divs. Module-level once, matching
+// the client's ensureMdConfigured; per-call breaks flags elsewhere override.
+let mdConfigured = false;
+function ensureMdConfigured() {
+  if (mdConfigured) return;
+  marked.use({
+    breaks: true,
+    renderer: {
+      code({ text, lang }) {
+        if (lang && String(lang).toLowerCase() === 'mermaid') {
+          return `<div class="mermaid">${escHtml(text)}</div>\n`;
+        }
+        return false;
+      },
+      blockquote(token) {
+        const m = /^\[!(NOTE|WARNING|IMPORTANT)\][ \t]*\n?([\s\S]*)$/i.exec(token.text || '');
+        if (m) {
+          const type = m[1].toLowerCase();
+          return `<div class="admonition admonition-${type}">\n${marked.parse(m[2] || '')}</div>\n`;
+        }
+        return false;
+      },
+    },
+  });
+  mdConfigured = true;
 }
 
 function attrValue(node, name) {
@@ -31,8 +68,53 @@ function setAttr(node, name, value) {
   else node.attrs.push({ name, value });
 }
 
+function removeAttr(node, name) {
+  if (!node.attrs) return;
+  node.attrs = node.attrs.filter((a) => a.name !== name);
+}
+
 function childElements(node) {
   return (node.childNodes ?? []).filter((n) => n?.nodeName !== undefined && n.tagName !== undefined);
+}
+
+// GOL-384 D3/R4: the public contract is title + body only. Internal Golem
+// document/API links are made inert (href="#") so the public render neither
+// navigates to nor advertises dashboard URLs; same-page fragments, mailto,
+// and external http(s) links stay (with noreferrer on externals).
+export function neutralizePublicLinks(doc) {
+  const walk = (node) => {
+    for (const el of childElements(node)) {
+      if (el.tagName.toLowerCase() === 'a') {
+        const href = attrValue(el, 'href') ?? '';
+        let keep = false;
+        let external = false;
+        if (href.startsWith('#')) {
+          keep = true;
+        } else {
+          try {
+            const u = new URL(href, 'https://golem.invalid');
+            if (u.protocol === 'mailto:') {
+              keep = true;
+            } else if ((u.protocol === 'http:' || u.protocol === 'https:')
+              && u.hostname !== 'golem.invalid'
+              && !PUBLIC_LINK_INTERNAL_HOSTS.has(u.hostname.toLowerCase())) {
+              keep = true;
+              external = true;
+            }
+          } catch { keep = false; }
+        }
+        if (!keep) {
+          setAttr(el, 'href', '#');
+          removeAttr(el, 'target');
+        } else if (external) {
+          setAttr(el, 'rel', 'noreferrer noopener');
+        }
+      }
+      walk(el);
+    }
+  };
+  walk(doc);
+  return doc;
 }
 
 // Render body to sanitized HTML + collect referenced asset names. Rewrites
@@ -45,6 +127,7 @@ export function renderSharedBody(body, format, token) {
   } else {
     const src = String(body ?? '');
     if (!src.trim()) return { html: '', refs: [] };
+    ensureMdConfigured();
     rawHtml = marked(src, { gfm: true, breaks: true, headerIds: false, mangle: false });
   }
   if (!rawHtml.trim()) return { html: '', refs: [] };
@@ -69,6 +152,7 @@ export function renderSharedBody(body, format, token) {
     }
   };
   walk(doc);
+  neutralizePublicLinks(doc);
   return { html: serializeNodes(doc.childNodes), refs: [...new Set(refs)] };
 }
 
@@ -78,6 +162,7 @@ export function referencedShareAssets(body, format) {
   if (fmt === 'markdown') {
     const src = String(body ?? '');
     if (!src.trim()) return [];
+    ensureMdConfigured();
     rawHtml = marked(src, { gfm: true, breaks: true, headerIds: false, mangle: false });
   }
   if (!rawHtml.trim()) return [];
@@ -102,27 +187,36 @@ export function referencedShareAssets(body, format) {
   return [...new Set(refs)];
 }
 
-const READER_CSS = `:root{color-scheme:light dark}body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;background:#fff;color:#111}main.share-reader{max-width:760px;margin:0 auto;padding:32px 20px 64px}h1.share-title{font-size:28px;line-height:1.25;margin:0 0 16px}.share-body img{max-width:100%;height:auto}.share-body pre{background:#f6f8fa;padding:12px;border-radius:6px;overflow:auto}.share-body code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}.share-body table{border-collapse:collapse;width:100%}.share-body th,.share-body td{border:1px solid #ddd;padding:6px 10px}.mermaid{background:#f6f8fa;border:1px solid #e1e4e8;border-radius:6px;padding:12px;white-space:pre-wrap}@media(prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}.share-body pre{background:#161b22}.mermaid{background:#161b22;border-color:#30363d}.share-body th,.share-body td{border-color:#30363d}}`;
+const READER_CSS = `:root{color-scheme:light dark}body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;background:#fff;color:#111}main.share-reader{max-width:760px;margin:0 auto;padding:32px 20px 64px}h1.share-title{font-size:28px;line-height:1.25;margin:0 0 16px}.share-body img{max-width:100%;height:auto}.share-body pre{background:#f6f8fa;padding:12px;border-radius:6px;overflow:auto}.share-body code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}.share-body table{border-collapse:collapse;width:100%}.share-body th,.share-body td{border:1px solid #ddd;padding:6px 10px}.mermaid{background:#f6f8fa;border:1px solid #e1e4e8;border-radius:6px;padding:12px;white-space:pre-wrap}.mermaid svg{max-width:100%;height:auto;display:block;margin:0 auto}.mermaid-error{border-color:#d1242f}.admonition{border-left:3px solid #0969da;background:#ddf4ff33;padding:8px 12px;margin:12px 0;border-radius:0 6px 6px 0}@media(prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}.share-body pre{background:#161b22}.mermaid{background:#161b22;border-color:#30363d}.share-body th,.share-body td{border-color:#30363d}}`;
+
+// Tiny loader: fetch the (large) diagram bundle only when the document
+// actually contains diagrams. No-JS clients keep the source-text fallback.
+const READER_JS = `(async () => {\n  try {\n    if (!document.querySelector('div.mermaid')) return;\n    const mod = await import('/s/assets/share-mermaid.mjs');\n    if (mod && typeof mod.renderShareMermaids === 'function') await mod.renderShareMermaids(document);\n  } catch { /* source-text fallback stays visible */ }\n})();\n`;
 
 function publicHeaders(extra = {}) {
   return {
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
     'Cache-Control': 'private, no-store',
-    'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'",
+    // GOL-388 fix 5: isolated module scripts from self only — still no
+    // inline scripts, no dashboard origins, no form actions.
+    'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'",
     ...extra,
   };
 }
 
-export function buildReaderHtml({ title, bodyHtml, displayId }) {
+// GOL-384 D3: title + body only — no display id, no tracker metadata.
+export function buildReaderHtml({ title, bodyHtml }) {
   const safeTitle = escHtml(title || 'Shared document');
-  const ref = displayId ? `<p class=\"share-ref\">${escHtml(displayId)}</p>` : '';
-  return `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><title>${safeTitle}</title><link rel=\"stylesheet\" href=\"/s/assets/reader.css\"></head><body><main class=\"share-reader\"><h1 class=\"share-title\">${safeTitle}</h1>${ref}<div class=\"share-body\">${bodyHtml || ''}</div></main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${safeTitle}</title><link rel="stylesheet" href="/s/assets/reader.css"></head><body><main class="share-reader"><h1 class="share-title">${safeTitle}</h1><div class="share-body">${bodyHtml || ''}</div></main><script type="module" src="/s/assets/reader.js"></script></body></html>`;
 }
 
 // Create the isolated public server. tracker must expose getShareGrantByToken
-// and getTicket; assetsDir is the content-addressed image dir.
-export function createSharePublicServer({ tracker, assetsDir }) {
+// and getTicket; assetsDir is the content-addressed image dir;
+// mermaidBundlePath (optional) is the built isolated diagram bundle file —
+// absent in source checkouts without a dashboard build, and the reader then
+// degrades to the diagram source-text fallback.
+export function createSharePublicServer({ tracker, assetsDir, mermaidBundlePath = null }) {
   const server = http.createServer((req, res) => {
     try {
       const method = String(req.method || 'GET').toUpperCase();
@@ -133,8 +227,23 @@ export function createSharePublicServer({ tracker, assetsDir }) {
         return;
       }
       if (url === '/s/assets/reader.css') {
-        res.writeHead(200, publicHeaders({ 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-store' }));
+        res.writeHead(200, publicHeaders({ 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'private, max-age=3600' }));
         res.end(READER_CSS);
+        return;
+      }
+      if (url === '/s/assets/reader.js') {
+        res.writeHead(200, publicHeaders({ 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'private, max-age=3600' }));
+        res.end(READER_JS);
+        return;
+      }
+      if (url === '/s/assets/share-mermaid.mjs') {
+        if (!mermaidBundlePath || !fs.existsSync(mermaidBundlePath)) {
+          res.writeHead(404, publicHeaders({ 'Content-Type': 'application/json' }));
+          res.end(JSON.stringify({ error: 'not_found' }));
+          return;
+        }
+        res.writeHead(200, publicHeaders({ 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'private, max-age=3600' }));
+        fs.createReadStream(mermaidBundlePath).pipe(res);
         return;
       }
       const docMatch = /^\/s\/([A-Za-z0-9_-]{8,256})\/?$/.exec(url);
@@ -153,7 +262,7 @@ export function createSharePublicServer({ tracker, assetsDir }) {
           return;
         }
         const { html } = renderSharedBody(ticket.body, ticket.body_format, token);
-        const page = buildReaderHtml({ title: ticket.title, bodyHtml: html, displayId: ticket.display_id });
+        const page = buildReaderHtml({ title: ticket.title, bodyHtml: html });
         res.writeHead(200, publicHeaders({ 'Content-Type': 'text/html; charset=utf-8' }));
         res.end(page);
         return;

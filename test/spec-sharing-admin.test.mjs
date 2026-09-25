@@ -133,6 +133,125 @@ try {
   res = await api('POST', '/api/tickets/TKT-missing/share', {});
   // Unsafe is gone, so this should be 404 (not 409).
   check('Share missing ticket 404', res.status === 404, JSON.stringify(res.json));
+
+  // ---- Phase 2 (GOL-388): restart rebind + GET bearer discipline ----
+  // Pre-seed a second isolated dashboard: tracker DB with a granted spec and
+  // a registry recording a live fake tunnel on a reserved public port. On
+  // boot the server must rebind that port so the copied link works with NO
+  // fresh POST (reviewer repro: pre-fix the port stays dark). Then, with an
+  // unsafe admin tunnel present, GET must omit the bearer URL (pre-fix it
+  // leaks the token) while keeping the shared/unsafe flags.
+  const home2 = path.join(tmp, 'home2');
+  const dbPath2 = path.join(tmp, 'tracker2.db');
+  for (const d of [home2, path.join(tmp, 'xdg2'), path.join(tmp, 'projects2'), path.join(tmp, 'ideas2')]) fs.mkdirSync(d, { recursive: true });
+  const { openTrackerDb } = await import('../dashboard/server/tracker-db.js');
+  const seedDb = openTrackerDb(dbPath2);
+  const spec2 = seedDb.createTicket({ project_id: proj, kind: 'spec', title: 'Restart Doc', body: '# Restart\n\nSurvives reboot.', state: 'todo' });
+  const grant2 = seedDb.createShareGrant(spec2.id);
+  seedDb.close();
+  const publicPort2 = await freePort();
+  const publicOrigin2 = `http://127.0.0.1:${publicPort2}`;
+  const host2 = 'restart-live-7.trycloudflare.com';
+  const fake2 = http.createServer((req, res2) => {
+    const url = String(req.url || '').split('?')[0];
+    if (url === '/quicktunnel') { res2.writeHead(200, { 'Content-Type': 'application/json' }); res2.end(JSON.stringify({ hostname: host2 })); return; }
+    if (url === '/config') { res2.writeHead(200, { 'Content-Type': 'application/json' }); res2.end(JSON.stringify({ ingress: [{ service: publicOrigin2 }] })); return; }
+    if (url === '/metrics') { res2.writeHead(200, { 'Content-Type': 'text/plain' }); res2.end('cloudflared_tunnel_ha_connections 1\n'); return; }
+    res2.writeHead(404, {}); res2.end('{}');
+  });
+  await new Promise((r) => fake2.listen(0, '127.0.0.1', r));
+  extraServers.push(fake2);
+  const metrics2 = fake2.address().port;
+  // pid:null: a previously adopted entry. Startup rebind needs no validation
+  // (it only binds the recorded port); the pid is filled below for the GET
+  // URL path, simulating a listener verified at adoption time.
+  fs.writeFileSync(path.join(home2, 'share-tunnel.json'), JSON.stringify({
+    publicPort: publicPort2, metricsPort: metrics2, hostname: host2, pid: null, updated_at: new Date().toISOString(),
+  }));
+  const port2 = await freePort();
+  const base2 = `http://127.0.0.1:${port2}`;
+  let dashboard2 = spawn(process.execPath, [path.join(repo, 'dashboard/server/index.js')], {
+    cwd: repo,
+    env: { ...env, PORT: String(port2), GOLEM_HOME: home2, GOLEM_TRACKER_DB: dbPath2, XDG_CONFIG_HOME: path.join(tmp, 'xdg2'), HOME: home2, GOLEM_PROJECTS_ROOT: path.join(tmp, 'projects2'), GOLEM_IDEAS_ROOT: path.join(tmp, 'ideas2') },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  try {
+    const deadline2 = Date.now() + 25000;
+    while (Date.now() < deadline2) {
+      try { if ((await fetch(`${base2}/api/health`)).ok) break; } catch { /* retry */ }
+      if (dashboard2.exitCode !== null) throw new Error('dashboard2 exited during restart test');
+      await sleep(150);
+    }
+    check('restarted dashboard healthy', true, base2);
+    const api2 = async (method, q, body = null) => {
+      const r2 = await fetch(`${base2}${q}`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return { status: r2.status, json: await r2.json().catch(() => null), text: null };
+    };
+    // Copied link works with NO fresh POST: the recorded public port was
+    // rebound at startup and the grant survived in the DB. Connection-level
+    // failure (pre-fix: nothing listens) reports as status 0, not a crash.
+    const fetchPub2 = async () => {
+      try {
+        const r = await fetch(`http://127.0.0.1:${publicPort2}/s/${grant2.token}`);
+        return { status: r.status, text: await r.text() };
+      } catch { return { status: 0, text: '' }; }
+    };
+    const pub2 = await fetchPub2();
+    check('restart rebinds recorded public port (copied link live, no POST)', pub2.status === 200, `got ${pub2.status}`);
+    check('rebound reader serves granted title', pub2.text.includes('Restart Doc'));
+    // A failed Share POST binds the public listener even when the tunnel
+    // cannot launch (no binary on PATH): 502, grant untouched. This also
+    // covers pre-fix code paths that only bind on POST, so the leak setup
+    // below discriminates the GET fix independently of the rebind fix.
+    res = await api2('POST', `/api/tickets/${spec2.id}/share`, {});
+    check('phase-2 Share fails closed without binary', res.status === 502, JSON.stringify(res.json)?.slice(0, 100));
+    // Record the (simulated verified) owner pid so GET can build the URL.
+    const reg2 = JSON.parse(fs.readFileSync(path.join(home2, 'share-tunnel.json'), 'utf8'));
+    reg2.pid = dashboard2.pid;
+    fs.writeFileSync(path.join(home2, 'share-tunnel.json'), JSON.stringify(reg2));
+    res = await api2('GET', `/api/tickets/${spec2.id}/share`);
+    check('GET returns bearer URL when safe (setup can leak)', res.status === 200 && typeof res.json?.url === 'string' && res.json.url.includes(grant2.token), JSON.stringify(res.json)?.slice(0, 120));
+    // Unsafe admin tunnel on a probed default port: GET must omit the URL
+    // and the token must appear nowhere in the response body.
+    const adminOrigin2 = `http://127.0.0.1:${port2}`;
+    const occupyUnsafe = async () => {
+      for (const p of [20244, 20242, 20243, 20245]) {
+        const srv = http.createServer((req, res2) => {
+          const url = String(req.url || '').split('?')[0];
+          if (url === '/quicktunnel') { res2.writeHead(200, { 'Content-Type': 'application/json' }); res2.end(JSON.stringify({ hostname: 'cutover-hole.trycloudflare.com' })); return; }
+          if (url === '/config') { res2.writeHead(200, { 'Content-Type': 'application/json' }); res2.end(JSON.stringify({ ingress: [{ service: adminOrigin2 }] })); return; }
+          if (url === '/metrics') { res2.writeHead(200, { 'Content-Type': 'text/plain' }); res2.end('cloudflared_tunnel_ha_connections 1\n'); return; }
+          res2.writeHead(404, {}); res2.end('{}');
+        });
+        try {
+          await new Promise((resolve, reject) => { srv.once('error', reject); srv.listen(p, '127.0.0.1', resolve); });
+          return srv;
+        } catch { /* held: try next */ }
+      }
+      throw new Error('no free default metrics port for unsafe GET test');
+    };
+    const unsafe2 = await occupyUnsafe();
+    extraServers.push(unsafe2);
+    await sleep(300);
+    const raw2 = await fetch(`${base2}/api/tickets/${spec2.id}/share`);
+    const body2 = await raw2.text();
+    let json2 = null;
+    try { json2 = JSON.parse(body2); } catch { json2 = null; }
+    check('GET omits bearer URL while unsafe', raw2.status === 200 && json2 && json2.url === null && json2.unsafe === true && json2.shared === true, body2.slice(0, 160));
+    check('no token bytes leak via unsafe GET', !body2.includes(grant2.token));
+    await new Promise((r) => unsafe2.close(r));
+    extraServers.splice(extraServers.indexOf(unsafe2), 1);
+  } finally {
+    if (dashboard2 && dashboard2.exitCode === null) {
+      dashboard2.kill('SIGTERM');
+      await new Promise((r) => setTimeout(r, 800));
+      if (dashboard2.exitCode === null) dashboard2.kill('SIGKILL');
+    }
+  }
 } finally {
   for (const s of extraServers) { try { await new Promise((r) => s.close(r)); } catch {} }
   if (dashboard && dashboard.exitCode === null) {

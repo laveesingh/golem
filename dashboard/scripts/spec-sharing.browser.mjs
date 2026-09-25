@@ -129,6 +129,29 @@ try {
   await pause(800);
   ok((await page.$('[data-testid="share-control"] .td-share-link')) === null, 'Stop sharing clears the link');
 
+  // GOL-388 unsafe UI: network-level unsafe status + 409s (no API stubs —
+  // page.route rewrites the real responses, so the real component paths run).
+  // No bearer link may render even though the grant exists server-side.
+  await page.route('**/api/tickets/*/share', (route) => {
+    const method = route.request().method();
+    if (method === 'GET') {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ shared: true, shareable: true, unsafe: true, url: null }) });
+    } else {
+      route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'Sharing is paused while the old dashboard tunnel runs. Retire it, then try again.', code: 'UNSAFE_ADMIN_TUNNEL' }) });
+    }
+  });
+  await page.goto(`${base}/read/${encodeURIComponent(spec.id)}`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-testid="share-control"] .td-share-btn', { timeout: 15000 });
+  await page.click('[data-testid="share-control"] .td-share-btn');
+  await page.waitForSelector('[data-testid="share-control"] .td-share-pop', { timeout: 15000 });
+  await pause(800);
+  ok((await page.$('[data-testid="share-control"] .td-share-link')) === null, 'unsafe status renders no bearer link');
+  const pausedText = await page.textContent('[data-testid="share-control"] .td-share-pop');
+  ok(/paused while the old dashboard tunnel runs/i.test(pausedText || ''), 'unsafe pause message shown, not silent');
+  const getBtn = await page.$('[data-testid="share-control"] .td-share-pop .orch-btn.small');
+  ok(getBtn && await getBtn.isDisabled(), 'URL generation disabled while unsafe');
+  await page.unroute('**/api/tickets/*/share');
+
   // Public reader isolation: direct grant + loopback public server (no tunnel).
   const { openTrackerDb } = await import('../server/tracker-db.js');
   const { createSharePublicServer } = await import('../server/share-public.js');
@@ -136,7 +159,11 @@ try {
   const pubTracker = openTrackerDb(pubDb);
   const pubSpec = pubTracker.createTicket({ project_id: proj, kind: 'spec', title: 'Public Isolation', body: '# Pub\n\nBody.', state: 'todo' });
   const pubGrant = pubTracker.createShareGrant(pubSpec.id);
-  const pubSrv = createSharePublicServer({ tracker: pubTracker, assetsDir: path.join(scratch, 'assets-nope') });
+  const pubSrv = createSharePublicServer({
+    tracker: pubTracker,
+    assetsDir: path.join(scratch, 'assets-nope'),
+    mermaidBundlePath: path.join(repo, 'dashboard', 'dist', 'share-mermaid.mjs'),
+  });
   const pubPort = await pubSrv.listen(0);
   await page.goto(`http://127.0.0.1:${pubPort}/s/${pubGrant.token}`, { waitUntil: 'networkidle' });
   const pubHtml = await page.content();
@@ -146,6 +173,16 @@ try {
   ok((await page.$('.td-children')) === null, 'public reader has no children panel');
   ok((await page.$('textarea')) === null, 'public reader has no comment composer');
   ok(!pubHtml.includes('/api/snapshot'), 'public reader has no dashboard bundle refs');
+  ok(!pubHtml.includes('share-ref'), 'public reader omits display-id ref (title/body only)');
+
+  // GOL-388 fix 5: fenced diagram renders to SVG via the isolated bundle.
+  const mmdSpec = pubTracker.createTicket({ project_id: proj, kind: 'spec', title: 'Public Diagram', body: '# Diagram\n\n```mermaid\nflowchart LR\n  A-->B\n```\n', state: 'todo' });
+  const mmdGrant = pubTracker.createShareGrant(mmdSpec.id);
+  await page.goto(`http://127.0.0.1:${pubPort}/s/${mmdGrant.token}`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('div.mermaid svg', { timeout: 20000 });
+  ok(true, 'public reader renders diagram SVG (isolated bundle)');
+  const mmdHtml = await page.content();
+  ok(!mmdHtml.includes('language-mermaid'), 'no raw code fence left for diagrams');
   await pubSrv.close();
   pubTracker.close();
   ok(true, 'public reader isolation verified without a tunnel');

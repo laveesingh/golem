@@ -79,13 +79,19 @@ function ShareControl({ ticket }) {
     window.SubstrateAPI.getShareStatus(ticketId).then((s) => {
       if (cancelled) return;
       setStatus(s);
-      if (s?.url) setLink(s.url);
+      // GOL-388: while unsafe, the server omits the bearer URL — clear any
+      // previously held link so no token renders through the old tunnel.
+      if (s?.unsafe) setLink(null);
+      else if (s?.url) setLink(s.url);
     }).catch(() => { if (!cancelled) setStatus({ shared: false, shareable: true, unsafe: false, url: null }); });
     return () => { cancelled = true; };
   }, [ticketId]);
   if (!ticket || (kind !== 'spec' && kind !== 'doc')) return null;
   const unsafe = !!status?.unsafe;
-  const shared = !!link || !!status?.shared;
+  // GOL-388: never render a bearer link while unsafe, even if one was
+  // fetched before the pause began.
+  const showLink = !!link && !unsafe;
+  const shared = !!status?.shared || showLink;
   const doShare = async () => {
     setBusy(true); setError(null); setCopyFailed(false); setOpen(true);
     try {
@@ -136,7 +142,7 @@ function ShareControl({ ticket }) {
           {busy && <div className="td-share-busy">working\u2026</div>}
           {error && <div className="ct-error" role="alert">{error}</div>}
           {unsafe && !error && <div className="ct-error" role="alert">Sharing is paused while the old dashboard tunnel runs. Retire it, then try again.</div>}
-          {link ? (
+          {showLink ? (
             <>
               <input className="td-share-link" readOnly value={link} onFocus={(e) => e.target.select()} aria-label="Shared link" />
               <div className="row">

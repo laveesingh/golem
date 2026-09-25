@@ -125,6 +125,56 @@ export function defaultIsProcessAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
+export function escapeRegExp(s) {
+  return String(s ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// True when a process command line is a cloudflared quick tunnel serving
+// exactly publicOrigin (GOL-388: fake metrics//config alone prove nothing).
+// Requires the literal `--url <origin>` bounded by whitespace/end so
+// :808 never matches :8080.
+export function isCloudflaredTunnelForOrigin(command, publicOrigin) {
+  const cmd = String(command ?? '');
+  if (!/cloudflared/i.test(cmd) || !/\btunnel\b/.test(cmd)) return false;
+  return new RegExp(`--url\\s+${escapeRegExp(publicOrigin)}(?=\\s|$)`).test(cmd);
+}
+
+// PID of the process LISTENing on a TCP port (lsof, loopback only). Null
+// when unresolvable — callers fail closed on null.
+export function findMetricsListenerPid(port, { spawnSyncFn = null } = {}) {
+  try {
+    const run = spawnSyncFn || nodeSpawnSync;
+    const res = run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-FpcL'], { encoding: 'utf8' });
+    for (const line of String(res.stdout || '').split('\n')) {
+      if (line.startsWith('p')) {
+        const pid = Number(line.slice(1));
+        if (Number.isInteger(pid) && pid > 0) return pid;
+      }
+    }
+  } catch { /* unavailable: caller treats null as unverified */ }
+  return null;
+}
+
+export function processCommandForPid(pid, { spawnSyncFn = null } = {}) {
+  return defaultPsCommand(pid, { spawnSyncFn });
+}
+
+// Verify a metrics port is served by a cloudflared tunnel for publicOrigin.
+// Returns { ok, pid?, reason? } — never throws for unresolvable listeners.
+export async function verifyMetricsListener(metricsPort, publicOrigin, { findPidFn = null, psCommandFn = null, spawnSyncFn = null } = {}) {
+  let pid = null;
+  try {
+    pid = findPidFn ? await findPidFn(metricsPort) : findMetricsListenerPid(metricsPort, { spawnSyncFn });
+  } catch { pid = null; }
+  if (!Number.isInteger(pid)) return { ok: false, reason: 'no_listener_pid' };
+  let cmd = '';
+  try {
+    cmd = psCommandFn ? String(await psCommandFn(pid) ?? '') : processCommandForPid(pid, { spawnSyncFn });
+  } catch { cmd = ''; }
+  if (!isCloudflaredTunnelForOrigin(cmd, publicOrigin)) return { ok: false, reason: 'command_mismatch', pid };
+  return { ok: true, pid };
+}
+
 export function defaultPsCommand(pid, { spawnSyncFn = null } = {}) {
   try {
     const run = spawnSyncFn || nodeSpawnSync;
@@ -136,7 +186,7 @@ export function defaultPsCommand(pid, { spawnSyncFn = null } = {}) {
 // Validate a registry candidate against the expected public origin. Returns
 // { ok, hostname, service, haConnections, reason } — never throws for
 // unreachable metrics (returns ok:false).
-export async function validateRegistryTunnel(registry, publicOrigin, { fetchFn = null, isProcessAlive = defaultIsProcessAlive } = {}) {
+export async function validateRegistryTunnel(registry, publicOrigin, { fetchFn = null, isProcessAlive = defaultIsProcessAlive, findPidFn = null, psCommandFn = null, spawnSyncFn = null } = {}) {
   if (!registry || !Number.isInteger(registry.metricsPort) || !registry.hostname) {
     return { ok: false, reason: 'no_registry' };
   }
@@ -151,19 +201,33 @@ export async function validateRegistryTunnel(registry, publicOrigin, { fetchFn =
   if (!facts.hostname || !parseHostname(facts.hostname)) return { ok: false, reason: 'no_hostname' };
   if (facts.service !== publicOrigin) return { ok: false, reason: 'origin_mismatch', service: facts.service };
   if (!(facts.haConnections > 0)) return { ok: false, reason: 'no_connection', haConnections: facts.haConnections };
+  // GOL-388: a pid-less (previously adopted) entry must re-prove its metrics
+  // listener is a cloudflared tunnel for this origin — metrics alone can be
+  // impersonated. Entries with a live recorded pid were spawned or verified
+  // with that pid and keep the pid-liveness proof above. Unresolvable
+  // listeners fail closed here (verifyMetricsListener returns ok:false).
+  if (registry.pid == null) {
+    const proof = await verifyMetricsListener(registry.metricsPort, publicOrigin, { findPidFn, psCommandFn, spawnSyncFn });
+    if (!proof.ok) return { ok: false, reason: `listener_unverified:${proof.reason}` };
+  }
   return { ok: true, hostname: facts.hostname, service: facts.service, haConnections: facts.haConnections };
 }
 
 // Probe well-known local metrics ports (+ an optional recorded port) for a
-// tunnel targeting publicOrigin. Returns { metricsPort, hostname } or null.
-export async function discoverPublicTunnel(publicOrigin, { fetchFn = null, extraPorts = [] } = {}) {
+// tunnel targeting publicOrigin. GOL-388: a candidate is adopted only when
+// its metrics listener PID proves to be `cloudflared tunnel --url
+// <exact publicOrigin>` — matching /config alone can be impersonated.
+// Returns { metricsPort, hostname, pid } or null. Unverifiable candidates
+// are skipped (fail closed toward launching a Golem-owned child).
+export async function discoverPublicTunnel(publicOrigin, { fetchFn = null, extraPorts = [], findPidFn = null, psCommandFn = null, spawnSyncFn = null } = {}) {
   const ports = [...new Set([...(extraPorts || []), ...SHARE_METRICS_CANDIDATES])];
   for (const port of ports) {
     try {
       const facts = await readTunnelFacts(port, { fetchFn });
-      if (facts.hostname && facts.service === publicOrigin && facts.haConnections > 0) {
-        return { metricsPort: port, hostname: facts.hostname };
-      }
+      if (!(facts.hostname && facts.service === publicOrigin && facts.haConnections > 0)) continue;
+      const proof = await verifyMetricsListener(port, publicOrigin, { findPidFn, psCommandFn, spawnSyncFn });
+      if (!proof.ok) continue;
+      return { metricsPort: port, hostname: facts.hostname, pid: proof.pid };
     } catch { /* next candidate */ }
   }
   return null;
@@ -231,15 +295,15 @@ function sleep(ms) {
 
 // Prove Golem owns the recorded tunnel (for safe rebind kill): pid alive,
 // metrics/config prove it targets publicOrigin (never admin), and the process
-// command looks like our cloudflared child when available.
-export async function registryOwnsLiveTunnel(registry, publicOrigin, { fetchFn = null, isProcessAlive = defaultIsProcessAlive, spawnSyncFn = null } = {}) {
+// command is a cloudflared tunnel for that exact origin when available.
+export async function registryOwnsLiveTunnel(registry, publicOrigin, { fetchFn = null, isProcessAlive = defaultIsProcessAlive, spawnSyncFn = null, psCommandFn = null } = {}) {
   if (!registry || !Number.isInteger(registry.pid)) return false;
   if (!isProcessAlive(registry.pid)) return false;
   const check = await validateRegistryTunnel(registry, publicOrigin, { fetchFn, isProcessAlive });
   if (!check.ok) return false;
   try {
-    const cmd = defaultPsCommand(registry.pid, { spawnSyncFn });
-    if (cmd && !/cloudflared/i.test(cmd)) return false;
+    const cmd = psCommandFn ? String(await psCommandFn(registry.pid) ?? '') : defaultPsCommand(registry.pid, { spawnSyncFn });
+    if (cmd && !isCloudflaredTunnelForOrigin(cmd, publicOrigin)) return false;
   } catch { /* ps unavailable: metrics proof above suffices */ }
   return true;
 }
@@ -271,6 +335,8 @@ export async function stopOwnedTunnel(homeDir, publicOrigin, adminOrigin, { fetc
 }
 
 // Single-flight supervised ensure. Returns { hostname, metricsPort, pid, reused }.
+// Reuse returns a live validated tunnel without spawning; launching a NEW
+// child while an admin-targeting tunnel is discoverable refuses (no spawn).
 export async function ensureShareTunnel({
   publicPort,
   publicOrigin,
@@ -283,6 +349,9 @@ export async function ensureShareTunnel({
   pickMetricsPort = null,
   timeoutMs = SHARE_TUNNEL_BUDGET_MS,
   cloudflaredBin = 'cloudflared',
+  findPidFn = null,
+  psCommandFn = null,
+  spawnSyncFn = null,
 } = {}) {
   if (!Number.isInteger(publicPort)) throw new Error('publicPort is required');
   const origin = publicOrigin || `http://127.0.0.1:${publicPort}`;
@@ -290,9 +359,10 @@ export async function ensureShareTunnel({
   if (flightByHome.has(key)) return flightByHome.get(key);
   const flight = (async () => {
     const registry = readShareRegistry(homeDir) || {};
+    const verifyOpts = { fetchFn, isProcessAlive, findPidFn, psCommandFn, spawnSyncFn };
     // 1. Reuse the recorded tunnel when it still validates.
     if (Number.isInteger(registry.metricsPort) && registry.hostname) {
-      const check = await validateRegistryTunnel(registry, origin, { fetchFn, isProcessAlive });
+      const check = await validateRegistryTunnel(registry, origin, verifyOpts);
       if (check.ok) {
         if (check.hostname !== registry.hostname) {
           writeShareRegistry(homeDir, { ...registry, publicPort, hostname: check.hostname, updated_at: new Date().toISOString() });
@@ -302,21 +372,35 @@ export async function ensureShareTunnel({
     }
     // 2. Adopt a locally discoverable tunnel targeting our public origin
     // (registry stale). Never adopt an admin-targeting tunnel: discovery
-    // requires exact publicOrigin equality.
+    // requires exact publicOrigin equality PLUS listener PID/command proof.
     const discovered = await discoverPublicTunnel(origin, {
       fetchFn,
       extraPorts: Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [],
+      findPidFn,
+      psCommandFn,
+      spawnSyncFn,
     });
     if (discovered) {
+      // The discovered listener PID is verified cloudflared-for-origin
+      // (discoverPublicTunnel proves it); record it for future ownership.
       const next = {
         publicPort,
         metricsPort: discovered.metricsPort,
         hostname: discovered.hostname,
-        pid: registry.pid && isProcessAlive(registry.pid) ? registry.pid : null,
+        pid: Number.isInteger(discovered.pid) ? discovered.pid : null,
         updated_at: new Date().toISOString(),
       };
       writeShareRegistry(homeDir, next);
       return { hostname: discovered.hostname, metricsPort: discovered.metricsPort, pid: next.pid, reused: true };
+    }
+    // 2b. Never spawn a new public tunnel while an admin-targeting tunnel
+    // is discoverable (GOL-388: the admin route already 409s; this keeps a
+    // direct ensureShareTunnel caller from launching into the cutover hole).
+    // Reuse above stays available — it spawns nothing new.
+    if (adminOrigin) {
+      const guardPorts = Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [];
+      const guard = await detectUnsafeAdminTunnel(adminOrigin, { fetchFn, metricsPorts: guardPorts, spawnSyncFn }).catch(() => ({ unsafe: false }));
+      if (guard.unsafe) throw new Error(`refusing to launch a public tunnel while an admin-targeting tunnel exists (${guard.detail})`);
     }
     // 3. Launch a new child. Explicit loopback --metrics, >=30s budget.
     const metricsPort = pickMetricsPort ? await pickMetricsPort() : await pickFreePort();

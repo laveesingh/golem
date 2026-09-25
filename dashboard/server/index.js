@@ -1317,7 +1317,11 @@ async function main() {
     const registry = readShareRegistry(homeDir) || {};
     const recorded = Number.isInteger(registry.publicPort) ? registry.publicPort : null;
     const tryBind = async (port) => {
-      const srv = createSharePublicServer({ tracker, assetsDir: CONFIG.assetsDir });
+      const srv = createSharePublicServer({
+        tracker,
+        assetsDir: CONFIG.assetsDir,
+        mermaidBundlePath: path.join(WEB_ROOT, 'share-mermaid.mjs'),
+      });
       const bound = await srv.listen(port);
       sharePublicServer = srv;
       sharePublicPort = bound;
@@ -1358,6 +1362,11 @@ async function main() {
     const shareable = ticket.kind === 'spec' || ticket.kind === 'doc';
     const grant = tracker.getShareGrant(ticket.id);
     const unsafe = await shareUnsafeDetail().catch(() => ({ unsafe: false, detail: '' }));
+    // GOL-388: while an admin-targeting tunnel is discoverable, never emit
+    // the bearer URL from this GET — the flags alone carry UI state.
+    if (unsafe.unsafe) {
+      return { shared: !!grant && shareable, shareable, unsafe: true, url: null };
+    }
     let url = null;
     if (grant && shareable) {
       try {
@@ -2875,6 +2884,24 @@ async function main() {
   // Canonical URL is http://dashboard.golem.localhost:7420 (RFC 6761 *.localhost
   // resolves to 127.0.0.1 — no /etc/hosts edit needed).
   const boundPort = await tryListen(CONFIG.port);
+
+  // GOL-384 restart: rebind the recorded public share listener so a
+  // still-live managed tunnel keeps serving copied links without a fresh
+  // Share. Lazy when no registry exists. Owned-occupant → stop + rebind;
+  // otherwise fail closed with a warning — the dashboard itself must start.
+  try {
+    const recorded = readShareRegistry(golemHome()) || {};
+    if (Number.isInteger(recorded.publicPort)) {
+      try {
+        const rebound = await ensureSharePublicPort();
+        fastify.log.info({ publicPort: rebound }, 'share public listener rebound');
+      } catch (err) {
+        fastify.log.warn({ err }, 'share public listener rebind failed (fail closed)');
+      }
+    }
+  } catch (err) {
+    fastify.log.warn({ err }, 'share registry read failed at startup');
+  }
 
   // WS2: self-register so WS3's MCP discovery can find the live dashboard.
   // Atomic write (tmp + rename) into ~/.golem/dashboard.json. Best-effort

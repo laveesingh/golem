@@ -49,7 +49,7 @@
     "test:release": "node test/release-smoke.mjs",
     "measure:turns": "node scripts/measure-turns.mjs",
     "dashboard": "node dashboard/server/index.js",
-    "dashboard:build": "vite build --config dashboard/vite.config.js",
+    "dashboard:build": "vite build --config dashboard/vite.config.js && vite build --config dashboard/vite.share.config.js",
     "dashboard:dev": "vite --config dashboard/vite.config.js",
     "dashboard:serve": "npm run dashboard:build && node dashboard/server/index.js",
     "test:dashboard:browser": "node dashboard/scripts/gol-461-browser.mjs && node dashboard/scripts/gol-495-browser.mjs && node dashboard/scripts/nested-composer-overlay.browser.mjs && node dashboard/scripts/gol-129-pi-browser.mjs && node dashboard/scripts/comment-image-paste.browser.mjs",
