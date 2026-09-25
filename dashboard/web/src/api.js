@@ -272,6 +272,9 @@
     searchTickets: (params) => getJSON(`/api/tickets/search${qs(params)}`),
     createTicket: (body) => postJSON('/api/tickets', body),
     getTicket: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}`),
+    getShareStatus: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}/share`),
+    shareTicket: (id) => postJSON(`/api/tickets/${encodeURIComponent(id)}/share`, {}),
+    unshareTicket: (id) => delJSON(`/api/tickets/${encodeURIComponent(id)}/share`),
     updateTicket: (id, patch) => patchJSON(`/api/tickets/${encodeURIComponent(id)}`, patch),
     // GOL-326: html outline / block reads / atomic block patches (dashboard UI).
     getTicketOutline: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}/outline`),

@@ -515,6 +515,16 @@ export function openTrackerDb(dbPath = defaultDbPath()) {
         last_seen_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_session_labels_project ON session_labels(project_id);
+
+      -- GOL-384: per-document bearer grants for read-only sharing. One row
+      -- per canonical tickets.id; the token is returned only from the Share
+      -- response and never appears in tickets/list/snapshot/WS payloads.
+      CREATE TABLE IF NOT EXISTS share_grants (
+        ticket_id  TEXT PRIMARY KEY REFERENCES tickets(id) ON DELETE CASCADE,
+        token      TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_share_grants_token ON share_grants(token);
     `);
     // Read schema_version BEFORE seeding it. A brand-new DB has no row yet —
     // that must read as "predates every migration" (0), not silently
@@ -3604,6 +3614,51 @@ WHERE state_changed_at IS NULL`).run();
 
     listLinks(ticket_id) {
       return stmts.listLinks.all(ticket_id, ticket_id);
+    },
+
+    // GOL-384: per-document bearer grants. One active grant per canonical
+    // tickets.id; tokens live only in share_grants (never in tickets, lists,
+    // snapshots, or WS payloads). Only spec/doc are eligible; a deleted
+    // ticket or a changed kind denies on read.
+    createShareGrant(ticketId) {
+      const row = stmts.getTicket.get(ticketId);
+      if (!row) throw notFound(`ticket '${ticketId}' not found`, 'not_found', { ticket_id: ticketId });
+      if (row.kind !== 'spec' && row.kind !== 'doc') {
+        throw badRequest(`only spec/doc can be shared (kind '${row.kind}')`, 'ineligible_kind', { kind: row.kind });
+      }
+      const existing = db.prepare('SELECT ticket_id, token, created_at FROM share_grants WHERE ticket_id = ?').get(ticketId);
+      if (existing) return existing;
+      const ts = now();
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const token = crypto.randomBytes(32).toString('hex');
+        try {
+          db.prepare('INSERT INTO share_grants (ticket_id, token, created_at) VALUES (?, ?, ?)').run(ticketId, token, ts);
+          return { ticket_id: ticketId, token, created_at: ts };
+        } catch (err) {
+          if (String(err?.message ?? '').includes('UNIQUE constraint failed: share_grants.token')) continue;
+          throw err;
+        }
+      }
+      throw new Error('createShareGrant: token collision after retries');
+    },
+
+    getShareGrant(ticketId) {
+      return db.prepare('SELECT ticket_id, token, created_at FROM share_grants WHERE ticket_id = ?').get(ticketId) ?? null;
+    },
+
+    getShareGrantByToken(token) {
+      if (!token || typeof token !== 'string') return null;
+      const grant = db.prepare('SELECT ticket_id, token, created_at FROM share_grants WHERE token = ?').get(token);
+      if (!grant) return null;
+      const ticket = stmts.getTicket.get(grant.ticket_id);
+      if (!ticket) return null;
+      if (ticket.kind !== 'spec' && ticket.kind !== 'doc') return null;
+      return grant;
+    },
+
+    revokeShareGrant(ticketId) {
+      const info = db.prepare('DELETE FROM share_grants WHERE ticket_id = ?').run(ticketId);
+      return { revoked: info.changes > 0 };
     },
 
     listEvents({ ticket_id, project_id, limit = 100 } = {}) {

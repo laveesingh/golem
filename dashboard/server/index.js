@@ -13,6 +13,16 @@ import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, channelHealth,
 import { createChat } from './chat.js';
 import { readNativeSessionPeek } from './native-session-peek.js';
 import { openTrackerDb } from './tracker-db.js';
+import { createSharePublicServer } from './share-public.js';
+import {
+  SHARE_METRICS_CANDIDATES,
+  detectUnsafeAdminTunnel,
+  ensureShareTunnel,
+  readShareRegistry,
+  registryOwnsLiveTunnel,
+  stopOwnedTunnel,
+  validateRegistryTunnel,
+} from './share-tunnel.js';
 import { createNotificationService } from './notification-service.js';
 import { isChannelDeliveryReady, isTypedWorkerChannel, readChannels } from './channels.js';
 import { applyGateVerdict, createGate } from './projects.js';
@@ -1292,6 +1302,133 @@ async function main() {
     const ticket = resolveTicketRef(req.params.id);
     if (!ticket) return reply.code(404).send({ error: 'not_found' });
     return { ...ticket, events: tracker.listEvents({ ticket_id: ticket.id }) };
+  });
+
+  // GOL-384: read-only spec/doc sharing. Grants live in share_grants keyed
+  // by canonical tickets.id; the token appears only in the POST response URL.
+  // While a discoverable cloudflared tunnel targets the admin dashboard,
+  // POST and DELETE refuse with an actionable error (GOL-386 critical).
+  const shareAdminOrigin = () => `http://127.0.0.1:${CONFIG.port}`;
+  let sharePublicServer = null;
+  let sharePublicPort = null;
+  async function ensureSharePublicPort() {
+    if (sharePublicServer && Number.isInteger(sharePublicPort)) return sharePublicPort;
+    const homeDir = golemHome();
+    const registry = readShareRegistry(homeDir) || {};
+    const recorded = Number.isInteger(registry.publicPort) ? registry.publicPort : null;
+    const tryBind = async (port) => {
+      const srv = createSharePublicServer({ tracker, assetsDir: CONFIG.assetsDir });
+      const bound = await srv.listen(port);
+      sharePublicServer = srv;
+      sharePublicPort = bound;
+      return bound;
+    };
+    if (recorded != null) {
+      try {
+        return await tryBind(recorded);
+      } catch (err) {
+        if (err?.code !== 'EADDRINUSE') throw err;
+        // Rebind failed: if the registry proves Golem owns a live tunnel on
+        // this port, stop only that child and invalidate the URL, then bind
+        // fresh. Otherwise fail closed without touching any process.
+        const origin = `http://127.0.0.1:${recorded}`;
+        const owned = await registryOwnsLiveTunnel(registry, origin).catch(() => false);
+        if (!owned) {
+          throw new Error(`public share port ${recorded} is occupied and tunnel ownership is unproven; refusing to kill or adopt (fail closed)`);
+        }
+        await stopOwnedTunnel(homeDir, origin, shareAdminOrigin()).catch((stopErr) => {
+          throw new Error(`public share port ${recorded} is occupied; owned tunnel stop failed: ${stopErr?.message ?? stopErr}`);
+        });
+        return await tryBind(recorded);
+      }
+    }
+    return await tryBind(0);
+  }
+  async function shareUnsafeDetail() {
+    const homeDir = golemHome();
+    const registry = readShareRegistry(homeDir) || {};
+    const extra = Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [];
+    return detectUnsafeAdminTunnel(shareAdminOrigin(), { metricsPorts: extra });
+  }
+  const SHARE_UNSAFE_MESSAGE =
+    'Sharing is paused while the old dashboard tunnel is running. Retire that cloudflared tunnel to 127.0.0.1:7420, then Share again for a document-only link.';
+  fastify.get('/api/tickets/:id/share', async (req, reply) => {
+    const ticket = resolveTicketRef(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: 'not_found' });
+    const shareable = ticket.kind === 'spec' || ticket.kind === 'doc';
+    const grant = tracker.getShareGrant(ticket.id);
+    const unsafe = await shareUnsafeDetail().catch(() => ({ unsafe: false, detail: '' }));
+    let url = null;
+    if (grant && shareable) {
+      try {
+        const homeDir = golemHome();
+        const registry = readShareRegistry(homeDir) || {};
+        const origin = Number.isInteger(registry.publicPort) && sharePublicPort === registry.publicPort
+          ? `http://127.0.0.1:${registry.publicPort}`
+          : (Number.isInteger(sharePublicPort) ? `http://127.0.0.1:${sharePublicPort}` : null);
+        if (origin && Number.isInteger(registry.metricsPort) && registry.hostname) {
+          const check = await validateRegistryTunnel(registry, origin);
+          if (check.ok) url = `https://${check.hostname}/s/${grant.token}`;
+        }
+      } catch { url = null; }
+    }
+    return { shared: !!grant && shareable, shareable, unsafe: !!unsafe.unsafe, url };
+  });
+  fastify.post('/api/tickets/:id/share', async (req, reply) => {
+    try {
+      const unsafe = await shareUnsafeDetail();
+      if (unsafe.unsafe) {
+        return reply.code(409).send({ error: SHARE_UNSAFE_MESSAGE, code: 'UNSAFE_ADMIN_TUNNEL', detail: unsafe.detail });
+      }
+    } catch (err) {
+      return reply.code(502).send({ error: `tunnel safety check failed: ${err?.message ?? err}`, code: 'TUNNEL_CHECK_FAILED' });
+    }
+    const ticket = resolveTicketRef(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: 'not_found' });
+    if (ticket.kind !== 'spec' && ticket.kind !== 'doc') {
+      return reply.code(400).send({ error: `only spec/doc can be shared (kind '${ticket.kind}')`, code: 'INELIGIBLE_KIND' });
+    }
+    const existing = tracker.getShareGrant(ticket.id);
+    let publicPort;
+    try {
+      publicPort = await ensureSharePublicPort();
+    } catch (err) {
+      return reply.code(502).send({ error: String(err?.message ?? err), code: 'PUBLIC_LISTENER_FAILED' });
+    }
+    const publicOrigin = `http://127.0.0.1:${publicPort}`;
+    let tunnel;
+    try {
+      tunnel = await ensureShareTunnel({
+        publicPort,
+        publicOrigin,
+        adminOrigin: shareAdminOrigin(),
+        homeDir: golemHome(),
+      });
+    } catch (err) {
+      return reply.code(502).send({ error: String(err?.message ?? err), code: 'TUNNEL_FAILED' });
+    }
+    // Failure atomicity: no grant is issued as success before tunnel
+    // validation — the tunnel above validated before we mint below.
+    try {
+      const grant = existing ?? tracker.createShareGrant(ticket.id);
+      return { url: `https://${tunnel.hostname}/s/${grant.token}`, shared: true, display_id: ticket.display_id, hostname: tunnel.hostname };
+    } catch (err) {
+      return sendTrackerError(reply, err);
+    }
+  });
+  fastify.delete('/api/tickets/:id/share', async (req, reply) => {
+    try {
+      const unsafe = await shareUnsafeDetail();
+      if (unsafe.unsafe) {
+        return reply.code(409).send({ error: SHARE_UNSAFE_MESSAGE, code: 'UNSAFE_ADMIN_TUNNEL', detail: unsafe.detail });
+      }
+    } catch (err) {
+      return reply.code(502).send({ error: `tunnel safety check failed: ${err?.message ?? err}`, code: 'TUNNEL_CHECK_FAILED' });
+    }
+    const ticket = resolveTicketRef(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: 'not_found' });
+    const result = tracker.revokeShareGrant(ticket.id);
+    return { revoked: !!result.revoked, shared: false };
   });
 
   // GET /api/tickets/:id/outline — ordered HTML block outline (GOL-326).
