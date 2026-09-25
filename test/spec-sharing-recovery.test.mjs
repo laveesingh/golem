@@ -221,6 +221,40 @@ try {
     check('clean ps + dead metrics resolves safe', calm.unsafe === false, JSON.stringify(calm));
   }
 
+  // 3b2. GOL-390 fix round 2: direct ensureShareTunnel must refuse (never
+  // launch) when the guard is indeterminate — metrics unavailable plus real
+  // ETIMEDOUT-shaped ps. Sentinel spawnFn fires iff the fail-open downgrade
+  // is present. pickMetricsPort succeeds so a downgraded run reaches spawn.
+  {
+    tunnel.__clearTunnelFlights();
+    const home = path.join(tmp, 'home-guard-hold');
+    fs.mkdirSync(home, { recursive: true });
+    const publicPort = await freePort();
+    const realShapeTimeout = () => {
+      const err = new Error('spawnSync ps timed out after 5000ms');
+      err.code = 'ETIMEDOUT';
+      err.signal = 'SIGTERM';
+      return { error: err, status: null, signal: 'SIGTERM', stdout: '', stderr: '' };
+    };
+    let spawned = false;
+    let err = null;
+    const t = Date.now();
+    try {
+      await tunnel.ensureShareTunnel({
+        publicPort, publicOrigin: `http://127.0.0.1:${publicPort}`, adminOrigin: 'http://127.0.0.1:7420',
+        homeDir: home,
+        fetchFn: async () => { throw new Error('metrics unavailable'); },
+        spawnSyncFn: realShapeTimeout,
+        spawnFn: () => { spawned = true; throw new Error('SENTINEL-SPAWN: launched while guard indeterminate'); },
+        pickMetricsPort: async () => await freePort(),
+        timeoutMs: 5000, overallTimeoutMs: 15000,
+      });
+    } catch (e) { err = e; }
+    const elapsed = Date.now() - t;
+    check('indeterminate guard refuses launch without spawn', !!err && /indeterminate/.test(String(err.message)) && spawned === false,
+      `${spawned ? 'SPAWNED' : 'no spawn'} ${elapsed}ms: ${String(err?.message).slice(0, 90)}`);
+  }
+
   // 3c. Staggered joiners share ONE absolute deadline from flight start: the
   // owner establishes it; a joiner arriving at +5s with a 45s budget must
   // still settle at ~8s, not joiner-start + 45s. Same error object for both.
@@ -380,9 +414,10 @@ try {
   }
 
   // 8. Declared-budget E2E (acceptance core): dead registry + hanging
-  // registry port + wedged ps + never-provisioning spawn, DEFAULT budgets.
-  // Pre-fix: ~2s + ~2s + 65s wedge + 30s launch ≈ 99s (red, >60s).
-  // Post-fix: ~2s + ~2s + 5s bound + 30s launch ≈ 39s < 45s global (green).
+  // registry port + never-provisioning spawn, DEFAULT budgets, working ps.
+  // (A wedged ps refuses before launch by design — covered by the guard and
+  // route tests above — so this E2E uses real process tools to exercise the
+  // full recovery path against hanging transport.)
   {
     tunnel.__clearTunnelFlights();
     const home = path.join(tmp, 'home-e2e');
@@ -405,7 +440,6 @@ try {
         spawnFn: () => child,
         pickMetricsPort: async () => await freePort(),
         killFn: async (pid) => { killedPid = pid; },
-        spawnSyncFn: honoringWedge(65000),
         // defaults: timeoutMs 30000 launch, overallTimeoutMs 45000 declared
       });
     } catch (e) { err = e; }

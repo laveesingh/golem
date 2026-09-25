@@ -529,11 +529,13 @@ export async function ensureShareTunnel({
     // 2b. Never spawn a new public tunnel while an admin-targeting tunnel
     // is discoverable (GOL-388: the admin route already 409s; this keeps a
     // direct ensureShareTunnel caller from launching into the cutover hole).
-    // Reuse above stays available — it spawns nothing new.
+    // An INDETERMINATE check (hung enumeration) propagates as a refusal —
+    // no .catch downgrade to safe (GOL-390 fix round 2): launching blind is
+    // the same hole. Reuse above stays available — it spawns nothing new.
     mark('guard');
     if (adminOrigin) {
       const guardPorts = Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [];
-      const guard = await detectUnsafeAdminTunnel(adminOrigin, { fetchFn, metricsPorts: guardPorts, spawnSyncFn }).catch(() => ({ unsafe: false }));
+      const guard = await detectUnsafeAdminTunnel(adminOrigin, { fetchFn, metricsPorts: guardPorts, spawnSyncFn });
       if (guard.unsafe) throw new Error(`refusing to launch a public tunnel while an admin-targeting tunnel exists (${guard.detail})`);
     }
     // 3. Launch a new child. Explicit loopback --metrics, >=30s budget.
