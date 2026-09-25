@@ -22,6 +22,20 @@ If your environment ever fails to resolve `dashboard.golem.localhost` (older OS,
 
 The port is fixed at 7420 — `golem dashboard` always reuses the same port, even across restarts (see the implementation in `dashboard/server/index.js`). If port 7420 is ever held by something that isn't a previous golem dashboard, the server will print a clear error rather than drift to a different port.
 
+## Sharing specs and docs
+
+Open a spec or doc in the dashboard and select **Share** beside its title. The link
+opens a read-only public page with the title, body, referenced images, and rendered
+Mermaid diagrams. It does not expose comments, work items, other tickets, or dashboard
+APIs. **Stop sharing** revokes that document link. Repeat Share uses the same running
+Cloudflare quick tunnel; `cloudflared` must be installed. The first link can take
+some time to resolve in DNS, and quick-tunnel URLs can change if the process exits.
+
+The public tunnel points to a separate loopback-only reader, **not** dashboard port
+7420. If an old tunnel still targets 7420, Share/Stop pause until you retire it:
+that old tunnel exposes the unauthenticated dashboard, not just a document. Tunnel
+lifecycle state lives in `~/.golem/share-tunnel.json`; the dashboard manages it.
+
 ## Quick start
 
 With the new Node CLI installed (`npm link` from the repo root):
@@ -203,4 +217,4 @@ The client may send:
   `GOLEM_SPAWN_CORR_MS` is matched in FIFO order. A more reliable mapping
   would require Claude Code to expose a parent→child session id field on
   spawn events.
-- The dashboard is read-only by design; it never writes to a project's tree.
+- The dashboard writes tracker state to SQLite but does not write to a project's tree. The public document listener is read-only.
