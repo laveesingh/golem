@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-25 @ beaf1a5 — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-25 @ bda674d — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -28,7 +28,7 @@
 
 `dashboard/server/index.js` owns admin REST/WS; `tracker-db.js` owns SQLite tickets and
 share grants. `share-public.js` serves only token documents on a separate loopback listener;
-`share-tunnel.js` verifies/reuses cloudflared via `~/.golem/share-tunnel.json` (never :7420).
+`share-tunnel.js` bounds/verifies cloudflared reuse via `~/.golem/share-tunnel.json` (never :7420).
 `html-body.js`/`md-body.js` patch strict anchors via `body-anchor.js`; `mermaid-check.js`
 validates diagrams. `notification-schedule*.js` schedules; `comment-dispatch.js` routes feedback.
 Agents never touch SQLite directly.
