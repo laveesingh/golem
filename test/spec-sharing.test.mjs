@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// GOL-387 spec/doc sharing: isolated grants + public reader + tunnel supervisor.
+// GOL-394 minimal read-link share: supervisor unit tests (fakes only) + share
+// route tests against an isolated dashboard with a fake `cloudflared` on PATH.
 // No shared state: temp HOME/GOLEM_HOME, temp tracker DB, ephemeral ports.
-// Never touches PID 31381 or :7420. Fake cloudflared metrics fixtures exercise
-// /quicktunnel, /config and /metrics; all fake processes/servers close before
-// temp dir removal.
+// Never touches :7420, ~/.golem/share-tunnel.json, or any real cloudflared.
 
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -21,12 +20,10 @@ const check = (label, cond, detail = '') => {
   if (cond) console.log(`  ok   ${label}`);
   else { failures.push(label); console.log(`  FAIL ${label}${detail ? ` — ${detail}` : ''}`); }
 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const serversToClose = [];
-const childrenToKill = [];
-const trackFetch = { quicktunnel: 0, config: 0, metrics: 0 };
-// GOL-388: guard probes real 20241 (live :7420 tunnel); keep unit origins safe.
-const SAFE_ADMIN = 'http://127.0.0.1:9';
+let dashboard = null;
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -54,19 +51,16 @@ function startFakeMetrics({ hostname, service, haConnections = 1 }) {
   return startHttp((req, res) => {
     const url = String(req.url || '').split('?')[0];
     if (url === '/quicktunnel') {
-      trackFetch.quicktunnel += 1;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ hostname }));
       return;
     }
     if (url === '/config') {
-      trackFetch.config += 1;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ingress: [{ service }, { service: 'http_status:404' }] }));
       return;
     }
     if (url === '/metrics') {
-      trackFetch.metrics += 1;
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end(`# HELP cloudflared_tunnel_ha_connections\ncloudflared_tunnel_ha_connections ${haConnections}\n`);
       return;
@@ -80,490 +74,482 @@ let fakePidCounter = 50000;
 function fakeChild() {
   const pid = fakePidCounter += 1;
   const listeners = new Map();
-  const child = {
+  return {
     pid,
-    killed: false,
+    stderr: null,
     on: (ev, fn) => {
       if (!listeners.has(ev)) listeners.set(ev, []);
       listeners.get(ev).push(fn);
     },
     removeListener: () => {},
-    kill: () => { child.killed = true; childrenToKill.push(pid); },
-    _exit: (code) => {
-      for (const fn of listeners.get('exit') || []) fn(code, null);
-    },
+    kill: () => {},
   };
-  return child;
 }
+
+const tunnelCmd = (origin, metricsPort) =>
+  `cloudflared tunnel --url ${origin} --metrics 127.0.0.1:${metricsPort}`;
 
 try {
-  const { openTrackerDb } = await import('../dashboard/server/tracker-db.js');
-  const { createSharePublicServer, renderSharedBody, buildReaderHtml } = await import('../dashboard/server/share-public.js');
   const tunnel = await import('../dashboard/server/share-tunnel.js');
-
-  // ---- grants: eligibility, canonical single grant, revoke, kind change ----
-  const dbPath = path.join(tmp, 'tracker.db');
-  const tracker = openTrackerDb(dbPath);
-  const proj = 'share-test-abcdef';
-  const spec = tracker.createTicket({ project_id: proj, kind: 'spec', title: 'Share me', body: '# Hello\n\nBody text.', state: 'todo' });
-  const doc = tracker.createTicket({ project_id: proj, kind: 'doc', title: 'Doc share', body: 'doc body', state: 'todo' });
-  const task = tracker.createTicket({ project_id: proj, kind: 'task', title: 'Task no share', body: 'task', state: 'todo' });
-  check('spec eligible: grant mints token', (() => { const g = tracker.createShareGrant(spec.id); return !!g.token && g.ticket_id === spec.id; })());
-  check('doc eligible', !!tracker.createShareGrant(doc.id).token);
-  assert.throws(() => tracker.createShareGrant(task.id), /only spec\/doc/);
-  check('task rejected', true);
-  // Canonical: repeat Share same token (display id resolves to same canonical
-  // in the admin layer; here assert idempotent mint on canonical id).
-  const g1 = tracker.createShareGrant(spec.id);
-  const g2 = tracker.createShareGrant(spec.id);
-  check('repeat Share same token', g1.token === g2.token);
-  const byDisplay = tracker.getTicketByDisplayId(spec.display_id);
-  check('display id resolves to canonical', byDisplay && byDisplay.id === spec.id);
-  const g3 = tracker.createShareGrant(byDisplay.id);
-  check('display/internal share one grant', g3.token === g1.token);
-  // getTicket / lists carry no token.
-  const full = tracker.getTicket(spec.id);
-  check('ordinary getTicket has no token', !('token' in full) && JSON.stringify(full).includes(g1.token) === false);
-  const listed = tracker.listTickets({ project_id: proj });
-  check('listTickets rows have no token', listed.every((t) => !('token' in t) && !JSON.stringify(t).includes(g1.token)));
-  // Revoke then old token 404s.
-  const tokenBefore = g1.token;
-  check('revoke reports revoked', tracker.revokeShareGrant(spec.id).revoked === true);
-  check('old token denies after revoke', tracker.getShareGrantByToken(tokenBefore) === null);
-  check('second revoke idempotent', tracker.revokeShareGrant(spec.id).revoked === false);
-  // Changed kind denies.
-  const g4 = tracker.createShareGrant(spec.id);
-  tracker.updateTicket(spec.id, { kind: 'task' });
-  check('changed-kind token denies', tracker.getShareGrantByToken(g4.token) === null);
-  assert.throws(() => tracker.createShareGrant(spec.id), /only spec\/doc/);
-  check('changed-kind mint denies', true);
-  tracker.updateTicket(spec.id, { kind: 'spec' });
-  check('kind restored: token valid again', tracker.getShareGrantByToken(g4.token)?.ticket_id === spec.id);
-  // Missing ticket denies.
-  assert.throws(() => tracker.createShareGrant('TKT-missing'), /not found/);
-  check('missing ticket denies', true);
-
-  // ---- public reader: rendering, scoping, deny surface ----
-  const assetsDir = path.join(tmp, 'assets');
-  fs.mkdirSync(assetsDir, { recursive: true });
-  const imgBuf = crypto.randomBytes(64);
-  const imgHash = crypto.createHash('sha256').update(imgBuf).digest('hex');
-  const imgName = `${imgHash}.png`;
-  fs.writeFileSync(path.join(assetsDir, imgName), imgBuf);
-  const unrefBuf = crypto.randomBytes(64);
-  const unrefHash = crypto.createHash('sha256').update(unrefBuf).digest('hex');
-  const unrefName = `${unrefHash}.png`;
-  fs.writeFileSync(path.join(assetsDir, unrefName), unrefBuf);
-  const mdSpec = tracker.createTicket({
-    project_id: proj, kind: 'spec', title: 'Public MD',
-    body: `# Public MD\n\nSee image ![ref](/api/ticket-assets/${imgName}) end.`,
-    state: 'todo',
-  });
-  const htmlSpec = tracker.createTicket({
-    project_id: proj, kind: 'spec', title: 'Public HTML', body_format: 'html',
-    body: `<section><h1>Hi</h1><p>Img <img src=\"/api/ticket-assets/${imgName}\" alt=\"x\"></p><script>alert(1)</script></section>`,
-    state: 'todo',
-  });
-  const mdGrant = tracker.createShareGrant(mdSpec.id);
-  const htmlGrant = tracker.createShareGrant(htmlSpec.id);
-  const pub = createSharePublicServer({
-    tracker,
-    assetsDir,
-    mermaidBundlePath: path.join(repo, 'dashboard', 'dist', 'share-mermaid.mjs'),
-  });
-  const publicPort = await pub.listen(0);
-  const base = `http://127.0.0.1:${publicPort}`;
-  check('public binds loopback', pub.address().address === '127.0.0.1');
-
-  const get = async (p, opts = {}) => fetch(`${base}${p}`, opts);
-  let r = await get(`/s/${mdGrant.token}`);
-  check('shared Markdown 200', r.status === 200, `got ${r.status}`);
-  await r.text().catch(() => '');
-  const mdHtml = await (await get(`/s/${mdGrant.token}`)).text();
-  check('markdown renders title + rewritten asset', mdHtml.includes('Public MD') && mdHtml.includes(`/s/${mdGrant.token}/assets/${imgName}`) && !mdHtml.includes('/api/ticket-assets/'));
-  check('markdown has no dashboard bundle', !mdHtml.includes('/src/app.jsx') && !mdHtml.includes('/api/snapshot'));
-  check('markdown has no comments/children markers', !mdHtml.includes('ticket-comment') && !mdHtml.includes('Work-items'));
-  const htmlHtml = await (await get(`/s/${htmlGrant.token}`)).text();
-  check('shared HTML renders + strips non-allowlisted scripts', htmlHtml.includes('Public HTML'));
-  check('isolated reader module present, no inline scripts', htmlHtml.includes('/s/assets/reader.js') && !/<script(?![^>]*src=)/.test(htmlHtml));
-  check('HTML reader has referrer guard', htmlHtml.includes('name=\"referrer\"'));
-  r = await get(`/s/${mdGrant.token}/assets/${imgName}`);
-  check('referenced image 200 private/no-store', r.status === 200
-    && (r.headers.get('cache-control') || '').includes('private')
-    && (r.headers.get('cache-control') || '').includes('no-store'));
-  check('image content matches', Buffer.from(await r.arrayBuffer()).equals(imgBuf));
-  r = await get(`/s/${mdGrant.token}/assets/${unrefName}`);
-  check('unreferenced image 404', r.status === 404);
-  r = await get(`/s/${htmlGrant.token}/assets/${imgName}`);
-  check('other-grant image via wrong token 404 (token scope)', r.status === 404 || r.status === 200 ? (await (async () => {
-    // html grant references the same image, so 200 is correct; instead check a
-    // token that never referenced it: use a fresh spec grant below.
-    return true;
-  })()) : false);
-  const otherSpec = tracker.createTicket({ project_id: proj, kind: 'spec', title: 'Other', body: 'no images', state: 'todo' });
-  const otherGrant = tracker.createShareGrant(otherSpec.id);
-  r = await get(`/s/${otherGrant.token}/assets/${imgName}`);
-  check('image from non-referencing doc 404', r.status === 404);
-  r = await get('/s/doesnotexist0123456789');
-  check('unknown token 404', r.status === 404);
-  for (const p of ['/api/snapshot', '/api/tickets', '/api/tickets/1', '/read/abc', '/ws', '/s/assets/../x']) {
-    r = await get(p);
-    check(`public denies ${p}`, r.status === 404, `got ${r.status}`);
-  }
-  for (const m of ['POST', 'PATCH', 'DELETE', 'PUT']) {
-    r = await get(`/s/${mdGrant.token}`, { method: m, body: m === 'POST' ? '{}' : undefined });
-    check(`public denies ${m} on doc`, r.status === 404, `got ${r.status}`);
-  }
-  r = await get(`/api/ticket-assets/${imgName}`);
-  check('no global immutable asset route on public', r.status === 404);
-  r = await get('/s/assets/reader.css');
-  check('fixed reader CSS served', r.status === 200 && (r.headers.get('content-type') || '').includes('text/css'));
-  r = await get('/s/assets/reader.js');
-  const loaderText = r.status === 200 ? await r.text() : '';
-  check('fixed reader loader served as JS', r.status === 200 && (r.headers.get('content-type') || '').includes('javascript')
-    && loaderText.includes('/s/assets/share-mermaid.mjs'));
-  r = await get('/s/assets/share-mermaid.mjs');
-  const bundleText = r.status === 200 ? await r.text() : '';
-  check('isolated diagram bundle served (real renderer, not a stub)', r.status === 200
-    && (r.headers.get('content-type') || '').includes('javascript') && bundleText.length > 100000
-    && bundleText.includes('mermaid'));
-  const linkSpec = tracker.createTicket({
-    project_id: proj, kind: 'spec', title: 'Link Soup',
-    body: '# Links\n\n[doc](/read/GOL-1) [api](http://127.0.0.1:7420/api/snapshot) [ext](https://example.com/x) [frag](#sec)\n\n```mermaid\nflowchart LR\n  A-->B\n```\n',
-    state: 'todo',
-  });
-  const linkGrant = tracker.createShareGrant(linkSpec.id);
-  const linkHtml = await (await get(`/s/${linkGrant.token}`)).text();
-  check('internal doc/api links inert', !linkHtml.includes('href="/read/') && !linkHtml.includes('127.0.0.1:7420') && linkHtml.includes('href="#"'));
-  check('external author link kept with noreferrer', linkHtml.includes('href="https://example.com/x"') && linkHtml.includes('noreferrer'));
-  check('mermaid fence renders as diagram div, not code', linkHtml.includes('class="mermaid"') && !linkHtml.includes('language-mermaid'));
-  check('reader carries no display-id ref', !linkHtml.includes('share-ref'));
-  check('buildReaderHtml emits title+body only', (() => {
-    const page = buildReaderHtml({ title: 'T', bodyHtml: '<p>x</p>', displayId: 'GOL-999' });
-    return !page.includes('share-ref') && !page.includes('GOL-999') && page.includes('<p>x</p>');
-  })());
-  check('CSP allows isolated self scripts only', (await get(`/s/${mdGrant.token}`)).headers.get('content-security-policy')?.includes("script-src 'self'") === true);
-  // Revoked token + images 404 (isolated, no dashboard restart).
-  tracker.revokeShareGrant(mdSpec.id);
-  r = await get(`/s/${mdGrant.token}`);
-  check('revoked token 404', r.status === 404);
-  r = await get(`/s/${mdGrant.token}/assets/${imgName}`);
-  check('revoked token images 404', r.status === 404);
-  // renderSharedBody unit: only parsed img srcs rewritten.
-  const { html: tricky } = renderSharedBody('Text /api/ticket-assets/notahash.png and ![a](/api/ticket-assets/' + imgName + ')', 'markdown', 'tok12345');
-  check('rewrite only valid asset form', tricky.includes(imgName) && tricky.includes('/s/tok12345/assets/'));
-  await pub.close();
-
-  // ---- tunnel supervisor with fake fixtures ----
   tunnel.__clearTunnelFlights();
-  const homeA = path.join(tmp, 'homeA');
-  fs.mkdirSync(homeA, { recursive: true });
-  const publicPortA = await freePort();
-  const publicOriginA = `http://127.0.0.1:${publicPortA}`;
-  const hostA = 'alpha-quick-tunnel-1.trycloudflare.com';
-  const { port: metricsA } = await startFakeMetrics({ hostname: hostA, service: publicOriginA, haConnections: 1 });
-  // Existing healthy matched tunnel reused with no spawn.
-  const { writeShareRegistry } = tunnel;
-  writeShareRegistry(homeA, { publicPort: publicPortA, metricsPort: metricsA, hostname: hostA, pid: 999001, updated_at: new Date().toISOString() });
-  let spawned = 0;
-  const noSpawn = () => { spawned += 1; throw new Error('must not spawn'); };
-  const aliveWith = (set) => (pid) => set.has(pid);
-  const reused = await tunnel.ensureShareTunnel({
-    publicPort: publicPortA, publicOrigin: publicOriginA, adminOrigin: SAFE_ADMIN,
-    homeDir: homeA, spawnFn: noSpawn, isProcessAlive: aliveWith(new Set([999001])),
-  });
-  check('healthy matched tunnel reused, no spawn', reused.reused === true && reused.hostname === hostA && spawned === 0);
-  // Changed hostname: metrics reports new host, registry updates without spawn.
-  const hostA2 = 'rotated-host-2.trycloudflare.com';
-  const { port: metricsA2 } = await startFakeMetrics({ hostname: hostA2, service: publicOriginA, haConnections: 2 });
-  writeShareRegistry(homeA, { publicPort: publicPortA, metricsPort: metricsA2, hostname: hostA, pid: 999002, updated_at: new Date().toISOString() });
-  // Point metricsA2 at new hostname (already), validate returns new host.
-  const rotated = await tunnel.ensureShareTunnel({
-    publicPort: publicPortA, publicOrigin: publicOriginA, adminOrigin: SAFE_ADMIN,
-    homeDir: homeA, spawnFn: noSpawn, isProcessAlive: aliveWith(new Set([999002])),
-  });
-  check('changed hostname adopted without spawn', rotated.hostname === hostA2 && rotated.reused === true && spawned === 0);
-  // Stale registry / dead child launches exactly one child.
-  const homeB = path.join(tmp, 'homeB');
-  fs.mkdirSync(homeB, { recursive: true });
-  const publicPortB = await freePort();
-  const publicOriginB = `http://127.0.0.1:${publicPortB}`;
-  writeShareRegistry(homeB, { publicPort: publicPortB, metricsPort: 20991, hostname: 'stale-host.trycloudflare.com', pid: 111111, updated_at: '2020-01-01T00:00:00.000Z' });
-  const hostB = 'fresh-launch-3.trycloudflare.com';
-  const metricsB = await freePort();
-  const fakeB = fakeChild();
-  childrenToKill.push(fakeB.pid);
-  // Fake metrics becomes live shortly after spawn (simulates provisioning).
-  let metricsBLive = false;
-  const { srv: metricsSrvB } = await startHttp((req, res) => {
-    const url = String(req.url || '').split('?')[0];
-    if (!metricsBLive) { res.writeHead(404, {}); res.end('{}'); return; }
-    if (url === '/quicktunnel') { trackFetch.quicktunnel += 1; res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hostname: hostB })); return; }
-    if (url === '/config') { trackFetch.config += 1; res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ingress: [{ service: publicOriginB }] })); return; }
-    if (url === '/metrics') { trackFetch.metrics += 1; res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('cloudflared_tunnel_ha_connections 1\n'); return; }
-    res.writeHead(404, {}); res.end('{}');
-  });
-  // Rebind the fake server port is random; discover it:
-  const liveMetricsPortB = metricsSrvB.address().port;
-  let spawnCountB = 0;
-  const spawnB = () => {
-    spawnCountB += 1;
-    setTimeout(() => { metricsBLive = true; }, 100);
-    // Rewrite: ensureShareTunnel picked its own metrics port; point our fake
-    // at it by re-reading registry? Instead use fetch indirection below.
-    return fakeB;
+  const ORIGIN = 'http://127.0.0.1:7420';
+  const HOST = 'alpha-quick-tunnel-1.trycloudflare.com';
+
+  const freshHome = (name) => {
+    const h = path.join(tmp, name);
+    fs.mkdirSync(h, { recursive: true });
+    return h;
   };
-  // Use pickMetricsPort to force the fake server's port.
-  const launched = await tunnel.ensureShareTunnel({
-    publicPort: publicPortB, publicOrigin: publicOriginB, adminOrigin: SAFE_ADMIN,
-    homeDir: homeB, spawnFn: spawnB, pickMetricsPort: async () => liveMetricsPortB,
-    isProcessAlive: () => true, timeoutMs: 8000,
-  });
-  check('stale registry launches one child', spawnCountB === 1 && launched.hostname === hostB && launched.reused === false);
-  // Missing binary.
-  const homeC = path.join(tmp, 'homeC');
-  fs.mkdirSync(homeC, { recursive: true });
-  const publicPortC = await freePort();
-  let missingErr = null;
-  try {
-    await tunnel.ensureShareTunnel({
-      publicPort: publicPortC, publicOrigin: `http://127.0.0.1:${publicPortC}`, adminOrigin: SAFE_ADMIN,
-      homeDir: homeC,
-      spawnFn: () => { const e = new Error('spawn cloudflared ENOENT'); e.code = 'ENOENT'; throw e; },
-      pickMetricsPort: async () => await freePort(),
-      isProcessAlive: () => false, timeoutMs: 2000,
-    });
-  } catch (e) { missingErr = e; }
-  check('missing binary actionable', !!missingErr && /cloudflared/i.test(String(missingErr.message)));
-  // Provisioning exit: child exits immediately.
-  const homeD = path.join(tmp, 'homeD');
-  fs.mkdirSync(homeD, { recursive: true });
-  const publicPortD = await freePort();
-  let exitErr = null;
-  let killedD = false;
-  const childD = fakeChild();
-  childrenToKill.push(childD.pid);
-  try {
-    await tunnel.ensureShareTunnel({
-      publicPort: publicPortD, publicOrigin: `http://127.0.0.1:${publicPortD}`, adminOrigin: SAFE_ADMIN,
-      homeDir: homeD,
-      spawnFn: () => { setTimeout(() => childD._exit(1), 50); return childD; },
-      pickMetricsPort: async () => await freePort(),
-      isProcessAlive: () => true, timeoutMs: 4000,
-      killFn: async () => { killedD = true; },
-    });
-  } catch (e) { exitErr = e; }
-  check('provisioning exit fails fast', !!exitErr && /exited before provisioning/i.test(String(exitErr.message)));
-  // Timeout: metrics never ready, only spawned child killed.
-  const homeE = path.join(tmp, 'homeE');
-  fs.mkdirSync(homeE, { recursive: true });
-  const publicPortE = await freePort();
-  let timeoutErr = null;
-  let killedPid = null;
-  const childE = fakeChild();
-  childrenToKill.push(childE.pid);
-  const deadPort = await freePort(); // nothing listens: refused
-  try {
-    await tunnel.ensureShareTunnel({
-      publicPort: publicPortE, publicOrigin: `http://127.0.0.1:${publicPortE}`, adminOrigin: SAFE_ADMIN,
-      homeDir: homeE,
-      spawnFn: () => childE,
-      pickMetricsPort: async () => deadPort,
-      isProcessAlive: () => true, timeoutMs: 1200,
-      killFn: async (pid) => { killedPid = pid; },
-    });
-  } catch (e) { timeoutErr = e; }
-  check('provisioning timeout kills only spawned child', !!timeoutErr && /timed out/i.test(String(timeoutErr.message)) && killedPid === childE.pid);
-  // Unsafe admin tunnel blocks (metadata + ps fallback).
-  const adminPortU = await freePort();
-  const adminOriginU = `http://127.0.0.1:${adminPortU}`;
-  const { port: unsafeMetrics } = await startFakeMetrics({ hostname: 'evil-admin.trycloudflare.com', service: adminOriginU, haConnections: 1 });
-  const unsafe = await tunnel.detectUnsafeAdminTunnel(adminOriginU, { metricsPorts: [unsafeMetrics] });
-  check('metadata detects admin-targeting tunnel', unsafe.unsafe === true);
-  const safe = await tunnel.detectUnsafeAdminTunnel('http://127.0.0.1:9', { metricsPorts: [unsafeMetrics] });
-  check('unrelated port not unsafe', safe.unsafe === false);
-  const psUnsafe = await tunnel.detectUnsafeAdminTunnel(adminOriginU, {
-    metricsPorts: [await freePort()],
-    psFn: async () => `  31381 /opt/homebrew/bin/cloudflared tunnel --url ${adminOriginU}\n 12345 /usr/bin/node server.js\n`,
-  });
-  check('ps fallback detects admin tunnel command', psUnsafe.unsafe === true);
-  // Ownership: refuses to stop admin-targeting registry.
-  const homeF = path.join(tmp, 'homeF');
-  fs.mkdirSync(homeF, { recursive: true });
-  writeShareRegistry(homeF, { publicPort: 1, metricsPort: unsafeMetrics, hostname: 'evil-admin.trycloudflare.com', pid: 31381, updated_at: new Date().toISOString() });
-  let refuseErr = null;
-  try {
-    await tunnel.stopOwnedTunnel(homeF, 'http://127.0.0.1:1', adminOriginU, { isProcessAlive: () => true });
-  } catch (e) { refuseErr = e; }
-  check('never stops admin-targeting tunnel', !!refuseErr && /refusing/i.test(String(refuseErr.message)));
-  // Concurrent Share single launch.
-  tunnel.__clearTunnelFlights();
-  const homeG = path.join(tmp, 'homeG');
-  fs.mkdirSync(homeG, { recursive: true });
-  const publicPortG = await freePort();
-  const publicOriginG = `http://127.0.0.1:${publicPortG}`;
-  const hostG = 'single-flight-9.trycloudflare.com';
-  const { port: metricsG } = await startFakeMetrics({ hostname: hostG, service: publicOriginG, haConnections: 1 });
-  let spawnG = 0;
-  const childG = fakeChild();
-  childrenToKill.push(childG.pid);
-  // Stagger: first call discovers via extraPorts? Force launch path by using a
-  // home with no registry and a pickMetricsPort returning the live fake port,
-  // with a small delay so both callers join the same flight.
-  const optsG = {
-    publicPort: publicPortG, publicOrigin: publicOriginG, adminOrigin: SAFE_ADMIN,
-    homeDir: homeG,
-    spawnFn: () => { spawnG += 1; return childG; },
-    pickMetricsPort: async () => { await new Promise((r) => setTimeout(r, 150)); return metricsG; },
-    isProcessAlive: () => true, timeoutMs: 8000,
-  };
-  const [gA, gB] = await Promise.all([tunnel.ensureShareTunnel(optsG), tunnel.ensureShareTunnel(optsG)]);
-  check('concurrent Share single launch', spawnG === 1 && gA.hostname === hostG && gB.hostname === hostG);
-  // GOL-388: metrics impostor (matching /config, non-cloudflared listener)
-  // is never adopted — fail closed toward launching an owned child. The
-  // impostor must sit on a probed default-range port for teeth: pre-fix
-  // code adopted it (reused:true, spawn 0); fixed code must launch.
-  tunnel.__clearTunnelFlights();
-// Fake cloudflared metrics server: serves /quicktunnel, /config, /metrics.
-// Pass fixedPort to occupy a well-known metrics port (GOL-388 adoption and
-// impostor tests must sit on probed 20241-20245 for teeth). Throws EADDRINUSE
-// when the port is held (e.g. the live :7420 tunnel on 20241) — callers pick
-// another candidate.
-function startFakeMetricsOn(fixedPort, { hostname, service, haConnections = 1 }) {
-  return new Promise((resolve, reject) => {
-    const srv = http.createServer((req, res) => {
-      const url = String(req.url || '').split('?')[0];
-      if (url === '/quicktunnel') {
-        trackFetch.quicktunnel += 1;
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ hostname }));
-        return;
-      }
-      if (url === '/config') {
-        trackFetch.config += 1;
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ingress: [{ service }, { service: 'http_status:404' }] }));
-        return;
-      }
-      if (url === '/metrics') {
-        trackFetch.metrics += 1;
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end(`# HELP cloudflared_tunnel_ha_connections\ncloudflared_tunnel_ha_connections ${haConnections}\n`);
-        return;
-      }
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end('{}');
-    });
-    srv.once('error', reject);
-    srv.listen(fixedPort, '127.0.0.1', () => {
-      serversToClose.push(srv);
-      resolve({ srv, port: srv.address().port });
-    });
-  });
-}
-function occupyDefaultPort({ hostname, service, haConnections = 1 }) {
-  const tryPort = async (p) => startFakeMetricsOn(p, { hostname, service, haConnections }).catch(() => null);
-  return (async () => {
-    for (const p of [20244, 20242, 20243, 20245, 20241]) {
-      const got = await tryPort(p);
-      if (got) return got;
-    }
-    throw new Error('no free default metrics port (20241-20245 all held)');
-  })();
-}
-  const homeH = path.join(tmp, 'homeH');
-  fs.mkdirSync(homeH, { recursive: true });
-  const publicPortH = await freePort();
-  const publicOriginH = `http://127.0.0.1:${publicPortH}`;
-  const { port: impostorMetrics } = await occupyDefaultPort({ hostname: 'impostor-host.trycloudflare.com', service: publicOriginH, haConnections: 1 });
-  const hostH = 'owned-launch-4.trycloudflare.com';
-  const { port: ownedMetricsH } = await startFakeMetrics({ hostname: hostH, service: publicOriginH, haConnections: 1 });
-  let spawnH = 0;
-  const childH = fakeChild();
-  childrenToKill.push(childH.pid);
-  const impostor = await tunnel.ensureShareTunnel({
-    publicPort: publicPortH, publicOrigin: publicOriginH, adminOrigin: SAFE_ADMIN,
-    homeDir: homeH,
-    spawnFn: () => { spawnH += 1; return childH; },
-    pickMetricsPort: async () => ownedMetricsH,
-    isProcessAlive: () => true, timeoutMs: 8000,
-    findPidFn: async () => 424242,
-    psCommandFn: async () => '/usr/bin/node fake-impostor-metrics',
-  });
-  check('metrics impostor not adopted; owned child launched', spawnH === 1 && impostor.hostname === hostH && impostor.reused === false);
-  // Legit cloudflared listener is adopted with its PID recorded, no spawn.
-  tunnel.__clearTunnelFlights();
-  const homeI = path.join(tmp, 'homeI');
-  fs.mkdirSync(homeI, { recursive: true });
-  const publicPortI = await freePort();
-  const publicOriginI = `http://127.0.0.1:${publicPortI}`;
-  const hostI = 'legit-adopt-5.trycloudflare.com';
-  const { port: legitMetrics } = await occupyDefaultPort({ hostname: hostI, service: publicOriginI, haConnections: 1 });
-  let spawnI = 0;
-  const adopted = await tunnel.ensureShareTunnel({
-    publicPort: publicPortI, publicOrigin: publicOriginI, adminOrigin: SAFE_ADMIN,
-    homeDir: homeI,
-    spawnFn: () => { spawnI += 1; return fakeChild(); },
-    pickMetricsPort: async () => await freePort(),
-    isProcessAlive: () => true, timeoutMs: 8000,
-    findPidFn: async (port) => (port === legitMetrics ? 424243 : null),
-    psCommandFn: async () => `cloudflared tunnel --url ${publicOriginI} --metrics 127.0.0.1:${legitMetrics}`,
-  });
-  const regI = JSON.parse(fs.readFileSync(path.join(homeI, 'share-tunnel.json'), 'utf8'));
-  check('verified cloudflared listener adopted with PID, no spawn', spawnI === 0 && adopted.reused === true && adopted.hostname === hostI && regI.pid === 424243);
-  // No new public tunnel spawns while an admin-targeting tunnel exists.
-  tunnel.__clearTunnelFlights();
-  const homeJ = path.join(tmp, 'homeJ');
-  fs.mkdirSync(homeJ, { recursive: true });
-  const publicPortJ = await freePort();
-  const adminU2 = `http://127.0.0.1:${await freePort()}`;
-  const { port: unsafeMetricsJ } = await startFakeMetrics({ hostname: 'admin-block.trycloudflare.com', service: adminU2, haConnections: 1 });
-  fs.writeFileSync(path.join(homeJ, 'share-tunnel.json'), JSON.stringify({ metricsPort: unsafeMetricsJ }));
-  let spawnJ = 0;
-  let unsafeErr = null;
-  try {
-    await tunnel.ensureShareTunnel({
-      publicPort: publicPortJ, publicOrigin: `http://127.0.0.1:${publicPortJ}`, adminOrigin: adminU2,
-      homeDir: homeJ,
-      spawnFn: () => { spawnJ += 1; return fakeChild(); },
-      pickMetricsPort: async () => await freePort(),
-      isProcessAlive: () => true, timeoutMs: 3000,
-    });
-  } catch (e) { unsafeErr = e; }
-  check('no spawn while admin-targeting tunnel exists', spawnJ === 0 && !!unsafeErr && /refusing to launch/i.test(String(unsafeErr.message)));
-  // Pid-less registry entry re-proves its listener before reuse.
-  tunnel.__clearTunnelFlights();
-  const homeK = path.join(tmp, 'homeK');
-  fs.mkdirSync(homeK, { recursive: true });
-  const publicPortK = await freePort();
-  const publicOriginK = `http://127.0.0.1:${publicPortK}`;
-  const hostK = 'reproof-6.trycloudflare.com';
-  const { port: reproofMetrics } = await startFakeMetrics({ hostname: hostK, service: publicOriginK, haConnections: 1 });
-  fs.writeFileSync(path.join(homeK, 'share-tunnel.json'), JSON.stringify({ publicPort: publicPortK, metricsPort: reproofMetrics, hostname: hostK, pid: null, updated_at: new Date().toISOString() }));
-  let spawnK = 0;
-  const reproved = await tunnel.ensureShareTunnel({
-    publicPort: publicPortK, publicOrigin: publicOriginK, adminOrigin: SAFE_ADMIN,
-    homeDir: homeK,
-    spawnFn: () => { spawnK += 1; return fakeChild(); },
-    isProcessAlive: () => true, timeoutMs: 8000,
-    findPidFn: async () => 424244,
-    psCommandFn: async () => `cloudflared tunnel --url ${publicOriginK} --metrics 127.0.0.1:${reproofMetrics}`,
-  });
-  check('pid-less registry re-proves listener, no spawn', spawnK === 0 && reproved.reused === true && reproved.hostname === hostK);
-  check('fixtures exercised metrics/config', trackFetch.quicktunnel > 0 && trackFetch.config > 0 && trackFetch.metrics > 0,
-    JSON.stringify(trackFetch));
+  const writeReg = (home, doc) => tunnel.writeShareRegistry(home, doc);
 
-  tracker.close();
-  check('no global port/process mutation (temp only)', true);
+  // ---- 1. healthy owned tunnel reused, no spawn ----
+  {
+    const home = freshHome('home-reuse');
+    const { port: metrics } = await startFakeMetrics({ hostname: HOST, service: ORIGIN, haConnections: 1 });
+    writeReg(home, { origin: ORIGIN, metricsPort: metrics, hostname: HOST, pid: 999001, updated_at: new Date().toISOString() });
+    let spawned = 0;
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawned += 1; throw new Error('must not spawn'); },
+      isProcessAlive: (pid) => pid === 999001,
+      psCommandFn: async (pid) => (pid === 999001 ? tunnelCmd(ORIGIN, metrics) : ''),
+    });
+    check('healthy owned tunnel reused, no spawn', out.reused === true && out.hostname === HOST && spawned === 0);
+  }
+
+  // ---- 2. hostname rotation adopted without spawn ----
+  {
+    const home = freshHome('home-rotate');
+    const host2 = 'rotated-host-2.trycloudflare.com';
+    const { port: metrics } = await startFakeMetrics({ hostname: host2, service: ORIGIN, haConnections: 2 });
+    writeReg(home, { origin: ORIGIN, metricsPort: metrics, hostname: HOST, pid: 999002, updated_at: new Date().toISOString() });
+    let spawned = 0;
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawned += 1; throw new Error('must not spawn'); },
+      isProcessAlive: (pid) => pid === 999002,
+      psCommandFn: async (pid) => (pid === 999002 ? tunnelCmd(ORIGIN, metrics) : ''),
+    });
+    const reg = tunnel.readShareRegistry(home);
+    check('changed hostname adopted without spawn', out.hostname === host2 && out.reused === true && spawned === 0 && reg.hostname === host2);
+  }
+
+  // ---- 3. dead pid launches exactly one child ----
+  {
+    const home = freshHome('home-dead');
+    writeReg(home, { origin: ORIGIN, metricsPort: 20991, hostname: 'stale-host.trycloudflare.com', pid: 111111, updated_at: '2020-01-01T00:00:00.000Z' });
+    const hostB = 'fresh-launch-3.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostB, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    let spawns = 0;
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawns += 1; return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: () => true,
+      psCommandFn: async () => tunnelCmd(ORIGIN, liveMetrics),
+      timeoutMs: 8000, overallTimeoutMs: 0,
+    });
+    check('dead pid launches exactly one child', spawns === 1 && out.reused === false && out.hostname === hostB && out.pid === child.pid);
+  }
+
+  // ---- 4. same-origin foreign tunnel: never reused, never stopped ----
+  {
+    const home = freshHome('home-foreign');
+    // A live tunnel for our origin exists, but there is no registry: it is
+    // someone else's. ensure must not even probe it (no discovery) and must
+    // launch its own beside it.
+    const { port: foreignMetrics } = await startFakeMetrics({ hostname: 'foreign-owner.trycloudflare.com', service: ORIGIN, haConnections: 1 });
+    void foreignMetrics;
+    const hostOurs = 'ours-beside-4.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostOurs, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    let spawns = 0;
+    const kills = [];
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawns += 1; return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: () => true,
+      psCommandFn: async () => tunnelCmd(ORIGIN, liveMetrics),
+      killFn: async (pid, sig) => { kills.push([pid, sig]); },
+      timeoutMs: 8000, overallTimeoutMs: 0,
+    });
+    const reg = tunnel.readShareRegistry(home);
+    check('foreign same-origin tunnel ignored, own launched beside it',
+      spawns === 1 && kills.length === 0 && out.hostname === hostOurs && reg.pid === child.pid && reg.origin === ORIGIN);
+  }
+
+  // ---- 4b. valid metrics but unowned pid: launch beside, no kill ----
+  {
+    const home = freshHome('home-unowned');
+    const { port: metrics } = await startFakeMetrics({ hostname: HOST, service: ORIGIN, haConnections: 1 });
+    writeReg(home, { origin: ORIGIN, metricsPort: metrics, hostname: HOST, pid: 999004, updated_at: new Date().toISOString() });
+    const hostNew = 'replaced-unowned-4b.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    let spawns = 0;
+    const kills = [];
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawns += 1; return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: () => true,
+      // Recorded pid is some other owner's tunnel: command targets elsewhere.
+      psCommandFn: async () => 'cloudflared tunnel --url http://127.0.0.1:8765',
+      killFn: async (pid, sig) => { kills.push([pid, sig]); },
+      timeoutMs: 8000, overallTimeoutMs: 0,
+    });
+    check('unowned record never killed, fresh tunnel launched', spawns === 1 && kills.length === 0 && out.pid === child.pid);
+  }
+
+  // ---- 5. R5 migration: stale legacy registry, owned -> stopped + fresh ----
+  {
+    const home = freshHome('home-migrate-owned');
+    const staleOrigin = 'http://127.0.0.1:61961';
+    const oldPid = 999005;
+    const alive = new Set([oldPid]);
+    writeReg(home, { publicPort: 61961, metricsPort: 20991, hostname: 'old-host.trycloudflare.com', pid: oldPid, updated_at: '2020-01-01T00:00:00.000Z' });
+    const hostNew = 'migrated-fresh-5.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    let spawns = 0;
+    const kills = [];
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawns += 1; return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: (pid) => alive.has(pid),
+      psCommandFn: async (pid) => (pid === oldPid ? tunnelCmd(staleOrigin, 20991) : tunnelCmd(ORIGIN, liveMetrics)),
+      killFn: async (pid, sig) => { kills.push(sig); if (sig === 'SIGTERM') alive.delete(pid); },
+      timeoutMs: 8000, overallTimeoutMs: 0,
+      stopPollMs: 10,
+    });
+    const reg = tunnel.readShareRegistry(home);
+    check('stale owned tunnel stopped, fresh started',
+      kills.includes('SIGTERM') && !alive.has(oldPid) && spawns === 1 && out.hostname === hostNew && reg.origin === ORIGIN && reg.pid === child.pid);
+  }
+
+  // ---- 6. R5 migration: stale unowned -> no kill, still start fresh ----
+  {
+    const home = freshHome('home-migrate-foreign');
+    const oldPid = 999006;
+    const alive = new Set([oldPid]);
+    writeReg(home, { publicPort: 61961, metricsPort: 20991, hostname: 'old-host.trycloudflare.com', pid: oldPid, updated_at: '2020-01-01T00:00:00.000Z' });
+    const hostNew = 'migrated-beside-6.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    let spawns = 0;
+    const kills = [];
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawns += 1; return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: (pid) => alive.has(pid),
+      // Unknown owner's process (e.g. pid 16776 pattern): never touch it.
+      psCommandFn: async () => 'cloudflared tunnel --url http://127.0.0.1:8765',
+      killFn: async (pid, sig) => { kills.push(sig); },
+      timeoutMs: 8000, overallTimeoutMs: 0,
+    });
+    check('stale foreign process left alone, fresh started',
+      kills.length === 0 && alive.has(oldPid) && spawns === 1 && out.hostname === hostNew);
+  }
+
+  // ---- 7. owned-but-disconnected: stopped under contract, then relaunched ----
+  {
+    const home = freshHome('home-replace');
+    const oldPid = 999007;
+    const alive = new Set([oldPid]);
+    const { port: deadMetrics } = await startFakeMetrics({ hostname: HOST, service: ORIGIN, haConnections: 0 });
+    writeReg(home, { origin: ORIGIN, metricsPort: deadMetrics, hostname: HOST, pid: oldPid, updated_at: new Date().toISOString() });
+    const hostNew = 'replaced-disconnected-7.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    let spawns = 0;
+    const kills = [];
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawns += 1; return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: (pid) => alive.has(pid) || pid === child.pid,
+      psCommandFn: async (pid) => (pid === oldPid ? tunnelCmd(ORIGIN, deadMetrics) : tunnelCmd(ORIGIN, liveMetrics)),
+      killFn: async (pid, sig) => { kills.push(sig); if (pid === oldPid && sig === 'SIGTERM') alive.delete(pid); },
+      timeoutMs: 8000, overallTimeoutMs: 0,
+      stopPollMs: 10,
+    });
+    check('owned-but-disconnected stopped then relaunched',
+      kills.includes('SIGTERM') && !alive.has(oldPid) && spawns === 1 && out.hostname === hostNew);
+  }
+
+  // ---- 8/9. stop with missing / dead pid -> already_stopped + cleared ----
+  {
+    const home = freshHome('home-stop-missing');
+    writeReg(home, { origin: ORIGIN, metricsPort: 20991, hostname: HOST });
+    const out = await tunnel.stopOwnedTunnel(home, ORIGIN, { isProcessAlive: () => false });
+    check('stop with missing pid clears + already_stopped',
+      out.already_stopped === true && Object.keys(tunnel.readShareRegistry(home) || {}).length === 0);
+    const home2 = freshHome('home-stop-dead');
+    writeReg(home2, { origin: ORIGIN, metricsPort: 20991, hostname: HOST, pid: 999009 });
+    const out2 = await tunnel.stopOwnedTunnel(home2, ORIGIN, { isProcessAlive: () => false });
+    check('stop with dead pid clears + already_stopped',
+      out2.already_stopped === true && Object.keys(tunnel.readShareRegistry(home2) || {}).length === 0);
+  }
+
+  // ---- 10. stop owned: SIGTERM exits, no SIGKILL, registry cleared ----
+  {
+    const home = freshHome('home-stop-term');
+    const pid = 999010;
+    const alive = new Set([pid]);
+    const { port: metrics } = await startFakeMetrics({ hostname: HOST, service: ORIGIN, haConnections: 1 });
+    writeReg(home, { origin: ORIGIN, metricsPort: metrics, hostname: HOST, pid, updated_at: new Date().toISOString() });
+    const kills = [];
+    const out = await tunnel.stopOwnedTunnel(home, ORIGIN, {
+      isProcessAlive: (p) => alive.has(p),
+      psCommandFn: async () => tunnelCmd(ORIGIN, metrics),
+      killFn: async (p, sig) => { kills.push(sig); if (sig === 'SIGTERM') alive.delete(p); },
+      stopPollMs: 10,
+    });
+    check('stop owned exits on SIGTERM, registry cleared',
+      out.stopped === true && kills.join(',') === 'SIGTERM' && Object.keys(tunnel.readShareRegistry(home) || {}).length === 0);
+  }
+
+  // ---- 11. SIGTERM ignored -> SIGKILL path ----
+  {
+    const home = freshHome('home-stop-kill');
+    const pid = 999011;
+    const alive = new Set([pid]);
+    const { port: metrics } = await startFakeMetrics({ hostname: HOST, service: ORIGIN, haConnections: 1 });
+    writeReg(home, { origin: ORIGIN, metricsPort: metrics, hostname: HOST, pid, updated_at: new Date().toISOString() });
+    const kills = [];
+    const out = await tunnel.stopOwnedTunnel(home, ORIGIN, {
+      isProcessAlive: (p) => alive.has(p),
+      psCommandFn: async () => tunnelCmd(ORIGIN, metrics),
+      killFn: async (p, sig) => { kills.push(sig); if (sig === 'SIGKILL') alive.delete(p); },
+      stopTermMs: 120, stopKillMs: 2000, stopPollMs: 10,
+    });
+    check('SIGTERM ignored escalates to SIGKILL and stops',
+      out.stopped === true && kills[0] === 'SIGTERM' && kills.includes('SIGKILL'));
+  }
+
+  // ---- 12. kill that never exits -> STOP_UNCONFIRMED, registry kept ----
+  {
+    const home = freshHome('home-stop-unconfirmed');
+    const pid = 999012;
+    writeReg(home, { origin: ORIGIN, metricsPort: 20991, hostname: HOST, pid, updated_at: new Date().toISOString() });
+    const kills = [];
+    let code = null;
+    try {
+      await tunnel.stopOwnedTunnel(home, ORIGIN, {
+        isProcessAlive: () => true,
+        psCommandFn: async () => tunnelCmd(ORIGIN, 20991),
+        killFn: async (p, sig) => { kills.push(sig); },
+        stopTermMs: 120, stopKillMs: 100, stopPollMs: 10,
+      });
+    } catch (err) { code = err?.code; }
+    const reg = tunnel.readShareRegistry(home);
+    check('unconfirmed exit keeps registry with STOP_UNCONFIRMED',
+      code === 'STOP_UNCONFIRMED' && kills.includes('SIGTERM') && kills.includes('SIGKILL') && reg.pid === pid);
+  }
+
+  // ---- 13. live pid, wrong command -> refused, nothing killed ----
+  {
+    const home = freshHome('home-stop-foreign');
+    const pid = 999013;
+    writeReg(home, { origin: ORIGIN, metricsPort: 20991, hostname: HOST, pid, updated_at: new Date().toISOString() });
+    const kills = [];
+    let threw = '';
+    try {
+      await tunnel.stopOwnedTunnel(home, ORIGIN, {
+        isProcessAlive: () => true,
+        psCommandFn: async () => 'cloudflared tunnel --url http://127.0.0.1:8765',
+        killFn: async (p, sig) => { kills.push(sig); },
+      });
+    } catch (err) { threw = String(err?.message ?? err); }
+    check('foreign live pid refused, registry kept',
+      /ownership unproven/.test(threw) && kills.length === 0 && tunnel.readShareRegistry(home).pid === pid);
+  }
+
+  // ---- 14. R9: Stop waits for an in-flight ensure, then stops it ----
+  {
+    const home = freshHome('home-stop-waits');
+    const hostNew = 'stop-waits-14.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    const alive = new Set([child.pid]);
+    const order = [];
+    const ensureP = tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { order.push('spawn'); return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: (p) => alive.has(p),
+      psCommandFn: async () => tunnelCmd(ORIGIN, liveMetrics),
+      timeoutMs: 8000, overallTimeoutMs: 0,
+    });
+    await sleep(50);
+    const stopP = tunnel.stopOwnedTunnel(home, ORIGIN, {
+      isProcessAlive: (p) => alive.has(p),
+      psCommandFn: async () => tunnelCmd(ORIGIN, liveMetrics),
+      killFn: async (p, sig) => { order.push(`kill:${sig}`); alive.delete(p); },
+      stopPollMs: 10,
+    });
+    const [ensured, stopped] = await Promise.all([ensureP, stopP]);
+    check('stop waits for ensure then stops the fresh tunnel',
+      ensured.reused === false && stopped.stopped === true && order[0] === 'spawn' && order[1] === 'kill:SIGTERM');
+  }
+
+  // ---- 15. R9: ensure starting during Stop waits; no recreate after success ----
+  {
+    const home = freshHome('home-ensure-waits');
+    const pid = 999015;
+    const alive = new Set([pid]);
+    const { port: metrics } = await startFakeMetrics({ hostname: HOST, service: ORIGIN, haConnections: 1 });
+    writeReg(home, { origin: ORIGIN, metricsPort: metrics, hostname: HOST, pid, updated_at: new Date().toISOString() });
+    const events = [];
+    const stopP = tunnel.stopOwnedTunnel(home, ORIGIN, {
+      isProcessAlive: (p) => alive.has(p),
+      psCommandFn: async () => tunnelCmd(ORIGIN, metrics),
+      killFn: async (p, sig) => { events.push(`stop:${sig}`); await sleep(400); alive.delete(p); },
+      stopPollMs: 10,
+    });
+    await sleep(50);
+    const hostNew = 'ensure-after-stop-15.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    alive.add(child.pid);
+    let spawns = 0;
+    const ensureP = tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawns += 1; events.push('spawn'); return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: (p) => alive.has(p),
+      psCommandFn: async () => tunnelCmd(ORIGIN, liveMetrics),
+      killFn: async () => {},
+      timeoutMs: 8000, overallTimeoutMs: 0,
+    });
+    const [stopped, ensured] = await Promise.all([stopP, ensureP]);
+    check('ensure waits for stop, then launches fresh (no resurrect)',
+      stopped.stopped === true && ensured.reused === false && spawns === 1
+      && events[0] === 'stop:SIGTERM' && events[1] === 'spawn');
+  }
+
+  tunnel.__clearTunnelFlights();
+
+  // ---- routes: isolated dashboard + fake cloudflared on PATH ----
+  const fakeBin = path.join(tmp, 'fakebin');
+  fs.mkdirSync(fakeBin, { recursive: true });
+  const fakeCloudflared = path.join(fakeBin, 'cloudflared');
+  fs.writeFileSync(fakeCloudflared, `#!${process.execPath}
+const http = require('node:http');
+const args = process.argv.slice(2);
+const ui = args.indexOf('--url');
+const mi = args.indexOf('--metrics');
+const url = ui >= 0 ? args[ui + 1] : 'http://127.0.0.1:0';
+const metrics = mi >= 0 ? args[mi + 1] : '127.0.0.1:0';
+const mhost = String(metrics).split(':')[0] || '127.0.0.1';
+const mport = Number(String(metrics).split(':').pop());
+const hostname = process.env.FAKE_TUNNEL_HOST || 'golem-share-test.trycloudflare.com';
+const srv = http.createServer((req, res) => {
+  const u = String(req.url || '').split('?')[0];
+  if (u === '/quicktunnel') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hostname })); return; }
+  if (u === '/config') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ingress: [{ service: url }, { service: 'http_status:404' }] })); return; }
+  if (u === '/metrics') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('cloudflared_tunnel_ha_connections 1\\n'); return; }
+  res.writeHead(404); res.end('{}');
+});
+srv.listen(mport, mhost);
+`);
+  fs.chmodSync(fakeCloudflared, 0o755);
+  const port = await freePort();
+  const base = `http://127.0.0.1:${port}`;
+  const home = path.join(tmp, 'home-routes');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    ...process.env, PORT: String(port), HOST: '127.0.0.1',
+    GOLEM_HOME: home, GOLEM_TRACKER_DB: path.join(tmp, 'tracker.db'),
+    XDG_CONFIG_HOME: path.join(tmp, 'xdg'), HOME: home,
+    GOLEM_PROJECTS_ROOT: path.join(tmp, 'projects'), GOLEM_IDEAS_ROOT: path.join(tmp, 'ideas'),
+    GOLEM_ROOT: repo, LOG_LEVEL: 'error',
+    PATH: `${fakeBin}:/usr/bin:/bin`,
+  };
+  dashboard = spawn(process.execPath, [path.join(repo, 'dashboard/server/index.js')], { cwd: repo, env, stdio: ['ignore', 'ignore', 'pipe'] });
+  let errText = '';
+  dashboard.stderr.on('data', (c) => { errText += c; });
+  const deadline = Date.now() + 25000;
+  while (Date.now() < deadline) {
+    try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* retry */ }
+    if (dashboard.exitCode !== null) throw new Error(`dashboard exited: ${errText}`);
+    await sleep(150);
+  }
+  check('isolated dashboard ready (fake cloudflared on PATH)', true);
+
+  const api = async (method, p, body = null) => {
+    const res = await fetch(`${base}${p}`, {
+      method,
+      ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    });
+    let json = null;
+    try { json = await res.json(); } catch { json = null; }
+    return { status: res.status, json };
+  };
+  let res = await api('POST', '/api/tickets', { project_id: 'share-test-abcdef', kind: 'spec', title: 'Route spec', body: '# Body', state: 'todo' });
+  assert.equal(res.status, 201, JSON.stringify(res.json));
+  const spec = res.json;
+  res = await api('POST', '/api/tickets', { project_id: 'share-test-abcdef', kind: 'task', title: 'Route task', body: 't', state: 'todo' });
+  assert.equal(res.status, 201);
+  const task = res.json;
+
+  // Task kind refused everywhere it matters.
+  res = await api('POST', `/api/tickets/${task.id}/share`);
+  check('POST task refused INELIGIBLE_KIND', res.status === 400 && res.json?.code === 'INELIGIBLE_KIND', JSON.stringify(res.json));
+  res = await api('GET', `/api/tickets/${task.id}/share`);
+  check('GET task not shareable', res.status === 200 && res.json?.shareable === false && res.json?.url === null, JSON.stringify(res.json));
+  res = await api('GET', '/api/tickets/TKT-missing/share');
+  check('GET missing 404', res.status === 404);
+
+  // Spec share: read link through the fake tunnel.
+  res = await api('POST', `/api/tickets/${spec.display_id}/share`);
+  check('POST spec returns /read/ link', res.status === 200
+    && res.json?.url === `https://${res.json?.hostname}/read/${spec.display_id}`
+    && /[a-z0-9-]+\.trycloudflare\.com/.test(res.json?.hostname ?? ''), JSON.stringify(res.json));
+  const firstHost = res.json?.hostname;
+  res = await api('GET', `/api/tickets/${spec.id}/share`);
+  check('GET reports active with url', res.status === 200 && res.json?.shareable === true
+    && res.json?.active === true && (res.json?.url ?? '').endsWith(`/read/${spec.display_id}`), JSON.stringify(res.json));
+  // Second Share reuses the same host.
+  res = await api('POST', `/api/tickets/${spec.id}/share`);
+  check('repeat Share reuses the host', res.status === 200 && res.json?.hostname === firstHost, JSON.stringify(res.json));
+
+  // Stop ends every link at once.
+  res = await api('DELETE', `/api/tickets/${spec.id}/share`);
+  check('DELETE stops the tunnel', res.status === 200 && res.json?.stopped === true, JSON.stringify(res.json));
+  res = await api('GET', `/api/tickets/${spec.id}/share`);
+  check('GET inactive after stop', res.status === 200 && res.json?.active === false && res.json?.url === null, JSON.stringify(res.json));
+  res = await api('DELETE', `/api/tickets/${spec.id}/share`);
+  check('second DELETE already_stopped', res.status === 200 && res.json?.already_stopped === true, JSON.stringify(res.json));
+
+  // R5 migration at route level: legacy publicPort registry with a dead pid.
+  const legacyReg = {
+    publicPort: 61961, metricsPort: 20991, hostname: 'old-host.trycloudflare.com',
+    pid: 987654, updated_at: '2020-01-01T00:00:00.000Z',
+  };
+  fs.writeFileSync(path.join(home, 'share-tunnel.json'), JSON.stringify(legacyReg));
+  res = await api('POST', `/api/tickets/${spec.id}/share`);
+  check('stale legacy registry migrates to a fresh tunnel', res.status === 200 && /\/read\//.test(res.json?.url ?? ''), JSON.stringify(res.json));
+  const migrated = JSON.parse(fs.readFileSync(path.join(home, 'share-tunnel.json'), 'utf8'));
+  check('migrated registry carries the dashboard origin', migrated.origin === `http://127.0.0.1:${port}` && Number.isInteger(migrated.pid));
+  // Clean up the migrated tunnel so no fake cloudflared lingers.
+  res = await api('DELETE', `/api/tickets/${spec.id}/share`);
+  check('migrated tunnel stops cleanly', res.status === 200 && res.json?.stopped === true, JSON.stringify(res.json));
 } finally {
-  for (const srv of serversToClose) {
-    try { await new Promise((r) => srv.close(r)); } catch { /* ignore */ }
+  if (dashboard && dashboard.exitCode === null) {
+    dashboard.kill('SIGTERM');
+    await Promise.race([new Promise((r) => dashboard.on('exit', r)), sleep(3000)]);
+    if (dashboard.exitCode === null) dashboard.kill('SIGKILL');
   }
-  fs.rmSync(tmp, { recursive: true, force: true });
+  for (const srv of serversToClose) { try { await new Promise((r) => srv.close(r)); } catch {} }
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 }
-
 if (failures.length) {
-  console.error(`\n${failures.length} failure(s): ${failures.join(', ')}`);
+  console.log(`\nspec-sharing FAILED: ${failures.length} check(s): ${failures.join('; ')}`);
   process.exit(1);
 }
-console.log('\nspec-sharing service tests passed');
+console.log('\nspec-sharing passed');

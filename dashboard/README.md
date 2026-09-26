@@ -24,17 +24,16 @@ The port is fixed at 7420 — `golem dashboard` always reuses the same port, eve
 
 ## Sharing specs and docs
 
-Open a spec or doc in the dashboard and select **Share** beside its title. The link
-opens a read-only public page with the title, body, referenced images, and rendered
-Mermaid diagrams. It does not expose comments, work items, other tickets, or dashboard
-APIs. **Stop sharing** revokes that document link. Repeat Share uses the same running
-Cloudflare quick tunnel; `cloudflared` must be installed. The first link can take
-some time to resolve in DNS, and quick-tunnel URLs can change if the process exits.
+Open a spec or doc in the dashboard and select **Share** beside its title. Share
+starts one Golem-owned Cloudflare quick tunnel to the dashboard and returns a
+public reader link `https://<tunnel-host>/read/<id>`. Repeat Share reuses the
+same running tunnel; `cloudflared` must be installed. A new link can take up
+to a minute to resolve in DNS, and the host changes whenever the tunnel restarts.
 
-The public tunnel points to a separate loopback-only reader, **not** dashboard port
-7420. If an old tunnel still targets 7420, Share/Stop pause until you retire it:
-that old tunnel exposes the unauthenticated dashboard, not just a document. Tunnel
-lifecycle state lives in `~/.golem/share-tunnel.json`; the dashboard manages it.
+While sharing is on, the link exposes the whole dashboard — every ticket and
+write API — unauthenticated, not just the shared document. **Stop sharing**
+stops the tunnel, so every shared link stops working at once. Tunnel lifecycle
+state lives in `~/.golem/share-tunnel.json`; the dashboard manages it.
 
 ## Quick start
 

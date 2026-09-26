@@ -26,9 +26,9 @@
 
 ### Dashboard
 
-`dashboard/server/index.js` owns admin REST/WS; `tracker-db.js` owns SQLite tickets and
-share grants. `share-public.js` serves only token documents on a separate loopback listener;
-`share-tunnel.js` bounds/verifies cloudflared reuse via `~/.golem/share-tunnel.json` (never :7420).
+`dashboard/server/index.js` owns admin REST/WS; `tracker-db.js` owns SQLite tickets.
+`share-tunnel.js` owns one Golem-owned cloudflared quick tunnel to the dashboard via
+`~/.golem/share-tunnel.json`: Share hands out `/read/<id>` links, Stop kills the tunnel.
 `html-body.js`/`md-body.js` patch strict anchors via `body-anchor.js`; `mermaid-check.js`
 validates diagrams. `notification-schedule*.js` schedules; `comment-dispatch.js` routes feedback.
 Agents never touch SQLite directly.
@@ -42,7 +42,7 @@ agents (one herdr session per project); `lib/team-registry.js` owns `teams.json`
 ## Data flow
 
 Hooks/shims register sessions under `~/.golem/`. The dashboard owns tracker writes and
-native/typed dispatch. Sharing issues a per-document grant; only the public listener is tunneled.
+native/typed dispatch. Sharing tunnels the dashboard itself; Stop ends every shared link at once.
 
 ## Constraints & gotchas
 
