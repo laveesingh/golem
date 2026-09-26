@@ -850,22 +850,29 @@ function TicketDrawer({ open, ticketId, onClose, variant = 'overlay', reader = f
 
   // Dispatch a single existing comment (per-comment Dispatch button on the
   // comment card, both in the read view and the edit composer). The comment
-  // stays undispatched on failure so it can be retried.
+  // stays undispatched on failure so it can be retried. GOL-383: the rail
+  // wraps this per card (pending label, duplicate-click guard, inline
+  // error), so failures reject after the draft-queue note is written — the
+  // wrapper catches and renders the error at the clicked card.
   const onDispatchComment = React.useCallback(async (commentId) => {
     if (!ticketId || !commentId) return;
     const target = selectedCommentDispatchSession;
     setCommentDispatchNote(null);
     if (!target) {
-      setCommentDispatchNote('Pick a session before dispatching comments');
-      return;
+      const message = 'Pick a session before dispatching comments';
+      setCommentDispatchNote(message);
+      throw new Error(message);
     }
     try {
       const res = await window.SubstrateAPI.dispatchComment(commentId, { session_id: target });
       if (res?.ticket?.id) window.Store.upsertTrackerTicket(res.ticket);
       if (res?.ticket?.comments) window.Store.seedTicketComments(res.ticket.id, res.ticket.comments);
       setCommentDispatchNote(`dispatched to ${labelBySession.get(target) || target}`);
+      return res;
     } catch (err) {
-      setCommentDispatchNote(err?.payload?.error || err?.message || 'Dispatch failed — the comment is still undispatched');
+      const message = err?.payload?.error || err?.message || 'Dispatch failed — the comment is still undispatched';
+      setCommentDispatchNote(message);
+      throw err;
     }
   }, [ticketId, selectedCommentDispatchSession, labelBySession]);
 

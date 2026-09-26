@@ -52,7 +52,7 @@
     "dashboard:build": "vite build --config dashboard/vite.config.js && vite build --config dashboard/vite.share.config.js",
     "dashboard:dev": "vite --config dashboard/vite.config.js",
     "dashboard:serve": "npm run dashboard:build && node dashboard/server/index.js",
-    "test:dashboard:browser": "node dashboard/scripts/gol-461-browser.mjs && node dashboard/scripts/gol-495-browser.mjs && node dashboard/scripts/nested-composer-overlay.browser.mjs && node dashboard/scripts/gol-129-pi-browser.mjs && node dashboard/scripts/comment-image-paste.browser.mjs",
+    "test:dashboard:browser": "node dashboard/scripts/gol-461-browser.mjs && node dashboard/scripts/gol-495-browser.mjs && node dashboard/scripts/nested-composer-overlay.browser.mjs && node dashboard/scripts/gol-129-pi-browser.mjs && node dashboard/scripts/comment-image-paste.browser.mjs && node dashboard/scripts/gol383-comment-dispatch.browser.mjs",
     "test:pi:dashboard": "node test/typed-immediate-retry.test.mjs && npm run dashboard:build && node dashboard/scripts/gol-129-pi-browser.mjs",
     "check:dashboard": "dashboard/scripts/check.sh"
   },
