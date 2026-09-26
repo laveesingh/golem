@@ -30,6 +30,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import * as tracker from './tracker-client.js';
 import { GOLEM_TOOL_CONTRACTS } from '../../lib/golem-tool-contracts.js';
+import { compactDispatch, compactTicket } from '../../lib/ticket-compact.js';
 
 // GOL-365: the full shared contract list is the only tool surface.
 const GOLEM_TOOL_LIST = GOLEM_TOOL_CONTRACTS.map((c) => ({ name: c.name, description: c.description, inputSchema: c.inputSchema }));
@@ -489,7 +490,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       return out;
     };
     const jsonResult = async (value) => ({
-      content: [{ type: 'text', text: JSON.stringify(await publicTicketIds(value), null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(await publicTicketIds(value)) }],
     });
     try {
       const sessionId = caller.sessionId;
@@ -546,7 +547,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           source_ref: args.source_ref,
           created_by: sessionId ?? undefined,
         };
-        return await jsonResult(await tracker.createTicket(body));
+        return await jsonResult(compactTicket(await tracker.createTicket(body)));
       }
 
       if (name === 'ticket_update') {
@@ -555,7 +556,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         for (const k of ['state', 'title', 'body', 'body_format', 'expected_revision', 'kind', 'priority', 'labels', 'parent_id', 'assignee']) {
           if (args[k] !== undefined) patch[k] = args[k];
         }
-        return await jsonResult(await tracker.updateTicket(args.id, patch));
+        return await jsonResult(compactTicket(await tracker.updateTicket(args.id, patch)));
       }
 
       if (name === 'ticket_comment') {
@@ -598,13 +599,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       if (name === 'ticket_dispatch') {
         if (!args.id) throw new Error('ticket_dispatch: id is required');
         if (!args.session_id) throw new Error('ticket_dispatch: session_id is required');
-        return await jsonResult(await tracker.dispatchTicket(args.id, {
+        return await jsonResult(compactDispatch(await tracker.dispatchTicket(args.id, {
           session_id: args.session_id,
           note: args.note,
           when_idle: args.when_idle === true,
           workspace: args.workspace || undefined,
           sender_id: sessionId,
-        }));
+        })));
       }
 
     } catch (err) {

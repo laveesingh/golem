@@ -215,7 +215,7 @@ function projectContext(sessionId, cwd) {
 }
 
 function toolText(value) {
-  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
   return text.length <= 30_000 ? text : `${text.slice(0, 30_000)}\n… output truncated by Golem`;
 }
 
