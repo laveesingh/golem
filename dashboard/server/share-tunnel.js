@@ -37,6 +37,19 @@ const flightByHome = new Map();
 const stopFlightByHome = new Map();
 
 export const STOP_UNCONFIRMED = 'STOP_UNCONFIRMED';
+// R9: Stop cancels Share. A Share that is in flight or waiting when Stop
+// begins is cancelled and surfaces this code (409 from the route).
+export const SHARE_STOPPED = 'SHARE_STOPPED';
+
+export function shareStoppedError() {
+  const err = new Error('Share cancelled: Stop began while this Share was running; Share again if a link is still wanted');
+  err.code = SHARE_STOPPED;
+  return err;
+}
+
+function shareTimeoutError(budget, phase) {
+  return new Error(`share recovery timed out after ${budget}ms in ${phase} (end-to-end budget ${SHARE_RECOVERY_BUDGET_MS}ms); retry Share — a stale tunnel is replaced, never reused`);
+}
 
 export function flightKeyFor(homeDir, origin) {
   return `${homeDir}::${origin}`;
@@ -368,15 +381,39 @@ export async function stopOwnedTunnelInner(homeDir, expectedOrigin, { isProcessA
   return { stopped: true, already_stopped: false, pid };
 }
 
-// R9: Stop serialized with the ensure flight both ways. Waits for an
-// in-flight ensure before proving ownership, and registers a stop flight so
-// an ensure that starts during Stop waits until Stop finishes.
+// R9: Stop cancels Share. An in-flight Share flight is cancelled and dropped
+// from the map — it can never spawn, publish, or write the registry
+// afterwards. A child it already spawned is killed and exit-confirmed
+// (STOP_UNCONFIRMED when exit stays unproven) before the registry stop runs,
+// so success means nothing share-related is still alive. A Share that starts
+// while this Stop runs waits on the stop flight, then cancels itself.
+// Concurrent Stops serialize on the stop flight.
 export async function stopOwnedTunnel(homeDir, expectedOrigin, opts = {}) {
   if (!expectedOrigin) throw new Error('expectedOrigin is required');
+  const {
+    isProcessAlive = defaultIsProcessAlive,
+    killFn = null,
+    stopTermMs = 5000,
+    stopKillMs = 2000,
+    stopPollMs = 100,
+  } = opts;
   const key = flightKeyFor(homeDir, expectedOrigin);
   const flight = flightByHome.get(key);
   if (flight) {
-    try { await flight; } catch { /* settle: Stop re-reads the registry, never the flight result */ }
+    const st = flight.shareState;
+    if (st) st.cancelled = true;
+    flightByHome.delete(key);
+    const spawned = st?.child ?? null;
+    if (st) st.child = null;
+    if (spawned && Number.isInteger(spawned.pid)) {
+      const outcome = await killPidWithContract(spawned.pid, {
+        isProcessAlive, killFn, termMs: stopTermMs, killMs: stopKillMs, pollMs: stopPollMs,
+      });
+      if (!outcome) throw stopUnconfirmedError(spawned.pid);
+    }
+    // Detach without waiting: the flight aborts at its next fence
+    // checkpoint. Handled here so its rejection is never unobserved.
+    flight.then(() => {}, () => {});
   }
   let release = null;
   const mine = new Promise((resolve) => { release = resolve; });
@@ -409,7 +446,8 @@ function sleep(ms) {
 // Single-flight supervised ensure for the dashboard-origin tunnel. Returns
 // { hostname, metricsPort, pid, reused }. Reuse returns the validated
 // recorded tunnel without spawning; otherwise a new Golem-owned child is
-// launched. Never adopts a foreign tunnel (R8); serialized with Stop (R9).
+// launched. Never adopts a foreign tunnel (R8). Stop cancels Share (R9): a
+// cancelled flight never spawns, publishes, or writes the registry.
 export async function ensureShareTunnel({
   origin,
   homeDir,
@@ -435,16 +473,28 @@ export async function ensureShareTunnel({
 } = {}) {
   if (!origin) throw new Error('origin is required');
   const key = flightKeyFor(homeDir, origin);
-  // R9: an ensure that starts during Stop waits until Stop finishes, so no
-  // Share publishes or recreates a tunnel mid-Stop.
+  // R9: a Share that starts while Stop runs waits for Stop to finish — then
+  // cancels itself instead of launching. Only a Share that starts after
+  // Stop returned may start a new tunnel.
   const pendingStop = stopFlightByHome.get(key);
-  if (pendingStop) await pendingStop; // a Stop flight always resolves; re-read the registry below
+  if (pendingStop) {
+    await pendingStop; // a Stop flight always resolves; never throws
+    throw shareStoppedError();
+  }
   const t0 = Date.now();
-  const state = { phase: 'start', timedOut: false, child: null };
+  const state = { phase: 'start', timedOut: false, cancelled: false, child: null };
   const ring = { text: '' };
   const mark = (name) => {
     state.phase = name;
     try { onPhase?.(name, Date.now() - t0); } catch {} // seam must never break recovery
+  };
+  // R9 fence checkpoint: a Stop-cancelled or budget-timed-out flight aborts
+  // here instead of spawning, publishing, or writing the registry. Cancel
+  // wins over timeout so overlapping Stops report SHARE_STOPPED, not a
+  // budget error.
+  const throwIfFenced = () => {
+    if (state.cancelled) throw shareStoppedError();
+    if (state.timedOut) throw shareTimeoutError(Number(overallTimeoutMs), state.phase);
   };
   // Bound one flight by the end-to-end budget. The FIRST bounded waiter
   // establishes exactly one timer from flight start (normally the owner);
@@ -468,12 +518,17 @@ export async function ensureShareTunnel({
     let timer = null;
     const timeoutRace = new Promise((_, reject) => {
       timer = setTimeout(() => {
+        // R9 fence: after a timeout nothing may spawn or write the registry
+        // (checkpoints + write guards enforce it), and a child spawned
+        // before the fence is killed and exit-confirmed in the background.
         st.timedOut = true;
+        st.cancelled = true;
         cleanupFlight();
         const c = st.child;
         st.child = null;
         killSpawned(c);
-        reject(new Error(`share recovery timed out after ${budget}ms in ${st.phase} (end-to-end budget ${SHARE_RECOVERY_BUDGET_MS}ms); retry Share — a stale tunnel is replaced, never reused`));
+        void confirmFencedChild(c).catch(() => {}); // hygiene only; the fence is the guarantee
+        reject(shareTimeoutError(budget, st.phase));
       }, budget);
       if (timer.unref) timer.unref();
     });
@@ -491,10 +546,18 @@ export async function ensureShareTunnel({
   const killSpawned = (proc) => {
     try {
       if (!proc) return;
-      if (typeof killFn === 'function') { Promise.resolve(killFn(proc.pid)).catch(() => {}); return; }
+      if (typeof killFn === 'function') { Promise.resolve(killFn(proc.pid, 'SIGTERM')).catch(() => {}); return; }
       if (typeof proc.kill === 'function') { try { proc.kill('SIGTERM'); } catch { /* already gone */ } return; }
       try { process.kill(proc.pid, 'SIGTERM'); } catch { /* already gone */ }
     } catch { /* never throw from cleanup */ }
+  };
+  // Bounded exit-confirm for a child that outlived the budget fence.
+  // Runs in the background after the waiter already got its timeout error.
+  const confirmFencedChild = async (proc) => {
+    if (!proc || !Number.isInteger(proc.pid)) return;
+    await killPidWithContract(proc.pid, {
+      isProcessAlive, killFn, termMs: stopTermMs, killMs: stopKillMs, pollMs: stopPollMs,
+    });
   };
   // Drain stderr so a chatty sustained child can never block on a full pipe.
   // Attached synchronously at spawn, before any output is possible. The ring
@@ -517,6 +580,7 @@ export async function ensureShareTunnel({
     return boundedFor(owner, owner.shareState ?? state);
   }
   const flight = (async () => {
+    throwIfFenced();
     const registry = readShareRegistry(homeDir) || {};
     const recordedOrigin = registryOrigin(registry);
     const verifyOpts = { fetchFn, isProcessAlive, findPidFn, psCommandFn, spawnSyncFn };
@@ -539,7 +603,8 @@ export async function ensureShareTunnel({
         throw new Error(`refusing Share: ${err?.message ?? err}`);
       }
       if (check.ok && owned) {
-        if (check.hostname !== registry.hostname && !state.timedOut) {
+        throwIfFenced(); // cancelled while validating: never publish the URL
+        if (check.hostname !== registry.hostname && !state.timedOut && !state.cancelled) {
           writeShareRegistry(homeDir, { origin, metricsPort: registry.metricsPort, hostname: check.hostname, pid: registry.pid, updated_at: new Date().toISOString() });
         }
         mark('reused');
@@ -551,6 +616,7 @@ export async function ensureShareTunnel({
         // one-owned-tunnel invariant instead of leaking it. An unconfirmed
         // exit propagates (Share 502s, registry kept for retry).
         mark('replace-owned');
+        throwIfFenced();
         await stopOwnedTunnelInner(homeDir, origin, stopOpts);
       }
       // Unowned records fall through to launch beside whatever process is
@@ -569,6 +635,7 @@ export async function ensureShareTunnel({
           owned = false; // indeterminate: leave the process alone, still start fresh
         }
         if (owned) {
+          throwIfFenced();
           // An unconfirmed exit throws (Share 502s, stale registry kept
           // for retry) rather than leak the child under a fresh registry.
           await stopOwnedTunnelInner(homeDir, recordedOrigin, stopOpts);
@@ -578,6 +645,7 @@ export async function ensureShareTunnel({
     // 3. Launch a new child. Explicit loopback --metrics, >=30s budget.
     mark('launch');
     const metricsPort = pickMetricsPort ? await pickMetricsPort() : await pickFreePort();
+    throwIfFenced(); // fence: a timed-out or Stop-cancelled flight never spawns
     const args = ['tunnel', '--url', origin, '--metrics', `127.0.0.1:${metricsPort}`];
     const runSpawn = spawnFn || ((bin, a, opts) => nodeSpawn(bin, a, opts));
     let child;
@@ -607,13 +675,14 @@ export async function ensureShareTunnel({
       const c = child;
       state.child = null;
       try {
-        if (typeof killFn === 'function') await killFn(c.pid);
+        if (typeof killFn === 'function') await killFn(c.pid, 'SIGTERM');
         else killSpawned(c);
       } catch { /* already gone */ }
     };
     const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || SHARE_TUNNEL_BUDGET_MS);
     let lastFacts = null;
     while (Date.now() < deadline) {
+      throwIfFenced();
       if (exited) {
         await killChild().catch(() => {});
         if (exited.error) throw new Error(`cloudflared launch failed: ${exited.error.message ?? exited.error} (is cloudflared installed?)`);
@@ -623,11 +692,12 @@ export async function ensureShareTunnel({
         const facts = await readTunnelFacts(metricsPort, { fetchFn });
         lastFacts = facts;
         if (facts.hostname && facts.service === origin && facts.haConnections > 0) {
+          throwIfFenced(); // cancelled while provisioning: never publish or write
           state.child = null;
-          // Skipped after a global timeout (a retry owns the registry then);
-          // validation gates any later reuse, so a skipped write only costs
-          // one extra relaunch, never a stale success.
-          if (!state.timedOut) {
+          // Skipped after a global timeout or Stop-cancel (a retry owns the
+          // registry then); validation gates any later reuse, so a skipped
+          // write only costs one extra relaunch, never a stale success.
+          if (!state.timedOut && !state.cancelled) {
             const next = { origin, metricsPort, hostname: facts.hostname, pid: child.pid, updated_at: new Date().toISOString() };
             writeShareRegistry(homeDir, next);
           }

@@ -1178,6 +1178,9 @@ async function main() {
     try {
       tunnel = await ensureShareTunnel({ origin, homeDir: golemHome() });
     } catch (err) {
+      if (err?.code === 'SHARE_STOPPED') {
+        return reply.code(409).send({ error: String(err?.message ?? err), code: 'SHARE_STOPPED' });
+      }
       const message = String(err?.message ?? err);
       // GOL-390: end-to-end recovery timeout is actionable and retryable —
       // name it distinctly from other launch failures.

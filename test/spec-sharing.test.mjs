@@ -409,37 +409,42 @@ try {
       /ownership unproven/.test(threw) && kills.length === 0 && tunnel.readShareRegistry(home).pid === pid);
   }
 
-  // ---- 14. R9: Stop waits for an in-flight ensure, then stops it ----
+  // ---- 14. R9: Stop cancels an in-flight Share; the spawned child is ----
+  // killed and exit-confirmed, the Share reports SHARE_STOPPED, never a URL.
   {
-    const home = freshHome('home-stop-waits');
-    const hostNew = 'stop-waits-14.trycloudflare.com';
-    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
+    const home = freshHome('home-stop-cancels');
+    // No registry yet; metrics hang (dead port) so ensure sits provisioning.
+    const deadPort = await freePort();
     const child = fakeChild();
     const alive = new Set([child.pid]);
-    const order = [];
+    const events = [];
     const ensureP = tunnel.ensureShareTunnel({
       origin: ORIGIN, homeDir: home,
-      spawnFn: () => { order.push('spawn'); return child; },
-      pickMetricsPort: async () => liveMetrics,
+      spawnFn: () => { events.push('spawn'); return child; },
+      pickMetricsPort: async () => deadPort,
       isProcessAlive: (p) => alive.has(p),
-      psCommandFn: async () => tunnelCmd(ORIGIN, liveMetrics),
+      psCommandFn: async () => tunnelCmd(ORIGIN, deadPort),
       timeoutMs: 8000, overallTimeoutMs: 0,
     });
-    await sleep(50);
+    await sleep(100); // let the Share spawn and enter provisioning
     const stopP = tunnel.stopOwnedTunnel(home, ORIGIN, {
       isProcessAlive: (p) => alive.has(p),
-      psCommandFn: async () => tunnelCmd(ORIGIN, liveMetrics),
-      killFn: async (p, sig) => { order.push(`kill:${sig}`); alive.delete(p); },
+      psCommandFn: async () => tunnelCmd(ORIGIN, deadPort),
+      killFn: async (p, sig) => { events.push(`kill:${sig}`); alive.delete(p); },
       stopPollMs: 10,
     });
-    const [ensured, stopped] = await Promise.all([ensureP, stopP]);
-    check('stop waits for ensure then stops the fresh tunnel',
-      ensured.reused === false && stopped.stopped === true && order[0] === 'spawn' && order[1] === 'kill:SIGTERM');
+    const [ensured, stopped] = await Promise.allSettled([ensureP, stopP]);
+    check('in-flight Share cancelled with SHARE_STOPPED, spawned child killed',
+      ensured.status === 'rejected' && ensured.reason?.code === 'SHARE_STOPPED'
+      && events[0] === 'spawn' && events.includes('kill:SIGTERM') && !alive.has(child.pid)
+      && stopped.status === 'fulfilled' && stopped.value.already_stopped === true);
+    const reg = tunnel.readShareRegistry(home);
+    check('cancelled Share writes no registry', !reg || !reg.hostname);
   }
 
-  // ---- 15. R9: ensure starting during Stop waits; no recreate after success ----
+  // ---- 15. R9: a Share waiting on Stop is cancelled, never spawns ----
   {
-    const home = freshHome('home-ensure-waits');
+    const home = freshHome('home-waiting-cancelled');
     const pid = 999015;
     const alive = new Set([pid]);
     const { port: metrics } = await startFakeMetrics({ hostname: HOST, service: ORIGIN, haConnections: 1 });
@@ -452,24 +457,68 @@ try {
       stopPollMs: 10,
     });
     await sleep(50);
-    const hostNew = 'ensure-after-stop-15.trycloudflare.com';
-    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
-    const child = fakeChild();
-    alive.add(child.pid);
     let spawns = 0;
     const ensureP = tunnel.ensureShareTunnel({
       origin: ORIGIN, homeDir: home,
-      spawnFn: () => { spawns += 1; events.push('spawn'); return child; },
-      pickMetricsPort: async () => liveMetrics,
+      spawnFn: () => { spawns += 1; events.push('spawn'); return fakeChild(); },
+      pickMetricsPort: async () => metrics,
       isProcessAlive: (p) => alive.has(p),
-      psCommandFn: async () => tunnelCmd(ORIGIN, liveMetrics),
-      killFn: async () => {},
+      psCommandFn: async () => tunnelCmd(ORIGIN, metrics),
       timeoutMs: 8000, overallTimeoutMs: 0,
     });
-    const [stopped, ensured] = await Promise.all([stopP, ensureP]);
-    check('ensure waits for stop, then launches fresh (no resurrect)',
-      stopped.stopped === true && ensured.reused === false && spawns === 1
-      && events[0] === 'stop:SIGTERM' && events[1] === 'spawn');
+    const [stopped, ensured] = await Promise.allSettled([stopP, ensureP]);
+    check('waiting Share cancelled with SHARE_STOPPED and never spawns',
+      stopped.status === 'fulfilled' && stopped.value.stopped === true
+      && ensured.status === 'rejected' && ensured.reason?.code === 'SHARE_STOPPED' && spawns === 0);
+  }
+
+  // ---- 16. R9 fence: timeout before spawn -> no spawn ever, no write ----
+  {
+    const home = freshHome('home-fence-prespawn');
+    let spawns = 0;
+    let message = '';
+    let code = null;
+    try {
+      await tunnel.ensureShareTunnel({
+        origin: ORIGIN, homeDir: home,
+        spawnFn: () => { spawns += 1; return fakeChild(); },
+        // Port selection lands after the 40ms budget: the reviewer probe shape.
+        pickMetricsPort: async () => { await sleep(180); return await freePort(); },
+        isProcessAlive: () => false,
+        timeoutMs: 8000, overallTimeoutMs: 40,
+      });
+    } catch (err) { message = String(err?.message ?? err); code = err?.code; }
+    check('budget timeout before spawn settles fast', /share recovery timed out after 40ms/.test(message) && !code);
+    await sleep(400); // past the delayed port selection
+    check('fenced flight never spawns after timeout', spawns === 0);
+    const reg = tunnel.readShareRegistry(home);
+    check('fenced flight never writes the registry', !reg || !reg.hostname);
+  }
+
+  // ---- 17. R9 fence: timeout after spawn -> child killed + confirmed ----
+  {
+    const home = freshHome('home-fence-postspawn');
+    const { port } = await startHttp(() => { /* hang forever: headers never sent */ });
+    const child = fakeChild();
+    const alive = new Set([child.pid]);
+    const kills = [];
+    let message = '';
+    try {
+      await tunnel.ensureShareTunnel({
+        origin: ORIGIN, homeDir: home,
+        spawnFn: () => child,
+        pickMetricsPort: async () => port,
+        isProcessAlive: (p) => alive.has(p),
+        killFn: async (p, sig) => { kills.push(sig); alive.delete(p); },
+        timeoutMs: 30000, overallTimeoutMs: 300,
+        stopTermMs: 200, stopKillMs: 100, stopPollMs: 10,
+      });
+    } catch (err) { message = String(err?.message ?? err); }
+    check('budget timeout after spawn settles', /share recovery timed out after 300ms/.test(message));
+    await sleep(800); // fence TERM + background exit-confirm
+    check('pre-fence child killed and exit-confirmed', kills.includes('SIGTERM') && !alive.has(child.pid), kills.join(','));
+    const reg = tunnel.readShareRegistry(home);
+    check('fenced flight never writes the registry', !reg || !reg.hostname);
   }
 
   tunnel.__clearTunnelFlights();
