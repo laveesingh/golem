@@ -99,13 +99,12 @@ Both dispatch actions surface delivery failure — neither reports success on an
 undelivered push, and a disabled batch button always states which precondition
 is missing.
 
-Spec ticket dispatches use a full-context brief builder (`buildSpecBrief`) via
-the same `/api/tickets/:id/dispatch` and dispatch-queue paths. Work-item briefs
-keep the original concise assignment text; spec briefs include the spec body,
-all active comments whose `dispatch_state` is `undispatched` or `dispatched`,
-and one-line child work-item summaries with display id, title, state, and wave.
-This makes re-dispatching a spec to a fresh session a complete handoff without
-transcript archaeology.
+Dispatch briefs come from `dashboard/server/dispatch-brief.js` on both the
+`/api/tickets/:id/dispatch` and dispatch-queue paths. Task and spec briefs are
+pointers: the receiver reads the ticket with `ticket_get`, which is compact and
+current, so the body is loaded once. A spec brief also names its active
+comments (`dispatch_state` `undispatched` or `dispatched`) by id and author and
+counts its children, so a re-dispatch still hands over open review feedback.
 
 The dispatch drainer is wave-aware for queued child tickets. If a queued ticket
 has both `parent_id` and `wave`, it only delivers when its wave equals the
