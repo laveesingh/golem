@@ -1,5 +1,7 @@
-// GOL-384 managed quick-tunnel supervisor: reuse one verified cloudflared
-// quick tunnel for public document sharing, never the admin dashboard tunnel.
+// GOL-384 managed quick-tunnel supervisor: one Golem-owned cloudflared quick
+// tunnel pointing at the dashboard origin (http://127.0.0.1:<port>) so Share
+// can hand out https://<host>/read/<display-id> links. No tokens, no grants,
+// no adoption of foreign tunnels (R8), exit-confirmed serialized Stop (R9).
 // All process/port effects are injectable for isolated tests; production wires
 // the real spawn/fetch/kill. Never rely on /ready (GOL-385 false-negative).
 
@@ -10,7 +12,6 @@ import { spawn as nodeSpawn } from 'node:child_process';
 import { spawnSync as nodeSpawnSync } from 'node:child_process';
 
 export const SHARE_REGISTRY_NAME = 'share-tunnel.json';
-export const SHARE_METRICS_CANDIDATES = [20241, 20242, 20243, 20244, 20245];
 export const SHARE_TUNNEL_BUDGET_MS = 30_000;
 export const SHARE_HOSTNAME_PATTERN = /^[a-z0-9-]+\.trycloudflare\.com$/;
 // GOL-390: every synchronous subprocess call in the Share path carries a
@@ -30,6 +31,16 @@ export const SHARE_RECOVERY_BUDGET_MS = 45_000;
 export const SHARE_STDERR_RING_MAX = 32 * 1024;
 
 const flightByHome = new Map();
+// R9: Stop registers here while it runs; an ensure that starts during Stop
+// waits for it, and Stop waits for an in-flight ensure. Keyed exactly like
+// the ensure flight so both sides rendezvous.
+const stopFlightByHome = new Map();
+
+export const STOP_UNCONFIRMED = 'STOP_UNCONFIRMED';
+
+export function flightKeyFor(homeDir, origin) {
+  return `${homeDir}::${origin}`;
+}
 
 export function registryPath(homeDir) {
   return path.join(homeDir, SHARE_REGISTRY_NAME);
@@ -57,12 +68,37 @@ export function writeShareRegistry(homeDir, doc) {
   return doc;
 }
 
-export function invalidateShareTunnelUrl(homeDir) {
-  const reg = readShareRegistry(homeDir) || {};
-  const next = {};
-  if (Number.isInteger(reg.publicPort)) next.publicPort = reg.publicPort;
-  writeShareRegistry(homeDir, next);
-  return next;
+// Registry shape (GOL-394): { origin, metricsPort, hostname, pid, updated_at }.
+// Legacy registries carry publicPort instead of origin; registryOrigin
+// translates both so R5 migration can tell stale from current.
+export function registryOrigin(registry) {
+  if (!registry || typeof registry !== 'object') return null;
+  if (typeof registry.origin === 'string' && registry.origin) return registry.origin;
+  if (Number.isInteger(registry.publicPort)) return `http://127.0.0.1:${registry.publicPort}`;
+  return null;
+}
+
+export function clearShareRegistry(homeDir) {
+  writeShareRegistry(homeDir, {});
+  return {};
+}
+
+// R8 identity: a tunnel is Golem-owned only if the registry PID Golem wrote
+// at spawn is alive and its live command is `cloudflared tunnel --url
+// <expectedOrigin>`. No health requirement (R9 reuses this for Stop, so an
+// owned-but-disconnected tunnel stays stoppable). Returns false on clean
+// mismatch; throws on indeterminate process state (fail closed) so callers
+// never kill or publish on a guess.
+export async function isOwnedTunnel(pid, expectedOrigin, { isProcessAlive = defaultIsProcessAlive, psCommandFn = null, spawnSyncFn = null } = {}) {
+  if (!Number.isInteger(pid)) return false;
+  if (!isProcessAlive(pid)) return false;
+  let cmd = '';
+  try {
+    cmd = psCommandFn ? String(await psCommandFn(pid) ?? '') : defaultPsCommand(pid, { spawnSyncFn });
+  } catch (err) {
+    throw new Error(`tunnel ownership indeterminate for pid ${pid}: ${err?.message ?? err}`);
+  }
+  return isCloudflaredTunnelForOrigin(cmd, expectedOrigin);
 }
 
 async function fetchText(url, timeoutMs, fetchFn) {
@@ -245,78 +281,99 @@ export async function validateRegistryTunnel(registry, publicOrigin, { fetchFn =
   return { ok: true, hostname: facts.hostname, service: facts.service, haConnections: facts.haConnections };
 }
 
-// Probe well-known local metrics ports (+ an optional recorded port) for a
-// tunnel targeting publicOrigin. GOL-388: a candidate is adopted only when
-// its metrics listener PID proves to be `cloudflared tunnel --url
-// <exact publicOrigin>` — matching /config alone can be impersonated.
-// Returns { metricsPort, hostname, pid } or null. Unverifiable candidates
-// are skipped (fail closed toward launching a Golem-owned child).
-export async function discoverPublicTunnel(publicOrigin, { fetchFn = null, extraPorts = [], findPidFn = null, psCommandFn = null, spawnSyncFn = null } = {}) {
-  const ports = [...new Set([...(extraPorts || []), ...SHARE_METRICS_CANDIDATES])];
-  for (const port of ports) {
-    try {
-      const facts = await readTunnelFacts(port, { fetchFn });
-      if (!(facts.hostname && facts.service === publicOrigin && facts.haConnections > 0)) continue;
-      const proof = await verifyMetricsListener(port, publicOrigin, { findPidFn, psCommandFn, spawnSyncFn });
-      if (!proof.ok) continue;
-      return { metricsPort: port, hostname: facts.hostname, pid: proof.pid };
-    } catch { /* next candidate */ }
+// Poll until pid exits (or timeout). Returns true on confirmed exit.
+async function pollForExit(pid, timeoutMs, pollMs, isProcessAlive) {
+  const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+  for (;;) {
+    let alive = true;
+    try { alive = isProcessAlive(pid); } catch { alive = true; } // indeterminate: keep waiting, never assume exit
+    if (!alive) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(Math.max(1, Math.min(Number(pollMs) || 100, Math.max(0, deadline - Date.now()))));
   }
+}
+
+// R9 kill contract on one proven-owned pid: SIGTERM, poll for exit up to
+// termMs, then SIGKILL and poll up to killMs. Returns 'term'/'kill' on
+// confirmed exit, null when exit stays unconfirmed. killFn(pid, signal)
+// is injectable; fakes model ignored signals by keeping the pid alive.
+// An ESRCH-style throw from kill means the pid is already gone → confirmed.
+async function killPidWithContract(pid, { isProcessAlive = defaultIsProcessAlive, killFn = null, termMs = 5000, killMs = 2000, pollMs = 100 } = {}) {
+  const kill = killFn || ((p, sig) => process.kill(p, sig));
+  const attempt = async (signal) => {
+    try { await kill(pid, signal); }
+    catch (err) {
+      const code = err && (err.code || err.errno);
+      if (code === 'ESRCH' || /ESRCH|no such process/i.test(String(err?.message ?? ''))) return 'gone';
+      throw err;
+    }
+    return 'signalled';
+  };
+  if (await attempt('SIGTERM') === 'gone') return 'term';
+  if (await pollForExit(pid, termMs, pollMs, isProcessAlive)) return 'term';
+  if (await attempt('SIGKILL') === 'gone') return 'kill';
+  if (await pollForExit(pid, killMs, pollMs, isProcessAlive)) return 'kill';
   return null;
 }
 
-export function adminOriginVariants(adminOrigin) {
-  const m = /^http:\/\/(127\.0\.0\.1|localhost):(\d+)$/.exec(String(adminOrigin || ''));
-  if (!m) return [String(adminOrigin)];
-  const port = m[2];
-  return [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
+function stopUnconfirmedError(pid) {
+  const err = new Error(`tunnel pid ${pid} did not exit after SIGTERM+SIGKILL; registry kept (retry Stop)`);
+  err.code = STOP_UNCONFIRMED;
+  return err;
 }
 
-// Detect any locally discoverable cloudflared tunnel targeting the admin
-// dashboard origin. Probes metrics /config + falls back to ps command scan.
-// Returns { unsafe, detail }.
-export async function detectUnsafeAdminTunnel(adminOrigin, { fetchFn = null, psFn = null, metricsPorts = null, spawnSyncFn = null } = {}) {
-  const variants = new Set(adminOriginVariants(adminOrigin));
-  const ports = [...new Set([...(metricsPorts || []), ...SHARE_METRICS_CANDIDATES])];
-  for (const port of ports) {
-    try {
-      const facts = await readTunnelFacts(port, { fetchFn });
-      if (facts.service && variants.has(facts.service)) {
-        return { unsafe: true, detail: `cloudflared metrics :${port} targets dashboard ${facts.service}` };
-      }
-    } catch { /* not a tunnel */ }
+// Stop the registry-recorded tunnel after proving R8 identity against
+// expectedOrigin (no health requirement). Dead or missing PID clears the
+// registry and reports already_stopped. The registry is cleared only after
+// exit is confirmed; otherwise STOP_UNCONFIRMED is thrown and the registry
+// is kept. Never kills a process whose ownership is unproven.
+export async function stopOwnedTunnelInner(homeDir, expectedOrigin, { isProcessAlive = defaultIsProcessAlive, killFn = null, psCommandFn = null, spawnSyncFn = null, stopTermMs = 5000, stopKillMs = 2000, stopPollMs = 100 } = {}) {
+  const registry = readShareRegistry(homeDir) || {};
+  if (!Number.isInteger(registry.pid)) {
+    clearShareRegistry(homeDir);
+    return { stopped: false, already_stopped: true };
   }
-  // Fallback: scan process commands for cloudflared --url pointing at admin.
-  // Fail-closed contract (GOL-390 fix round 1): a hung enumeration is
-  // INDETERMINATE and propagates — callers answer 502/omit rather than
-  // minting or emitting bearer URLs. A missing ps tool degrades to the
-  // metrics verdict above (refused/unreachable metrics + no ps still means
-  // nothing was found, not hidden evidence).
-  let output = '';
-  if (psFn) {
-    output = String(await psFn() || '');
-  } else {
-    try {
-      const res = runSyncBounded(spawnSyncFn, 'ps', ['-ax', '-o', 'command='], { encoding: 'utf8' });
-      output = String(res.stdout || '');
-    } catch (err) {
-      if (err && err.code === 'ETIMEDOUT') {
-        throw new Error(`unsafe-admin check indeterminate: process listing timed out (${err.message || 'ETIMEDOUT'})`);
-      }
-      return { unsafe: false, detail: '' };
-    }
+  const pid = registry.pid;
+  let alive = true;
+  try { alive = isProcessAlive(pid); } catch { alive = true; } // indeterminate: identity below fails closed
+  if (!alive) {
+    clearShareRegistry(homeDir);
+    return { stopped: false, already_stopped: true };
   }
-  const adminPort = (/:(\d+)$/.exec(String(adminOrigin)) || [])[1] || '';
-  for (const line of output.split('\n')) {
-    if (!/cloudflared/i.test(line) || !/tunnel/i.test(line)) continue;
-    if (!line.includes('--url')) continue;
-    const hasAdminHost = variants.size === 0 ? false : [...variants].some((v) => line.includes(v));
-    const hasAdminPort = adminPort && line.includes(`:${adminPort}`) && /127\.0\.0\.1|localhost/.test(line);
-    if (hasAdminHost || hasAdminPort) {
-      return { unsafe: true, detail: `cloudflared process targets dashboard (${line.trim().slice(0, 160)})` };
-    }
+  let owned = false;
+  try {
+    owned = await isOwnedTunnel(pid, expectedOrigin, { isProcessAlive, psCommandFn, spawnSyncFn });
+  } catch (err) {
+    throw new Error(`refusing to stop: ${err?.message ?? err}`);
   }
-  return { unsafe: false, detail: '' };
+  if (!owned) throw new Error(`tunnel ownership unproven for pid ${pid}; refusing to stop`);
+  const outcome = await killPidWithContract(pid, { isProcessAlive, killFn, termMs: stopTermMs, killMs: stopKillMs, pollMs: stopPollMs });
+  if (!outcome) throw stopUnconfirmedError(pid);
+  clearShareRegistry(homeDir);
+  return { stopped: true, already_stopped: false, pid };
+}
+
+// R9: Stop serialized with the ensure flight both ways. Waits for an
+// in-flight ensure before proving ownership, and registers a stop flight so
+// an ensure that starts during Stop waits until Stop finishes.
+export async function stopOwnedTunnel(homeDir, expectedOrigin, opts = {}) {
+  if (!expectedOrigin) throw new Error('expectedOrigin is required');
+  const key = flightKeyFor(homeDir, expectedOrigin);
+  const flight = flightByHome.get(key);
+  if (flight) {
+    try { await flight; } catch { /* settle: Stop re-reads the registry, never the flight result */ }
+  }
+  let release = null;
+  const mine = new Promise((resolve) => { release = resolve; });
+  const prev = stopFlightByHome.get(key);
+  stopFlightByHome.set(key, mine);
+  try {
+    if (prev) await prev; // a prior Stop always resolves; re-read below
+    return await stopOwnedTunnelInner(homeDir, expectedOrigin, opts);
+  } finally {
+    if (stopFlightByHome.get(key) === mine) stopFlightByHome.delete(key);
+    if (release) release();
+  }
 }
 
 export function pickFreePort() {
@@ -334,58 +391,12 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Prove Golem owns the recorded tunnel (for safe rebind kill): pid alive,
-// metrics/config prove it targets publicOrigin (never admin), and the process
-// command is a cloudflared tunnel for that exact origin when available.
-export async function registryOwnsLiveTunnel(registry, publicOrigin, { fetchFn = null, isProcessAlive = defaultIsProcessAlive, spawnSyncFn = null, psCommandFn = null } = {}) {
-  if (!registry || !Number.isInteger(registry.pid)) return false;
-  if (!isProcessAlive(registry.pid)) return false;
-  const check = await validateRegistryTunnel(registry, publicOrigin, { fetchFn, isProcessAlive });
-  if (!check.ok) return false;
-  try {
-    const cmd = psCommandFn ? String(await psCommandFn(registry.pid) ?? '') : defaultPsCommand(registry.pid, { spawnSyncFn });
-    if (cmd && !isCloudflaredTunnelForOrigin(cmd, publicOrigin)) return false;
-  } catch (err) {
-    // Hung enumeration is indeterminate: refuse the kill (fail closed).
-    // Other ps failures keep the long-standing metrics-suffice behavior.
-    if (err && err.code === 'ETIMEDOUT') return false;
-  }
-  return true;
-}
-
-// Stop only the registry-owned child after proving it targets publicOrigin.
-// Refuses when the tunnel targets adminOrigin or ownership cannot be proved.
-export async function stopOwnedTunnel(homeDir, publicOrigin, adminOrigin, { fetchFn = null, isProcessAlive = defaultIsProcessAlive, killFn = null, spawnSyncFn = null } = {}) {
-  const registry = readShareRegistry(homeDir);
-  if (!registry || !Number.isInteger(registry.pid)) throw new Error('no owned tunnel to stop');
-  const variants = new Set(adminOriginVariants(adminOrigin));
-  // Fail closed: never kill a tunnel that targets the admin dashboard.
-  if (Number.isInteger(registry.metricsPort)) {
-    try {
-      const facts = await readTunnelFacts(registry.metricsPort, { fetchFn });
-      if (facts.service && variants.has(facts.service)) {
-        throw new Error('refusing to stop a tunnel targeting the admin dashboard');
-      }
-    } catch (err) {
-      if (String(err?.message || '').includes('refusing to stop')) throw err;
-      // Unreachable metrics: fall through to ownership proof below.
-    }
-  }
-  const owned = await registryOwnsLiveTunnel(registry, publicOrigin, { fetchFn, isProcessAlive, spawnSyncFn });
-  if (!owned) throw new Error('tunnel ownership unproven; refusing to stop');
-  const kill = killFn || ((pid) => process.kill(pid, 'SIGTERM'));
-  await kill(registry.pid);
-  invalidateShareTunnelUrl(homeDir);
-  return { stopped: registry.pid };
-}
-
-// Single-flight supervised ensure. Returns { hostname, metricsPort, pid, reused }.
-// Reuse returns a live validated tunnel without spawning; launching a NEW
-// child while an admin-targeting tunnel is discoverable refuses (no spawn).
+// Single-flight supervised ensure for the dashboard-origin tunnel. Returns
+// { hostname, metricsPort, pid, reused }. Reuse returns the validated
+// recorded tunnel without spawning; otherwise a new Golem-owned child is
+// launched. Never adopts a foreign tunnel (R8); serialized with Stop (R9).
 export async function ensureShareTunnel({
-  publicPort,
-  publicOrigin,
-  adminOrigin,
+  origin,
   homeDir,
   spawnFn = null,
   fetchFn = null,
@@ -397,15 +408,22 @@ export async function ensureShareTunnel({
   findPidFn = null,
   psCommandFn = null,
   spawnSyncFn = null,
-  // GOL-390: end-to-end recovery budget (ms) across reuse + discovery +
-  // guard + launch. <=0 disables the race (phase budgets still apply).
+  // R9 kill-contract bounds reused by the migration/replace stops below.
+  stopTermMs = 5000,
+  stopKillMs = 2000,
+  stopPollMs = 100,
+  // GOL-390: end-to-end recovery budget (ms) across reuse + migration +
+  // launch. <=0 disables the race (phase budgets still apply).
   overallTimeoutMs = SHARE_RECOVERY_BUDGET_MS,
   // GOL-390: timestamped instrumentation seam — onPhase(name, elapsedMs).
   onPhase = null,
 } = {}) {
-  if (!Number.isInteger(publicPort)) throw new Error('publicPort is required');
-  const origin = publicOrigin || `http://127.0.0.1:${publicPort}`;
-  const key = `${homeDir}::${publicPort}`;
+  if (!origin) throw new Error('origin is required');
+  const key = flightKeyFor(homeDir, origin);
+  // R9: an ensure that starts during Stop waits until Stop finishes, so no
+  // Share publishes or recreates a tunnel mid-Stop.
+  const pendingStop = stopFlightByHome.get(key);
+  if (pendingStop) await pendingStop; // a Stop flight always resolves; re-read the registry below
   const t0 = Date.now();
   const state = { phase: 'start', timedOut: false, child: null };
   const ring = { text: '' };
@@ -485,58 +503,62 @@ export async function ensureShareTunnel({
   }
   const flight = (async () => {
     const registry = readShareRegistry(homeDir) || {};
+    const recordedOrigin = registryOrigin(registry);
     const verifyOpts = { fetchFn, isProcessAlive, findPidFn, psCommandFn, spawnSyncFn };
-    // 1. Reuse the recorded tunnel when it still validates.
+    const ownedOpts = { isProcessAlive, psCommandFn, spawnSyncFn };
+    const stopOpts = { isProcessAlive, killFn, psCommandFn, spawnSyncFn, stopTermMs, stopKillMs, stopPollMs };
+    // 1. Reuse only what Golem spawned and recorded (R8): the registry
+    // origin must be this dashboard origin, the tunnel must validate
+    // (hostname + origin + edge health), and the recorded pid must prove
+    // identity. A same-origin tunnel started by anyone else has no recorded
+    // pid — ignored: never reused, never stopped.
     mark('validate');
-    if (Number.isInteger(registry.metricsPort) && registry.hostname) {
+    if (recordedOrigin === origin && Number.isInteger(registry.metricsPort) && registry.hostname && Number.isInteger(registry.pid)) {
       const check = await validateRegistryTunnel(registry, origin, verifyOpts);
-      if (check.ok) {
+      let owned = false;
+      try {
+        owned = await isOwnedTunnel(registry.pid, origin, ownedOpts);
+      } catch (err) {
+        // Indeterminate process state: fail closed rather than reuse or
+        // overwrite the registry of a possibly-owned tunnel.
+        throw new Error(`refusing Share: ${err?.message ?? err}`);
+      }
+      if (check.ok && owned) {
         if (check.hostname !== registry.hostname && !state.timedOut) {
-          writeShareRegistry(homeDir, { ...registry, publicPort, hostname: check.hostname, updated_at: new Date().toISOString() });
+          writeShareRegistry(homeDir, { origin, metricsPort: registry.metricsPort, hostname: check.hostname, pid: registry.pid, updated_at: new Date().toISOString() });
         }
         mark('reused');
-        return { hostname: check.hostname, metricsPort: registry.metricsPort, pid: registry.pid ?? null, reused: true };
+        return { hostname: check.hostname, metricsPort: registry.metricsPort, pid: registry.pid, reused: true };
       }
-    }
-    // 2. Adopt a locally discoverable tunnel targeting our public origin
-    // (registry stale). Never adopt an admin-targeting tunnel: discovery
-    // requires exact publicOrigin equality PLUS listener PID/command proof.
-    mark('discover');
-    const discovered = await discoverPublicTunnel(origin, {
-      fetchFn,
-      extraPorts: Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [],
-      findPidFn,
-      psCommandFn,
-      spawnSyncFn,
-    });
-    if (discovered) {
-      // The discovered listener PID is verified cloudflared-for-origin
-      // (discoverPublicTunnel proves it); record it for future ownership.
-      // Skipped after a global timeout (a retry owns the registry then).
-      if (!state.timedOut) {
-        const next = {
-          publicPort,
-          metricsPort: discovered.metricsPort,
-          hostname: discovered.hostname,
-          pid: Number.isInteger(discovered.pid) ? discovered.pid : null,
-          updated_at: new Date().toISOString(),
-        };
-        writeShareRegistry(homeDir, next);
+      if (owned) {
+        // Owned but not validating (edge down, rotated metrics): stop the
+        // useless child under the R9 contract, then launch fresh. Keeps the
+        // one-owned-tunnel invariant instead of leaking it. An unconfirmed
+        // exit propagates (Share 502s, registry kept for retry).
+        mark('replace-owned');
+        await stopOwnedTunnelInner(homeDir, origin, stopOpts);
       }
-      mark('adopted');
-      return { hostname: discovered.hostname, metricsPort: discovered.metricsPort, pid: Number.isInteger(discovered.pid) ? discovered.pid : null, reused: true };
-    }
-    // 2b. Never spawn a new public tunnel while an admin-targeting tunnel
-    // is discoverable (GOL-388: the admin route already 409s; this keeps a
-    // direct ensureShareTunnel caller from launching into the cutover hole).
-    // An INDETERMINATE check (hung enumeration) propagates as a refusal —
-    // no .catch downgrade to safe (GOL-390 fix round 2): launching blind is
-    // the same hole. Reuse above stays available — it spawns nothing new.
-    mark('guard');
-    if (adminOrigin) {
-      const guardPorts = Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [];
-      const guard = await detectUnsafeAdminTunnel(adminOrigin, { fetchFn, metricsPorts: guardPorts, spawnSyncFn });
-      if (guard.unsafe) throw new Error(`refusing to launch a public tunnel while an admin-targeting tunnel exists (${guard.detail})`);
+      // Unowned records fall through to launch beside whatever process is
+      // out there — never killed, never reused.
+    } else if (recordedOrigin && recordedOrigin !== origin) {
+      // 2. R5 migration: the registry points at another origin (the old
+      // public listener). Stop it only with R8 identity against THAT
+      // origin; a foreign process (or an indeterminate check) is left
+      // alone — fail closed without killing — then start fresh.
+      mark('migrate');
+      if (Number.isInteger(registry.pid)) {
+        let owned = false;
+        try {
+          owned = await isOwnedTunnel(registry.pid, recordedOrigin, ownedOpts);
+        } catch {
+          owned = false; // indeterminate: leave the process alone, still start fresh
+        }
+        if (owned) {
+          // An unconfirmed exit throws (Share 502s, stale registry kept
+          // for retry) rather than leak the child under a fresh registry.
+          await stopOwnedTunnelInner(homeDir, recordedOrigin, stopOpts);
+        }
+      }
     }
     // 3. Launch a new child. Explicit loopback --metrics, >=30s budget.
     mark('launch');
@@ -591,7 +613,7 @@ export async function ensureShareTunnel({
           // validation gates any later reuse, so a skipped write only costs
           // one extra relaunch, never a stale success.
           if (!state.timedOut) {
-            const next = { publicPort, metricsPort, hostname: facts.hostname, pid: child.pid, updated_at: new Date().toISOString() };
+            const next = { origin, metricsPort, hostname: facts.hostname, pid: child.pid, updated_at: new Date().toISOString() };
             writeShareRegistry(homeDir, next);
           }
           if (typeof child.removeListener === 'function') {
@@ -621,6 +643,7 @@ export async function ensureShareTunnel({
 
 export function __clearTunnelFlights() {
   flightByHome.clear();
+  stopFlightByHome.clear();
 }
 
 // GOL-390 seam: drain a spawned child's stderr into a bounded ring so pipe
