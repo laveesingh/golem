@@ -1141,7 +1141,7 @@ async function main() {
       const registry = readShareRegistry(golemHome()) || {};
       if (registryOrigin(registry) === origin) {
         try {
-          active = await isOwnedTunnel(registry.pid, origin);
+          active = await isOwnedTunnel(registry.pid, origin, { metricsPort: registry.metricsPort });
         } catch {
           // Indeterminate process state: inactive but uncertain, never a
           // confident false.

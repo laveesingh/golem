@@ -203,6 +203,46 @@ try {
     check('unowned record never killed, fresh tunnel launched', spawns === 1 && kills.length === 0 && out.pid === child.pid);
   }
 
+  // ---- 4c. R8: same origin but a different metrics port is NOT owned ----
+  // (review GOL-394 #1: a stale PID reused by another cloudflared for the
+  // same dashboard must be neither reused nor stopped).
+  {
+    const home = freshHome('home-wrong-metrics');
+    const { port: metrics } = await startFakeMetrics({ hostname: HOST, service: ORIGIN, haConnections: 1 });
+    const pid = 999014;
+    const alive = new Set([pid]);
+    writeReg(home, { origin: ORIGIN, metricsPort: metrics, hostname: HOST, pid, updated_at: new Date().toISOString() });
+    const psWrong = async () => `cloudflared tunnel --url ${ORIGIN} --metrics 127.0.0.1:29999`;
+    const kills = [];
+    const killFn = async (p, sig) => { kills.push(sig); };
+    let threw = '';
+    try {
+      await tunnel.stopOwnedTunnel(home, ORIGIN, {
+        isProcessAlive: (p) => alive.has(p),
+        psCommandFn: psWrong,
+        killFn,
+      });
+    } catch (err) { threw = String(err?.message ?? err); }
+    check('stop refuses same-origin wrong-metrics pid',
+      /ownership unproven/.test(threw) && kills.length === 0 && alive.has(pid)
+      && tunnel.readShareRegistry(home).pid === pid);
+    const hostNew = 'replaced-wrong-metrics-4c.trycloudflare.com';
+    const { port: liveMetrics } = await startFakeMetrics({ hostname: hostNew, service: ORIGIN, haConnections: 1 });
+    const child = fakeChild();
+    let spawns = 0;
+    const out = await tunnel.ensureShareTunnel({
+      origin: ORIGIN, homeDir: home,
+      spawnFn: () => { spawns += 1; return child; },
+      pickMetricsPort: async () => liveMetrics,
+      isProcessAlive: (p) => alive.has(p) || p === child.pid,
+      psCommandFn: psWrong,
+      killFn,
+      timeoutMs: 8000, overallTimeoutMs: 0,
+    });
+    check('same-origin wrong-metrics pid never reused, launched beside',
+      spawns === 1 && kills.length === 0 && out.pid === child.pid && out.hostname === hostNew && alive.has(pid));
+  }
+
   // ---- 5. R5 migration: stale legacy registry, owned -> stopped + fresh ----
   {
     const home = freshHome('home-migrate-owned');

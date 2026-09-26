@@ -85,12 +85,16 @@ export function clearShareRegistry(homeDir) {
 
 // R8 identity: a tunnel is Golem-owned only if the registry PID Golem wrote
 // at spawn is alive and its live command is `cloudflared tunnel --url
-// <expectedOrigin>`. No health requirement (R9 reuses this for Stop, so an
-// owned-but-disconnected tunnel stays stoppable). Returns false on clean
-// mismatch; throws on indeterminate process state (fail closed) so callers
-// never kill or publish on a guess.
-export async function isOwnedTunnel(pid, expectedOrigin, { isProcessAlive = defaultIsProcessAlive, psCommandFn = null, spawnSyncFn = null } = {}) {
+// <expectedOrigin>` AND `--metrics 127.0.0.1:<metricsPort>` (the recorded
+// metrics port — a stale PID reused by another cloudflared for the same
+// dashboard must not read as owned). No health requirement (R9 reuses this
+// for Stop, so an owned-but-disconnected tunnel stays stoppable). Returns
+// false on clean mismatch (including a missing/non-integer metricsPort);
+// throws on indeterminate process state (fail closed) so callers never kill
+// or publish on a guess.
+export async function isOwnedTunnel(pid, expectedOrigin, { metricsPort = null, isProcessAlive = defaultIsProcessAlive, psCommandFn = null, spawnSyncFn = null } = {}) {
   if (!Number.isInteger(pid)) return false;
+  if (!Number.isInteger(metricsPort)) return false;
   if (!isProcessAlive(pid)) return false;
   let cmd = '';
   try {
@@ -98,7 +102,7 @@ export async function isOwnedTunnel(pid, expectedOrigin, { isProcessAlive = defa
   } catch (err) {
     throw new Error(`tunnel ownership indeterminate for pid ${pid}: ${err?.message ?? err}`);
   }
-  return isCloudflaredTunnelForOrigin(cmd, expectedOrigin);
+  return isCloudflaredTunnelForOrigin(cmd, expectedOrigin) && commandHasMetricsPort(cmd, metricsPort);
 }
 
 async function fetchText(url, timeoutMs, fetchFn) {
@@ -202,6 +206,17 @@ export function isCloudflaredTunnelForOrigin(command, publicOrigin) {
   const cmd = String(command ?? '');
   if (!/cloudflared/i.test(cmd) || !/\btunnel\b/.test(cmd)) return false;
   return new RegExp(`--url\\s+${escapeRegExp(publicOrigin)}(?=\\s|$)`).test(cmd);
+}
+
+// True when a process command line carries the recorded metrics endpoint:
+// the literal `--metrics 127.0.0.1:<port>` bounded by whitespace/end so
+// :2024 never matches :20241. Golem always spawns with the explicit
+// loopback endpoint, so identity requires exactly that form.
+export function commandHasMetricsPort(command, metricsPort) {
+  if (!Number.isInteger(metricsPort)) return false;
+  const cmd = String(command ?? '');
+  if (!/cloudflared/i.test(cmd)) return false;
+  return new RegExp(`--metrics\\s+127\\.0\\.0\\.1:${metricsPort}(?=\\s|$)`).test(cmd);
 }
 
 // PID of the process LISTENing on a TCP port (lsof, loopback only). Null
@@ -342,7 +357,7 @@ export async function stopOwnedTunnelInner(homeDir, expectedOrigin, { isProcessA
   }
   let owned = false;
   try {
-    owned = await isOwnedTunnel(pid, expectedOrigin, { isProcessAlive, psCommandFn, spawnSyncFn });
+    owned = await isOwnedTunnel(pid, expectedOrigin, { metricsPort: registry.metricsPort, isProcessAlive, psCommandFn, spawnSyncFn });
   } catch (err) {
     throw new Error(`refusing to stop: ${err?.message ?? err}`);
   }
@@ -505,7 +520,7 @@ export async function ensureShareTunnel({
     const registry = readShareRegistry(homeDir) || {};
     const recordedOrigin = registryOrigin(registry);
     const verifyOpts = { fetchFn, isProcessAlive, findPidFn, psCommandFn, spawnSyncFn };
-    const ownedOpts = { isProcessAlive, psCommandFn, spawnSyncFn };
+    const ownedOpts = { metricsPort: registry.metricsPort, isProcessAlive, psCommandFn, spawnSyncFn };
     const stopOpts = { isProcessAlive, killFn, psCommandFn, spawnSyncFn, stopTermMs, stopKillMs, stopPollMs };
     // 1. Reuse only what Golem spawned and recorded (R8): the registry
     // origin must be this dashboard origin, the tunnel must validate
