@@ -39,3 +39,43 @@ export function compactDispatch(result) {
   if (result.ticket) out.ticket = compactTicket(result.ticket);
   return out;
 }
+
+// ticket_get for agents: the ticket itself stays whole (body, state, links,
+// dispatch fields). What shrinks is what repeats or belongs to other tickets:
+// - children: each child's own summary, not its full body (read the child
+//   with its own ticket_get);
+// - events: type, actor, data and time; the row ids and routing fields repeat
+//   on every event and carry no meaning for the reader;
+// - comments: the text and its anchor (quote, section, block) without the
+//   text-matching offsets and the parent ticket id.
+// `full: true` on the tool returns the unshaped REST payload.
+const CHILD_FIELDS = ['id', 'display_id', 'title', 'kind', 'state', 'assignee', 'assignee_label'];
+const EVENT_FIELDS = ['type', 'actor_label', 'data', 'created_at'];
+const COMMENT_DROP = new Set(['ticket_id', 'prefix', 'suffix', 'section_id', 'updated_at']);
+
+function pick(row, fields) {
+  const out = {};
+  for (const field of fields) if (row?.[field] !== undefined) out[field] = row[field];
+  return out;
+}
+
+export function compactTicketRead(ticket) {
+  if (!ticket || typeof ticket !== 'object') return ticket;
+  const out = { ...ticket };
+  if (Array.isArray(ticket.children)) out.children = ticket.children.map((child) => pick(child, CHILD_FIELDS));
+  if (Array.isArray(ticket.events)) out.events = ticket.events.map((event) => pick(event, EVENT_FIELDS));
+  if (Array.isArray(ticket.comments)) {
+    out.comments = ticket.comments.map((comment) => Object.fromEntries(
+      Object.entries(comment).filter(([key]) => !COMMENT_DROP.has(key)),
+    ));
+  }
+  return out;
+}
+
+// ticket_list rows: the same summary the CLI prints; bodies come from ticket_get.
+export function compactTicketList(rows) {
+  const list = Array.isArray(rows) ? rows : rows?.tickets;
+  if (!Array.isArray(list)) return rows;
+  const compact = list.map(compactTicket);
+  return Array.isArray(rows) ? compact : { ...rows, tickets: compact };
+}

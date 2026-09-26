@@ -22,7 +22,7 @@ const contracts = [
   },
   {
     name: 'ticket_list',
-    description: 'Golem tracker — the cross-project source of truth for work (replaces PLAN.md). List tickets. Pass mine:true to find work assigned to YOU (this session). Defaults to your current project; pass project:"<contract-id>" for another, or all:true (or project:"*") to list across every project. Optional filters: state (todo|in_progress|blocked|review|done|archived), assignee, kind (spec|task|doc).',
+    description: 'Golem tracker — the cross-project source of truth for work (replaces PLAN.md). List tickets. Pass mine:true to find work assigned to YOU (this session). Defaults to your current project; pass project:"<contract-id>" for another, or all:true (or project:"*") to list across every project. Optional filters: state (todo|in_progress|blocked|review|done|archived), assignee, kind (spec|task|doc). Rows are summaries without the body; read one with ticket_get.',
     inputSchema: object({
       project: string('Contract project_id `<slug>-<6hex>`. Defaults to your current project. Use "*" to list across all projects.'),
       all: { type: 'boolean', description: 'List across all projects (same as project:"*").' },
@@ -34,8 +34,11 @@ const contracts = [
   },
   {
     name: 'ticket_get',
-    description: 'Golem tracker — fetch one ticket by id, including its Markdown body, anchored comments, links, and event history. Read this before starting work on a dispatched/assigned ticket.',
-    inputSchema: object({ id: string('Display ticket id, e.g. GOL-244. Legacy TKT refs still resolve.') }, ['id']),
+    description: 'Golem tracker — fetch one ticket by id, including its Markdown body, anchored comments, links, and event history. Children come as summaries (read a child with its own ticket_get); events carry type, actor, data and time. Pass full:true for the unshaped payload. Read this before starting work on a dispatched/assigned ticket.',
+    inputSchema: object({
+      id: string('Display ticket id, e.g. GOL-244. Legacy TKT refs still resolve.'),
+      full: { type: 'boolean', description: 'Return the unshaped payload: full child bodies and raw event rows.' },
+    }, ['id']),
   },
   {
     name: 'ticket_create',

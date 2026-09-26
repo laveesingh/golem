@@ -3,7 +3,7 @@
 // that returns it. A fake client stands in for the dashboard REST payloads.
 
 import assert from 'node:assert/strict';
-import { compactDispatch, compactTicket, TICKET_SUMMARY_FIELDS } from '../lib/ticket-compact.js';
+import { compactDispatch, compactTicket, compactTicketList, compactTicketRead, TICKET_SUMMARY_FIELDS } from '../lib/ticket-compact.js';
 import { createGolemToolRuntime } from '../lib/golem-tool-runtime.js';
 
 const body = 'x'.repeat(20_000);
@@ -47,12 +47,37 @@ const client = {
   updateTicket: async (id, patch) => { calls.push(['update', id, patch.title]); return fullTicket; },
   dispatchTicket: async (id, input) => { calls.push(['dispatch', id, input.session_id]); return delivered; },
   addComment: async () => ({ id: 'c9', body: 'hi' }),
+  getTicket: async () => readTicket,
+  listTickets: async () => [fullTicket, fullTicket],
 };
+// compactTicketRead keeps the ticket whole and shrinks what repeats.
+const readTicket = {
+  ...fullTicket,
+  children: [{ id: 'TKT-2', display_id: 'GOL-2', title: 'child', kind: 'task', state: 'todo', assignee: null, assignee_label: null, body }],
+  events: [{ id: 9, event_uuid: 'u', ticket_id: 'TKT-1', project_id: 'p', topic: 'ticket/GOL-1', class: 'tracker', type: 'state_change',
+    actor: 's-1', actor_kind: 'session', actor_label: 'lead1', data: { from: 'todo', to: 'in_progress' }, created_at: 5 }],
+  comments: [{ id: 'c1', ticket_id: 'TKT-1', author: 's-1', author_label: 'lead1', body: 'fix this', quote: 'q', prefix: 'pre', suffix: 'suf',
+    section: 'Design', section_id: 'sec-1', block_id: 'b1', anchor_kind: 'block', tag: null, status: 'open', dispatch_state: 'undispatched',
+    parent_id: null, created_at: 3, updated_at: 4 }],
+};
+const read = compactTicketRead(readTicket);
+assert.equal(read.body, body, 'keeps the ticket body');
+assert.deepEqual(read.outline, fullTicket.outline);
+assert.deepEqual(read.children, [{ id: 'TKT-2', display_id: 'GOL-2', title: 'child', kind: 'task', state: 'todo', assignee: null, assignee_label: null }]);
+assert.deepEqual(read.events, [{ type: 'state_change', actor_label: 'lead1', data: { from: 'todo', to: 'in_progress' }, created_at: 5 }]);
+assert.deepEqual(read.comments, [{ id: 'c1', author: 's-1', author_label: 'lead1', body: 'fix this', quote: 'q', section: 'Design',
+  block_id: 'b1', anchor_kind: 'block', tag: null, status: 'open', dispatch_state: 'undispatched', parent_id: null, created_at: 3 }]);
+assert.deepEqual(compactTicketList([fullTicket]), [summary]);
+assert.deepEqual(compactTicketList({ tickets: [fullTicket], total: 1 }), { tickets: [summary], total: 1 });
+
 const runtime = createGolemToolRuntime({ client, callerSessionId: 's-1', projectId: 'golem-38ab8a' });
 assert.deepEqual(await runtime.invoke('ticket_create', { title: 'T' }), summary);
 assert.deepEqual(await runtime.invoke('ticket_update', { id: 'GOL-1', title: 'T2' }), summary);
 assert.deepEqual(await runtime.invoke('ticket_dispatch', { id: 'GOL-1', session_id: 's-2' }), compactDispatch(delivered));
 assert.deepEqual(await runtime.invoke('ticket_comment', { id: 'GOL-1', body: 'hi' }), { id: 'c9', body: 'hi' });
+assert.deepEqual(await runtime.invoke('ticket_get', { id: 'GOL-1' }), read);
+assert.deepEqual(await runtime.invoke('ticket_get', { id: 'GOL-1', full: true }), readTicket, 'full:true returns the unshaped payload');
+assert.deepEqual(await runtime.invoke('ticket_list', {}), [summary, summary]);
 assert.deepEqual(calls, [['create', 'T'], ['update', 'GOL-1', 'T2'], ['dispatch', 'GOL-1', 's-2']]);
 
-console.log(`ticket compact passed: summary + outline + mermaid_errors kept, echo dropped; dispatch ${deliveredSize} -> ${compactSize} chars; Pi runtime returns compact create/update/dispatch`);
+console.log(`ticket compact passed: summary + outline + mermaid_errors kept, echo dropped; dispatch ${deliveredSize} -> ${compactSize} chars; ticket_get shapes children/events/comments with full:true opt-in; ticket_list rows compact; Pi runtime returns compact create/update/dispatch/get/list`);

@@ -30,7 +30,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import * as tracker from './tracker-client.js';
 import { GOLEM_TOOL_CONTRACTS } from '../../lib/golem-tool-contracts.js';
-import { compactDispatch, compactTicket } from '../../lib/ticket-compact.js';
+import { compactDispatch, compactTicket, compactTicketList, compactTicketRead } from '../../lib/ticket-compact.js';
 
 // GOL-365: the full shared contract list is the only tool surface.
 const GOLEM_TOOL_LIST = GOLEM_TOOL_CONTRACTS.map((c) => ({ name: c.name, description: c.description, inputSchema: c.inputSchema }));
@@ -522,12 +522,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         }
         if (args.state != null) params.state = args.state;
         if (args.kind != null) params.kind = args.kind;
-        return await jsonResult(await tracker.listTickets(params));
+        return await jsonResult(compactTicketList(await tracker.listTickets(params)));
       }
 
       if (name === 'ticket_get') {
         if (!args.id) throw new Error('ticket_get: id is required');
-        return await jsonResult(await tracker.getTicket(args.id));
+        const ticket = await tracker.getTicket(args.id);
+        return await jsonResult(args.full === true ? ticket : compactTicketRead(ticket));
       }
 
       if (name === 'ticket_create') {

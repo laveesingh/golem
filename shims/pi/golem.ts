@@ -216,7 +216,7 @@ function projectContext(sessionId, cwd) {
 
 function toolText(value) {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return text.length <= 30_000 ? text : `${text.slice(0, 30_000)}\n… output truncated by Golem`;
+  return text.length <= 30_000 ? text : `${text.slice(0, 30_000)}\n… output truncated by Golem at 30000 of ${text.length} chars. For one ticket's full text run \`golem ticket get <id>\` in bash, or one block with \`golem ticket get-block <id> <block-id>\`.`;
 }
 
 // Pi-specific primitive binding. Shared transport, lifecycle, replay, facts,
