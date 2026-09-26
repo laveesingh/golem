@@ -292,7 +292,7 @@ function ProfileChoice({ value, options, onChange, id, placeholder = 'Select a p
         disabled={disabled}
         onClick={() => setOpen((state) => !state)}
       >
-        {current?.provider && <ProfileMark provider={current.provider} model={current.model}/>}
+        {(current?.provider || current?.model) && <ProfileMark provider={current.provider} model={current.model}/>}
         <span className={!current ? 'is-placeholder' : ''}>{current?.label || placeholder}</span>
         <span className="model-profile-choice-caret" aria-hidden="true">▾</span>
       </button>
@@ -309,7 +309,7 @@ function ProfileChoice({ value, options, onChange, id, placeholder = 'Select a p
               className={`model-profile-choice-option ${option.value === value ? 'is-selected' : ''}`}
               onClick={() => choose(option.value)}
             >
-              {option.provider && <ProfileMark provider={option.provider} model={option.model}/>}
+              {(option.provider || option.model) && <ProfileMark provider={option.provider} model={option.model}/>}
               <span>{option.label}</span>
             </button>
           ))}
