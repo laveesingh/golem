@@ -20,6 +20,7 @@ import { dashboardJsonPath } from '../lib/golem-home.js';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
 import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import { NotificationError } from '../lib/notification-contract.js';
+import { compactTicket } from '../lib/ticket-compact.js';
 
 const OPS = {
   'list': { args: 0, mutation: false,
@@ -266,27 +267,8 @@ function exitPayload(payload) {
   return JSON.stringify(payload, null, 2);
 }
 
-// GOL-349 response shaping: machine-facing ticket outputs are compact. The
-// ticket body, comments, events and children never echo back — `golem ticket
-// get` is the deliberate full-body read.
-const TICKET_SUMMARY_FIELDS = ['id', 'display_id', 'seq', 'project_id', 'kind', 'title', 'state',
-  'priority', 'assignee', 'assignee_label', 'parent_id', 'labels', 'body_format', 'body_revision',
-  'created_by', 'created_at', 'updated_at'];
-function compactTicket(ticket) {
-  if (!ticket || typeof ticket !== 'object') return ticket;
-  const summary = {};
-  for (const field of TICKET_SUMMARY_FIELDS) {
-    if (ticket[field] !== undefined) summary[field] = ticket[field];
-  }
-  // D3: html create/update responses carry the normalized outline with the
-  // assigned block ids — that is the useful payload, not the body.
-  if (Array.isArray(ticket.outline)) summary.outline = ticket.outline;
-  // GOL-369 D7: the server checks changed Mermaid diagrams on every write.
-  // The write commits; broken diagrams report here so the next edit fixes
-  // only that diagram.
-  if (Array.isArray(ticket.mermaid_errors)) summary.mermaid_errors = ticket.mermaid_errors;
-  return summary;
-}
+// GOL-349 response shaping: machine-facing ticket outputs are compact
+// (lib/ticket-compact.js). `golem ticket get` is the deliberate full-body read.
 
 function errorPayload(err) {
   // The server's owned payload (code + revision/outline recovery fields) is

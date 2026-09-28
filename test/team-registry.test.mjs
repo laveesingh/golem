@@ -232,4 +232,21 @@ assert.throws(
   new RegExp(NO_TEAM_MESSAGE),
 );
 
+// --- golem team list hides closed teams unless --all ------------------------
+{
+  const { runTeam } = await import('../cli/team.js');
+  const projectC = 'team-proj-cccccc';
+  const openTeam = createTeam({ projectId: projectC, label: 'List open', herdrSession: 'herdr-c' });
+  const shutTeam = createTeam({ projectId: projectC, label: 'List shut', herdrSession: 'herdr-c' });
+  closeTeam(shutTeam.team_id);
+  const listed = async (args) => {
+    const out = [];
+    const status = await runTeam('team', ['list', '--project', projectC, '--json', ...args], { stdout: (t) => out.push(t), stderr: () => {} });
+    assert.equal(status, 0);
+    return JSON.parse(out.join('')).map((row) => row.slug);
+  };
+  assert.deepEqual(await listed([]), [openTeam.slug], 'default list shows open teams only');
+  assert.deepEqual((await listed(['--all'])).sort(), [openTeam.slug, shutTeam.slug].sort(), '--all includes closed teams');
+}
+
 console.log('team registry journey passed: slugs, rows, owner/member join, legacy lead read + mirror, close, team-scoped naming, session lookup, G8 resolution');

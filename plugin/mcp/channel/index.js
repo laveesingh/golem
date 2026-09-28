@@ -30,6 +30,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import * as tracker from './tracker-client.js';
 import { GOLEM_TOOL_CONTRACTS } from '../../lib/golem-tool-contracts.js';
+import { compactDispatch, compactTicket, compactTicketList, compactTicketRead } from '../../lib/ticket-compact.js';
 
 // GOL-365: the full shared contract list is the only tool surface.
 const GOLEM_TOOL_LIST = GOLEM_TOOL_CONTRACTS.map((c) => ({ name: c.name, description: c.description, inputSchema: c.inputSchema }));
@@ -337,19 +338,14 @@ const mcp = new Server(
     },
     instructions: [
       'Events from this channel arrive as <channel source="golem" kind="..."> tags.',
-      'Recognised kinds:',
-      '  - brief: a new request from the human. Route it per Global Rules § How work arrives (answer a question, build directly, or run the spec sequence you are authorized to coordinate).',
-      '  - role_assign: session role identity only (dashboard/CLI role picker). NOT a task. ack once, then STOP and wait. Do not ticket_list, explore, plan, build, or invent work. Work starts only on an explicit brief or ticket_dispatch.',
-      '  - interrupt: a course-correction to fold into in-flight work without restarting. Read, integrate, continue.',
-      '  - halt: a request to gracefully halt the current work, write a closing memo, and yield. Do not start new work.',
-      '  - gate_approve: the human approved a pending approval/question request (legacy event name; the gate_id meta identifies the request). Resume the blocked work.',
-      '  - gate_deny: the human denied it — hard stop for that thread.',
-      '  - gate_cancel: the human cancelled it — drop that thread without resuming.',
-      '  - session_notify brief: an active peer message. Delegated returns and consultations arrive as ordinary briefs with explicit headers and an authenticated sender session_id; read the durable report or context before acting.',
-      'You have ONE reply tool that fires over the SSE channel and surfaces in the dashboard chat:',
-      '  • `ack` — fires IMMEDIATELY on receipt of every inbound event, no exceptions. One short sentence describing what this session understood and is about to do. Pass the same kind; include gate_id for gate_* events. For role_assign, ack is the entire job.',
+      'Event kinds (what happened; what to do about each one is in your instructions):',
+      '  - brief: a message from the human or a peer session. Peer messages carry an authenticated sender session_id.',
+      '  - role_assign: your session role changed; the message carries the new role card.',
+      '  - interrupt: a course-correction for the current work.',
+      '  - halt: a request to stop the current work.',
+      '  - gate_approve / gate_deny / gate_cancel: the human resolved a pending approval or question request; the gate_id meta identifies it.',
+      'Tool: `ack` records receipt of an inbound event in the dashboard chat. Pass the same kind; include gate_id for gate_* events and envelope_id when the message names one.',
       MCP_RETURN_GUIDANCE.delegatedReturns,
-      'Order of operations for any inbound channel event: 1) call ack on receipt, 2) do the work (role_assign: none), 3) reply in chat if a user-facing answer is needed, 4) yield.',
       MCP_RETURN_GUIDANCE.peerHelp,
     ].join(' '),
   },
@@ -494,7 +490,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       return out;
     };
     const jsonResult = async (value) => ({
-      content: [{ type: 'text', text: JSON.stringify(await publicTicketIds(value), null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(await publicTicketIds(value)) }],
     });
     try {
       const sessionId = caller.sessionId;
@@ -526,12 +522,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         }
         if (args.state != null) params.state = args.state;
         if (args.kind != null) params.kind = args.kind;
-        return await jsonResult(await tracker.listTickets(params));
+        return await jsonResult(compactTicketList(await tracker.listTickets(params)));
       }
 
       if (name === 'ticket_get') {
         if (!args.id) throw new Error('ticket_get: id is required');
-        return await jsonResult(await tracker.getTicket(args.id));
+        const ticket = await tracker.getTicket(args.id);
+        return await jsonResult(args.full === true ? ticket : compactTicketRead(ticket));
       }
 
       if (name === 'ticket_create') {
@@ -551,7 +548,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           source_ref: args.source_ref,
           created_by: sessionId ?? undefined,
         };
-        return await jsonResult(await tracker.createTicket(body));
+        return await jsonResult(compactTicket(await tracker.createTicket(body)));
       }
 
       if (name === 'ticket_update') {
@@ -560,7 +557,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         for (const k of ['state', 'title', 'body', 'body_format', 'expected_revision', 'kind', 'priority', 'labels', 'parent_id', 'assignee']) {
           if (args[k] !== undefined) patch[k] = args[k];
         }
-        return await jsonResult(await tracker.updateTicket(args.id, patch));
+        return await jsonResult(compactTicket(await tracker.updateTicket(args.id, patch)));
       }
 
       if (name === 'ticket_comment') {
@@ -603,13 +600,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       if (name === 'ticket_dispatch') {
         if (!args.id) throw new Error('ticket_dispatch: id is required');
         if (!args.session_id) throw new Error('ticket_dispatch: session_id is required');
-        return await jsonResult(await tracker.dispatchTicket(args.id, {
+        return await jsonResult(compactDispatch(await tracker.dispatchTicket(args.id, {
           session_id: args.session_id,
           note: args.note,
           when_idle: args.when_idle === true,
           workspace: args.workspace || undefined,
           sender_id: sessionId,
-        }));
+        })));
       }
 
     } catch (err) {

@@ -1,5 +1,6 @@
 import { GolemClientError } from './golem-client.js';
 import { GOLEM_TOOL_CONTRACTS, registerGolemTools } from './golem-tool-contracts.js';
+import { compactDispatch, compactTicket, compactTicketList, compactTicketRead } from './ticket-compact.js';
 
 const WRITE_TOOLS = new Set([
   'ticket_create', 'ticket_update', 'ticket_comment',
@@ -69,24 +70,27 @@ export function createGolemToolRuntime({
       else if (args.assignee != null) params.assignee = args.assignee;
       if (args.state != null) params.state = args.state;
       if (args.kind != null) params.kind = args.kind;
-      return client.listTickets(params);
+      return compactTicketList(await client.listTickets(params));
     }
-    if (name === 'ticket_get') return client.getTicket(required(args.id, 'ticket_get: id is required'));
+    if (name === 'ticket_get') {
+      const ticket = await client.getTicket(required(args.id, 'ticket_get: id is required'));
+      return args.full === true ? ticket : compactTicketRead(ticket);
+    }
     if (name === 'ticket_create') {
       const scopedProject = required(args.project || trustedProjectId, 'ticket_create: could not resolve a project — pass project:"<contract-id>"');
-      return client.createTicket({
+      return compactTicket(await client.createTicket({
         project_id: scopedProject, title: args.title, body: args.body, kind: args.kind,
         priority: args.priority, state: args.state, labels: args.labels,
         parent_id: args.parent_id, assignee: args.assignee,
         source_ref: args.source_ref, created_by: trustedSessionId,
-      });
+      }));
     }
     if (name === 'ticket_update') {
       const patch = { actor: trustedSessionId };
       for (const key of ['state', 'title', 'body', 'body_format', 'expected_revision', 'kind', 'priority', 'labels', 'parent_id', 'assignee']) {
         if (args[key] !== undefined) patch[key] = args[key];
       }
-      return client.updateTicket(required(args.id, 'ticket_update: id is required'), patch);
+      return compactTicket(await client.updateTicket(required(args.id, 'ticket_update: id is required'), patch));
     }
     if (name === 'ticket_comment') {
       return client.addComment(required(args.id, 'ticket_comment: id is required'), {
@@ -104,11 +108,11 @@ export function createGolemToolRuntime({
       return client.replyComment(required(args.id, 'ticket_comment_reply: id is required'), required(args.comment_id, 'ticket_comment_reply: comment_id is required'), { author: trustedSessionId, body: args.body });
     }
     if (name === 'ticket_dispatch') {
-      return client.dispatchTicket(required(args.id, 'ticket_dispatch: id is required'), {
+      return compactDispatch(await client.dispatchTicket(required(args.id, 'ticket_dispatch: id is required'), {
         session_id: required(args.session_id, 'ticket_dispatch: session_id is required'),
         note: args.note, mode: args.when_idle === true ? 'when_idle' : 'now',
         workspace: args.workspace || undefined, sender_id: trustedSessionId,
-      });
+      }));
     }
     throw invalid(`unknown Golem tool: ${name}`);
   };

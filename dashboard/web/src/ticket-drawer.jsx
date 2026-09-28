@@ -57,11 +57,13 @@ function collectImages(dt) {
   return out;
 }
 
-// GOL-384: Share control for specs/docs. Lives on .td-title-row so it shows
+// GOL-394: Share control for specs/docs. Lives on .td-title-row so it shows
 // in both the drawer and /read/:id (which hides .td-header). Tasks render
-// nothing. Popover offers Get link / Copy link / Stop sharing with busy,
-// error (including the actionable unsafe-tunnel pause), and clipboard-failure
-// states. Both URL generation and Stop stay disabled while unsafe.
+// nothing. Share ensures the dashboard tunnel and shows the reader link with
+// Copy; Stop sharing confirms first, then stops the tunnel so every shared
+// link stops working. Stop is offered whenever the tunnel is active, even
+// when no link URL is resolving. The link exposes the whole dashboard while
+// sharing is on — the popover says so plainly (GOL-384 D3).
 function ShareControl({ ticket }) {
   const kind = ticket?.kind;
   const ticketId = ticket?.id;
@@ -79,42 +81,34 @@ function ShareControl({ ticket }) {
     window.SubstrateAPI.getShareStatus(ticketId).then((s) => {
       if (cancelled) return;
       setStatus(s);
-      // GOL-388: while unsafe, the server omits the bearer URL — clear any
-      // previously held link so no token renders through the old tunnel.
-      if (s?.unsafe) setLink(null);
-      else if (s?.url) setLink(s.url);
-    }).catch(() => { if (!cancelled) setStatus({ shared: false, shareable: true, unsafe: false, url: null }); });
+      if (s?.url) setLink(s.url);
+    }).catch(() => { if (!cancelled) setStatus({ shareable: true, active: false, url: null, uncertain: false }); });
     return () => { cancelled = true; };
   }, [ticketId]);
   if (!ticket || (kind !== 'spec' && kind !== 'doc')) return null;
-  const unsafe = !!status?.unsafe;
-  // GOL-388: never render a bearer link while unsafe, even if one was
-  // fetched before the pause began.
-  const showLink = !!link && !unsafe;
-  const shared = !!status?.shared || showLink;
+  const active = !!status?.active || !!link;
+  const showLink = !!link;
   const doShare = async () => {
     setBusy(true); setError(null); setCopyFailed(false); setOpen(true);
     try {
       const res = await window.SubstrateAPI.shareTicket(ticketId);
       setLink(res.url);
-      setStatus((s) => ({ ...(s || {}), shared: true, url: res.url, unsafe: false }));
+      setStatus((s) => ({ ...(s || {}), active: true, url: res.url, uncertain: false }));
       setOpen(true);
     } catch (e) {
-      const payload = e?.payload;
-      setError(payload?.error || String(e?.message || e));
-      if (payload?.code === 'UNSAFE_ADMIN_TUNNEL') setStatus((s) => ({ ...(s || {}), unsafe: true }));
+      setError(e?.payload?.error || String(e?.message || e));
       setOpen(true);
     } finally { setBusy(false); }
   };
   const doStop = async () => {
+    if (!window.confirm('Stops the tunnel. Every shared link stops working.')) return;
     setBusy(true); setError(null);
     try {
       await window.SubstrateAPI.unshareTicket(ticketId);
       setLink(null);
-      setStatus((s) => ({ ...(s || {}), shared: false, url: null }));
+      setStatus((s) => ({ ...(s || {}), active: false, url: null }));
     } catch (e) {
-      const payload = e?.payload;
-      setError(payload?.error || String(e?.message || e));
+      setError(e?.payload?.error || String(e?.message || e));
     } finally { setBusy(false); }
   };
   const doCopy = async () => {
@@ -128,33 +122,39 @@ function ShareControl({ ticket }) {
       setCopyFailed(true);
     }
   };
-  const label = busy ? 'Sharing\u2026' : (shared ? 'Shared' : 'Share');
+  const label = busy ? 'Sharing\u2026' : (active ? 'Shared' : 'Share');
   return (
     <div className="td-share" data-testid="share-control">
       <button
         className="orch-btn small ghost td-share-btn"
-        onClick={() => { if (!open && !shared && !link) doShare(); else setOpen(!open); }}
+        onClick={() => { if (!open && !active) doShare(); else setOpen(!open); }}
         disabled={busy}
-        title={unsafe ? 'Sharing paused while the old dashboard tunnel runs' : 'Share a read-only document link'}
+        title="Share a link to this document"
       >{label}</button>
       {open && (
         <div className="td-share-pop" role="dialog" aria-label="Share document">
           {busy && <div className="td-share-busy">working\u2026</div>}
           {error && <div className="ct-error" role="alert">{error}</div>}
-          {unsafe && !error && !status?.uncertain && <div className="ct-error" role="alert">Sharing is paused while the old dashboard tunnel runs. Retire it, then try again.</div>}
-          {unsafe && !error && status?.uncertain && <div className="ct-error" role="alert">Sharing safety check failed — no link shown. Retry in a moment.</div>}
+          {status?.uncertain && !active && !error && <div className="ct-error" role="alert">Sharing status is uncertain \u2014 retry in a moment.</div>}
           {showLink ? (
             <>
               <input className="td-share-link" readOnly value={link} onFocus={(e) => e.target.select()} aria-label="Shared link" />
               <div className="row">
                 <button className="orch-btn small" onClick={doCopy} disabled={busy}>Copy link</button>
-                <button className="orch-btn small ghost" onClick={doStop} disabled={busy || unsafe} title={unsafe ? 'Stop is paused while the old tunnel runs' : 'Revoke this document link'}>Stop sharing</button>
+                <button className="orch-btn small ghost" onClick={doStop} disabled={busy} title="Stop the tunnel; every shared link stops working">Stop sharing</button>
               </div>
               {copied && <div className="td-share-copied">Copied</div>}
               {copyFailed && <div className="ct-error" role="alert">Copy failed \u2014 select the link manually.</div>}
+              <div className="td-share-note">Anyone with this link can open and edit the whole dashboard while sharing is on.</div>
+              <div className="td-share-note">A new link can take up to a minute to resolve.</div>
+            </>
+          ) : active ? (
+            <>
+              <div className="td-share-note">Sharing is on but the link is not resolving yet. Wait a minute and try again, or stop below.</div>
+              <button className="orch-btn small ghost" onClick={doStop} disabled={busy} title="Stop the tunnel; every shared link stops working">Stop sharing</button>
             </>
           ) : (
-            <button className="orch-btn small" onClick={doShare} disabled={busy || unsafe} title={unsafe ? 'Sharing paused while the old tunnel runs' : 'Get a read-only link'}>Get link</button>
+            <button className="orch-btn small" onClick={doShare} disabled={busy} title="Get a link to this document">Get link</button>
           )}
         </div>
       )}

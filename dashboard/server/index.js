@@ -13,13 +13,11 @@ import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, channelHealth,
 import { createChat } from './chat.js';
 import { readNativeSessionPeek } from './native-session-peek.js';
 import { openTrackerDb } from './tracker-db.js';
-import { createSharePublicServer } from './share-public.js';
 import {
-  SHARE_METRICS_CANDIDATES,
-  detectUnsafeAdminTunnel,
   ensureShareTunnel,
+  isOwnedTunnel,
   readShareRegistry,
-  registryOwnsLiveTunnel,
+  registryOrigin,
   stopOwnedTunnel,
   validateRegistryTunnel,
 } from './share-tunnel.js';
@@ -32,6 +30,7 @@ import { registerSubstrateRoutes } from './substrate.js';
 import { teamAssists } from './team-assist.js';
 import { golemHome, dashboardJsonPath, journalDirFor, projectsJsonPath, sessionsJsonPath } from '../../lib/golem-home.js';
 import { projectIdFor } from '../../lib/project-id.js';
+import { buildDispatchBrief } from './dispatch-brief.js';
 import { createRole, defaultSessionRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.js';
 import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../../lib/worker-manager.js';
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
@@ -166,113 +165,6 @@ function findListenerPid(port) {
 function getProcessComm(pid) {
   const result = spawnSync('ps', ['-p', String(pid), '-o', 'comm='], { encoding: 'utf8' });
   return (result.stdout || '').trim() || 'unknown';
-}
-
-// TKT-0245: build a self-contained brief so the receiving session knows exactly
-// what it's been handed and how to pick it up. Extracted from the inline
-// construction in the dispatch handler so the drainer (dispatch-queue.js)
-// produces byte-identical briefs — no format drift between the two delivery
-// paths. `note` is an already-trimmed string or null.
-// `workspace` is an optional directive ('worktree' | undefined) that appends
-// a workspace setup block to the brief (GOL-316 §2.7).
-
-function ticketSlug(title) {
-  return String(title || 'ticket')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-}
-
-// GOL-382 R7: briefs carry facts. What a session does with a dispatch — state
-// moves, worktree setup, merge ownership, return routing — is workflow and
-// lives in the instructions. A project may add its own text in
-// .agents/briefs/dispatch.md; it is appended verbatim with {{ticket_id}},
-// {{ticket_slug}}, {{ticket_title}} and {{workspace}} filled in.
-function projectBriefTemplate(ticket, workspace) {
-  let root = null;
-  try {
-    const registry = JSON.parse(fs.readFileSync(projectsJsonPath(), 'utf8'));
-    root = (registry.projects ?? []).find((entry) => entry?.path && (
-      entry.id === ticket.project_id || projectIdFor(path.resolve(entry.path)) === ticket.project_id
-    ))?.path ?? null;
-  } catch {
-    root = null;
-  }
-  if (!root) return null;
-  let template = null;
-  try {
-    template = fs.readFileSync(path.join(root, '.agents', 'briefs', 'dispatch.md'), 'utf8').trim();
-  } catch {
-    return null;
-  }
-  if (!template) return null;
-  const values = {
-    ticket_id: ticket.display_id || ticket.id,
-    ticket_slug: ticketSlug(ticket.title),
-    ticket_title: ticket.title ?? '',
-    workspace: workspace || '',
-  };
-  return template.replace(/\{\{(ticket_id|ticket_slug|ticket_title|workspace)\}\}/g, (_match, key) => values[key]);
-}
-
-function briefFacts(ticket, { messageId = null, senderSessionId = null, workspace = null } = {}) {
-  return [
-    messageId ? `Dispatch message_id: ${messageId} (pass it as envelope_id when you ack this dispatch)` : null,
-    senderSessionId ? `Authenticated delegating session_id: ${senderSessionId}` : null,
-    workspace ? `Workspace: ${workspace}` : null,
-  ].filter(Boolean);
-}
-
-function buildDispatchBrief(ticket, note, workspace, messageId = null, senderSessionId = null) {
-  if (ticket?.kind === 'spec') return buildSpecBrief(ticket, note, workspace, messageId, senderSessionId);
-  const id = ticket.display_id || ticket.id;
-  const lines = [
-    `Ticket dispatch: ${id} "${ticket.title}" (project ${ticket.project_id}, kind ${ticket.kind}, state ${ticket.state ?? 'unknown'}).`,
-    note ? `\nNote:\n${note}` : null,
-    '',
-    ...briefFacts(ticket, { messageId, senderSessionId, workspace }),
-    `Read it with ticket_get ${id} (or golem ticket get ${id}).`,
-    projectBriefTemplate(ticket, workspace),
-  ];
-  return lines.filter((line) => line != null).join('\n');
-}
-
-function buildSpecBrief(ticket, note, workspace, messageId = null, senderSessionId = null) {
-  const id = ticket.display_id || ticket.id;
-  const comments = (ticket.comments || []).filter((c) => c.dispatch_state === 'undispatched' || c.dispatch_state === 'dispatched');
-  const children = ticket.children || [];
-  const commentSection = comments.length
-    ? comments.map((c, idx) => [
-      `### Comment ${idx + 1}: ${c.id}`,
-      `Author: ${c.author || 'unknown'} · state: ${c.dispatch_state}`,
-      c.block_id ? `Block: ${c.block_id}` : null,
-      c.anchor_kind ? `Anchor: ${c.anchor_kind}` : null,
-      c.quote ? `Quote: ${c.quote}` : null,
-      '',
-      c.body || '',
-    ].filter((line) => line != null).join('\n')).join('\n\n')
-    : 'No undispatched/dispatched comments.';
-  const childSection = children.length
-    ? children.map((c) => `- ${c.display_id || c.id}: ${c.title} — ${c.state}`).join('\n')
-    : 'No children.';
-  const lines = [
-    `Spec dispatch: ${id} "${ticket.title}" (project ${ticket.project_id}, state ${ticket.state}).`,
-    note ? `\nNote:\n${note}` : null,
-    '',
-    ...briefFacts(ticket, { messageId, senderSessionId, workspace }),
-    '',
-    '## Spec Body',
-    ticket.body || '(empty)',
-    '',
-    '## Active Comments',
-    commentSection,
-    '',
-    '## Children',
-    childSection,
-    projectBriefTemplate(ticket, workspace),
-  ];
-  return lines.filter((line) => line != null).join('\n');
 }
 
 function statusForHookEvent(type) {
@@ -1230,146 +1122,89 @@ async function main() {
     return { ...ticket, events: tracker.listEvents({ ticket_id: ticket.id }) };
   });
 
-  // GOL-384: read-only spec/doc sharing. Grants live in share_grants keyed
-  // by canonical tickets.id; the token appears only in the POST response URL.
-  // While a discoverable cloudflared tunnel targets the admin dashboard,
-  // POST and DELETE refuse with an actionable error (GOL-386 critical).
-  const shareAdminOrigin = () => `http://127.0.0.1:${CONFIG.port}`;
-  let sharePublicServer = null;
-  let sharePublicPort = null;
-  async function ensureSharePublicPort() {
-    if (sharePublicServer && Number.isInteger(sharePublicPort)) return sharePublicPort;
-    const homeDir = golemHome();
-    const registry = readShareRegistry(homeDir) || {};
-    const recorded = Number.isInteger(registry.publicPort) ? registry.publicPort : null;
-    const tryBind = async (port) => {
-      const srv = createSharePublicServer({
-        tracker,
-        assetsDir: CONFIG.assetsDir,
-        mermaidBundlePath: path.join(WEB_ROOT, 'share-mermaid.mjs'),
-      });
-      const bound = await srv.listen(port);
-      sharePublicServer = srv;
-      sharePublicPort = bound;
-      return bound;
-    };
-    if (recorded != null) {
-      try {
-        return await tryBind(recorded);
-      } catch (err) {
-        if (err?.code !== 'EADDRINUSE') throw err;
-        // Rebind failed: if the registry proves Golem owns a live tunnel on
-        // this port, stop only that child and invalidate the URL, then bind
-        // fresh. Otherwise fail closed without touching any process.
-        const origin = `http://127.0.0.1:${recorded}`;
-        const owned = await registryOwnsLiveTunnel(registry, origin).catch(() => false);
-        if (!owned) {
-          throw new Error(`public share port ${recorded} is occupied and tunnel ownership is unproven; refusing to kill or adopt (fail closed)`);
-        }
-        await stopOwnedTunnel(homeDir, origin, shareAdminOrigin()).catch((stopErr) => {
-          throw new Error(`public share port ${recorded} is occupied; owned tunnel stop failed: ${stopErr?.message ?? stopErr}`);
-        });
-        return await tryBind(recorded);
-      }
-    }
-    return await tryBind(0);
-  }
-  async function shareUnsafeDetail() {
-    const homeDir = golemHome();
-    const registry = readShareRegistry(homeDir) || {};
-    const extra = Number.isInteger(registry.metricsPort) ? [registry.metricsPort] : [];
-    return detectUnsafeAdminTunnel(shareAdminOrigin(), { metricsPorts: extra });
-  }
-  const SHARE_UNSAFE_MESSAGE =
-    'Sharing is paused while the old dashboard tunnel is running. Retire that cloudflared tunnel to 127.0.0.1:7420, then Share again for a document-only link.';
+  // GOL-394: minimal read-link sharing. Share ensures one Golem-owned quick
+  // tunnel to the dashboard origin and returns the reader link
+  // https://<host>/read/<display_id>. No tokens, no grants, no separate
+  // public listener. Stop kills the owned tunnel; every shared link stops.
+  // Accepted risk (GOL-384 D3): while the tunnel runs, the link exposes the
+  // whole dashboard, unauthenticated and writable. The UI says so plainly.
+  const shareDashboardOrigin = () => `http://127.0.0.1:${CONFIG.port}`;
   fastify.get('/api/tickets/:id/share', async (req, reply) => {
     const ticket = resolveTicketRef(req.params.id);
     if (!ticket) return reply.code(404).send({ error: 'not_found' });
     const shareable = ticket.kind === 'spec' || ticket.kind === 'doc';
-    const grant = tracker.getShareGrant(ticket.id);
-    const unsafe = await shareUnsafeDetail().catch(() => ({ unsafe: true, uncertain: true, detail: 'tunnel safety check failed; retry Share' }));
-    // GOL-388: while an admin-targeting tunnel is discoverable, never emit
-    // the bearer URL from this GET — the flags alone carry UI state.
-    // GOL-390 fix round 1: an INDETERMINATE check omits too (fail closed).
-    if (unsafe.unsafe) {
-      return { shared: !!grant && shareable, shareable, unsafe: true, uncertain: !!unsafe.uncertain, url: null };
+    if (!shareable) return { shareable: false, active: false, url: null, uncertain: false };
+    const origin = shareDashboardOrigin();
+    let active = false;
+    let uncertain = false;
+    try {
+      const registry = readShareRegistry(golemHome()) || {};
+      if (registryOrigin(registry) === origin) {
+        try {
+          active = await isOwnedTunnel(registry.pid, origin, { metricsPort: registry.metricsPort });
+        } catch {
+          // Indeterminate process state: inactive but uncertain, never a
+          // confident false.
+          active = false;
+          uncertain = true;
+        }
+      }
+    } catch {
+      active = false;
+      uncertain = true;
     }
     let url = null;
-    if (grant && shareable) {
+    if (active) {
       try {
-        const homeDir = golemHome();
-        const registry = readShareRegistry(homeDir) || {};
-        const origin = Number.isInteger(registry.publicPort) && sharePublicPort === registry.publicPort
-          ? `http://127.0.0.1:${registry.publicPort}`
-          : (Number.isInteger(sharePublicPort) ? `http://127.0.0.1:${sharePublicPort}` : null);
-        if (origin && Number.isInteger(registry.metricsPort) && registry.hostname) {
-          const check = await validateRegistryTunnel(registry, origin);
-          if (check.ok) url = `https://${check.hostname}/s/${grant.token}`;
-        }
-      } catch { url = null; }
+        const registry = readShareRegistry(golemHome()) || {};
+        const check = await validateRegistryTunnel(registry, origin);
+        if (check.ok) url = `https://${check.hostname}/read/${ticket.display_id}`;
+      } catch {
+        // Fail closed: any validation error omits the link.
+        url = null;
+        uncertain = true;
+      }
     }
-    return { shared: !!grant && shareable, shareable, unsafe: !!unsafe.unsafe, uncertain: !!unsafe.uncertain, url };
+    return { shareable, active, url, uncertain };
   });
   fastify.post('/api/tickets/:id/share', async (req, reply) => {
-    try {
-      const unsafe = await shareUnsafeDetail();
-      if (unsafe.unsafe) {
-        return reply.code(409).send({ error: SHARE_UNSAFE_MESSAGE, code: 'UNSAFE_ADMIN_TUNNEL', detail: unsafe.detail });
-      }
-    } catch (err) {
-      return reply.code(502).send({ error: `tunnel safety check failed: ${err?.message ?? err}`, code: 'TUNNEL_CHECK_FAILED' });
-    }
     const ticket = resolveTicketRef(req.params.id);
     if (!ticket) return reply.code(404).send({ error: 'not_found' });
     if (ticket.kind !== 'spec' && ticket.kind !== 'doc') {
       return reply.code(400).send({ error: `only spec/doc can be shared (kind '${ticket.kind}')`, code: 'INELIGIBLE_KIND' });
     }
-    const existing = tracker.getShareGrant(ticket.id);
-    let publicPort;
-    try {
-      publicPort = await ensureSharePublicPort();
-    } catch (err) {
-      return reply.code(502).send({ error: String(err?.message ?? err), code: 'PUBLIC_LISTENER_FAILED' });
-    }
-    const publicOrigin = `http://127.0.0.1:${publicPort}`;
+    const origin = shareDashboardOrigin();
     let tunnel;
     try {
-      tunnel = await ensureShareTunnel({
-        publicPort,
-        publicOrigin,
-        adminOrigin: shareAdminOrigin(),
-        homeDir: golemHome(),
-      });
+      tunnel = await ensureShareTunnel({ origin, homeDir: golemHome() });
     } catch (err) {
+      if (err?.code === 'SHARE_STOPPED') {
+        return reply.code(409).send({ error: String(err?.message ?? err), code: 'SHARE_STOPPED' });
+      }
       const message = String(err?.message ?? err);
       // GOL-390: end-to-end recovery timeout is actionable and retryable —
-      // name it distinctly from other launch failures. No grant is minted
-      // on any of these paths (creation happens only after ensure returns).
+      // name it distinctly from other launch failures.
       const code = /share recovery timed out after/.test(message) ? 'SHARE_TIMEOUT' : 'TUNNEL_FAILED';
       return reply.code(502).send({ error: message, code });
     }
-    // Failure atomicity: no grant is issued as success before tunnel
-    // validation — the tunnel above validated before we mint below.
-    try {
-      const grant = existing ?? tracker.createShareGrant(ticket.id);
-      return { url: `https://${tunnel.hostname}/s/${grant.token}`, shared: true, display_id: ticket.display_id, hostname: tunnel.hostname };
-    } catch (err) {
-      return sendTrackerError(reply, err);
-    }
+    return { url: `https://${tunnel.hostname}/read/${ticket.display_id}`, hostname: tunnel.hostname, display_id: ticket.display_id };
   });
   fastify.delete('/api/tickets/:id/share', async (req, reply) => {
-    try {
-      const unsafe = await shareUnsafeDetail();
-      if (unsafe.unsafe) {
-        return reply.code(409).send({ error: SHARE_UNSAFE_MESSAGE, code: 'UNSAFE_ADMIN_TUNNEL', detail: unsafe.detail });
-      }
-    } catch (err) {
-      return reply.code(502).send({ error: `tunnel safety check failed: ${err?.message ?? err}`, code: 'TUNNEL_CHECK_FAILED' });
-    }
     const ticket = resolveTicketRef(req.params.id);
     if (!ticket) return reply.code(404).send({ error: 'not_found' });
-    const result = tracker.revokeShareGrant(ticket.id);
-    return { revoked: !!result.revoked, shared: false };
+    try {
+      const result = await stopOwnedTunnel(golemHome(), shareDashboardOrigin());
+      if (result.already_stopped) return { stopped: false, already_stopped: true };
+      return { stopped: true, already_stopped: false };
+    } catch (err) {
+      if (err?.code === 'STOP_UNCONFIRMED') {
+        return reply.code(502).send({ error: String(err?.message ?? err), code: 'STOP_UNCONFIRMED' });
+      }
+      if (/ownership unproven|refusing to stop/.test(String(err?.message ?? ''))) {
+        return reply.code(409).send({ error: String(err?.message ?? err), code: 'NOT_OWNED' });
+      }
+      return reply.code(502).send({ error: String(err?.message ?? err), code: 'TUNNEL_CHECK_FAILED' });
+    }
   });
 
   // GET /api/tickets/:id/outline — ordered HTML block outline (GOL-326).
@@ -2807,24 +2642,6 @@ async function main() {
   // Canonical URL is http://dashboard.golem.localhost:7420 (RFC 6761 *.localhost
   // resolves to 127.0.0.1 — no /etc/hosts edit needed).
   const boundPort = await tryListen(CONFIG.port);
-
-  // GOL-384 restart: rebind the recorded public share listener so a
-  // still-live managed tunnel keeps serving copied links without a fresh
-  // Share. Lazy when no registry exists. Owned-occupant → stop + rebind;
-  // otherwise fail closed with a warning — the dashboard itself must start.
-  try {
-    const recorded = readShareRegistry(golemHome()) || {};
-    if (Number.isInteger(recorded.publicPort)) {
-      try {
-        const rebound = await ensureSharePublicPort();
-        fastify.log.info({ publicPort: rebound }, 'share public listener rebound');
-      } catch (err) {
-        fastify.log.warn({ err }, 'share public listener rebind failed (fail closed)');
-      }
-    }
-  } catch (err) {
-    fastify.log.warn({ err }, 'share registry read failed at startup');
-  }
 
   // WS2: self-register so WS3's MCP discovery can find the live dashboard.
   // Atomic write (tmp + rename) into ~/.golem/dashboard.json. Best-effort

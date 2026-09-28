@@ -14,6 +14,7 @@ import { dirname, resolve as pathResolve } from 'node:path';
 import { createGolemClient, resolveGolemDashboardBaseUrl } from '../lib/golem-client.js';
 import { dashboardJsonPath, sessionsJsonPath } from '../lib/golem-home.js';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
+import { formatTable } from '../lib/cli-table.js';
 import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import {
   NotificationError,
@@ -207,30 +208,10 @@ const AGENT_TABLE_COLUMNS = [
   { key: 'delivery', label: 'DELIVERY', max: 12 },
 ];
 
-function agentTableValue(row, key) {
-  const value = row?.[key];
-  if (value == null || value === '') return '-';
-  return String(value).replace(/\s+/g, ' ');
-}
-
-function fitTableCell(value, width) {
-  const text = String(value);
-  if (text.length <= width) return text.padEnd(width);
-  return `${text.slice(0, Math.max(1, width - 1))}…`;
-}
-
 function formatAgentTable(rows) {
   const list = Array.isArray(rows) ? rows : [rows];
   if (!list.length) return 'No agents.';
-  const values = list.map((row) => AGENT_TABLE_COLUMNS.map((column) => agentTableValue(row, column.key)));
-  const widths = AGENT_TABLE_COLUMNS.map((column, index) => Math.min(
-    column.max,
-    Math.max(column.label.length, ...values.map((row) => row[index].length)),
-  ));
-  const header = AGENT_TABLE_COLUMNS.map((column, index) => fitTableCell(column.label, widths[index])).join('  ');
-  const divider = widths.map((width) => '-'.repeat(width)).join('  ');
-  const body = values.map((row) => row.map((value, index) => fitTableCell(value, widths[index])).join('  '));
-  return [header, divider, ...body].join('\n');
+  return formatTable(AGENT_TABLE_COLUMNS, list);
 }
 
 /**

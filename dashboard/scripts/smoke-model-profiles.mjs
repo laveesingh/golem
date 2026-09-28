@@ -100,7 +100,8 @@ try {
   await page.waitForTimeout(300);
   check('profile edit persists thinking level', (await card.innerText()).includes('thinking · max'));
 
-  const reviewer = page.locator('.role-editor-card', { hasText: 'reviewer' }).first();
+  // The card that holds the reviewer dropdown; other role cards can mention reviewers in their text.
+  const reviewer = page.locator('.role-editor-card').filter({ has: page.locator('#role-reviewer-default-profile') });
   await reviewer.locator('#role-reviewer-default-profile').click();
   await reviewer.locator('.model-profile-choice-option', { hasText: 'Browser Profile' }).click();
   await reviewer.getByRole('button', { name: 'Save default' }).click();
@@ -139,6 +140,14 @@ try {
   const stored = await fetch(`${base}/api/model-profiles`).then((response) => response.json());
   const storedClaude = (stored.profiles ?? stored).find?.((row) => row.name === 'Claude Profile');
   check('claude profile persists with harness claude and no provider', storedClaude?.harness === 'claude' && storedClaude?.provider == null, JSON.stringify(storedClaude));
+
+  // A Claude profile has no provider; its role-dropdown mark resolves from the
+  // model, like its card does.
+  await reviewer.locator('#role-reviewer-default-profile').click();
+  const claudeOption = reviewer.locator('.model-profile-choice-option', { hasText: 'Claude Profile' });
+  check('claude profile option shows its mark in the role dropdown', await claudeOption.locator('.model-profile-mark').count() === 1);
+  await claudeOption.click();
+  check('chosen claude profile shows its mark on the closed dropdown', await reviewer.locator('#role-reviewer-default-profile .model-profile-mark').count() === 1);
 } catch (error) {
   failures++;
   console.log(`[FAIL] unexpected browser journey error — ${error?.stack || error}`);

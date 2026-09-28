@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-// GOL-387 browser journey: Share control on isolated dashboard (no real tunnel;
-// PATH hides cloudflared so Share surfaces an actionable error, never a public
-// deployment) + public reader isolation via a direct grant + loopback server.
+// GOL-394 browser journey: read-link Share control on an isolated dashboard
+// (no real tunnel; PATH hides cloudflared so a real Share surfaces an
+// actionable error, never a public deployment). Covers: spec shows Share,
+// task does not; reader shows Share; real Share errors actionably; stubbed
+// read-link renders with Copy + exposure/DNS notes; Stop confirms with the
+// tunnel message and clears; Stop shows while active even with no URL.
 // Avoids port 7420 and the shared dashboard throughout.
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
@@ -94,111 +97,80 @@ try {
   await page.waitForSelector('.td-title-row [data-testid="share-control"] .td-share-btn', { timeout: 15000 });
   ok(true, 'local reader header shows Share');
 
-  // Share click surfaces an actionable error (no binary, no silent bypass).
+  // Real Share click surfaces an actionable error (no binary, no silent bypass).
   await page.click('[data-testid="share-control"] .td-share-btn');
   await page.waitForSelector('[data-testid="share-control"] .td-share-pop', { timeout: 15000 });
   await page.waitForSelector('[data-testid="share-control"] .ct-error', { timeout: 20000 });
   const errText = await page.textContent('[data-testid="share-control"] .ct-error');
-  ok(/cloudflared|tunnel|paused|retire/i.test(errText || ''), `Share error state actionable (${(errText || '').slice(0, 80)})`);
+  ok(/cloudflared|tunnel/i.test(errText || ''), `Share error state actionable (${(errText || '').slice(0, 80)})`);
 
-  // Clipboard failure path: stub shareTicket to a fake link, break clipboard,
-  // then Copy must show the manual fallback (no silent swallow). Stub AFTER
-  // navigation (a goto clears page JS).
+  // Stubbed read-link: renders with Copy + exposure + DNS-lag notes.
+  const fakeLink = `https://stub-host.trycloudflare.com/read/${spec.display_id}`;
   await page.goto(`${base}/read/${encodeURIComponent(spec.id)}`, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-testid="share-control"] .td-share-btn', { timeout: 15000 });
-  await page.evaluate(() => {
-    window.__fakeLink = 'https://stub-trycloudflare.test/s/stubtoken123';
-    window.SubstrateAPI.shareTicket = async () => ({ url: window.__fakeLink, shared: true });
-    window.SubstrateAPI.unshareTicket = async () => ({ revoked: true, shared: false });
-  });
+  await page.evaluate((link) => {
+    window.__fakeLink = link;
+    window.SubstrateAPI.shareTicket = async () => ({ url: window.__fakeLink, hostname: 'stub-host.trycloudflare.com', display_id: 'stub' });
+    window.SubstrateAPI.unshareTicket = async () => ({ stopped: true, already_stopped: false });
+  }, fakeLink);
   await page.click('[data-testid="share-control"] .td-share-btn');
   await page.waitForSelector('[data-testid="share-control"] .td-share-link', { timeout: 15000 });
   const linkVal = await page.inputValue('[data-testid="share-control"] .td-share-link');
-  ok(linkVal === 'https://stub-trycloudflare.test/s/stubtoken123', 'stubbed link renders in popover');
+  ok(linkVal === fakeLink, 'stubbed read-link renders in popover');
+  const popText = await page.textContent('[data-testid="share-control"] .td-share-pop');
+  ok(/Anyone with this link can open and edit the whole dashboard while sharing is on/.test(popText || ''), 'exposure warning shown');
+  ok(/up to a minute to resolve/.test(popText || ''), 'DNS-lag note shown');
+
+  // Copy success path.
+  await page.evaluate(() => {
+    window.__copied = null;
+    Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: async (t) => { window.__copied = t; } }, configurable: true });
+  });
+  await page.click('[data-testid="share-control"] .td-share-pop .orch-btn.small');
+  await page.waitForSelector('[data-testid="share-control"] .td-share-copied', { timeout: 10000 });
+  ok((await page.evaluate(() => window.__copied)) === fakeLink, 'Copy writes the read-link to the clipboard');
+
+  // Clipboard failure path: manual fallback, no silent swallow.
   await page.evaluate(() => {
     Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: async () => { throw new Error('denied'); } }, configurable: true });
   });
-  await page.click('[data-testid="share-control"] .td-share-pop .orch-btn.small');
-  await page.waitForSelector('[data-testid="share-control"] .ct-error', { timeout: 10000 });
+  const copyBtns = await page.$$('[data-testid="share-control"] .td-share-pop .orch-btn.small');
+  await copyBtns[0].click();
+  await page.waitForSelector('[data-testid="share-control"] .td-share-pop .ct-error', { timeout: 10000 });
   const copyErr = await page.textContent('[data-testid="share-control"] .td-share-pop');
   ok(/Copy failed/.test(copyErr || ''), 'clipboard failure shows manual fallback');
-  // Stop sharing clears the link (stubbed revoke).
-  const buttons = await page.$$(' [data-testid="share-control"] .td-share-pop .orch-btn');
-  // Second button in the row is Stop sharing.
-  await buttons[buttons.length - 1].click();
-  await pause(800);
+
+  // Stop sharing confirms with the tunnel message, then clears the link.
+  let dialogMessage = null;
+  page.on('dialog', async (d) => { dialogMessage = d.message(); await d.accept(); });
+  const rowBtns = await page.$$('[data-testid="share-control"] .td-share-pop .orch-btn');
+  await rowBtns[rowBtns.length - 1].click();
+  await pause(1000);
+  ok(dialogMessage === 'Stops the tunnel. Every shared link stops working.', `stop confirms the tunnel message (got: ${(dialogMessage || '').slice(0, 60)})`);
   ok((await page.$('[data-testid="share-control"] .td-share-link')) === null, 'Stop sharing clears the link');
 
-  // GOL-388 unsafe UI: network-level unsafe status + 409s (no API stubs —
-  // page.route rewrites the real responses, so the real component paths run).
-  // No bearer link may render even though the grant exists server-side.
+  // Active-but-no-URL still offers Stop (R7): stub only the GET status.
   await page.route('**/api/tickets/*/share', (route) => {
-    const method = route.request().method();
-    if (method === 'GET') {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ shared: true, shareable: true, unsafe: true, url: null }) });
+    if (route.request().method() === 'GET') {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ shareable: true, active: true, url: null, uncertain: false }) });
     } else {
-      route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'Sharing is paused while the old dashboard tunnel runs. Retire it, then try again.', code: 'UNSAFE_ADMIN_TUNNEL' }) });
+      route.continue();
     }
   });
   await page.goto(`${base}/read/${encodeURIComponent(spec.id)}`, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-testid="share-control"] .td-share-btn', { timeout: 15000 });
+  const activeLabel = await page.textContent('[data-testid="share-control"] .td-share-btn');
+  ok(/Shared/.test(activeLabel || ''), 'active tunnel labels the button Shared');
   await page.click('[data-testid="share-control"] .td-share-btn');
   await page.waitForSelector('[data-testid="share-control"] .td-share-pop', { timeout: 15000 });
   await pause(800);
-  ok((await page.$('[data-testid="share-control"] .td-share-link')) === null, 'unsafe status renders no bearer link');
-  const pausedText = await page.textContent('[data-testid="share-control"] .td-share-pop');
-  ok(/paused while the old dashboard tunnel runs/i.test(pausedText || ''), 'unsafe pause message shown, not silent');
-  const getBtn = await page.$('[data-testid="share-control"] .td-share-pop .orch-btn.small');
-  ok(getBtn && await getBtn.isDisabled(), 'URL generation disabled while unsafe');
-  await page.unroute('**/api/tickets/*/share');
-  // Indeterminate safety check: distinct honest message, still no link.
-  await page.route('**/api/tickets/*/share', (route) => {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ shared: true, shareable: true, unsafe: true, uncertain: true, url: null }) });
-  });
-  await page.goto(`${base}/read/${encodeURIComponent(spec.id)}`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('[data-testid="share-control"] .td-share-btn', { timeout: 15000 });
-  await page.click('[data-testid="share-control"] .td-share-btn');
-  await page.waitForSelector('[data-testid="share-control"] .td-share-pop', { timeout: 15000 });
-  await pause(800);
-  ok((await page.$('[data-testid="share-control"] .td-share-link')) === null, 'indeterminate check renders no bearer link');
-  const uncertainText = await page.textContent('[data-testid="share-control"] .td-share-pop');
-  ok(/safety check failed/.test(uncertainText || ''), 'indeterminate shows honest retry text, not pause text');
+  ok((await page.$('[data-testid="share-control"] .td-share-link')) === null, 'no link renders when url is null');
+  const stopBtn = await page.$('[data-testid="share-control"] .td-share-pop .orch-btn');
+  const stopLabel = stopBtn ? await stopBtn.textContent() : '';
+  ok(/Stop sharing/.test(stopLabel || ''), 'Stop offered while active even with no URL');
   await page.unroute('**/api/tickets/*/share');
 
-  // Public reader isolation: direct grant + loopback public server (no tunnel).
-  const { openTrackerDb } = await import('../server/tracker-db.js');
-  const { createSharePublicServer } = await import('../server/share-public.js');
-  const pubDb = path.join(scratch, 'pub.db');
-  const pubTracker = openTrackerDb(pubDb);
-  const pubSpec = pubTracker.createTicket({ project_id: proj, kind: 'spec', title: 'Public Isolation', body: '# Pub\n\nBody.', state: 'todo' });
-  const pubGrant = pubTracker.createShareGrant(pubSpec.id);
-  const pubSrv = createSharePublicServer({
-    tracker: pubTracker,
-    assetsDir: path.join(scratch, 'assets-nope'),
-    mermaidBundlePath: path.join(repo, 'dashboard', 'dist', 'share-mermaid.mjs'),
-  });
-  const pubPort = await pubSrv.listen(0);
-  await page.goto(`http://127.0.0.1:${pubPort}/s/${pubGrant.token}`, { waitUntil: 'networkidle' });
-  const pubHtml = await page.content();
-  ok(pubHtml.includes('Public Isolation'), 'public reader renders title/body');
-  ok((await page.$('.td-edit-btn')) === null, 'public reader has no Edit');
-  ok((await page.$('[data-testid="share-control"]')) === null, 'public reader has no Share control');
-  ok((await page.$('.td-children')) === null, 'public reader has no children panel');
-  ok((await page.$('textarea')) === null, 'public reader has no comment composer');
-  ok(!pubHtml.includes('/api/snapshot'), 'public reader has no dashboard bundle refs');
-  ok(!pubHtml.includes('share-ref'), 'public reader omits display-id ref (title/body only)');
-
-  // GOL-388 fix 5: fenced diagram renders to SVG via the isolated bundle.
-  const mmdSpec = pubTracker.createTicket({ project_id: proj, kind: 'spec', title: 'Public Diagram', body: '# Diagram\n\n```mermaid\nflowchart LR\n  A-->B\n```\n', state: 'todo' });
-  const mmdGrant = pubTracker.createShareGrant(mmdSpec.id);
-  await page.goto(`http://127.0.0.1:${pubPort}/s/${mmdGrant.token}`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('div.mermaid svg', { timeout: 20000 });
-  ok(true, 'public reader renders diagram SVG (isolated bundle)');
-  const mmdHtml = await page.content();
-  ok(!mmdHtml.includes('language-mermaid'), 'no raw code fence left for diagrams');
-  await pubSrv.close();
-  pubTracker.close();
-  ok(true, 'public reader isolation verified without a tunnel');
+  ok(true, 'read-link share journey verified without a tunnel');
 } finally {
   if (chrome) await chrome.cleanup().catch(() => {});
   await stopChild(server);
