@@ -14,14 +14,14 @@ single writer; hooks, shims, and MCP tools connect live sessions to it.
 | Harness | Current support | Start with |
 | --- | --- | --- |
 | Claude Code | Tier A development-channel delivery; plain `claude` can pull work only | `golem claude` |
-| Pi | Tier A worker with typed delivery; Node.js 22.19+ and Pi 0.85.1 | `golem pi` |
+| Pi | Tier A worker with typed delivery; tested baseline Pi 0.99.1 and Node.js 22.19+ | `golem pi` |
 | Gemini CLI | Unsupported; no adapter or release contract is shipped | — |
 
 The built-in roles are `lead`, `builder`, `explorer`, and `reviewer`.
 
 ## Requirements
 
-- Golem requires Node.js 22.19 or newer and npm. Pi uses the pinned `@earendil-works/pi-coding-agent` 0.85.1 release.
+- Use Node.js 22.19 or newer and npm. The tested Pi baseline is `@earendil-works/pi-coding-agent` 0.99.1. Other Pi versions and older Node versions warn before a launch attempt; actual runtime errors still fail.
 - Git.
 - At least one supported coding harness installed separately.
 
@@ -60,16 +60,15 @@ golem claude
 `golem claude` supplies Claude Code's development-channel launch. A plain
 `claude` session has Golem tools but must pull work. After a render update, run
 `claude plugin update golem@golem-workspace` and `/reload-plugins` in existing
-sessions.
-
-
-
-
-
+sessions. Reloading does not replace an already-running channel MCP process;
+restart that process deliberately to load changed channel code. Bedrock, Vertex,
+Foundry and custom API endpoints are unverified configurations, not automatic
+push prohibitions. MCP initialization and actual transport failures remain
+separate from compatibility warnings.
 
 ### Pi
 
-Install the supported Pi release separately, then render and launch a native
+Install the tested Pi baseline separately, then render and launch a native
 Pi session:
 
 ```sh

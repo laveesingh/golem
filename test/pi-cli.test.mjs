@@ -36,7 +36,7 @@ const fakePi = path.join(bin, 'pi');
 fs.writeFileSync(fakePi, `#!${process.execPath}
 const fs = require('node:fs');
 if (process.argv.length === 3 && process.argv[2] === '--version') {
-  process.stdout.write((process.env.GOLEM_FAKE_PI_VERSION || '0.84.3') + '\\n');
+  process.stdout.write((process.env.GOLEM_FAKE_PI_VERSION || '0.99.1') + '\\n');
   process.exit(0);
 }
 fs.writeFileSync(process.env.GOLEM_PI_CAPTURE, JSON.stringify({
@@ -132,7 +132,9 @@ try {
   assert.equal(record.cwd, fs.realpathSync(project));
   assert.equal(record.profile, normalProfile, 'golem pi preserves Pi\'s profile selection');
   assert.equal(record.sessions, normalSessions, 'golem pi preserves Pi\'s session selection');
-  assert.equal(record.pi_version, '0.84.3');
+  assert.equal(record.pi_version, '0.99.1');
+  assert.doesNotMatch(launched.stderr, /WARN: Golem tested on Pi/);
+  assert.equal(launched.stdout, '', 'diagnostics never pollute native machine-readable stdout');
   assert.match(record.extension_version, /^5\./);
   assert.match(record.launch_nonce, /^[0-9a-f-]{36}$/);
   assert.equal(record.args.includes('--no-extensions'), false, 'native Pi extension discovery remains enabled');
@@ -163,21 +165,37 @@ try {
   assert.equal(Object.hasOwn(defaultRecord, 'profile'), false, 'golem pi does not inject a profile override');
   assert.equal(Object.hasOwn(defaultRecord, 'sessions'), false, 'golem pi does not inject a session override');
 
-  const nonStandardVersion = run(['pi'], { ...baseEnv, GOLEM_FAKE_PI_VERSION: '0.84.3' });
-  assert.equal(nonStandardVersion.status, 0, nonStandardVersion.stderr);
-  assert.equal(JSON.parse(fs.readFileSync(capture, 'utf8')).pi_version, '0.84.3');
+  for (const version of ['0.84.3', '0.85.1', '0.100.0', '1.0.0']) {
+    const nonStandardVersion = run(['pi'], { ...baseEnv, GOLEM_FAKE_PI_VERSION: version });
+    assert.equal(nonStandardVersion.status, 0, nonStandardVersion.stderr);
+    assert.match(nonStandardVersion.stderr, /WARN: Golem tested on Pi 0\.99\.1.*continuing/);
+    assert.equal(nonStandardVersion.stdout, '');
+    assert.equal(JSON.parse(fs.readFileSync(capture, 'utf8')).pi_version, version);
+  }
 
   const wrongNodeRunner = path.join(temp, 'wrong-node.mjs');
   fs.writeFileSync(wrongNodeRunner, `Object.defineProperty(process.versions, 'node', { value: '22.18.0' });\nawait import(${JSON.stringify(cli)});\n`);
   const wrongNode = spawnSync(process.execPath, [wrongNodeRunner, 'pi'], {
     cwd: project, env: baseEnv, encoding: 'utf8',
   });
-  assert.equal(wrongNode.status, 1, wrongNode.stderr);
-  assert.match(wrongNode.stderr, /requires Node\.js >=22\.19; running 22\.18\.0/);
+  assert.equal(wrongNode.status, 0, wrongNode.stderr);
+  assert.match(wrongNode.stderr, /WARN: Golem tested on Node\.js >=22\.19; running 22\.18\.0 is unverified.*continuing launch attempt/);
+  assert.equal(wrongNode.stdout, '');
+  assert.equal(JSON.parse(fs.readFileSync(capture, 'utf8')).pi_version, '0.99.1', 'old Node policy still attempts the real launch path');
 
   const missing = run(['pi'], { ...baseEnv, PATH: path.join(temp, 'missing-bin') });
   assert.equal(missing.status, 1, missing.stderr);
   assert.match(missing.stderr, /could not find the 'pi' executable/);
+
+  const probeFailBin = path.join(temp, 'probe-failure'); fs.mkdirSync(probeFailBin);
+  fs.writeFileSync(path.join(probeFailBin, 'pi'), `#!${process.execPath}\nprocess.stderr.write('native version probe failed\\n'); process.exit(7);\n`, { mode: 0o700 });
+  const probeFailed = run(['pi'], { ...baseEnv, PATH: probeFailBin });
+  assert.equal(probeFailed.status, 1); assert.match(probeFailed.stderr, /native version probe failed/);
+  const spawnFailBin = path.join(temp, 'spawn-failure'); fs.mkdirSync(spawnFailBin);
+  const disappears = path.join(spawnFailBin, 'pi');
+  fs.writeFileSync(disappears, `#!${process.execPath}\nrequire('node:fs').unlinkSync(__filename); process.stdout.write('0.99.1\\n');\n`, { mode: 0o700 });
+  const spawnFailed = run(['pi'], { ...baseEnv, PATH: spawnFailBin });
+  assert.equal(spawnFailed.status, 1); assert.match(spawnFailed.stderr, /could not start Pi.*ENOENT/);
 
   const failed = run(['pi'], { ...baseEnv, GOLEM_FAKE_PI_EXIT: '17' });
   assert.equal(failed.status, 17, failed.stderr);

@@ -15,6 +15,7 @@
 import { CONFIG } from './config.js';
 import { channelDeliveryError, isChannelDeliveryReady, isTypedWorkerChannel, readChannels } from './channels.js';
 import { TYPED_WORKER_PROTOCOL_VERSION, typedEnvelopeMetadata } from '../../lib/typed-worker-endpoint.js';
+import { channelCompatibilityWarnings } from '../../lib/runtime-compatibility.js';
 
 // Issue #34 (GOL-296): the typed channel endpoint now accepts instantly in
 // every session state (the adapter queues natively and injects at the next
@@ -58,7 +59,8 @@ async function forward(method, pathSuffix, body, sessionId, metadata = null) {
   // GOL-365: Pi and Claude are the only harnesses. Registrations keep their
   // channel-presence behaviour through isChannelDeliveryReady().
   if (!isChannelDeliveryReady(channel)) {
-    return { ok: false, status: 503, body: '', error: channelDeliveryError(channel), target: baseUrl, failure_stage: 'before_native', retryable: true };
+    return { ok: false, status: 503, body: '', error: channelDeliveryError(channel), target: baseUrl, failure_stage: 'before_native', retryable: true,
+      compatibility_warnings: channelCompatibilityWarnings(channel) };
   }
   const url = `${baseUrl.replace(/\/$/, '')}${pathSuffix}`;
   const headers = { 'X-Sender': 'dashboard' };
@@ -97,6 +99,7 @@ async function forward(method, pathSuffix, body, sessionId, metadata = null) {
     let parsed = null;
     try { parsed = JSON.parse(text); } catch {}
     return { ok: resp.ok && parsed?.ok !== false, status: resp.status, body: text, target: baseUrl,
+      compatibility_warnings: channelCompatibilityWarnings(channel),
       typed_worker: isTypedWorkerChannel(channel),
       ...(typeof parsed?.error === 'string' ? { error: parsed.error } : {}),
       ...(typeof parsed?.code === 'string' ? { code: parsed.code } : {}),
@@ -106,6 +109,7 @@ async function forward(method, pathSuffix, body, sessionId, metadata = null) {
   } catch (err) {
     const refused = ['ECONNREFUSED', 'ENOTFOUND'].includes(err?.cause?.code ?? err?.code);
     return { ok: false, status: 0, body: '', error: String(err?.message ?? err), target: baseUrl,
+      compatibility_warnings: channelCompatibilityWarnings(channel),
       failure_stage: refused ? 'before_native' : 'after_native', retryable: refused };
   } finally {
     clearTimeout(timer);

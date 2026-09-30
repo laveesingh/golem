@@ -581,16 +581,26 @@ async function main() {
     },
     stderr: 'pipe',
   });
-  unsupportedCcMcpTransport.stderr?.on('data', (d) => process.stderr.write(`[unsupported-cc:err] ${d}`));
+  let providerStderr = '';
+  unsupportedCcMcpTransport.stderr?.on('data', (d) => { providerStderr += d; process.stderr.write(`[provider-cc:err] ${d}`); });
   await unsupportedCcMcpClient.connect(unsupportedCcMcpTransport);
   const unsupportedChannel = await waitForChannelEntry(
     unsupportedCcId,
     15_000,
-    (channel) => channel.consumer_reason === 'unsupported_custom_base_url',
+    (channel) => channel.consumer_initialized === true && channel.compatibility?.status === 'unverified',
   );
-  check('custom-provider CC stays explicitly ineligible after MCP initialization',
-    unsupportedChannel.consumer_ready === false && unsupportedChannel.delivery_ready === false,
+  check('fresh custom-provider CC is initialized/eligible with observable advisory evidence',
+    unsupportedChannel.consumer_initialized === true && unsupportedChannel.consumer_ready === true && unsupportedChannel.delivery_ready === true
+      && unsupportedChannel.compatibility?.warnings?.some(w => w.code === 'CLAUDE_CHANNEL_PROVIDER_UNVERIFIED'),
     JSON.stringify(unsupportedChannel));
+  check('provider warning is stderr-only and does not corrupt MCP framing', providerStderr.includes('WARN CLAUDE_CHANNEL_PROVIDER_UNVERIFIED'), providerStderr);
+  const providerBrief = await fetch(`http://${unsupportedChannel.host}:${unsupportedChannel.port}/brief`, {
+    method: 'POST', headers: { 'X-Sender': 'dashboard', 'Content-Type': 'text/plain' }, body: 'Initialized custom-provider push attempt',
+  });
+  const providerReceipt = await providerBrief.json();
+  check('initialized provider configuration attempts normal native channel push', providerBrief.status === 202 && providerReceipt.compatibility_warnings?.length === 1, JSON.stringify(providerReceipt));
+  await sleep(50);
+  check('normal native notification reaches the real MCP SDK client (not a Claude consumption claim)', unsupportedCcNotifications.some(n => n.params.content === 'Initialized custom-provider push attempt'), JSON.stringify(unsupportedCcNotifications));
   check('channel metadata persists no provider URL or auth secret',
     !/11434|ANTHROPIC_(?:BASE_URL|API_KEY|AUTH_TOKEN)/.test(JSON.stringify(unsupportedChannel)),
     JSON.stringify(unsupportedChannel));
@@ -619,9 +629,10 @@ async function main() {
   ] }));
   await sleep(3_500);
   const readinessFilteredDispatchables = await client.listDispatchable('trialroomai');
-  check('dashboard dispatchability keeps supported CC and excludes unsupported-provider CC',
+  check('dashboard dispatchability keeps initialized provider CC with compatibility warnings',
     readinessFilteredDispatchables.some((row) => row.session_id === ccFallbackId)
-      && !readinessFilteredDispatchables.some((row) => row.session_id === unsupportedCcId),
+      && readinessFilteredDispatchables.some((row) => row.session_id === unsupportedCcId && row.delivery_ready === true
+        && row.compatibility_warnings?.some(w => w.code === 'CLAUDE_CHANNEL_PROVIDER_UNVERIFIED')),
     JSON.stringify(readinessFilteredDispatchables));
 
 

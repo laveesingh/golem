@@ -34,6 +34,18 @@ npx golem <command>
 | `golem schedule cancel <id> [--human] [--json]` | Stop future emission; it cannot recall an in-flight occurrence or cancel a task. |
 | `golem help` | Show usage. |
 
+## Runtime compatibility
+
+Pi 0.99.1 and Node.js 22.19+ are the tested baseline. `golem pi` warns on
+other versions, then attempts the normal launch. Missing executables/renders,
+process failures, invalid arguments and actual protocol errors still fail.
+Warnings go to stderr, not machine-readable stdout.
+
+Claude provider configuration is advisory. An initialized native channel can
+attempt delivery with Bedrock, Vertex, Foundry or a custom API endpoint; actual
+native rejection remains a failure. Legacy provider labels do not prove MCP
+initialization. Old channel processes may still refuse until restarted.
+
 ## Notification workflow
 
 Run `golem agent notify --help` for the input and exit contracts. File `-` reads
@@ -52,6 +64,11 @@ request ID and content/timing. A fresh ID means a new message. Exit0 means durab
 admission, never job completion; exit3 means uncertainty. The CLI checks server
 idempotency support before sending, so an older dashboard cannot silently ignore
 the request ID. Existing notify tools remain compatible during the staged cutover.
+
+Schedule occurrence receipts expose `compatibility_warnings` separately from
+delivery state. Warnings are not native receipt, consumption or work completion.
+Cancelled, ended and historical blocked schedules are not automatically revived
+by a compatibility-policy update.
 
 ## Removed v3 commands
 
