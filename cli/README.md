@@ -86,6 +86,25 @@ IDs; retry resumes instead of guessing resources or duplicating completed work.
 All mutations and attach support `--dry-run`; positional name and `--session`
 must agree. Stable association tombstones make repeated close a no-op.
 
+## Logical team controls
+
+`team inspect <team>` shows canonical owner/members, actual workspace and native
+availability. `team focus` selects that exact existing workspace; `team attach`
+then opens its session UI. Neither creates missing resources.
+
+`team rename <team> <label>` changes logical label/slug and workspace display;
+IDs, ownership and agent handles remain stable. A failed display update returns
+exit1 with the committed logical name and retryable pending label.
+`team join <team> --agent ID [--owner]` transfers canonical responsibility only;
+previous owners remain members. `team leave [team] --agent ID` removes membership
+without moving/stopping the conversation; repeated leave is a no-op.
+
+`team adopt <label> --workspace ID [--project P] [--session S]` records an exact
+existing workspace under an owned runtime. It never searches native labels or
+steals another team's workspace. Team close continues independent agent stops,
+reports each failure, and retains foreign/transferred/unmanaged native activity.
+All new mutations and UI controls accept read-only `--dry-run` plans.
+
 ## Runtime compatibility
 
 Pi 0.99.1 and Node.js 22.19+ are the tested baseline. `golem pi` warns on

@@ -7,7 +7,9 @@
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
 import { NotificationError } from '../lib/notification-contract.js';
 import { formatTable } from '../lib/cli-table.js';
-import { createTeam, findTeam, joinTeam, listTeams, closeTeam } from '../lib/team-registry.js';
+import { createTeam, findTeam, joinTeam, leaveTeam, slugifyTeamLabel, closeTeam } from '../lib/team-registry.js';
+import { workspaceList, workspaceFocus, workspaceRename, sessionAttach } from '../lib/herdr-driver.js';
+import { teamNativeEvidence, focusManagedTeam, renameManagedTeam, adoptManagedTeam } from '../lib/management-team.js';
 import { activeWorkerStates, listWorkers } from '../lib/worker-registry.js';
 import { killWorker } from '../lib/worker-manager.js';
 import { readSessionFacts } from '../lib/session-facts.js';
@@ -47,10 +49,10 @@ const commands = {
     ].join('\n') },
   'team join': { flags: { '--owner': 'bool', '--project': 'value', '--json': 'bool' }, args: 1,
     help: [
-      'golem team join <team> [--owner] [--project <id-or-path>] [--json]',
+      'golem team join <team> [--agent ID] [--owner] [--project <id-or-path>] [--json]',
       '',
-      'Usage: put the calling bound session in one team (by id or slug) as a member, or as its owner with --owner (the previous owner stays a member). The session leaves any other open team: a session is in at most one open team. Its team is where `golem agent create` starts agents and what `golem agent list` shows by default.',
-      'Input: the team id or slug. Only a bound session may run it. Exit codes: 0 joined, 1 operational failure, 2 invalid input/context.',
+      'Usage: put --agent ID or caller self in one team (by id or slug), as a member or owner with --owner. The previous owner stays a member. Canonical membership transfers from any previous open team without changing role or physical placement.',
+      'Input: the team id or slug; --agent ID targets a registered conversation, otherwise caller self. Membership changes no role or pane placement. Exit codes: 0 joined, 1 operational failure, 2 invalid input/context.',
       'Examples:',
       '  golem team join blue-team           # join the blue team',
       '  golem team join blue-team --owner   # take ownership of the blue team',
@@ -66,9 +68,18 @@ const commands = {
     ].join('\n') },
 };
 
+for (const [verb, args, flags, description] of [
+  ['inspect', [0, 1], {}, 'Read canonical membership, exact workspace, capabilities and conflicts; never create native resources.'],
+  ['focus', [0, 1], {}, 'Focus the exact recorded existing workspace; no creation or UI-focus inference.'],
+  ['attach', [0, 1], {}, 'Focus the exact workspace, then open its native session UI; no creation.'],
+  ['rename', 2, {}, 'Change logical label/slug and native display label. IDs, ownership and agent handles stay stable; native failure is partial and retryable.'],
+  ['leave', [0, 1], { '--agent': 'value' }, 'Leave the named or target conversation\'s canonical team. No role, placement or process change; repeated leave is a no-op.'],
+  ['adopt', 1, { '--workspace': 'value' }, 'Associate the label with an exact existing native workspace in an owned project/session. Foreign ownership conflicts; never adopt by native label.'],
+]) commands[`team ${verb}`] = { args, flags: { ...flags, '--json': 'bool' }, help: `golem team ${verb} ${verb === 'rename' ? '<team> <label>' : verb === 'adopt' ? '<label> --workspace ID' : '[team]'} [--json]\n\n${description}\nExit0 completed/no-op, exit2 invalid scope, exit1 runtime/partial failure.` };
+
 for (const [key, command] of Object.entries(commands)) {
   Object.assign(command.flags, MANAGEMENT_SELECTOR_FLAGS);
-  if (key !== 'team list') command.flags['--dry-run'] = 'bool';
+  if (!['team list', 'team inspect'].includes(key)) command.flags['--dry-run'] = 'bool';
   if (key === 'team list') command.flags['--scope'] = 'value';
   if (['team join', 'team close'].includes(key)) command.args = [0, 1];
   command.help += '\nSelectors: --project P --team T --session S --caller ID. Mutations accept --dry-run.';
@@ -128,6 +139,8 @@ function teamView(team, workerCount) {
     members: (team.member_session_ids ?? []).map((sessionId) => ({ session_id: sessionId, name: sessionName(sessionId) })),
     agent_count: workerCount,
     state: team.closed_at == null ? 'open' : 'closed',
+    lifecycle: team.lifecycle ?? (team.closed_at == null ? 'open' : 'closed'),
+    generation: team.generation ?? 0,
     herdr_session: team.herdr_session,
     herdr_workspace_id: team.herdr_workspace_id,
     created_at: team.created_at,
@@ -169,7 +182,9 @@ export async function runTeam(family, args, {
   stderr = (text) => process.stderr.write(`${text}\n`),
   cwd = process.cwd(),
   resolveContext = resolveCliSessionContext,
-  herdr = { ensureProjectSession, createTeamWorkspace, closeTeamWorkspace, projectHerdrSession, unmanagedAgentPanes },
+  workers = { listWorkers, killWorker },
+  herdr = { ensureProjectSession, createTeamWorkspace, closeTeamWorkspace, projectHerdrSession, unmanagedAgentPanes,
+    workspaceList, workspaceFocus, workspaceRename, sessionAttach },
   ...collector
 } = {}) {
   let resolution = null;
@@ -181,7 +196,8 @@ export async function runTeam(family, args, {
     const { key, options: o, positional } = parsed;
     if (o['--scope'] && !['team', 'project', 'all'].includes(o['--scope'])) throw new NotificationError(`invalid scope: ${o['--scope']}`);
     const query = await managementQuery({ operation: key, kind: 'team', options: key === 'team list' ? { '--scope': 'project', ...o } : o,
-      target: ['team join', 'team close'].includes(key) ? positional[0] : null, cwd, resolveContext, ...collector });
+      target: !['team create', 'team adopt', 'team list'].includes(key) ? positional[0] : null,
+      memberTarget: o['--agent'] ?? o['--caller'] ?? null, cwd, resolveContext, ...collector });
     resolution = query.resolution;
     let member = null;
     if (key === 'team join') {
@@ -192,7 +208,12 @@ export async function runTeam(family, args, {
         resolution.corrected_command = `golem team join ${resolution.team_id ?? '<team-id>'} --agent <exact-conversation-id>`;
       } else { resolution.member_session_id = member; resolution.provenance.member_session_id = o['--agent'] ? 'explicit-agent' : o['--caller'] ? 'explicit-caller' : 'caller-agent'; }
     }
-    const dry = writeDryRun(query, o, stdout, { label: key === 'team create' ? positional[0] : undefined, member_session_id: member, owner: !!o['--owner'] });
+    if (key === 'team leave') member = resolution.member_session_id;
+    if (['team create', 'team rename', 'team adopt'].includes(key)) slugifyTeamLabel(positional[key === 'team rename' ? 1 : 0]);
+    if (key === 'team adopt' && !o['--workspace']) { resolution.ok = false; resolution.missing.push({ field: 'workspace', message: 'team adopt requires --workspace <exact-id>' }); }
+    const physical = key === 'team adopt' ? { herdr_session: resolution.session, herdr_workspace_id: o['--workspace'] } : query.evidence.teams.find(t => t.team_id === resolution.team_id);
+    const capability = ['team inspect', 'team focus', 'team attach', 'team rename', 'team adopt'].includes(key) ? await teamNativeEvidence(physical, herdr) : null;
+    const dry = writeDryRun(query, o, stdout, { label: ['team create', 'team adopt'].includes(key) ? positional[0] : key === 'team rename' ? positional[1] : undefined, member_session_id: member, owner: !!o['--owner'], ...(capability ? { capability } : {}), ...(o['--workspace'] ? { workspace_id: o['--workspace'] } : {}) });
     if (dry != null) return dry;
     requireManagementResolution(resolution);
     const projectId = resolution.project_id;
@@ -207,6 +228,27 @@ export async function runTeam(family, args, {
       }
       stdout(views.length ? formatTable(TEAM_TABLE_COLUMNS, views.map(teamTableRow)) : 'No teams.');
       return 0;
+    }
+
+    const controlOutput = result => {
+      const { team, ...outcome } = result;
+      stdout(json ? JSON.stringify({ ...(team ? teamView(team, agentCountFor(team.team_id, projectId)) : {}), ...outcome, resolution }) : result.error ?? `team ${team?.slug ?? ''} ${key.split(' ')[1]}${result.noop ? ' (no-op)' : ''}`);
+      return result.ok === false ? 1 : 0;
+    };
+    if (key === 'team inspect') {
+      const team = physical;
+      const members = [team.owner_session_id, ...team.member_session_ids].filter(Boolean);
+      return controlOutput({ team, capabilities: { inspect: { state: 'available', reason: 'canonical snapshot' }, focus: capability, attach: capability },
+        conversations: query.evidence.agents.filter(a => members.includes(a.session_id)),
+        pending_native_label: team.pending_native_label ?? null,
+        conflicts: query.evidence.snapshot?.plan.projects[team.project_id]?.conflicts ?? [] });
+    }
+    if (['team focus', 'team attach'].includes(key)) return controlOutput(await focusManagedTeam(physical, { native: herdr, attach: key === 'team attach', json }));
+    if (key === 'team rename') return controlOutput(await renameManagedTeam(resolution.team_id, positional[1], { native: herdr }));
+    if (key === 'team adopt') return controlOutput(await adoptManagedTeam(positional[0], { projectId, session: resolution.session, workspaceId: o['--workspace'], native: herdr }));
+    if (key === 'team leave') {
+      const result = leaveTeam(member, { teamId: resolution.team_id });
+      return controlOutput({ ok: true, ...result, noop: result.left.length === 0 });
     }
 
     if (key === 'team create') {
@@ -261,17 +303,22 @@ export async function runTeam(family, args, {
 
     if (key === 'team close') {
       const team = findTeam(resolution.team_id);
-      beginManagementClose({ teamId: team.team_id });
+      const closing = beginManagementClose({ teamId: team.team_id });
       const flight = await waitForManagementLaunches({ teamId: team.team_id });
-      if (!flight.completed) throw new Error(`team ${team.slug} remains closing; unresolved operation IDs: ${flight.pending.map(i => i.operation_id).join(', ')}`);
+      const partial = (error, extra = {}) => controlOutput({ ok: false, team: { ...team, lifecycle: 'closing' }, lifecycle: 'closing', operation_id: closing.close_operation_id, error, ...extra });
+      if (!flight.completed) return partial(`team ${team.slug} remains closing; unresolved native launches`, { pending_operation_ids: flight.pending.map(i => i.operation_id) });
       const active = activeWorkerStates();
-      const members = listWorkers({ projectId, teamId: team.team_id })
+      const members = workers.listWorkers({ teamId: team.team_id })
         .filter((row) => active.has(String(row.state || '').toLowerCase()));
-      const stopped = [];
+      const stopped = [], targets = [];
       for (const member of members) {
-        const dead = await killWorker(member.name, { projectId, teamId: team.team_id, workerId: member.worker_id });
-        stopped.push(dead?.name ?? member.name);
+        try {
+          const dead = await workers.killWorker(member.name, { projectId: member.project_id, teamId: team.team_id, workerId: member.worker_id, constraints: { teamId: team.team_id } });
+          stopped.push(dead?.name ?? member.name);
+          targets.push({ id: member.session_id ?? member.worker_id, name: member.name, status: 'completed' });
+        } catch (error) { targets.push({ id: member.session_id ?? member.worker_id, name: member.name, status: 'failed', error: error.message }); }
       }
+      if (targets.some(t => t.status === 'failed')) return partial('independent agent stops completed with failures; retry exact remaining targets', { stopped, targets });
       let workspaceClosed = false;
       let keptFor = [];
       if (team.herdr_workspace_id) {
@@ -279,15 +326,15 @@ export async function runTeam(family, args, {
         // hand) keeps the workspace open (GOL-382 R4).
         try {
           keptFor = herdr.unmanagedAgentPanes(team.herdr_session, team.herdr_workspace_id, members.map((row) => row.herdr_pane_id));
-        } catch (error) { throw new Error(`team ${team.slug} remains closing; native inventory unavailable: ${error.message}`); }
+        } catch (error) { return partial(`native inventory unavailable: ${error.message}`, { stopped, targets, workspace_closed: false }); }
         if (!keptFor.length) {
           workspaceClosed = herdr.closeTeamWorkspace(team.herdr_session, team.herdr_workspace_id);
-          if (!workspaceClosed) throw new Error(`team ${team.slug} remains closing; native workspace close unconfirmed`);
+          if (!workspaceClosed) return partial('native workspace close unconfirmed', { stopped, targets, workspace_closed: false });
         }
       }
       const closed = closeTeam(team.team_id);
       const keptPanes = keptFor.map((pane) => pane.pane_id);
-      const result = { ...teamView(closed, 0), stopped, workspace_closed: workspaceClosed, workspace_kept_for: keptPanes };
+      const result = { ...teamView(closed, 0), stopped, targets, operation_id: closing.close_operation_id, workspace_closed: workspaceClosed, workspace_kept_for: keptPanes };
       const keptNote = keptPanes.length ? `; workspace kept open for ${keptPanes.join(', ')}` : '';
       stdout(json ? JSON.stringify({ ...result, resolution }) : `team ${closed.slug} closed (${stopped.length} agents stopped${keptNote})`);
       return 0;
@@ -295,7 +342,7 @@ export async function runTeam(family, args, {
 
     throw new NotificationError(`unknown command: ${key}`);
   } catch (error) {
-    const invalid = error.exitCode === 2 || error instanceof NotificationError || /unknown team|team slug|team label|team is closed|bound session|requires a value|unknown command|unknown option|duplicate option/.test(error.message);
+    const invalid = error.exitCode === 2 || error instanceof NotificationError || /unknown team|team slug|team label|workspace already owned|team adoption requires|team is closed|bound session|requires a value|unknown command|unknown option|duplicate option/.test(error.message);
     if (json) stdout(JSON.stringify({ ok: false, error: error.message, resolution: error.resolution ?? resolution }));
     else stderr(`golem team: ${error.message}`);
     return invalid ? 2 : 1;

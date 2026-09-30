@@ -16,7 +16,7 @@
 ### CLI and collaboration
 
 Management uses `lib/management-{context,resolve}.js`; `context` exposes scope.
-State/controls: `lib/management-{registry,session}.js`.
+State/controls: `lib/management-{registry,session,team}.js`.
 `cli/collaboration.js` schedules/messages; `cli/ticket.js` tracker authoring.
 `lib/session-role.js` defines roles; retired names only migrate.
 

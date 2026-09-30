@@ -805,7 +805,7 @@ ${helpDashboardRestart()}
                        Read-only scope and resolution provenance. Management
                        mutations accept --dry-run; list JSON is schema v2
                        {schema_version:2,items:[...],resolution:{...}}.
-  team create|list|join|close [--help]
+  team create|list|inspect|focus|attach|rename|join|leave|adopt|close [--help]
                        Teams: create a team and its herdr workspace, list
                        teams, join a team (or own it with --owner), or close
                        a team and stop only its agents.

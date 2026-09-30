@@ -93,6 +93,16 @@ driver.workspaceList(session);
 let argv = fs.readFileSync(capture, 'utf8').split('\u0000');
 check('workspace list carries --session first', argv.slice(0, 2).join(' ') === `--session ${session}`, argv.join(' '));
 
+driver.workspaceFocus({ session, workspaceId: 'w-exact' });
+check('workspace focus targets exact ID/session', JSON.stringify(argvOf()) === JSON.stringify(['--session', session, 'workspace', 'focus', 'w-exact']));
+driver.workspaceRename({ session, workspaceId: 'w-exact', label: 'Label With Spaces' });
+check('workspace rename keeps exact ID and one label argument', JSON.stringify(argvOf()) === JSON.stringify(['--session', session, 'workspace', 'rename', 'w-exact', 'Label With Spaces']));
+setResponse(['workspace', 'focus', 'w-denied'], { __error: { message: 'focus denied' } });
+assert.throws(() => driver.workspaceFocus({ session, workspaceId: 'w-denied' }), /focus denied/);
+setResponse(['workspace', 'rename', 'w-denied', 'New'], { __error: { message: 'rename denied' } });
+assert.throws(() => driver.workspaceRename({ session, workspaceId: 'w-denied', label: 'New' }), /rename denied/);
+check('focus/rename errors never become successful UI outcomes', true);
+
 // 2. JSON envelope parsing: results and errors
 setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [{ workspace_id: 'w1', label: 'agents' }] });
 const list = driver.workspaceList(session);
