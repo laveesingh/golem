@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-30 @ a4a6cae — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-30 @ c445f19 — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -15,9 +15,10 @@
 
 ### CLI and collaboration
 
-`cli/golem.js` dispatches verbs; `cli/agent.js` and `cli/team.js` own managed workers/teams.
-`cli/collaboration.js` owns schedules/messages; `cli/ticket.js` authors via tracker REST.
-`lib/session-role.js` owns role definitions; retired names are migration input only.
+Management uses `lib/management-{context,resolve}.js`; `context` exposes scope.
+`lib/management-registry.js` owns runtime mappings and membership.
+`cli/collaboration.js` schedules/messages; `cli/ticket.js` tracker authoring.
+`lib/session-role.js` defines roles; retired names only migrate.
 
 ### Instructions
 
@@ -36,9 +37,9 @@ Agents never touch SQLite directly.
 ### Compiler and delivery
 
 `lib/compiler/` renders substrate with drift/tamper checks; `lint.js` only reports word count.
-`lib/typed-worker-endpoint.js` owns the Pi envelope protocol. `lib/herdr-driver.js` hosts managed
-agents (one herdr session per project); `lib/team-registry.js` owns `teams.json`.
-`lib/runtime-compatibility.js` keeps policy warnings separate from initialization/native outcomes.
+`lib/typed-worker-endpoint.js` owns Pi envelopes; `lib/herdr-driver.js` native hosting.
+`lib/team-registry.js` never treats worker cache as membership authority.
+`lib/runtime-compatibility.js` separates policy warnings from initialization/native outcomes.
 
 ## Data flow
 
