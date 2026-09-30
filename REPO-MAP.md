@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-25 @ bda674d — maintained via golem:docs-maintenance.
+> Last verified: 2026-09-30 @ a4a6cae — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -38,6 +38,7 @@ Agents never touch SQLite directly.
 `lib/compiler/` renders substrate with drift/tamper checks; `lint.js` only reports word count.
 `lib/typed-worker-endpoint.js` owns the Pi envelope protocol. `lib/herdr-driver.js` hosts managed
 agents (one herdr session per project); `lib/team-registry.js` owns `teams.json`.
+`lib/runtime-compatibility.js` keeps policy warnings separate from initialization/native outcomes.
 
 ## Data flow
 
@@ -48,7 +49,7 @@ native/typed dispatch. Sharing tunnels the dashboard itself; Stop ends every sha
 
 - Project rules come from `AGENTS.md`; shared rules come from `substrate/`, never renders.
 - Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
-- Supported Pi worker version is 0.85.1 with Node.js 22.19+.
+- Pi 0.99.1 / Node.js 22.19+ are tested baselines; version/provider labels warn, not veto delivery.
 - Pi and Claude Code are the only harnesses. No test or lint check inspects instruction content.
 - Herdr tests must `session stop` before deleting a temp HOME; a deleted socket dir leaks a live server.
 
