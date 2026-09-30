@@ -25,8 +25,8 @@ dependencies. Keep the dashboard running before using tracker tools or dispatch.
   development channel. A plain `claude` session can pull tracker work but does
   not receive channel pushes.
 - **Pi** — `golem sync --target pi` renders the native extension. `golem pi`
-  provides typed-worker delivery and requires Pi 0.85.1 with Node.js 22.19+
-  or newer.
+  provides typed-worker delivery, tested on Pi 0.99.1 with Node.js 22.19+.
+  Other versions warn and attempt execution; actual runtime failures remain failures.
 
 The built-in roles are `lead`, `builder`, `explorer`, and `reviewer`. Role
 cards live in `roles/`; shared operational instructions live in
@@ -44,6 +44,11 @@ claude plugin marketplace add ~/.golem/renders/cc-marketplace
 claude plugin install golem@golem-workspace --scope user
 golem claude
 ```
+
+Provider compatibility warnings do not prohibit an initialized Claude channel
+push. Initialization, endpoint availability and native/protocol failures remain
+real limits. Reloading plugins does not restart a running channel MCP process;
+load changed channel code through a deliberate process restart.
 
 The marketplace render points at `~/.golem/renders/cc-plugin/`. The compiler
 copies the channel server's locked production dependencies into that render, so
