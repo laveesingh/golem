@@ -69,6 +69,23 @@ golem context --project <project-id> --json
 golem agent create builder --team <team-id> --dry-run --json
 ```
 
+## Physical session controls
+
+`session start [name] --project P` starts the stable owned container or allocates
+an opaque handle. Existing unowned containers require `session adopt <name>
+--project P`. `session inspect [name]` reads associations, import/provisioning
+facts and native state without starting anything. Unknown native evidence stays
+unknown, not empty.
+
+`session stop <name>` retains native registration, project mapping and logical
+team definitions/memberships; it does not promise conversation resumption.
+`session close <name>` stops/deletes the physical container, including contained
+external panes, and closes definitions only after confirmed outcomes. Self-close
+requires `--force`. Partial results return exit1 with target outcomes and operation
+IDs; retry resumes instead of guessing resources or duplicating completed work.
+All mutations and attach support `--dry-run`; positional name and `--session`
+must agree. Stable association tombstones make repeated close a no-op.
+
 ## Runtime compatibility
 
 Pi 0.99.1 and Node.js 22.19+ are the tested baseline. `golem pi` warns on

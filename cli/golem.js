@@ -809,7 +809,7 @@ ${helpDashboardRestart()}
                        Teams: create a team and its herdr workspace, list
                        teams, join a team (or own it with --owner), or close
                        a team and stop only its agents.
-  session list|attach|close [--help]
+  session list|inspect|start|adopt|attach|stop|close [--help]
                        herdr sessions: list them with their project and open
                        teams, attach this terminal to one (default: the
                        current project's session), or close one with its
