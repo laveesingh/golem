@@ -23,6 +23,7 @@ import {
 } from './share-tunnel.js';
 import { createNotificationService } from './notification-service.js';
 import { isChannelDeliveryReady, isTypedWorkerChannel, readChannels } from './channels.js';
+import { targetCompatibilityWarnings } from '../../lib/runtime-compatibility.js';
 import { applyGateVerdict, createGate } from './projects.js';
 import { listIdeas, createIdea, popIdea, readIdea } from './ideas.js';
 import { initDispatchDrainer } from './dispatch-queue.js';
@@ -500,6 +501,7 @@ async function main() {
       endpoint_health,
       delivery_ready,
       delivery_reason,
+      compatibility_warnings: targetCompatibilityWarnings({ target: session, channel }),
       // Existing routing callers use reachable for immediate eligibility. Keep
       // that meaning while exposing endpoint presence separately above.
       reachable: delivery_ready,

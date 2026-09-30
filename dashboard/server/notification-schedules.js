@@ -25,11 +25,13 @@ export function createNotificationSchedules({ db, tracker }) {
   }).immediate();
   const receipt = (id, { includeContent = false } = {}) => {
     const row = get(id); if (!row) return null;
+    const currentReceipt = row.current_envelope_id ? tracker.getEnvelopeReceipt(row.current_envelope_id) : null;
+    const payload = currentReceipt ? JSON.parse(tracker.getEnvelope(row.current_envelope_id)?.payload || '{}') : null;
     return { kind: 'schedule', id: row.id, state: row.status, creator_id: row.creator_id, creator_kind: row.creator_kind,
       owner_project_id: row.owner_project_id, target_session_id: row.target_session_id, project_id: row.target_project_id,
       created_at: row.created_at, next_due_at: row.next_due_at, interval_ms: row.interval_ms,
       occurrence_seq: row.occurrence_seq, cancelled_at: row.cancelled_at, reason: row.blocked_reason,
-      current_occurrence: row.current_envelope_id ? tracker.getEnvelopeReceipt(row.current_envelope_id) : null,
+      current_occurrence: currentReceipt ? { ...currentReceipt, compatibility_warnings: payload?.compatibility_warnings ?? [] } : null,
       work_outcome: 'not_evaluated', ...(includeContent ? { content: row.message_text, ticket_context: row.ticket_context } : {}) };
   };
   return {
@@ -98,7 +100,7 @@ export function createNotificationSchedules({ db, tracker }) {
             AND (e.delivery_state IN ('published','accepted','settled','interrupted') OR (e.delivery_state='claimed' AND e.accepted_attempt_id IS NOT NULL))))
         ORDER BY s.next_due_at, s.id LIMIT 100`).all({ now: new Date(nowMs).toISOString() });
     },
-    emit(observed, { nowMs = Date.now() } = {}) {
+    emit(observed, { nowMs = Date.now(), compatibilityWarnings = [] } = {}) {
       return db.transaction(() => {
         if (observed.status !== 'active' || !Number.isFinite(Date.parse(observed.next_due_at)) || Date.parse(observed.next_due_at) > nowMs) return null;
         const current = get(observed.id);
@@ -129,13 +131,15 @@ export function createNotificationSchedules({ db, tracker }) {
           created_at: new Date().toISOString(), expires_at: new Date(8640000000000000).toISOString() }), content });
         const envelope = tracker.createControlEnvelope({ id: envelopeId, sender_id: current.creator_id,
           recipient_session_id: current.target_session_id, project_id: current.target_project_id,
-          payload: { content, notification_text: current.message_text, schedule_id: current.id, occurrence_seq: sequence, due_at: current.next_due_at } });
+          payload: { content, notification_text: current.message_text, schedule_id: current.id, occurrence_seq: sequence, due_at: current.next_due_at,
+            compatibility_warnings: compatibilityWarnings } });
         db.prepare('UPDATE message_envelopes SET schedule_id=?, occurrence_seq=? WHERE id=?').run(current.id, sequence, envelope.id);
         tracker.enqueueEnvelopeRetry(envelope.id, { session_id: current.target_session_id, content,
           legacy: { path: '/brief', body: content }, require_typed: !!current.require_typed });
         db.prepare('UPDATE notification_schedules SET current_envelope_id=? WHERE id=?').run(envelope.id, current.id);
         tracker.recordEvent({ project_id: current.target_project_id, topic: `schedule/${current.id}`,
-          type: 'notification_schedule_emitted', actor: 'golem-scheduler', data: { schedule_id: current.id, envelope_id: envelope.id, occurrence_seq: sequence, due_at: current.next_due_at } });
+          type: 'notification_schedule_emitted', actor: 'golem-scheduler', data: { schedule_id: current.id, envelope_id: envelope.id, occurrence_seq: sequence, due_at: current.next_due_at,
+            compatibility_warnings: compatibilityWarnings } });
         return tracker.getEnvelope(envelope.id);
       }).immediate();
     },

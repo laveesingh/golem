@@ -1,4 +1,5 @@
 import { readSessionFacts, isSessionFactTerminal } from '../../lib/session-facts.js';
+import { targetCompatibilityWarnings } from '../../lib/runtime-compatibility.js';
 
 function processAlive(pid) {
   if (!Number.isInteger(Number(pid)) || Number(pid) <= 0) return false;
@@ -16,8 +17,6 @@ export function createNotificationScheduleRuntime({ tracker, readFacts = readSes
       const transports = new Map(channels.map((row) => [row.session_id, row]));
       const problem = (row) => {
         const fact = facts.get(row.target_session_id), target = targets.get(row.target_session_id), channel = transports.get(row.target_session_id);
-        if (String(channel?.consumer_reason || '').startsWith('unsupported_')
-          || fact?.compatibility?.status === 'unsupported' || target?.compatibility?.status === 'unsupported') return 'target transport is unsupported; inspect configuration';
         if (target?.delivery_mode === 'pull-only') return 'target cannot receive pushed notifications';
         const reloading = fact?.observations?.reason === 'reload' && (!fact.pid || pidAlive(fact.pid));
         if (!reloading && (isSessionFactTerminal(fact) || target?.alive === false)) return 'target session has ended; no automatic retargeting';
@@ -34,7 +33,9 @@ export function createNotificationScheduleRuntime({ tracker, readFacts = readSes
         try {
           const reason = problem(row);
           if (reason) tracker.schedules.block(row.id, reason, nowMs);
-          else if (!tracker.schedules.emit(row, { nowMs })) continue;
+          else if (!tracker.schedules.emit(row, { nowMs, compatibilityWarnings: targetCompatibilityWarnings({
+            fact: facts.get(row.target_session_id), target: targets.get(row.target_session_id), channel: transports.get(row.target_session_id),
+          }) })) continue;
           changed = true;
         } catch (error) {
           // Storage faults remain retryable on the next tick. Do not turn an

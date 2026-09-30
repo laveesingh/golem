@@ -13,6 +13,7 @@ const { createNotificationScheduleRuntime } = await import('../dashboard/server/
 const { initDispatchDrainer } = await import('../dashboard/server/dispatch-queue.js');
 const { notificationFingerprint, normalizeNotificationTiming, parseNotificationDuration } = await import('../lib/notification-contract.js');
 const { closeTypedDeliveryStores } = await import('../lib/typed-delivery-tombstones.js');
+const { SUPPORTED_PI_VERSION, piCompatibility } = await import('../lib/pi-compatibility.js');
 const file = path.join(home, 'tracker.db');
 let tracker = openTrackerDb(file), drainer, releaseSlow, running;
 const t0 = Date.UTC(2026, 8, 10);
@@ -142,7 +143,9 @@ try {
   runtime.prepare({ nowMs: t0, sessions: [{ session_id: 'dead', alive: false }, { session_id: 'unsupported', alive: true }],
     channels: [{ session_id: 'unsupported', consumer_reason: 'unsupported_custom_base_url' }] });
   assert.equal(tracker.schedules.get(dead.id).status, 'blocked');
-  assert.equal(tracker.schedules.get(unsupported.id).status, 'blocked');
+  assert.equal(tracker.schedules.get(unsupported.id).status, 'active');
+  assert.equal(tracker.schedules.get(unsupported.id).occurrence_seq, 1, 'legacy provider policy emits through the normal outbox');
+  assert.ok(tracker.schedules.receipt(unsupported.id).current_occurrence.compatibility_warnings.some(w => w.legacy_metadata));
   assert.equal(tracker.schedules.get(temporary.id).status, 'active');
   assert.equal(tracker.schedules.get(temporary.id).occurrence_seq, 1);
   runtime.prepare({ nowMs: t0 + 100000, sessions: [], channels: [] });
@@ -158,7 +161,56 @@ try {
   reloadRuntime.prepare({ nowMs: t0, sessions: [{ session_id: 'reloading', alive: false }] });
   reloadRuntime.prepare({ nowMs: t0, sessions: [{ session_id: 'reloading', alive: false }] });
   assert.equal(tracker.schedules.get(reload.id).status, 'blocked');
-  console.log('dead/unsupported targets block; temporary absence retains one occurrence; content opt-in: passed');
+  console.log('dead targets block; legacy provider policy warns/emits; temporary absence retains one occurrence; content opt-in: passed');
+
+  assert.equal(SUPPORTED_PI_VERSION, '0.99.1');
+  const versions = ['0.99.1', '0.85.1', '0.100.0', '1.0.0'];
+  const versionFacts = [], versionTargets = [];
+  const versionSchedules = versions.map(version => {
+    const row = create({ target: `pi-${version}`, typed: true });
+    versionFacts.push({ canonical_id: row.target_session_id, harness: 'pi', status: 'idle', compatibility: piCompatibility(version) });
+    versionTargets.push({ session_id: row.target_session_id, harness: 'pi', alive: true, compatibility: piCompatibility(version) });
+    return row;
+  });
+  const legacyVersion = create({ target: 'legacy-pi', typed: true });
+  versionFacts.push({ canonical_id: legacyVersion.target_session_id, harness: 'pi', status: 'idle', compatibility: { status: 'unsupported', pi_version: '0.100.0' } });
+  versionTargets.push({ session_id: legacyVersion.target_session_id, harness: 'pi', alive: true });
+  const legacyOther = create({ target: 'legacy-provider-label' });
+  const pullOnly = create({ target: 'pull-only' });
+  const oldBlocked = create({ target: 'old-policy-block' }); tracker.schedules.block(oldBlocked.id, 'historical policy block', t0);
+  const cancelledPolicy = create({ target: 'cancelled-policy' }); tracker.schedules.cancel(cancelledPolicy.id, { caller: 'owner' });
+  const versionRuntime = createNotificationScheduleRuntime({ tracker, readFacts: () => versionFacts });
+  const policySessions = [...versionTargets, { session_id: 'legacy-provider-label', alive: true }, { session_id: 'pull-only', alive: true, delivery_mode: 'pull-only' }];
+  const policyChannels = [{ session_id: 'legacy-provider-label', consumer_reason: 'unsupported_future_provider', consumer_initialized: true, delivery_ready: false }];
+  versionRuntime.prepare({ nowMs: t0, sessions: policySessions, channels: policyChannels });
+  for (const row of [...versionSchedules, legacyVersion, legacyOther]) {
+    const schedule = tracker.schedules.get(row.id);
+    assert.equal(schedule.status, 'active'); assert.equal(schedule.occurrence_seq, 1);
+    assert.equal(tracker.getEnvelopeRetry(schedule.current_envelope_id).status, 'pending', 'normal durable outbox owns delivery');
+  }
+  const baselineWarnings = tracker.schedules.receipt(versionSchedules[0].id).current_occurrence.compatibility_warnings;
+  assert.deepEqual(baselineWarnings, []);
+  for (const row of versionSchedules.slice(1)) assert.ok(tracker.schedules.receipt(row.id).current_occurrence.compatibility_warnings.some(w => w.code === 'PI_VERSION_UNVERIFIED'));
+  assert.ok(tracker.schedules.receipt(legacyVersion.id).current_occurrence.compatibility_warnings.some(w => w.legacy_metadata));
+  assert.ok(tracker.schedules.receipt(legacyOther.id).current_occurrence.compatibility_warnings.some(w => w.code === 'LEGACY_CHANNEL_COMPATIBILITY_POLICY'));
+  assert.equal(tracker.schedules.get(pullOnly.id).status, 'blocked');
+  assert.equal(tracker.schedules.get(oldBlocked.id).status, 'blocked'); assert.equal(tracker.schedules.get(oldBlocked.id).occurrence_seq, 0);
+  assert.equal(tracker.schedules.get(cancelledPolicy.id).status, 'cancelled'); assert.equal(tracker.schedules.get(cancelledPolicy.id).occurrence_seq, 0);
+  const beforePolicyTicks = tracker.listEvents({ limit: 1000 }).filter(e => e.type === 'notification_schedule_emitted').length;
+  for (let tick = 0; tick < 3; tick++) versionRuntime.prepare({ nowMs: t0 + tick, sessions: policySessions, channels: policyChannels });
+  assert.equal(tracker.listEvents({ limit: 1000 }).filter(e => e.type === 'notification_schedule_emitted').length, beforePolicyTicks, 'pending ticks do not flood advisory events');
+  const emittedPolicy = tracker.getEnvelope(tracker.schedules.get(legacyVersion.id).current_envelope_id);
+  await send(emittedPolicy, async ({ metadata }) => ({ ok: true, status: 202, typed_worker: true,
+    body: JSON.stringify({ accepted: true, envelope_id: emittedPolicy.id, attempt_id: metadata.attempt_id, accepted_attempt_id: metadata.attempt_id, delivery_state: 'accepted' }) }), { typedTarget: true });
+  versionRuntime.reconcile(t0 + 5);
+  assert.equal(tracker.schedules.receipt(legacyVersion.id).state, 'completed');
+  assert.equal(tracker.schedules.receipt(legacyVersion.id).work_outcome, 'not_evaluated');
+  const actualFailure = tracker.getEnvelope(tracker.schedules.get(legacyOther.id).current_envelope_id);
+  await send(actualFailure, async () => ({ ok: false, status: 503, failure_stage: 'before_native', retryable: true, error: 'MCP initialization unavailable' }));
+  assert.equal(tracker.getEnvelope(actualFailure.id).accepted_attempt_id, null);
+  assert.notEqual(tracker.schedules.receipt(legacyOther.id).state, 'completed', 'warning is not native receipt/consumption');
+  assert.match(tracker.getEnvelopeRetry(actualFailure.id).last_error, /MCP initialization unavailable/);
+  console.log('current/future/older/legacy policies emit with observable warnings; real endpoint/lifecycle failures and historical cancellation remain intact: passed');
 
   const slow = create({ target: 'slow' }), fast = create({ target: 'fast' });
   let slowStarted, fastDelivered;
