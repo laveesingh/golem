@@ -390,10 +390,23 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   ], { projectId });
   const managedRow = enriched.find((row) => row.session_id === 'sess-alpha-1');
   assert.equal(managedRow.delivery_ready, false, 'a managed row with delivery_ready:false stays not ready');
-  assert.equal(managedRow.host, 'legacy', 'row without herdr placement keeps the legacy host');
+  assert.equal(managedRow.host, 'herdr', 'a new reservation carries an exact native session');
   const externalRow = enriched.find((row) => row.session_id === 'sess-external-1');
   assert.equal(externalRow.delivery_ready, true, 'an external row with delivery_ready:true stays ready');
   assert.equal(externalRow.host, 'external');
 }
 
-console.log('agent CLI passed: help, verb map, scope defaults, ambiguity, create, role, dedup, removed verbs');
+// Actual pre-herdr legacy rows stay legacy and refuse native teardown/read.
+{
+  const { withManagementTransaction } = await import('../lib/management-registry.js');
+  const { enrichDispatchableRows, peekWorker, killWorker } = await import('../lib/worker-manager.js');
+  withManagementTransaction(state => state.workers.workers.push({ worker_id: 'actual-legacy', session_id: 'sess-real-legacy',
+    name: 'legacy-worker', project_id: projectId, state: 'live', tmux_session: 'legacy-exact', tmux_socket: 'legacy-socket',
+    herdr_session: null, herdr_pane_id: null, herdr_agent_name: 'legacy-control-exact' }));
+  const row = enrichDispatchableRows([{ session_id: 'sess-real-legacy', project_id: projectId, delivery_ready: false }])[0];
+  assert.equal(row.host, 'legacy', 'actual migrated legacy placement stays legacy');
+  assert.equal(row.delivery_ready, false);
+  await assert.rejects(peekWorker('legacy-worker', { projectId }), /legacy tmux row.*legacy-exact/);
+  await assert.rejects(killWorker('legacy-worker', { projectId }), /legacy tmux row.*legacy-exact/);
+}
+console.log('agent CLI passed: help, verb map, scope defaults, ambiguity, create, role, dedup, removed verbs, new reservations + actual legacy refusal');

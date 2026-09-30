@@ -14,7 +14,7 @@ const bin = path.join(temp, 'bin');
 fs.mkdirSync(bin, { recursive: true });
 
 const originalEnv = {};
-for (const key of ['GOLEM_HERDR_BIN', 'GOLEM_HERDR_SESSION', 'GOLEM_HERDR_LOG_DIR']) {
+for (const key of ['GOLEM_HOME', 'GOLEM_HERDR_BIN', 'GOLEM_HERDR_SESSION', 'GOLEM_HERDR_LOG_DIR']) {
   originalEnv[key] = process.env[key];
 }
 
@@ -55,6 +55,7 @@ process.exit(0);
 }
 writeFakeHerdr();
 
+process.env.GOLEM_HOME = path.join(temp, 'state');
 process.env.GOLEM_HERDR_BIN = path.join(bin, 'herdr');
 process.env.GOLEM_HERDR_SESSION = session;
 
@@ -85,6 +86,7 @@ function setResponse(args, value) {
 }
 
 // 1. --session override lands first on every call
+setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [] });
 driver.workspaceList(session);
 let argv = fs.readFileSync(capture, 'utf8').split('\u0000');
 check('workspace list carries --session first', argv.slice(0, 2).join(' ') === `--session ${session}`, argv.join(' '));
@@ -96,17 +98,27 @@ check('workspace list parses the result payload', list.length === 1 && list[0].w
 
 setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [] });
 setResponse(['workspace', 'create', '--label', 'agents'], { type: 'workspace_created', workspace: { workspace_id: 'w9', label: 'agents' } });
-const workspaceCreated = driver.workspaceEnsure({ session, label: 'agents' });
-check('workspaceEnsure creates when the label is absent', workspaceCreated?.workspace_id === 'w9');
+const workspaceCreated = driver.workspaceCreate({ session, label: 'agents' });
+check('workspaceCreate returns a new exact owned resource', workspaceCreated?.workspace_id === 'w9');
 
 setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [{ workspace_id: 'w1', label: 'agents' }] });
-const ensured = driver.workspaceEnsure({ session, label: 'agents' });
-check('workspaceEnsure returns the existing row', ensured?.workspace_id === 'w1');
+const owned = driver.workspaceCreate({ session, label: 'agents' });
+check('workspaceCreate never adopts a same-label workspace', owned?.workspace_id === 'w9');
 
 // 3. error envelopes throw with the herdr message
 setResponse(['pane', 'list'], { __error: { code: 'server_not_running', message: 'no herdr server is running at the fixture socket' } });
 assert.throws(() => driver.paneList(session), /no herdr server is running/);
 check('error envelopes throw with the herdr message', true);
+setResponse(['pane', 'list'], { type: 'ok' });
+assert.throws(() => driver.paneList(session), /inventory unavailable/);
+check('invalid inventory never becomes an empty native target', true);
+setResponse(['pane', 'list'], { panes: [
+  { pane_id: 'foreign-shell', workspace_id: 'w1' },
+  { pane_id: 'owned-pane', workspace_id: 'w1', agent: {} },
+] });
+const { unmanagedAgentPanes } = await import('../lib/team-herdr.js');
+assert.deepEqual(unmanagedAgentPanes(session, 'w1', ['owned-pane']).map(p => p.pane_id), ['foreign-shell']);
+check('unmanaged shells retain workspace even without detected agents', true);
 
 // 4. tab create + pane run + agent rename shapes
 setResponse(['tab', 'create', '--workspace', 'w1', '--cwd', '/tmp', '--label', 'builder1'], {
@@ -175,29 +187,20 @@ assert.throws(() => driver.resolveSession(null), /herdr session is required/);
 check('resolveSession throws without any session', true);
 process.env.GOLEM_HERDR_SESSION = session;
 
-// 9. G2 session names: one function serves spawn, team create and doctor.
-// Without the override, derivation lowercases, collapses illegal runs to
-// one '-', and falls back to the project id on empty/collision.
+// 9. Stable mappings, not project-label derivation. Reads cannot allocate.
 delete process.env.GOLEM_HERDR_SESSION;
-const { projectHerdrSession } = await import('../lib/team-herdr.js');
-const known = [
-  { project_id: 'proj-myapp-111111', name: 'My App!' },
-  { project_id: 'proj-clash1-222222', name: 'Clash!' },
-  { project_id: 'proj-clash2-333333', name: 'clash?' },
-  { project_id: 'proj-empty-444444', name: '!!!' },
-];
-check('My App! derives my-app', driver.herdrSessionForProject('proj-myapp-111111', { knownProjects: known }) === 'my-app');
-check('team seam derives the same session as spawn', projectHerdrSession('proj-myapp-111111', { knownProjects: known }) === 'my-app');
-check('colliding names fall back to the project id',
-  driver.herdrSessionForProject('proj-clash1-222222', { knownProjects: known }) === 'proj-clash1-222222'
-  && projectHerdrSession('proj-clash2-333333', { knownProjects: known }) === 'proj-clash2-333333');
-check('empty derivations fall back to the project id', driver.herdrSessionForProject('proj-empty-444444', { knownProjects: known }) === 'proj-empty-444444');
-check('long names cap at the 32-char herdr limit',
-  driver.herdrSessionForProject('proj-long-555555', { knownProjects: [...known, { project_id: 'proj-long-555555', name: `${'a'.repeat(40)}!` }] }) === 'a'.repeat(32));
+const { projectHerdrSession, createTeamWorkspace } = await import('../lib/team-herdr.js');
+const { ensureProjectAssociation } = await import('../lib/management-registry.js');
+assert.throws(() => driver.herdrSessionForProject('proj-unmapped'), /no runtime association/);
+const mapped = ensureProjectAssociation('proj-myapp-111111');
+check('new project receives opaque handle', /^g-[0-9a-f]{28}$/.test(mapped.session));
+check('team and driver read the same stable mapping', projectHerdrSession('proj-myapp-111111') === mapped.session);
+check('rename/long-prefix labels do not retarget a mapping', driver.herdrSessionForProject('proj-myapp-111111', { knownProjects: [{ project_id: 'proj-myapp-111111', name: 'a'.repeat(64) }] }) === mapped.session);
+check('different projects get distinct handles', ensureProjectAssociation('proj-clash-222222').session !== mapped.session);
 process.env.GOLEM_HERDR_SESSION = session;
-check('GOLEM_HERDR_SESSION overrides derivation on both paths',
-  driver.herdrSessionForProject('proj-myapp-111111', { knownProjects: known }) === session
-  && projectHerdrSession('proj-myapp-111111', { knownProjects: known }) === session);
+setResponse(['workspace', 'create', '--label', 'agents'], { workspace: { workspace_id: 'new-owned', label: 'agents' } });
+check('team creation does not reuse a same-label workspace', createTeamWorkspace(session, 'agents') === 'new-owned');
+check('team creation invokes exact create', argvOf().slice(2).join(' ') === 'workspace create --label agents');
 
 console.log(failures === 0 ? '\nHERDR DRIVER UNIT TESTS PASS' : `\n${failures} FAILURE(S)`);
 process.exitCode = failures === 0 ? 0 : 1;

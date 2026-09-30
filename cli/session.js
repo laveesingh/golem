@@ -13,6 +13,7 @@ import { formatTable } from '../lib/cli-table.js';
 import { closeTeam, listTeams } from '../lib/team-registry.js';
 import { activeWorkerStates, listWorkers } from '../lib/worker-registry.js';
 import { killWorker } from '../lib/worker-manager.js';
+import { beginManagementClose, waitForManagementLaunches, finishManagementClose } from '../lib/management-registry.js';
 import {
   herdrSessionForProject,
   sessionAttach,
@@ -168,6 +169,9 @@ export async function runSession(family, args, {
       if (env.HERDR_SESSION === name && !o['--force']) {
         throw new NotificationError(`refusing to close ${name}: this terminal runs inside it (pass --force to close it anyway)`);
       }
+      beginManagementClose({ session: name });
+      const flight = await waitForManagementLaunches({ session: name });
+      if (!flight.completed) throw new Error(`session ${name} remains closing; unresolved operation IDs: ${flight.pending.map(i => i.operation_id).join(', ')}`);
       const active = activeWorkerStates();
       const live = workers.listWorkers()
         .filter((row) => row.herdr_session === name && active.has(String(row.state || '').toLowerCase()));
@@ -183,8 +187,7 @@ export async function runSession(family, args, {
       }
       if (failed.length) throw new Error(`session ${name} left open; agents failed to stop: ${failed.join('; ')}`);
       const teams = listTeams({ includeClosed: false }).filter((team) => team.herdr_session === name);
-      for (const team of teams) closeTeam(team.team_id);
-      herdr.sessionStop(name);
+      if (!herdr.sessionStop(name)) throw new Error(`session ${name} remains closing; native stop failed`);
       // herdr deletes only a stopped session; the server takes a moment to exit.
       let deleted = false;
       for (let attempt = 0; attempt < 20 && !deleted; attempt += 1) {
@@ -192,6 +195,8 @@ export async function runSession(family, args, {
         if (!deleted) await sleep(250);
       }
       if (!deleted) throw new Error(`herdr session ${name} stopped but could not be deleted`);
+      for (const team of teams) closeTeam(team.team_id);
+      finishManagementClose({ session: name });
       const result = { session: name, stopped, teams_closed: teams.map((team) => team.slug) };
       stdout(json
         ? JSON.stringify(result)

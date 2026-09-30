@@ -9,10 +9,14 @@ import { resolveCliSessionContext } from '../lib/cli-session-context.js';
 import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import { NotificationError } from '../lib/notification-contract.js';
 import { formatTable } from '../lib/cli-table.js';
-import { createTeam, findTeam, joinTeam, listTeams, setTeamWorkspace, closeTeam } from '../lib/team-registry.js';
+import { createTeam, findTeam, joinTeam, listTeams, closeTeam } from '../lib/team-registry.js';
 import { activeWorkerStates, listWorkers } from '../lib/worker-registry.js';
 import { killWorker } from '../lib/worker-manager.js';
 import { readSessionFacts } from '../lib/session-facts.js';
+import {
+  admitProvisioning, beforeNativeCall, recordNativeResult, commitAdmission, settleAdmission,
+  reserveWorkspaceProvisioning, readManagementSnapshot, beginManagementClose, waitForManagementLaunches,
+} from '../lib/management-registry.js';
 import {
   closeTeamWorkspace,
   createTeamWorkspace,
@@ -27,7 +31,7 @@ const commands = {
       'golem team create <label> [--project <id-or-path>] [--json]',
       '',
       'Usage: create a team and its herdr workspace. Does not launch any agent.',
-      'Input: a label; the slug comes from the label and must be unique among open teams in the project. Run by a bound session, that session becomes the owner and leaves any other open team; from an unbound shell the team starts with no owner. An existing herdr workspace with the same label in the project herdr session is reused.',
+      'Input: a label; the slug comes from the label and must be unique among open teams in the project. Run by a bound session, that session becomes the owner and leaves any other open team; from an unbound shell the team starts with no owner. Creation allocates a new owned workspace; a same-label native workspace is never implicitly adopted.',
       'Receipts: prints the team id, slug and workspace id. Exit codes: 0 created, 1 operational failure, 2 invalid input/context.',
       'Examples:',
       '  golem team create "Blue team" --json   # machine-readable team record',
@@ -202,17 +206,29 @@ export async function runTeam(family, args, {
     if (key === 'team create') {
       const label = positional[0];
       const caller = callerSession(resolveContext);
-      const session = herdr.projectHerdrSession(projectId);
+      const session = herdr.projectHerdrSession(projectId, { create: true });
       const team = createTeam({
         label,
         projectId,
         ownerSessionId: caller,
         herdrSession: session,
       });
+      const intent = admitProvisioning({ kind: 'team-workspace', projectId, teamId: team.team_id });
       try {
-        await herdr.ensureProjectSession(session);
+        beforeNativeCall(intent.operation_id);
+        const started = await herdr.ensureProjectSession(session);
+        if (!recordNativeResult(intent.operation_id, { type: 'session', session, created: started?.started ?? false }).valid) throw new Error(`team provisioning fenced: ${intent.operation_id}`);
+        reserveWorkspaceProvisioning(intent.operation_id);
+        beforeNativeCall(intent.operation_id);
         const workspaceId = herdr.createTeamWorkspace(session, team.label);
-        const updated = setTeamWorkspace(team.team_id, workspaceId);
+        const recorded = recordNativeResult(intent.operation_id, { type: 'workspace', session, workspace_id: workspaceId, created: true });
+        if (!recorded.valid) {
+          const cleaned = herdr.closeTeamWorkspace(session, workspaceId);
+          settleAdmission(intent.operation_id, { phase: cleaned ? 'cleaned' : 'unresolved' });
+          throw new Error(`team provisioning fenced: ${intent.operation_id}`);
+        }
+        commitAdmission(intent.operation_id);
+        const updated = findTeam(team.team_id);
         if (json) {
           stdout(JSON.stringify(teamView(updated, 0)));
         } else {
@@ -220,8 +236,10 @@ export async function runTeam(family, args, {
         }
         return 0;
       } catch (error) {
+        const current = readManagementSnapshot().mappings.intents.find(i => i.operation_id === intent.operation_id);
+        if (current.phase !== 'cleaned') settleAdmission(intent.operation_id, { phase: ['native_call', 'unresolved', 'cleanup_required'].includes(current.phase) ? 'unresolved' : 'failed', error: error.message });
         try { closeTeam(team.team_id); } catch {}
-        throw new Error(`team workspace failed: ${error.message}`);
+        throw new Error(`team workspace failed: ${error.message}; operation ${intent.operation_id}`);
       }
     }
 
@@ -240,6 +258,9 @@ export async function runTeam(family, args, {
     if (key === 'team close') {
       const team = findTeam(positional[0], { projectId });
       if (!team) throw new NotificationError(`unknown team: ${positional[0]}`);
+      beginManagementClose({ teamId: team.team_id });
+      const flight = await waitForManagementLaunches({ teamId: team.team_id });
+      if (!flight.completed) throw new Error(`team ${team.slug} remains closing; unresolved operation IDs: ${flight.pending.map(i => i.operation_id).join(', ')}`);
       const active = activeWorkerStates();
       const members = listWorkers({ projectId, teamId: team.team_id })
         .filter((row) => active.has(String(row.state || '').toLowerCase()));
@@ -255,8 +276,11 @@ export async function runTeam(family, args, {
         // hand) keeps the workspace open (GOL-382 R4).
         try {
           keptFor = herdr.unmanagedAgentPanes(team.herdr_session, team.herdr_workspace_id, members.map((row) => row.herdr_pane_id));
-        } catch { keptFor = []; }
-        if (!keptFor.length) workspaceClosed = herdr.closeTeamWorkspace(team.herdr_session, team.herdr_workspace_id);
+        } catch (error) { throw new Error(`team ${team.slug} remains closing; native inventory unavailable: ${error.message}`); }
+        if (!keptFor.length) {
+          workspaceClosed = herdr.closeTeamWorkspace(team.herdr_session, team.herdr_workspace_id);
+          if (!workspaceClosed) throw new Error(`team ${team.slug} remains closing; native workspace close unconfirmed`);
+        }
       }
       const closed = closeTeam(team.team_id);
       const keptPanes = keptFor.map((pane) => pane.pane_id);

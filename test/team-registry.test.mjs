@@ -48,12 +48,10 @@ assert.throws(() => slugifyTeamLabel('9 lives'), /valid slug/);
 assert.throws(() => slugifyTeamLabel('x'.repeat(100)), /valid slug/);
 
 // --- herdr agent names --------------------------------------------------------
-assert.equal(herdrAgentNameFor('blue-team', 'builder1'), 'blue-team-builder1');
-const long = herdrAgentNameFor('a-very-long-team-slug-here', 'builder12345');
-assert.ok(long.length <= 32, `cut to 32 chars: ${long}`);
-assert.match(long, /^[a-z][a-z0-9_-]{0,31}$/);
-assert.equal(herdrAgentNameFor('blue-team', 'Builder One'), 'blue-team-builder-one');
-assert.throws(() => herdrAgentNameFor('Bad Slug', 'builder1'), /team slug is required/);
+assert.match(herdrAgentNameFor('stable-runtime-1'), /^g-[0-9a-f]{28}$/);
+assert.equal(herdrAgentNameFor('stable-runtime-1'), herdrAgentNameFor('stable-runtime-1'));
+assert.notEqual(herdrAgentNameFor('stable-runtime-1'), herdrAgentNameFor('stable-runtime-2'));
+assert.throws(() => herdrAgentNameFor(''), /runtime ID is required/);
 
 // --- team rows ----------------------------------------------------------------
 const blue = createTeam({ label: 'Blue Team', projectId: projectA, herdrSession: 'herdr-a' });
@@ -119,7 +117,7 @@ assert.throws(() => joinTeam('missing-id', 'lead-9'), /team not found/);
   setTeamWorkspace(red.team_id, 'w9');
   const written = JSON.parse(fs.readFileSync(file, 'utf8')).teams.find((row) => row.team_id === red.team_id);
   assert.equal(written.owner_session_id, 'legacy-lead');
-  assert.equal(written.lead_session_id, 'legacy-lead', 'lead_session_id is mirrored on write');
+  assert.equal(written.lead_session_id, undefined, 'v2 removes the superseded owner mirror');
 }
 
 // --- workspace + close -----------------------------------------------------------
@@ -214,6 +212,7 @@ assert.equal(
   team2.team_id,
 );
 // Lead wins over own worker row.
+joinTeam(team1.team_id, 'sess-builder-2');
 updateWorker(first2.worker_id, { session_id: 'lead-alpha' });
 const leadAlsoWorker = findWorkerBySession('lead-alpha');
 assert.equal(
@@ -249,4 +248,5 @@ assert.throws(
   assert.deepEqual((await listed(['--all'])).sort(), [openTeam.slug, shutTeam.slug].sort(), '--all includes closed teams');
 }
 
-console.log('team registry journey passed: slugs, rows, owner/member join, legacy lead read + mirror, close, team-scoped naming, session lookup, G8 resolution');
+console.log('team registry journey passed: slugs, rows, owner/member join, legacy lead read + v2 cutover, close, team-scoped naming, session lookup, canonical resolution');
+fs.rmSync(temp, { recursive: true, force: true });
