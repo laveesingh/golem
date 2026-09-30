@@ -39,7 +39,8 @@ const herdrSession = `golem-test-${process.pid}-journey`;
 const xdgHome = `/tmp/golem-test-xdg-${process.pid}-journey`;
 const envKeys = ['GOLEM_HOME', 'HOME', 'PATH', 'GOLEM_HERDR_SESSION', 'GOLEM_DASHBOARD_URL', 'XDG_CONFIG_HOME',
   'GOLEM_TEST_REGISTRATION_DIR', 'GOLEM_TEST_PROJECT_ID',
-  'GOLEM_WORKER_READY_TIMEOUT_MS', 'GOLEM_WORKER_POLL_MS'];
+  'GOLEM_WORKER_READY_TIMEOUT_MS', 'GOLEM_WORKER_POLL_MS',
+  'HERDR_ENV', 'HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID'];
 const originalEnv = {};
 for (const key of envKeys) originalEnv[key] = process.env[key];
 
@@ -82,6 +83,7 @@ const { projectIdFor } = await import('../lib/project-id.js');
 const projectId = projectIdFor(project);
 
 Object.assign(process.env, {
+  HERDR_ENV: '0',
   GOLEM_HOME: state,
   HOME: home,
   PATH: `${bin}${path.delimiter}${originalEnv.PATH ?? ''}`,
@@ -92,6 +94,8 @@ Object.assign(process.env, {
   GOLEM_WORKER_READY_TIMEOUT_MS: '30000',
   GOLEM_WORKER_POLL_MS: '250',
 });
+
+for (const key of ['HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID']) delete process.env[key];
 
 const { readWorkers } = await import('../lib/worker-registry.js');
 const { listTeams, joinTeam } = await import('../lib/team-registry.js');
@@ -178,7 +182,7 @@ function strayPiCount(name) {
 }
 
 async function main() {
-  assert.equal(projectHerdrSession(projectId), herdrSession, 'tests run under the throwaway session');
+  assert.equal(projectHerdrSession(projectId, { create: true }), herdrSession, 'real fixture reservation uses the throwaway session; reads do not allocate');
   await startDashboard();
 
   // The pane's `golem pi` needs its render (isolated GOLEM_HOME).
@@ -224,8 +228,9 @@ async function main() {
   assert.equal(betaBuilder.name, 'builder1');
   assert.equal(alphaBuilder.state, 'live');
   assert.equal(betaBuilder.state, 'live');
-  assert.equal(alphaBuilder.herdr_agent_name, 'alpha-team-builder1');
-  assert.equal(betaBuilder.herdr_agent_name, 'beta-team-builder1');
+  assert.match(alphaBuilder.herdr_agent_name, /^g-[0-9a-f]{28}$/);
+  assert.match(betaBuilder.herdr_agent_name, /^g-[0-9a-f]{28}$/);
+  assert.notEqual(alphaBuilder.herdr_agent_name, betaBuilder.herdr_agent_name);
   assert.equal(alphaBuilder.herdr_workspace_id, alpha.herdr_workspace_id);
   // GOL-382 R5: same name in two teams, two sessions — binding is by launch
   // nonce, never by name.
@@ -236,11 +241,11 @@ async function main() {
 
   // GOL-379: the team agent name sticks after create — herdr resolves it,
   // the JSON list shows its state, and attach prefers the resolved name.
-  const alphaAgentInfo = agentGet({ session: herdrSession, target: 'alpha-team-builder1' });
+  const alphaAgentInfo = agentGet({ session: herdrSession, target: alphaBuilder.herdr_agent_name });
   assert.equal(alphaAgentInfo?.pane_id, alphaBuilder.herdr_pane_id, 'herdr resolves alpha-team-builder1 after create');
-  const betaAgentInfo = agentGet({ session: herdrSession, target: 'beta-team-builder1' });
+  const betaAgentInfo = agentGet({ session: herdrSession, target: betaBuilder.herdr_agent_name });
   assert.equal(betaAgentInfo?.pane_id, betaBuilder.herdr_pane_id, 'herdr resolves beta-team-builder1 after create');
-  assert.equal(herdrAttachTarget(alphaBuilder), 'alpha-team-builder1', 'attach prefers the resolved team agent name');
+  assert.equal(herdrAttachTarget(alphaBuilder), alphaBuilder.herdr_agent_name, 'attach prefers the stable opaque native handle');
   const namedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(namedList.status, 0, namedList.stderr);
   const namedRows = parseManagementList(namedList.stdout);
@@ -250,7 +255,13 @@ async function main() {
   for (const row of herdrRows) {
     assert.ok(row.herdr_state != null, `herdr row shows state: ${JSON.stringify(row)}`);
   }
-  console.log(JSON.stringify({ agent_names_stick: ['alpha-team-builder1', 'beta-team-builder1'], herdr_list_states: herdrRows.map((row) => row.herdr_state) }));
+  console.log(JSON.stringify({ agent_names_stick: [alphaBuilder.herdr_agent_name, betaBuilder.herdr_agent_name], herdr_list_states: herdrRows.map((row) => row.herdr_state) }));
+  // Bounded slice-2 consumer proof; later close/capability journeys remain the
+  // full integration boundary. This is a test mode, never a CLI output bridge.
+  if (process.argv.includes('--receipts-only')) {
+    console.log('team native receipt boundary passed: real owned herdr + fake Pi, schema-v2 consumer and stable native handles');
+    return;
+  }
 
   // An owner spawns into its own team (G8): own the alpha team, resolve.
   // (A CLI subprocess cannot bind a session — no pi ancestry in tests —

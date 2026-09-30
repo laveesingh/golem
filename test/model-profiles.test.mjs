@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -30,6 +31,7 @@ const envKeys = [
   'GOLEM_WORKER_READY_TIMEOUT_MS', 'GOLEM_WORKER_POLL_MS', 'GOLEM_WORKER_REQUEST_TIMEOUT_MS',
   'GOLEM_WORKER_CLI', 'GOLEM_BIN', 'XDG_CONFIG_HOME',
   'CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID',
+  'HERDR_ENV', 'HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID',
 ];
 for (const key of envKeys) originalEnv[key] = process.env[key];
 
@@ -108,6 +110,7 @@ setInterval(() => {}, 1000);
 `, { mode: 0o700 });
 
 Object.assign(process.env, {
+  HERDR_ENV: '0',
   GOLEM_HOME: state,
   HOME: path.join(temp, 'home'),
   PATH: `${bin}${path.delimiter}${originalEnv.PATH ?? ''}`,
@@ -128,6 +131,7 @@ Object.assign(process.env, {
 });
 delete process.env.GOLEM_WORKER_CLI;
 delete process.env.GOLEM_BIN;
+for (const key of ['HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID']) delete process.env[key];
 
 // Version-1 registry without exec: the current reader seeds the builtin execs
 // (identical for builder/explorer/reviewer), which the profiles first-load must
@@ -425,7 +429,7 @@ try {
   }));
   const listJson = await runCollecting(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(listJson.status, 0, listJson.stderr);
-  const listRows = JSON.parse(listJson.stdout);
+  const listRows = parseManagementList(listJson.stdout);
   const externalRow = listRows.find((row) => row.session_id === 'golemtest-t3-external');
   assert.ok(externalRow, 'external roster session is listed');
   assert.equal(externalRow.host, 'external');

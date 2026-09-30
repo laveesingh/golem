@@ -57,7 +57,7 @@ const envKeys = [
   'GOLEM_TEST_REGISTRATION_DIR', 'GOLEM_TEST_PROJECT_ID', 'GOLEM_WORKER_READY_TIMEOUT_MS',
   'GOLEM_WORKER_POLL_MS', 'GOLEM_WORKER_REQUEST_TIMEOUT_MS', 'GOLEM_HERDR_BIN',
   'GOLEM_TEST_REGISTRATION_DIR', 'GOLEM_FAKE_NO_REGISTER', 'GOLEM_WORKER_CLI', 'GOLEM_BIN',
-  'XDG_CONFIG_HOME',
+  'XDG_CONFIG_HOME', 'HERDR_ENV', 'HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID',
 ];
 for (const key of envKeys) originalEnv[key] = process.env[key];
 
@@ -109,6 +109,7 @@ setInterval(() => {}, 1000);
 `, { mode: 0o700 });
 
 Object.assign(process.env, {
+  HERDR_ENV: '0',
   GOLEM_HOME: state,
   HOME: path.join(temp, 'home'),
   PATH: `${bin}${path.delimiter}${originalEnv.PATH ?? ''}`,
@@ -126,6 +127,7 @@ Object.assign(process.env, {
 });
 delete process.env.GOLEM_WORKER_CLI;
 delete process.env.GOLEM_BIN;
+for (const key of ['HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID']) delete process.env[key];
 
 function readBody(request) {
   return new Promise((resolve) => {
@@ -311,6 +313,8 @@ try {
   });
   assert.ok(readRoleRegistry().some((row) => row.name === 'golemtest-t2'));
 
+  const receiptsOnly = process.argv.includes('--receipts-only');
+  if (!receiptsOnly) {
   const claimed = await Promise.all(Array.from({ length: 5 }, () => claimChild()));
   assert.ok(claimed.every((result) => result.code === 0), JSON.stringify(claimed));
   const claimedNames = claimed.map((result) => JSON.parse(result.stdout).name);
@@ -318,8 +322,9 @@ try {
   assert.deepEqual(readWorkers({ file: path.join(lockState, 'workers.json') }).map((row) => row.name).sort(), claimedNames.slice().sort());
   const claimedRows = JSON.parse(fs.readFileSync(path.join(lockState, 'workers.json'), 'utf8')).workers;
   assert.ok(claimedRows.every((row) => !row.tmux_session && !row.tmux_socket), 'new herdr rows never write tmux_* fields');
-  assert.ok(claimedRows.every((row) => row.herdr_agent_name === row.name), 'new rows carry the herdr agent name');
+  assert.ok(claimedRows.every((row) => /^g-[0-9a-f]{28}$/.test(row.herdr_agent_name)), 'new reservations carry stable opaque native handles');
   console.log(JSON.stringify({ lock_claims: claimedNames.sort() }));
+  }
 
   // GOL-363 G8: spawn requires a team — create one and spawn into it.
   const { createTeam } = await import('../lib/team-registry.js');
@@ -343,16 +348,18 @@ try {
   assert.equal(cliSpawned.team_id, journeyTeam.team_id);
   console.log(JSON.stringify({ cli_spawn: ['gt2-cli-table', 'gt2-cli-json'], herdr_columns: true }));
 
-  const spawned = await Promise.all(Array.from({ length: 5 }, () => spawnWorker({ role: 'golemtest-t2', project, teamId: journeyTeam.team_id })));
+  const spawned = receiptsOnly ? [] : await Promise.all(Array.from({ length: 5 }, () => spawnWorker({ role: 'golemtest-t2', project, teamId: journeyTeam.team_id })));
   const names = spawned.map((worker) => worker.name);
   const panes = spawned.map((worker) => worker.herdr_pane_id);
-  assert.equal(new Set(names).size, 5, JSON.stringify(names));
-  assert.equal(new Set(panes).size, 5, JSON.stringify(panes));
+  assert.equal(new Set(names).size, receiptsOnly ? 0 : 5, JSON.stringify(names));
+  assert.equal(new Set(panes).size, receiptsOnly ? 0 : 5, JSON.stringify(panes));
   assert.ok(spawned.every((worker) => worker.state === 'live' && worker.dispatchable));
   assert.ok(spawned.every((worker) => !worker.tmux_session), 'spawned rows carry no tmux fields');
-  const enriched = enrichDispatchableRows([{ session_id: spawned[0].session_id, project_id: projectId }], { projectId });
-  assert.equal(enriched[0].worker_state, 'live');
-  assert.equal(enriched[0].worker_attach_hint, `golem agent attach ${spawned[0].name}`);
+  const enriched = enrichDispatchableRows([{ session_id: (spawned[0] ?? cliSpawned).session_id, project_id: projectId }], { projectId });
+  if (!receiptsOnly) {
+    assert.equal(enriched[0].worker_state, 'live');
+    assert.equal(enriched[0].worker_attach_hint, `golem agent attach ${spawned[0].name}`);
+  }
   console.log(JSON.stringify({ parallel_workers: names.slice().sort(), herdr_panes: panes.slice().sort(), dispatchable_worker_fields: true }));
 
   const directListed = await listWorkerViews({ project });
@@ -365,9 +372,12 @@ try {
   const cliListJson = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(cliListJson.status, 0, cliListJson.stderr);
   const listed = parseManagementList(cliListJson.stdout);
-  assert.equal(listed.length, 7);
+  assert.equal(listed.length, receiptsOnly ? 2 : 7);
   assert.ok(listed.every((worker) => worker.dispatchable && worker.model === 'deepseek-v4-flash:0731'));
   console.log(JSON.stringify({ cli_list_count: listed.length, table_default: true, json_stable: true }));
+  if (receiptsOnly) {
+    console.log('worker native receipt boundary passed: real owned herdr + fake Pi, actual schema-v2 consumer; full stress/teardown acceptance remains later');
+  } else {
 
   const cliPeek = await runCli(['agent', 'read', names[0], '--project', project, '--lines', '3']);
   assert.equal(cliPeek.status, 0, cliPeek.stderr);
@@ -617,6 +627,7 @@ try {
   console.log(JSON.stringify({ identity_mismatch: 'refused, row live, sleeper untouched, tab closed in cleanup' }));
 
   console.log('Worker journey passed: locked naming in herdr panes, dispatchable readiness, table/JSON agent create-list-read-stop output, dead-row filtering and 24h prune, peek, dashboard terminal shape, stop/read legacy refusals with exact tmux commands, stale-pgid guard, launcher-path rejection, and zero-survivor teardown');
+  }
 } finally {
   if (recycled && recycled.exitCode === null) {
     try {

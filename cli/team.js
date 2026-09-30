@@ -4,9 +4,7 @@
 // calls go through the lib/team-herdr.js seam, which delegates to
 // lib/herdr-driver.js (GOL-370).
 
-import path from 'node:path';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
-import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import { NotificationError } from '../lib/notification-contract.js';
 import { formatTable } from '../lib/cli-table.js';
 import { createTeam, findTeam, joinTeam, listTeams, closeTeam } from '../lib/team-registry.js';

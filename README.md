@@ -88,7 +88,9 @@ The tracker is the source of truth for cross-session work. Ticket lifecycle is
 Comments and dispatch preserve planned work. On Pi and interactive Claude,
 `golem agent list/notify`, `golem message inspect`, and `golem schedule ...`
 provide direct coordination and agent-managed follow-up. The event ledger is
-audit history, not a message subscription.
+audit history, not a message subscription. Management CLI list JSON is
+`{schema_version:2,items:[...],resolution:{...}}`; scripting clients read `.items`.
+`golem context` and management `--dry-run` explain scope without writing state.
 
 Sessions register their project, harness, role, and delivery capability.
 Golem runs on Pi and Claude Code only.

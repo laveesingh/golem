@@ -5,9 +5,7 @@
 // follow cli/team.js.
 
 import fs from 'node:fs';
-import path from 'node:path';
 import { projectsJsonPath } from '../lib/golem-home.js';
-import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import { NotificationError } from '../lib/notification-contract.js';
 import { formatTable } from '../lib/cli-table.js';
 import { closeTeam, listTeams } from '../lib/team-registry.js';
@@ -176,7 +174,9 @@ export async function runSession(family, args, {
     if (key === 'session attach') {
       const name = resolution.target?.herdr_session ?? resolution.session;
       requireKnown(name, inventory.value);
-      return herdr.sessionAttach(name);
+      const status = herdr.sessionAttach(name, { outputToStderr: json });
+      if (json) stdout(JSON.stringify({ attached: status === 0, status, session: name, resolution }));
+      return status;
     }
 
     if (key === 'session close') {

@@ -15,7 +15,6 @@ import { createGolemClient, resolveGolemDashboardBaseUrl } from '../lib/golem-cl
 import { dashboardJsonPath, sessionsJsonPath } from '../lib/golem-home.js';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
 import { formatTable } from '../lib/cli-table.js';
-import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 import {
   NotificationError,
   notificationBodyLimit,
@@ -26,10 +25,9 @@ import {
   parseNotificationDuration,
   normalizeNotificationTiming,
 } from '../lib/notification-contract.js';
-import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../lib/session-role.js';
+import { roleNamesSnapshot, pushRoleBriefDirect, setSessionRole } from '../lib/session-role.js';
 import { listTeams } from '../lib/team-registry.js';
-import { findWorkerBySession, listWorkers } from '../lib/worker-registry.js';
-import { MANAGEMENT_SELECTOR_FLAGS, managementQuery, listReceipt, writeDryRun, requireManagementResolution } from '../lib/management-cli.js';
+import { MANAGEMENT_SELECTOR_FLAGS, managementQuery, listReceipt, writeDryRun, requireManagementResolution, managedControlOptions, managementProjectInput } from '../lib/management-cli.js';
 import { herdrStateFor, listHerdrAgentStates, projectHerdrSession } from '../lib/team-herdr.js';
 import {
   attachWorker,
@@ -37,7 +35,6 @@ import {
   listAgentRoster,
   listWorkerViews,
   peekWorker,
-  resolveWorkerProject,
   spawnWorker,
 } from '../lib/worker-manager.js';
 
@@ -111,7 +108,7 @@ const commands = {
     ].join('\n') },
   'agent role': { flags: { '--json': 'bool' }, args: 1,
     help: [
-      `golem agent role <${SESSION_ROLES.join('|')}|clear> [<agent>] [--json]`,
+      'golem agent role <role|clear> [<agent>] [--json]',
       '',
       'Usage: set or clear an agents role. <agent> is an exact session id; without it, the bound callers own session. An unbound shell must pass <agent>.',
       'Exit codes: 0 set, 1 operational failure, 2 invalid input/context.',
@@ -474,6 +471,7 @@ async function cmdAgentList(o, { stdout, cwd, manager, query }) {
   }
   const { roster, ended } = await manager.listAgentRoster({
     project: scope.projectId == null ? null : projectInput,
+    projectId: scope.projectId,
     includeDead: Boolean(o['--ended']),
     cwd,
     herdrStates,
@@ -506,10 +504,11 @@ async function cmdAgentCreate(role, o, positional, { stdout, cwd, manager, query
   const created = await manager.spawnWorker({
     role,
     name,
-    project: query.resolution.project_id,
+    project: managementProjectInput(query),
     cwd,
     profile,
     teamId: team.team_id,
+    ...(o['--session'] ? { nativeSession: query.resolution.session } : {}),
   });
   const rows = buildAgentRows([created], { teams });
   stdout(o['--json'] ? JSON.stringify({ ...rows[0], resolution: query.resolution }) : formatAgentTable(rows));
@@ -531,18 +530,20 @@ async function cmdAgentRead(ref, o, { stdout, manager, query }) {
     if (!Number.isInteger(lines) || lines < 1) throw new NotificationError('golem agent read --lines requires a positive integer');
   }
   const row = managedTarget(query);
-  const output = await manager.peekWorker(row.name, { projectId: row.project_id, teamId: row.team_id ?? null, workerId: row.worker_id, lines });
+  const output = await manager.peekWorker(row.name, { ...managedControlOptions(query.resolution, o), lines });
   stdout(o['--json'] ? JSON.stringify({ text: output, resolution: query.resolution }) : output);
 }
 
-async function cmdAgentAttach(ref, o, { manager, query }) {
+async function cmdAgentAttach(ref, o, { stdout, manager, query }) {
   const row = managedTarget(query);
-  return manager.attachWorker(row.name, { projectId: row.project_id, teamId: row.team_id ?? null, workerId: row.worker_id });
+  const status = await manager.attachWorker(row.name, { ...managedControlOptions(query.resolution, o), ...(o['--json'] ? { outputToStderr: true } : {}) });
+  if (o['--json']) stdout(JSON.stringify({ attached: status === 0, status, session_id: row.session_id, resolution: query.resolution }));
+  return status;
 }
 
 async function cmdAgentStop(ref, o, { stdout, manager, query }) {
   const row = managedTarget(query);
-  const stopped = await manager.killWorker(row.name, { projectId: row.project_id, teamId: row.team_id ?? null, workerId: row.worker_id });
+  const stopped = await manager.killWorker(row.name, managedControlOptions(query.resolution, o));
   const rows = buildAgentRows([stopped], { teams: listTeams({ projectId: row.project_id }) });
   stdout(o['--json'] ? JSON.stringify({ ...rows[0], resolution: query.resolution }) : formatAgentTable(rows));
 }
@@ -550,26 +551,19 @@ async function cmdAgentStop(ref, o, { stdout, manager, query }) {
 async function cmdAgentRole(roleArg, positional, o, { stdout, resolveContext }) {
   let role = roleArg;
   if (roleArg === 'list' || roleArg === '--list') {
-    stdout(SESSION_ROLES.join('\n'));
+    stdout(roleNamesSnapshot().join('\n'));
     return;
   }
   if (roleArg === 'clear') role = null;
-  else if (!SESSION_ROLES.includes(roleArg)) {
-    throw new NotificationError(`invalid role: ${roleArg} (expected ${SESSION_ROLES.join('|')} or clear)`);
+  else if (!roleNamesSnapshot().includes(roleArg)) {
+    throw new NotificationError(`invalid role: ${roleArg} (expected ${roleNamesSnapshot().join('|')} or clear)`);
   }
   const ref = positional[0] ?? null;
   const sessions = readSessionsRegistry();
-  let targetId;
-  if (ref) {
-    // T2: role takes an exact session id, never a name.
-    const target = sessions.find((s) => s.session_id === ref);
-    if (!target) throw new NotificationError(`session not found: ${ref}`);
-    targetId = target.session_id;
-  } else {
-    const caller = callerSession(resolveContext);
-    if (!caller?.sessionId) throw new NotificationError('agent role without an id requires a bound session');
-    targetId = caller.sessionId;
-  }
+  // Shared resolution supplied the exact conversation, including self.
+  const target = sessions.find(s => s.session_id === ref);
+  if (!target) throw new NotificationError(`session not found: ${ref}`);
+  const targetId = target.session_id;
   const updated = setSessionRole(targetId, role, { by: 'human:cli' });
   const activation = role ? await pushRoleBriefDirect(updated.session_id, role, updated) : null;
   const receipt = {
@@ -641,7 +635,8 @@ export async function runAgent(family, args, {
     if (parsed.help) { stdout(json ? JSON.stringify({ help: parsed.help }) : parsed.help); return 0; }
     const { key, options: o, positional } = parsed;
     let query = null;
-    if (key === 'agent role' && ![...SESSION_ROLES, 'clear', 'list'].includes(positional[0])) throw new NotificationError(`invalid role: ${positional[0]}`);
+    if (key === 'agent create' && !roleNamesSnapshot().includes(positional[0])) throw new NotificationError(`unknown role: ${positional[0]}`);
+    if (key === 'agent role' && ![...roleNamesSnapshot(), 'clear', 'list'].includes(positional[0])) throw new NotificationError(`invalid role: ${positional[0]}`);
     if (managementVerbs.has(key) && !(key === 'agent role' && positional[0] === 'list')) {
       if (o['--scope'] && !['team', 'project', 'all'].includes(o['--scope'])) throw new NotificationError(`invalid scope: ${o['--scope']}`);
       query = await managementQuery({ operation: key, kind: 'agent', options: o,
@@ -665,9 +660,8 @@ export async function runAgent(family, args, {
       return 0;
     }
     if (key === 'agent attach') {
-      const status = await cmdAgentAttach(positional[0], o, { manager, query });
-      if (status) process.exitCode = status;
-      return 0;
+      const status = await cmdAgentAttach(positional[0], o, { stdout, manager, query });
+      return status ?? 0;
     }
     if (key === 'agent stop') {
       await cmdAgentStop(positional[0], o, { stdout, manager, query });

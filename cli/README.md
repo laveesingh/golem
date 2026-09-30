@@ -20,7 +20,8 @@ npx golem <command>
 | `golem dashboard [--public]` | Start the admin dashboard on `http://dashboard.golem.localhost:7420`. Pass extra args through to `npm start`. |
 | `golem doctor` | Sanity-check the environment. |
 | `golem status [--json]` | Probe the dashboard `/api/health` endpoint and print the canonical URL. |
-| `golem agent list [--scope team\|project\|all] [--json]` | List agents: id, name, role, team, host, status, herdr state, model, delivery. |
+| `golem context [--project P] [--team T] [--session S] [--caller ID] [--json]` | Inspect read-only selected scope, provenance, candidates and unavailable evidence. |
+| `golem agent list [--scope team\|project\|all] [--json]` | List agents: id, name, role, team, host, status, herdr state, model, delivery. JSON rows are in `.items`. |
 | `golem agent create <role> [--team <team>] [--json]` | Start a managed agent in the caller's team (`--team` picks another). |
 | `golem agent read <agent> [--lines N]` | Print an agent's terminal output. |
 | `golem agent attach <agent>` | Attach to an agent's terminal. |
@@ -33,6 +34,40 @@ npx golem <command>
 | `golem schedule inspect <id> [--content] [--json]` | Inspect cadence and current occurrence delivery. |
 | `golem schedule cancel <id> [--human] [--json]` | Stop future emission; it cannot recall an in-flight occurrence or cancel a task. |
 | `golem help` | Show usage. |
+
+## Management scope and JSON
+
+Agent, team and session management share `--project`, `--team`, `--session`
+and `--caller` selectors where applicable. Exact target IDs establish their
+parents before caller or cwd inference. Explicit parent selectors constrain the
+target; conflicting parents return exit2 with candidates and a corrected command.
+`--caller` selects context or `self`, not authentication.
+
+A registered caller's canonical logical team wins over its physical pane.
+A human shell can infer a team from its actual inherited herdr pane/workspace;
+UI focus is never evidence. Cwd supplies a project only, even with one team.
+An explicit team never falls back to another team for a missing name. An inferred
+team prefers that team, then permits a unique match in the selected project.
+
+`golem context` is read-only. Applicable mutations and attach accept `--dry-run`:
+they return an operation plan, required capabilities and resolution diagnostics
+without migration, registry writes, native creation or UI effects. Exit2 means
+missing/conflicting scope; a resolved dry-run is not completed execution.
+
+`agent list`, `team list` and `session list --json` have one schema-v2 receipt:
+`{schema_version:2,items:[...],resolution:{...}}`, including empty/global results.
+Row fields and text tables remain unchanged. Scripts migrate bare-array operations
+to `.items`; provenance is query-level, never duplicated on rows. REST roster
+arrays and MCP readers keep their existing contracts. Object receipts add
+`resolution`; attach sends native terminal output to stderr in JSON mode.
+
+```sh
+golem agent list --scope all --json | jq '.items[] | .session_id'
+golem team list --scope all --json | jq '.items[] | .team_id'
+golem session list --json | jq '.items[] | .name'
+golem context --project <project-id> --json
+golem agent create builder --team <team-id> --dry-run --json
+```
 
 ## Runtime compatibility
 
