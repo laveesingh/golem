@@ -13,6 +13,7 @@ import { createTeam, findTeam, joinTeam, listTeams, closeTeam } from '../lib/tea
 import { activeWorkerStates, listWorkers } from '../lib/worker-registry.js';
 import { killWorker } from '../lib/worker-manager.js';
 import { readSessionFacts } from '../lib/session-facts.js';
+import { MANAGEMENT_SELECTOR_FLAGS, managementQuery, listReceipt, writeDryRun, requireManagementResolution } from '../lib/management-cli.js';
 import {
   admitProvisioning, beforeNativeCall, recordNativeResult, commitAdmission, settleAdmission,
   reserveWorkspaceProvisioning, readManagementSnapshot, beginManagementClose, waitForManagementLaunches,
@@ -67,6 +68,16 @@ const commands = {
     ].join('\n') },
 };
 
+for (const [key, command] of Object.entries(commands)) {
+  Object.assign(command.flags, MANAGEMENT_SELECTOR_FLAGS);
+  if (key !== 'team list') command.flags['--dry-run'] = 'bool';
+  if (key === 'team list') command.flags['--scope'] = 'value';
+  if (['team join', 'team close'].includes(key)) command.args = [0, 1];
+  command.help += '\nSelectors: --project P --team T --session S --caller ID. Mutations accept --dry-run.';
+}
+commands['team join'].flags['--agent'] = 'value';
+commands['team list'].help += '\nJSON: {schema_version:2,items:[...],resolution:{...}}. Scripts read .items; --scope all lists every project.';
+
 function parse(family, args) {
   if (!args.length || ['--help', '-h', 'help'].includes(args[0])) {
     return { help: Object.entries(commands).filter(([key]) => key.startsWith(`${family} `)).map(([, value]) => value.help).join('\n\n') };
@@ -91,31 +102,9 @@ function parse(family, args) {
     }
   }
   if (options.help) return { help: command.help, options };
-  if (positional.length !== command.args) throw new NotificationError(command.help.split('\n')[0]);
+  const [min, max] = Array.isArray(command.args) ? command.args : [command.args, command.args];
+  if (positional.length < min || positional.length > max) throw new NotificationError(command.help.split('\n')[0]);
   return { key, options, positional };
-}
-
-function callerSession(resolveContext) {
-  try {
-    return resolveContext()?.sessionId ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function resolveTeamProject(explicit, { cwd, resolveContext }) {
-  if (typeof explicit === 'string' && explicit.trim()) {
-    const value = explicit.trim();
-    if (/^[\w-]+-[a-f0-9]{6}$/.test(value)) return value;
-    return projectIdFor(await resolveProjectRoot(path.resolve(cwd, value)));
-  }
-  const context = callerSession(resolveContext);
-  void context;
-  try {
-    const full = resolveContext();
-    if (full?.projectId) return full.projectId;
-  } catch {}
-  return projectIdFor(await resolveProjectRoot(cwd));
 }
 
 function sessionName(sessionId) {
@@ -183,20 +172,39 @@ export async function runTeam(family, args, {
   cwd = process.cwd(),
   resolveContext = resolveCliSessionContext,
   herdr = { ensureProjectSession, createTeamWorkspace, closeTeamWorkspace, projectHerdrSession, unmanagedAgentPanes },
+  ...collector
 } = {}) {
+  let resolution = null;
   let json = args.includes('--json');
   try {
     const parsed = parse(family, args);
     if (parsed.options) json = Boolean(parsed.options['--json']);
     if (parsed.help) { stdout(json ? JSON.stringify({ help: parsed.help }) : parsed.help); return 0; }
     const { key, options: o, positional } = parsed;
-    const projectId = await resolveTeamProject(o['--project'], { cwd, resolveContext });
+    if (o['--scope'] && !['team', 'project', 'all'].includes(o['--scope'])) throw new NotificationError(`invalid scope: ${o['--scope']}`);
+    const query = await managementQuery({ operation: key, kind: 'team', options: key === 'team list' ? { '--scope': 'project', ...o } : o,
+      target: ['team join', 'team close'].includes(key) ? positional[0] : null, cwd, resolveContext, ...collector });
+    resolution = query.resolution;
+    let member = null;
+    if (key === 'team join') {
+      member = o['--agent'] ?? o['--caller'] ?? query.evidence.sources.callerAgent.value?.sessionId ?? null;
+      if (!member || !query.evidence.agents.some(a => a.session_id === member)) {
+        resolution.missing.push({ field: 'agent', message: 'team join requires a concrete conversation: pass --agent <id> or --caller <id>' });
+        resolution.ok = false;
+        resolution.corrected_command = `golem team join ${resolution.team_id ?? '<team-id>'} --agent <exact-conversation-id>`;
+      } else { resolution.member_session_id = member; resolution.provenance.member_session_id = o['--agent'] ? 'explicit-agent' : o['--caller'] ? 'explicit-caller' : 'caller-agent'; }
+    }
+    const dry = writeDryRun(query, o, stdout, { label: key === 'team create' ? positional[0] : undefined, member_session_id: member, owner: !!o['--owner'] });
+    if (dry != null) return dry;
+    requireManagementResolution(resolution);
+    const projectId = resolution.project_id;
 
     if (key === 'team list') {
-      const teams = listTeams({ projectId, includeClosed: Boolean(o['--all']) });
+      const teams = query.evidence.teams.filter(t => (!projectId || t.project_id === projectId) && (o['--all'] || t.closed_at == null)
+        && (!resolution.team_id || t.team_id === resolution.team_id) && (!o['--session'] || t.herdr_session === resolution.session));
       const views = teams.map((team) => teamView(team, agentCountFor(team.team_id, projectId)));
       if (json) {
-        stdout(JSON.stringify(views));
+        stdout(JSON.stringify(listReceipt(views, resolution)));
         return 0;
       }
       stdout(views.length ? formatTable(TEAM_TABLE_COLUMNS, views.map(teamTableRow)) : 'No teams.');
@@ -205,7 +213,7 @@ export async function runTeam(family, args, {
 
     if (key === 'team create') {
       const label = positional[0];
-      const caller = callerSession(resolveContext);
+      const caller = o['--caller'] ?? query.evidence.sources.callerAgent.value?.sessionId ?? null;
       const session = herdr.projectHerdrSession(projectId, { create: true });
       const team = createTeam({
         label,
@@ -230,7 +238,7 @@ export async function runTeam(family, args, {
         commitAdmission(intent.operation_id);
         const updated = findTeam(team.team_id);
         if (json) {
-          stdout(JSON.stringify(teamView(updated, 0)));
+          stdout(JSON.stringify({ ...teamView(updated, 0), resolution }));
         } else {
           stdout(`team ${updated.team_id} (slug ${updated.slug}) workspace ${updated.herdr_workspace_id}`);
         }
@@ -244,20 +252,17 @@ export async function runTeam(family, args, {
     }
 
     if (key === 'team join') {
-      const caller = callerSession(resolveContext);
-      if (!caller) throw new NotificationError('team join requires a bound session', 'INVALID_CALLER_CONTEXT');
-      const team = findTeam(positional[0], { projectId });
-      if (!team) throw new NotificationError(`unknown team: ${positional[0]}`);
+      const caller = member;
+      const team = findTeam(resolution.team_id);
       const owner = Boolean(o['--owner']);
       const updated = joinTeam(team.team_id, caller, { owner });
       const view = teamView(updated, agentCountFor(updated.team_id, projectId));
-      stdout(json ? JSON.stringify(view) : `team ${view.slug} ${owner ? 'owner' : 'member'} ${caller}`);
+      stdout(json ? JSON.stringify({ ...view, resolution }) : `team ${view.slug} ${owner ? 'owner' : 'member'} ${caller}`);
       return 0;
     }
 
     if (key === 'team close') {
-      const team = findTeam(positional[0], { projectId });
-      if (!team) throw new NotificationError(`unknown team: ${positional[0]}`);
+      const team = findTeam(resolution.team_id);
       beginManagementClose({ teamId: team.team_id });
       const flight = await waitForManagementLaunches({ teamId: team.team_id });
       if (!flight.completed) throw new Error(`team ${team.slug} remains closing; unresolved operation IDs: ${flight.pending.map(i => i.operation_id).join(', ')}`);
@@ -266,7 +271,7 @@ export async function runTeam(family, args, {
         .filter((row) => active.has(String(row.state || '').toLowerCase()));
       const stopped = [];
       for (const member of members) {
-        const dead = await killWorker(member.name, { projectId, teamId: team.team_id });
+        const dead = await killWorker(member.name, { projectId, teamId: team.team_id, workerId: member.worker_id });
         stopped.push(dead?.name ?? member.name);
       }
       let workspaceClosed = false;
@@ -286,14 +291,14 @@ export async function runTeam(family, args, {
       const keptPanes = keptFor.map((pane) => pane.pane_id);
       const result = { ...teamView(closed, 0), stopped, workspace_closed: workspaceClosed, workspace_kept_for: keptPanes };
       const keptNote = keptPanes.length ? `; workspace kept open for ${keptPanes.join(', ')}` : '';
-      stdout(json ? JSON.stringify(result) : `team ${closed.slug} closed (${stopped.length} agents stopped${keptNote})`);
+      stdout(json ? JSON.stringify({ ...result, resolution }) : `team ${closed.slug} closed (${stopped.length} agents stopped${keptNote})`);
       return 0;
     }
 
     throw new NotificationError(`unknown command: ${key}`);
   } catch (error) {
-    const invalid = error instanceof NotificationError || /unknown team|team slug|team label|team is closed|bound session|requires a value|unknown command|unknown option|duplicate option/.test(error.message);
-    if (json) stdout(JSON.stringify({ ok: false, error: error.message }));
+    const invalid = error.exitCode === 2 || error instanceof NotificationError || /unknown team|team slug|team label|team is closed|bound session|requires a value|unknown command|unknown option|duplicate option/.test(error.message);
+    if (json) stdout(JSON.stringify({ ok: false, error: error.message, resolution: error.resolution ?? resolution }));
     else stderr(`golem team: ${error.message}`);
     return invalid ? 2 : 1;
   }

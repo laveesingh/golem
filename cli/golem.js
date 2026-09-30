@@ -801,6 +801,10 @@ ${helpDashboardRestart()}
                        terminal, stop it, notify a session, set a role, or
                        clean up duplicate session rows.
                        See golem agent --help.
+  context [--project P] [--team T] [--session S] [--caller ID] [--json]
+                       Read-only scope and resolution provenance. Management
+                       mutations accept --dry-run; list JSON is schema v2
+                       {schema_version:2,items:[...],resolution:{...}}.
   team create|list|join|close [--help]
                        Teams: create a team and its herdr workspace, list
                        teams, join a team (or own it with --owner), or close
@@ -1237,6 +1241,11 @@ async function main() {
     case 'message': {
       const { runCollaboration } = await import('./collaboration.js');
       process.exitCode = await runCollaboration(cmd, rest);
+      break;
+    }
+    case 'context': {
+      const { runContext } = await import('./context.js');
+      process.exitCode = await runContext(rest);
       break;
     }
     case 'session': {

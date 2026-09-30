@@ -4,6 +4,7 @@
 // herdr seam; no herdr server.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'golemtest-session-cli-'));
 process.env.GOLEM_HOME = path.join(temp, 'state');
 delete process.env.XDG_CONFIG_HOME;
 delete process.env.GOLEM_HERDR_SESSION;
+delete process.env.HERDR_ENV;
 fs.mkdirSync(process.env.GOLEM_HOME, { recursive: true });
 
 const projectId = 'demo-proj-abcdef';
@@ -44,7 +46,7 @@ async function run(args, extra = {}) {
 {
   const listed = await run(['list', '--json']);
   assert.equal(listed.exit, 0, listed.err);
-  assert.deepEqual(JSON.parse(listed.text), [
+  assert.deepEqual(parseManagementList(listed.text), [
     { name: 'default', status: 'running', project: null, open_teams: 0 },
     { name: 'demo-proj', status: 'running', project: 'Demo Proj', open_teams: 1 },
     { name: 'idle', status: 'stopped', project: null, open_teams: 0 },
@@ -64,7 +66,7 @@ async function run(args, extra = {}) {
   assert.deepEqual(attached, ['idle', 'demo-proj']);
   const unknown = await run(['attach', 'nope']);
   assert.equal(unknown.exit, 2);
-  assert.match(unknown.err, /unknown herdr session: nope \(known: default, demo-proj, idle\)/);
+  assert.match(unknown.err, /session not found: nope.*candidates: default.*demo-proj.*idle.*try:/);
   assert.equal(attached.length, 2, 'unknown session never reaches herdr');
   assert.equal((await run(['attach', 'a', 'b'])).exit, 2);
   assert.equal((await run(['bogus'])).exit, 2);
@@ -104,7 +106,9 @@ async function run(args, extra = {}) {
 
   const closed = await run(['close', 'demo-proj', '--json'], extra);
   assert.equal(closed.exit, 0, closed.err);
-  assert.deepEqual(JSON.parse(closed.text), { session: 'demo-proj', stopped: ['builder1'], teams_closed: ['open-one'] });
+  const { resolution, ...receipt } = JSON.parse(closed.text);
+  assert.equal(resolution.provenance.session, 'exact-target');
+  assert.deepEqual(receipt, { session: 'demo-proj', stopped: ['builder1'], teams_closed: ['open-one'] });
   assert.deepEqual(calls, [`kill builder1 ${projectId} t1`, 'stop demo-proj', 'delete demo-proj']);
   assert.equal(listTeams({ includeClosed: false }).filter((t) => t.herdr_session === 'demo-proj').length, 0);
 

@@ -9,6 +9,7 @@
 // killed, throwaway session stopped and deleted, zero server processes left.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -242,7 +243,7 @@ async function main() {
   assert.equal(herdrAttachTarget(alphaBuilder), 'alpha-team-builder1', 'attach prefers the resolved team agent name');
   const namedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(namedList.status, 0, namedList.stderr);
-  const namedRows = JSON.parse(namedList.stdout);
+  const namedRows = parseManagementList(namedList.stdout);
   // Both teams run builder1 with their own sessions: the list shows both.
   const herdrRows = namedRows.filter((row) => row.host === 'herdr');
   assert.equal(new Set(herdrRows.map((row) => row.session_id)).size, 2, `list shows both builder1 sessions: ${namedList.stdout.slice(0, 500)}`);
@@ -342,7 +343,7 @@ async function main() {
 
   const listed = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json', '--ended']);
   assert.equal(listed.status, 0, listed.stderr);
-  const rows = JSON.parse(listed.stdout);
+  const rows = parseManagementList(listed.stdout);
   assert.ok(rows.some((row) => row.team_id === beta.team_id), 'list shows team rows (ended included)');
   const tabled = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended']);
   assert.match(tabled.stdout, /TEAM/, 'table carries the TEAM column');

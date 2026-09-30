@@ -20,6 +20,7 @@ for (const key of ['GOLEM_HOME', 'GOLEM_HERDR_BIN', 'GOLEM_HERDR_SESSION', 'GOLE
 
 const session = 'gol370-driver-unit';
 const capture = path.join(temp, 'argv.txt');
+const envCapture = path.join(temp, 'inherited-env.json');
 const responses = {};
 const responsesFile = path.join(temp, 'responses.json');
 
@@ -28,10 +29,11 @@ function writeFakeHerdr() {
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.writeFileSync(${JSON.stringify(capture)}, args.join('\\u0000'));
+fs.writeFileSync(${JSON.stringify(envCapture)}, JSON.stringify(Object.fromEntries(['HERDR_ENV','HERDR_SESSION','HERDR_PANE_ID','HERDR_WORKSPACE_ID','HERDR_SOCKET_PATH','GOLEM_HERDR_SESSION'].map(k => [k, process.env[k] ?? null]))));
 let responses = {};
 try { responses = JSON.parse(fs.readFileSync(${JSON.stringify(responsesFile)}, 'utf8')); } catch {}
 const sessionIndex = args.indexOf('--session');
-const key = args.filter((a, index) => index !== sessionIndex && index !== sessionIndex + 1).join(' ');
+const key = args.filter((a, index) => sessionIndex < 0 || (index !== sessionIndex && index !== sessionIndex + 1)).join(' ');
 const entry = responses[key];
 if (entry == null) {
   process.stdout.write(JSON.stringify({ id: 'fake', result: { type: 'ok', key } }));
@@ -45,7 +47,7 @@ if (errPayload) {
   process.exit(0);
 }
 // pane read prints plain scrollback text (no JSON envelope).
-if (args[0] === 'pane' && args[1] === 'read') {
+if (key.startsWith('pane read ')) {
   process.stdout.write(entry?.text ?? '');
   process.exit(0);
 }
@@ -143,7 +145,7 @@ check('agent rename targets the pane with the agent name', argv.slice(-3).join('
 
 // 5. pane read returns text
 setResponse(['pane', 'read', 'w1:p2'], { type: 'pane_read', text: 'scrollback line' });
-check('pane read returns the text payload', String(driver.paneRead({ session, paneId: 'w1:p2' })).includes('scrollback line'));
+check('pane read returns plain terminal text, not an envelope', driver.paneRead({ session, paneId: 'w1:p2' }) === 'scrollback line');
 
 // 6. session stop is --session-scoped
 setResponse(['session', 'stop', 'gol370-driver-unit'], { type: 'session_stopped' });
@@ -201,6 +203,26 @@ process.env.GOLEM_HERDR_SESSION = session;
 setResponse(['workspace', 'create', '--label', 'agents'], { workspace: { workspace_id: 'new-owned', label: 'agents' } });
 check('team creation does not reuse a same-label workspace', createTeamWorkspace(session, 'agents') === 'new-owned');
 check('team creation invokes exact create', argvOf().slice(2).join(' ') === 'workspace create --label agents');
+
+// Inherited caller query: no target override, no focus, moved alias is current.
+const inherited = { ...process.env, HERDR_ENV: '1', HERDR_SESSION: 'caller-session', HERDR_PANE_ID: 'old:p1',
+  HERDR_WORKSPACE_ID: 'old', HERDR_SOCKET_PATH: '/tmp/fixture/caller-session/herdr.sock', GOLEM_HERDR_SESSION: 'different-target' };
+setResponse(['pane', 'current', '--current'], { type: 'pane_current', pane: { pane_id: 'moved:p9', workspace_id: 'moved', tab_id: 'moved:t9', focused: false } });
+const callerPane = driver.paneCurrentInherited({ env: inherited });
+assert.deepEqual(argvOf(), ['pane', 'current', '--current']);
+assert.equal(callerPane.session, 'caller-session');
+assert.equal(callerPane.pane_id, 'moved:p9'); assert.equal(callerPane.workspace_id, 'moved'); assert.equal(callerPane.focused, false);
+const nativeEnv = JSON.parse(fs.readFileSync(envCapture, 'utf8'));
+assert.equal(nativeEnv.HERDR_SESSION, 'caller-session'); assert.equal(nativeEnv.HERDR_SOCKET_PATH, inherited.HERDR_SOCKET_PATH);
+assert.equal(nativeEnv.GOLEM_HERDR_SESSION, null);
+check('inherited current query preserves caller socket/session and moved nonfocused IDs, ignoring target override', true);
+setResponse(['pane', 'current', '--current'], { __error: { message: 'caller alias unavailable' } });
+assert.throws(() => driver.paneCurrentInherited({ env: inherited }), /caller alias unavailable/);
+assert.throws(() => driver.paneCurrentInherited({ env: { HERDR_ENV: '1' } }), /context is missing/);
+const hang = path.join(bin, 'herdr-hang');
+fs.writeFileSync(hang, '#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n', { mode: 0o700 });
+assert.throws(() => driver.paneCurrentInherited({ env: { ...inherited, GOLEM_HERDR_BIN: hang }, timeoutMs: 25 }), /query failed/);
+check('inherited unavailable/timeout errors are bounded and never fall back to UI focus', true);
 
 console.log(failures === 0 ? '\nHERDR DRIVER UNIT TESTS PASS' : `\n${failures} FAILURE(S)`);
 process.exitCode = failures === 0 ? 0 : 1;

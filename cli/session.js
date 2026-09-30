@@ -13,6 +13,8 @@ import { formatTable } from '../lib/cli-table.js';
 import { closeTeam, listTeams } from '../lib/team-registry.js';
 import { activeWorkerStates, listWorkers } from '../lib/worker-registry.js';
 import { killWorker } from '../lib/worker-manager.js';
+import { resolveCliSessionContext } from '../lib/cli-session-context.js';
+import { MANAGEMENT_SELECTOR_FLAGS, managementQuery, listReceipt, writeDryRun, requireManagementResolution } from '../lib/management-cli.js';
 import { beginManagementClose, waitForManagementLaunches, finishManagementClose } from '../lib/management-registry.js';
 import {
   herdrSessionForProject,
@@ -54,6 +56,15 @@ const commands = {
       '  golem session close alpha   # retire the alpha session and its teams',
     ].join('\n') },
 };
+
+for (const [key, command] of Object.entries(commands)) {
+  Object.assign(command.flags, MANAGEMENT_SELECTOR_FLAGS, { '--json': 'bool' });
+  if (key !== 'session list') command.flags['--dry-run'] = 'bool';
+  else command.flags['--scope'] = 'value';
+  if (key === 'session close') command.args = [0, 1];
+  command.help += '\nSelectors: --project P --team T --session S --caller ID. Mutations and attach accept --dry-run.';
+}
+commands['session list'].help += '\nJSON: {schema_version:2,items:[...],resolution:{...}}. Scripts read .items.';
 
 function parse(family, args) {
   if (!args.length || ['--help', '-h', 'help'].includes(args[0])) {
@@ -127,14 +138,6 @@ function requireKnown(name, rows) {
   }
 }
 
-async function projectSession(explicit, cwd) {
-  const value = typeof explicit === 'string' ? explicit.trim() : '';
-  const projectId = /^[\w-]+-[a-f0-9]{6}$/.test(value)
-    ? value
-    : projectIdFor(await resolveProjectRoot(path.resolve(cwd, value || '.')));
-  return herdrSessionForProject(projectId);
-}
-
 export async function runSession(family, args, {
   stdout = (text) => process.stdout.write(`${text}\n`),
   stderr = (text) => process.stderr.write(`${text}\n`),
@@ -142,30 +145,43 @@ export async function runSession(family, args, {
   herdr = { sessionList, sessionAttach, sessionStop, sessionDelete },
   workers = { listWorkers, killWorker },
   env = process.env,
+  resolveContext = resolveCliSessionContext,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  ...collector
 } = {}) {
+  let resolution = null;
   let json = args.includes('--json');
   try {
     const parsed = parse(family, args);
     if (parsed.help) { stdout(json ? JSON.stringify({ help: parsed.help }) : parsed.help); return 0; }
     const { key, options: o, positional } = parsed;
+    if (o['--scope'] && !['team', 'project', 'all'].includes(o['--scope'])) throw new NotificationError(`invalid scope: ${o['--scope']}`);
+    const query = await managementQuery({ operation: key, kind: 'session', target: positional[0], options: o, cwd, env, resolveContext,
+      nativeSessions: () => herdr.sessionList(), ...collector });
+    resolution = query.resolution;
+    const dry = writeDryRun(query, o, stdout);
+    if (dry != null) return dry;
+    requireManagementResolution(resolution);
+    const inventory = query.evidence.sources.nativeSessions;
+    if (inventory.status !== 'resolved') throw new Error(`native session inventory unavailable: ${inventory.reason}`);
 
     if (key === 'session list') {
-      const views = sessionViews(herdr.sessionList());
-      if (json) stdout(JSON.stringify(views));
+      const selected = inventory.value.filter(row => resolution.scope === 'global' || (resolution.session && row.name === resolution.session));
+      const views = sessionViews(selected);
+      if (json) stdout(JSON.stringify(listReceipt(views, resolution)));
       else stdout(views.length ? formatTable(SESSION_TABLE_COLUMNS, views) : 'No herdr sessions.');
       return 0;
     }
 
     if (key === 'session attach') {
-      const name = positional[0] ?? await projectSession(o['--project'], cwd);
-      requireKnown(name, herdr.sessionList());
+      const name = resolution.target?.herdr_session ?? resolution.session;
+      requireKnown(name, inventory.value);
       return herdr.sessionAttach(name);
     }
 
     if (key === 'session close') {
-      const name = positional[0];
-      requireKnown(name, herdr.sessionList());
+      const name = resolution.target?.herdr_session ?? resolution.session;
+      requireKnown(name, inventory.value);
       if (env.HERDR_SESSION === name && !o['--force']) {
         throw new NotificationError(`refusing to close ${name}: this terminal runs inside it (pass --force to close it anyway)`);
       }
@@ -179,7 +195,7 @@ export async function runSession(family, args, {
       const failed = [];
       for (const row of live) {
         try {
-          await workers.killWorker(row.name, { projectId: row.project_id, teamId: row.team_id ?? null });
+          await workers.killWorker(row.name, { projectId: row.project_id, teamId: row.team_id ?? null, workerId: row.worker_id });
           stopped.push(row.name);
         } catch (error) {
           failed.push(`${row.name}: ${error.message}`);
@@ -199,15 +215,15 @@ export async function runSession(family, args, {
       finishManagementClose({ session: name });
       const result = { session: name, stopped, teams_closed: teams.map((team) => team.slug) };
       stdout(json
-        ? JSON.stringify(result)
+        ? JSON.stringify({ ...result, resolution })
         : `session ${name} closed (${stopped.length} agents stopped, ${teams.length} teams closed)`);
       return 0;
     }
 
     throw new NotificationError(`unknown command: ${key}`);
   } catch (error) {
-    const invalid = error instanceof NotificationError;
-    if (json) stdout(JSON.stringify({ ok: false, error: error.message }));
+    const invalid = error.exitCode === 2 || error instanceof NotificationError;
+    if (json) stdout(JSON.stringify({ ok: false, error: error.message, resolution: error.resolution ?? resolution }));
     else stderr(`golem session: ${error.message}`);
     return invalid ? 2 : 1;
   }

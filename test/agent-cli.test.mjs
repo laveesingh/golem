@@ -7,6 +7,7 @@
 // verbs answering unknown command through the real CLI entry.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import { spawnSync } from 'node:child_process';
 import fs, { writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -17,6 +18,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'golemtest-agent-cli-'));
 process.env.GOLEM_HOME = path.join(temp, 'home');
 delete process.env.XDG_CONFIG_HOME;
+delete process.env.HERDR_ENV;
 const projectDir = path.join(temp, 'project');
 fs.mkdirSync(projectDir, { recursive: true });
 fs.writeFileSync(path.join(projectDir, 'CLAUDE.md'), '# agent cli fixture\n');
@@ -201,41 +203,41 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
 {
   const scoped = await run(['list', '--json']);
   assert.equal(scoped.exit, 0, scoped.text);
-  const rows = JSON.parse(scoped.text);
+  const rows = parseManagementList(scoped.text);
   assert.equal(rows.length, 1, 'lead-A default list holds only the alpha team');
   assert.equal(rows[0].session_id, 'sess-alpha-1');
   assert.equal(rows[0].team, 'alpha-team');
   assert.equal(rows[0].host, 'herdr');
 
   const team = await run(['list', '--scope', 'team', '--json']);
-  assert.deepEqual(JSON.parse(team.text).map((row) => row.session_id), ['sess-alpha-1']);
+  assert.deepEqual(parseManagementList(team.text).map((row) => row.session_id), ['sess-alpha-1']);
 
   const project = await run(['list', '--scope', 'project', '--json']);
   assert.equal(project.exit, 0, project.text);
-  const ids = JSON.parse(project.text).map((row) => row.session_id).sort();
+  const ids = parseManagementList(project.text).map((row) => row.session_id).sort();
   assert.deepEqual(ids, ['sess-alpha-1', 'sess-beta-1', 'sess-external-1'], '--scope project shows other teams agents and external sessions');
-  const external = JSON.parse(project.text).find((row) => row.session_id === 'sess-external-1');
+  const external = parseManagementList(project.text).find((row) => row.session_id === 'sess-external-1');
   assert.equal(external.host, 'external');
   assert.equal(external.team, null);
   assert.equal(external.name, 'field-lead');
   assert.equal(external.delivery, 'ready');
 
   const unbound = await run(['list', '--json'], { resolveContext: unboundContext });
-  assert.deepEqual(JSON.parse(unbound.text).map((row) => row.session_id).sort(), ['sess-alpha-1', 'sess-beta-1', 'sess-external-1'],
+  assert.deepEqual(parseManagementList(unbound.text).map((row) => row.session_id).sort(), ['sess-alpha-1', 'sess-beta-1', 'sess-external-1'],
     'an unbound shell lists the project scope without caller binding');
 
   const ended = await run(['list', '--scope', 'project', '--ended', '--json']);
-  const endedRows = JSON.parse(ended.text);
+  const endedRows = parseManagementList(ended.text);
   assert.ok(endedRows.some((row) => row.session_id === 'sess-beta-9'), '--ended adds retired rows');
   assert.equal(endedRows.find((row) => row.session_id === 'sess-beta-9').host, 'legacy');
-  assert.ok(!JSON.parse(project.text).some((row) => row.session_id === 'sess-beta-9'), 'retired rows hidden by default');
+  assert.ok(!parseManagementList(project.text).some((row) => row.session_id === 'sess-beta-9'), 'retired rows hidden by default');
 
   // An external session shows under team scope when it owns or joined the team.
   const { createTeam: createTeamInScope, joinTeam: joinInScope } = await import('../lib/team-registry.js');
   const gamma = createTeamInScope({ label: 'Gamma Team', projectId, herdrSession: 'agent-cli-test' });
   joinInScope(gamma.team_id, 'sess-external-1');
   const externalLead = await run(['list', '--json'], { resolveContext: () => ({ sessionId: 'sess-external-1', projectId }) });
-  assert.deepEqual(JSON.parse(externalLead.text).map((row) => row.session_id), ['sess-external-1'],
+  assert.deepEqual(parseManagementList(externalLead.text).map((row) => row.session_id), ['sess-external-1'],
     'a lead with no managed agents still sees its own external session');
 
   // The discovered external id is usable with agent notify.
@@ -272,12 +274,12 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   const read = await run(['read', 'builder1']);
   assert.equal(read.exit, 0, read.text);
   assert.equal(read.text.trim(), 'scrollback for builder1');
-  assert.deepEqual(calls.at(-1), ['peek', 'builder1', { projectId, teamId: alpha.team_id, lines: null }]);
+  assert.deepEqual(calls.at(-1), ['peek', 'builder1', { projectId, teamId: alpha.team_id, workerId: alphaBuilder.worker_id, lines: null }]);
 
   // Exact session id reaches across teams (no enforcement).
   const stop = await run(['stop', 'sess-beta-1', '--json']);
   assert.equal(stop.exit, 0, stop.text);
-  assert.deepEqual(calls.at(-1), ['stop', 'builder1', { projectId, teamId: beta.team_id }]);
+  assert.deepEqual(calls.at(-1), ['stop', 'builder1', { projectId, teamId: beta.team_id, workerId: betaBuilder.worker_id }]);
 
   // A caller with no team and a repeated name gets candidates, not a pick.
   const ambiguous = await run(['read', 'builder1'], { resolveContext: unboundContext });
@@ -291,7 +293,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
 
   const attach = await run(['attach', 'sess-alpha-1']);
   assert.equal(attach.exit, 0, attach.text);
-  assert.deepEqual(calls.at(-1), ['attach', 'builder1', { projectId, teamId: alpha.team_id }]);
+  assert.deepEqual(calls.at(-1), ['attach', 'builder1', { projectId, teamId: alpha.team_id, workerId: alphaBuilder.worker_id }]);
 
   // GOL-382 R6: an exact session id on two rows (a stale shared binding)
   // resolves to the live row instead of failing as ambiguous.
@@ -307,7 +309,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
 {
   const refused = await run(['create', 'builder'], { resolveContext: unboundContext });
   assert.equal(refused.exit, 2);
-  assert.match(refused.text, /no team: pass --team or run golem team join <team>/);
+  assert.match(refused.text, /no team: pass --team/);
 
   const created = await run(['create', 'explorer', '--team', 'beta-team', '--json']);
   assert.equal(created.exit, 0, created.text);

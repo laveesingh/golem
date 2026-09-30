@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-management-'));
 delete process.env.GOLEM_HERDR_SESSION;
+delete process.env.HERDR_ENV;
 process.env.GOLEM_HOME = path.join(temp, 'state');
 const service = await import('../lib/management-registry.js');
 const teams = await import('../lib/team-registry.js');

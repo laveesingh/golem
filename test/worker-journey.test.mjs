@@ -7,6 +7,7 @@
 // stop/read refuse with the exact tmux command.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -363,7 +364,7 @@ try {
   assert.doesNotMatch(cliList.stdout, /^\[/, 'table output is the default');
   const cliListJson = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(cliListJson.status, 0, cliListJson.stderr);
-  const listed = JSON.parse(cliListJson.stdout);
+  const listed = parseManagementList(cliListJson.stdout);
   assert.equal(listed.length, 7);
   assert.ok(listed.every((worker) => worker.dispatchable && worker.model === 'deepseek-v4-flash:0731'));
   console.log(JSON.stringify({ cli_list_count: listed.length, table_default: true, json_stable: true }));
@@ -410,7 +411,7 @@ try {
   assert.equal(hiddenDead.stdout.trim(), 'No agents.');
   const allDead = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended', '--json']);
   assert.equal(allDead.status, 0, allDead.stderr);
-  const allDeadRows = JSON.parse(allDead.stdout);
+  const allDeadRows = parseManagementList(allDead.stdout);
   assert.ok(allDeadRows.some((worker) => worker.name === youngTombstone));
   assert.equal(allDeadRows.some((worker) => worker.name === oldTombstone), false);
   const allDeadTable = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended']);
@@ -574,7 +575,7 @@ try {
   assert.equal(failedList.status, 0, failedList.stderr);
   // The row was failed right after spawn (asserted above); listing
   // reconciles it, and the closed tab + empty group honestly read dead.
-  assert.ok(JSON.parse(failedList.stdout).some((worker) => worker.name === failedName && ['failed', 'dead'].includes(worker.state)));
+  assert.ok(parseManagementList(failedList.stdout).some((worker) => worker.name === failedName && ['failed', 'dead'].includes(worker.state)));
   console.log(JSON.stringify({ failed_spawn: failedName, state: failed.state, tab_closed_on_failure: true }));
   await killWorker(failedName, { projectId });
   assert.deepEqual(processIdsInGroup(failed.pid), []);

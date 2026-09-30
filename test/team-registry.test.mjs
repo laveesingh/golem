@@ -3,6 +3,7 @@
 // resolution. Temp GOLEM_HOME only; no herdr, no tmux, no dashboard.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +11,7 @@ import path from 'node:path';
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'golemtest-team-registry-'));
 process.env.GOLEM_HOME = path.join(temp, 'state');
 delete process.env.XDG_CONFIG_HOME;
+delete process.env.HERDR_ENV;
 
 const { teamsJsonPath } = await import('../lib/golem-home.js');
 const {
@@ -183,7 +185,7 @@ const teams = listTeams({ projectId: projectA });
 // --team wins, by id and by slug.
 assert.equal(resolveCallerTeam({ teamRef: team1.team_id, projectId: projectA, teams }).team_id, team1.team_id);
 assert.equal(resolveCallerTeam({ teamRef: 'team-two', projectId: projectA, teams }).team_id, team2.team_id);
-assert.throws(() => resolveCallerTeam({ teamRef: 'nope', projectId: projectA, teams }), /unknown team: nope/);
+assert.throws(() => resolveCallerTeam({ teamRef: 'nope', projectId: projectA, teams }), /unknown or ambiguous team: nope/);
 // A slug shared with a closed row resolves to the open team.
 assert.equal(resolveCallerTeam({ teamRef: 'blue-team', projectId: projectA, teams }).team_id, blue2.team_id);
 
@@ -242,7 +244,7 @@ assert.throws(
     const out = [];
     const status = await runTeam('team', ['list', '--project', projectC, '--json', ...args], { stdout: (t) => out.push(t), stderr: () => {} });
     assert.equal(status, 0);
-    return JSON.parse(out.join('')).map((row) => row.slug);
+    return parseManagementList(out.join('')).map((row) => row.slug);
   };
   assert.deepEqual(await listed([]), [openTeam.slug], 'default list shows open teams only');
   assert.deepEqual((await listed(['--all'])).sort(), [openTeam.slug, shutTeam.slug].sort(), '--all includes closed teams');
