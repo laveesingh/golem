@@ -178,6 +178,17 @@ try {
   const recovery = service.readManagementSnapshot().mappings.intents.find(i => i.operation_id === doomed.operation_id);
   assert.deepEqual(recovery.resources, []);
 
+  fixture('creator-token');
+  const tokenTeam = create('token-team'); const tokenWorker = claim(tokenTeam);
+  const tokenState = service.readManagementSnapshot();
+  tokenState.mappings.intents[0].owner.incarnation = 'previous-process-token';
+  raw('herdr-mappings.json', tokenState.mappings);
+  check('same PID/birth cannot reuse an ended creator incarnation token', () => {
+    assert.throws(() => service.beforeNativeCall(tokenWorker.operation_id), /fenced/);
+    service.recoverManagementIntents();
+    assert.equal(service.readManagementSnapshot().mappings.intents[0].phase, 'cancelled');
+  });
+
   fixture('legacy-provisioning');
   raw('teams.json', { version: 1, teams: [teamRow('a', 'p', 'exact')] });
   raw('workers.json', { version: 1, workers: [{ ...workerRow('legacy-launch', 'p', 'exact', 'a', null), state: 'spawning', herdr_pane_id: null }] });
