@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import { channelsJsonPath } from '../../lib/golem-home.js';
 import { readEndpointLeases } from '../../lib/session-facts.js';
 import { TYPED_WORKER_PROTOCOL_VERSION } from '../../lib/typed-worker-endpoint.js';
+import { claudeChannelDeliveryReady } from '../../lib/runtime-compatibility.js';
 
 const CHANNELS_REGISTRY = channelsJsonPath();
 
@@ -26,18 +27,15 @@ export function isTypedWorkerChannel(channel) {
 export function isChannelDeliveryReady(channel) {
   if (!channel) return false;
   if (isTypedWorkerChannel(channel)) return channel.delivery_ready === true;
-  return channel.consumer_ready === true && channel.delivery_ready === true;
+  return claudeChannelDeliveryReady(channel);
 }
 
 export function channelDeliveryError(channel) {
   if (isTypedWorkerChannel(channel)) return 'typed worker target is not delivery-ready';
-  if (String(channel?.consumer_reason || '').startsWith('unsupported_')) {
-    return 'Claude Code channel is ineligible under this provider configuration. Claude Channels require Anthropic authentication through claude.ai or a Console API key; unset Bedrock/Vertex/Foundry or non-default ANTHROPIC_BASE_URL configuration, then restart with --dangerously-load-development-channels plugin:golem@golem-workspace.';
-  }
   if (channel?.consumer_reason === 'mcp_not_initialized') {
     return 'Claude Code channel MCP initialization has not completed; wait for plugin startup or restart the channel-enabled session.';
   }
-  return 'Claude Code channel consumer readiness is unknown; restart the session with an Anthropic-authenticated channel configuration.';
+  return 'Claude Code channel initialization/readiness is unknown; restart the channel process to publish current initialization evidence. Compatibility labels alone do not prove readiness.';
 }
 
 function pidAlive(pid) {
@@ -103,15 +101,18 @@ export async function readChannels() {
           // The authenticated health response is newer than the persisted
           // explicit consumer readiness for CC; old unknown CC rows fail
           // bridge retains its independent readiness contract.
+          consumer_initialized: body.consumer_initialized ?? lease.consumer_initialized ?? null,
+          compatibility: body.compatibility ?? lease.compatibility ?? null,
           consumer_ready: body.consumer_ready ?? lease.consumer_ready ?? null,
           consumer_reason: body.consumer_reason ?? lease.consumer_reason ?? null,
           consumer_transport: body.consumer_transport ?? lease.consumer_transport ?? null,
           typed_worker: typedWorker,
-          delivery_ready: typedWorker
-            ? body.delivery_ready === true
-            : null
-              ? body.delivery_ready !== false
-              : body.consumer_ready === true && body.delivery_ready === true,
+          delivery_ready: typedWorker ? body.delivery_ready === true : claudeChannelDeliveryReady({
+            consumer_initialized: body.consumer_initialized ?? lease.consumer_initialized,
+            consumer_ready: body.consumer_ready ?? lease.consumer_ready,
+            consumer_reason: body.consumer_reason ?? lease.consumer_reason,
+            delivery_ready: body.delivery_ready ?? lease.delivery_ready,
+          }),
         }, owner_token);
     } catch { return null; } finally { clearTimeout(timer); }
   }))).filter(Boolean);
@@ -124,7 +125,7 @@ export async function readChannels() {
       ...c,
       url: `http://${c.host}:${c.port}`,
       endpoint_health: 'legacy-pid-only',
-      delivery_ready: c.consumer_ready === true && c.delivery_ready === true,
+      delivery_ready: claudeChannelDeliveryReady(c),
     }));
   return [...healthy, ...legacy];
 }

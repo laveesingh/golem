@@ -38,6 +38,7 @@ import { resolveCallerSessionId, resolveProjectCwd, sessionsForParent } from './
 import { readClaudeSessionRecord } from '../../lib/claude-session-context.js';
 import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../../lib/session-role.js';
 import { releaseEndpointLeases, renewEndpointLease, upsertSessionFact } from '../../lib/session-facts.js';
+import { claudeConsumerStatus, submitClaudeChannelNotification } from '../../lib/runtime-compatibility.js';
 
 const VERSION = '0.1.0';
 // Port selection (multi-CEO safe by default):
@@ -119,57 +120,13 @@ function launcherBoundSessionId() {
 const CHANNELS_REGISTRY = path.join(tracker.golemHome(), 'channels.json');
 const CHANNELS_LOCK = `${CHANNELS_REGISTRY}.lock`;
 
-// A live HTTP child is only an endpoint, not proof that its host can consume
-// Claude channel notifications. Claude Code may initialize ordinary MCP tools
-// even when its model-provider configuration is ineligible for Channels. Keep
-// the signal deliberately narrow: completed MCP initialization plus the
+// Endpoint presence is not initialization, and initialization/submission is
+// not proof of native consumption. Provider compatibility is advisory only.
 let MCP_INITIALIZED = false;
 let BOUND_PORT = null;
 
-function nonDefaultAnthropicBaseUrl(value) {
-  const normalized = String(value || '').trim().replace(/\/+$/, '').toLowerCase();
-  return !!normalized && normalized !== 'https://api.anthropic.com';
-}
-
-function enabledProviderFlag(value) {
-  return String(value || '').trim() === '1';
-}
-
-function claudeChannelProviderStatus(env = process.env) {
-  if (enabledProviderFlag(env.CLAUDE_CODE_USE_BEDROCK)) {
-    return { supported: false, reason: 'unsupported_bedrock_provider' };
-  }
-  if (enabledProviderFlag(env.CLAUDE_CODE_USE_VERTEX)) {
-    return { supported: false, reason: 'unsupported_vertex_provider' };
-  }
-  if (enabledProviderFlag(env.CLAUDE_CODE_USE_FOUNDRY)) {
-    return { supported: false, reason: 'unsupported_foundry_provider' };
-  }
-  if (nonDefaultAnthropicBaseUrl(env.ANTHROPIC_BASE_URL)) {
-    return { supported: false, reason: 'unsupported_custom_base_url' };
-  }
-  return { supported: true, reason: null };
-}
-
-function channelConsumerStatus(harness) {
-  const provider = claudeChannelProviderStatus();
-  if (!provider.supported) {
-    return { ready: false, reason: provider.reason, transport: 'claude-channel' };
-  }
-  if (!MCP_INITIALIZED) {
-    return { ready: false, reason: 'mcp_not_initialized', transport: 'claude-channel' };
-  }
-  return { ready: true, reason: null, transport: 'claude-channel' };
-}
-
-function channelReadinessError(reason) {
-  if (String(reason || '').startsWith('unsupported_')) {
-    return 'Claude Code channel is ineligible under this provider configuration. Claude Channels require Anthropic authentication through claude.ai or a Console API key; unset Bedrock/Vertex/Foundry or non-default ANTHROPIC_BASE_URL configuration, then restart with --dangerously-load-development-channels plugin:golem@golem-workspace.';
-  }
-  if (reason === 'mcp_not_initialized') {
-    return 'Claude Code channel is not ready because MCP initialization has not completed. Wait for plugin startup, or restart with --dangerously-load-development-channels plugin:golem@golem-workspace.';
-  }
-  return 'Claude Code channel consumer readiness is unknown. Restart the session with an Anthropic-authenticated Claude Code channel configuration and --dangerously-load-development-channels plugin:golem@golem-workspace.';
+function channelConsumerStatus() {
+  return claudeConsumerStatus({ initialized: MCP_INITIALIZED });
 }
 
 
@@ -280,9 +237,11 @@ function registerChannel(port, { logMissing = true } = {}) {
         port,
         version: VERSION,
         harness,
+        consumer_initialized: consumer.initialized,
         consumer_ready: consumer.ready,
         consumer_reason: consumer.reason,
         consumer_transport: consumer.transport,
+        compatibility: consumer.compatibility,
         delivery_ready: consumer.ready,
         started_at: STARTED_AT,
       });
@@ -300,6 +259,7 @@ function registerChannel(port, { logMissing = true } = {}) {
         continuation_key: row.session_id,
         ...(row.name ? { name: row.name } : {}),
         ...(row.status ? { status: row.status } : {}),
+        compatibility: consumer.compatibility,
         observed_at: new Date().toISOString(),
       }, { reassert: true });
       renewEndpointLease({
@@ -310,9 +270,11 @@ function registerChannel(port, { logMissing = true } = {}) {
         pid: process.pid,
         harness,
         kind: 'claude-channel',
+        consumer_initialized: consumer.initialized,
         consumer_ready: consumer.ready,
         consumer_reason: consumer.reason,
         consumer_transport: consumer.transport,
+        compatibility: consumer.compatibility,
         delivery_ready: consumer.ready,
       });
     }
@@ -687,17 +649,8 @@ async function pushEvent(kind, content, extraMeta = {}, targetSessionId = null) 
   // are silently dropped by Claude Code. snake_case only.
   const meta = { kind, ...extraMeta };
   const renderedContent = renderTrustedIdentity(content, extraMeta);
-  const consumer = channelConsumerStatus('claudecode');
-  if (!consumer.ready) {
-    const error = new Error(channelReadinessError(consumer.reason));
-    error.statusCode = 503;
-    error.failureStage = 'before_native';
-    throw error;
-  }
-  await mcp.notification({
-    method: 'notifications/claude/channel',
-    params: { content: renderedContent, meta },
-  });
+  return submitClaudeChannelNotification({ initialized: MCP_INITIALIZED,
+    notification: message => mcp.notification(message), content: renderedContent, meta });
 }
 
 // --- HTTP listener ---------------------------------------------------------
@@ -729,9 +682,11 @@ const server = http.createServer(async (req, res) => {
         canonical_id: canonicalId,
         owner_token: LEASE_OWNER,
         harness,
+        consumer_initialized: consumer.initialized,
         consumer_ready: consumer.ready,
         consumer_reason: consumer.reason,
         consumer_transport: consumer.transport,
+        compatibility: consumer.compatibility,
         delivery_ready: consumer.ready,
       });
     }
@@ -766,8 +721,8 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && path === '/brief') {
       const body = await readBody(req);
       const metadata = extractMetadata(body);
-      await pushEvent('brief', extractContent(body), metadata, targetSessionId || metadata.target_session_id || null);
-      return sendJson(res, 202, { ok: true, kind: 'brief' });
+      const warnings = await pushEvent('brief', extractContent(body), metadata, targetSessionId || metadata.target_session_id || null);
+      return sendJson(res, 202, { ok: true, kind: 'brief', compatibility_warnings: warnings });
     }
 
     // POST /role — identity only (dashboard/CLI role assignment). Never a work brief.
@@ -880,6 +835,7 @@ server.listen(PORT, HOST, () => {
   process.stderr.write(
     `[golem-channel] http://${HOST}:${boundPort} (v${VERSION}) session=${SESSION_ID || '(none)'}\n`,
   );
+  for (const warning of channelConsumerStatus().compatibility.warnings) process.stderr.write(`[golem-channel] WARN ${warning.code}: ${warning.message}\n`);
   try { registerChannel(boundPort); } catch (err) {
     process.stderr.write(`[golem-channel] register failed: ${err.message}\n`);
   }

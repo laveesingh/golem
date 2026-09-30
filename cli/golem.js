@@ -1028,7 +1028,7 @@ async function cmdPi(args) {
     return;
   }
   if (!piNodeSupported()) {
-    fatal(1, `golem pi requires Node.js >=${MIN_PI_NODE.major}.${MIN_PI_NODE.minor}; running ${process.versions.node}`);
+    err(`WARN: Golem tested on Node.js >=${MIN_PI_NODE.major}.${MIN_PI_NODE.minor}; running ${process.versions.node} is unverified — continuing launch attempt`);
   }
 
   let role = null;
