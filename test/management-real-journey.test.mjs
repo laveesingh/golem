@@ -2,20 +2,22 @@
 // Explicit real-app acceptance. No fake harness or silent skip/pass substitute.
 import assert from 'node:assert/strict'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import crypto from 'node:crypto'; import http from 'node:http'; import { spawn, spawnSync } from 'node:child_process'; import { once } from 'node:events'; import { fileURLToPath } from 'node:url';
+import { planRealActorSetup, verifyRealActorSetup, realActorEnvironment } from './_real-actor-setup.mjs';
 if (process.env.GOLEM_REAL_HARNESS !== '1') { console.error('UNVERIFIED: real harness opt-in required: GOLEM_REAL_HARNESS=1'); process.exit(2); }
+let setup;
+try { setup=verifyRealActorSetup(planRealActorSetup(process.env)); }
+catch(error) { console.error(error.message); process.exit(3); }
+const actors=setup.actors;
+if(process.env.GOLEM_REAL_SETUP_ONLY==='1') { console.log(JSON.stringify({state:'INCOMPLETE',actors,setup:'metadata-only prerequisites configured; authentication and owned-test use still require explicit authorization',auth_run:false})); process.exit(0); }
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), cli = path.join(repo,'cli/golem.js');
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'golemtest-management-real-'))), xdg = `/tmp/golem-real-${process.pid}`;
 const home = path.join(root,'home'), state = path.join(root,'state'), project = path.join(root,'project'), outside = path.join(root,'outside');
 for (const dir of [home,state,project,outside]) fs.mkdirSync(dir,{recursive:true}); fs.chmodSync(root,0o700); fs.writeFileSync(path.join(project,'CLAUDE.md'),'# Disposable actual management acceptance\n');
 const originalHome = process.env.HOME, nativeName = `golem-test-${process.pid}-real`;
-const env = { ...process.env, HOME: home, GOLEM_HOME: state, XDG_CONFIG_HOME: xdg, GOLEM_HERDR_SESSION: nativeName, HERDR_ENV:'0', GOLEM_TRACKER_DB:path.join(root,'tracker.db'), GOLEM_PROJECTS_ROOT:path.join(root,'projects'), GOLEM_IDEAS_ROOT:path.join(root,'ideas'), GOLEM_ROOT:repo, HOST:'127.0.0.1', CLAUDE_CONFIG_DIR:path.join(home,'.claude') };
-for (const dir of [env.GOLEM_PROJECTS_ROOT,env.GOLEM_IDEAS_ROOT,env.CLAUDE_CONFIG_DIR,path.join(home,'.pi','agent')]) fs.mkdirSync(dir,{recursive:true});
-for (const key of ['PI_SESSION_ID','PI_SESSION_FILE','PI_MODEL','PI_PROVIDER','PI_REASONING_LEVEL','GOLEM_SESSION_ID','GOLEM_CEO_SESSION_ID','CLAUDE_CODE_SESSION_ID','CLAUDECODE','CLAUDE_CODE_CHILD_SESSION','HERDR_SESSION','HERDR_SOCKET_PATH','HERDR_PANE_ID','HERDR_TAB_ID','HERDR_WORKSPACE_ID','PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR']) delete env[key];
-// Private credential copies only: original files never changed, contents never
-// printed/staged. OAuth refreshes, if needed, affect only these mode0600 copies.
-for (const name of ['auth.json','models.json']) { const source = path.join(originalHome,'.pi','agent',name); if(fs.existsSync(source)) { const dest=path.join(home,'.pi','agent',name); fs.copyFileSync(source,dest); fs.chmodSync(dest,0o600); } }
-for (const name of ['.credentials.json','settings.json']) { const source=path.join(originalHome,'.claude',name); if(fs.existsSync(source)) { const dest=path.join(env.CLAUDE_CONFIG_DIR,name); fs.copyFileSync(source,dest); fs.chmodSync(dest,0o600); } }
-const ccConfig=path.join(originalHome,'.claude.json'); if(fs.existsSync(ccConfig)) { fs.copyFileSync(ccConfig,path.join(home,'.claude.json')); fs.chmodSync(path.join(home,'.claude.json'),0o600); }
+const env = { ...realActorEnvironment(process.env), HOME: home, GOLEM_HOME: state, XDG_CONFIG_HOME: xdg, GOLEM_HERDR_SESSION: nativeName, HERDR_ENV:'0', GOLEM_TRACKER_DB:path.join(root,'tracker.db'), GOLEM_PROJECTS_ROOT:path.join(root,'projects'), GOLEM_IDEAS_ROOT:path.join(root,'ideas'), GOLEM_ROOT:repo, HOST:'127.0.0.1' };
+for (const dir of [env.GOLEM_PROJECTS_ROOT,env.GOLEM_IDEAS_ROOT]) fs.mkdirSync(dir,{recursive:true});
+if(setup.facilities.pi) { env.PI_CODING_AGENT_DIR=setup.facilities.pi.directory; env.PI_CODING_AGENT_SESSION_DIR=path.join(root,'pi-sessions'); }
+if(setup.facilities.claude) env.CLAUDE_CONFIG_DIR=setup.facilities.claude.directory;
 const shell = value => `'${String(value).replace(/'/g,"'\\''")}'`;
 const run = (args,{json=true,timeout=45000}={}) => { const result=spawnSync(process.execPath,[cli,...args],{cwd:project,env,encoding:'utf8',timeout}); assert.equal(result.status,0,`${args.slice(0,3).join(' ')}: ${result.error?.message ?? result.stderr} ${result.stdout}`); return json?JSON.parse(result.stdout):result.stdout; };
 const native = args => { const result=spawnSync('herdr',['--session',nativeName,...args],{env,encoding:'utf8',timeout:10000}); assert.equal(result.status,0,result.stderr||result.stdout); return result.stdout.trim() ? JSON.parse(result.stdout).result : null; };
@@ -27,7 +29,8 @@ try {
   let ready=false; for(let i=0;i<150;i++){try{ready=(await fetch(`${env.GOLEM_DASHBOARD_URL}/api/health`)).ok;}catch{}if(ready)break;if(dashboard.exitCode!=null)throw new Error(dashboardLog);await new Promise(r=>setTimeout(r,100));} assert.equal(ready,true,'owned dashboard startup');
   const registered=JSON.parse(fs.readFileSync(path.join(state,'dashboard.json'),'utf8')); assert.equal(registered.url,env.GOLEM_DASHBOARD_URL,'private endpoint must be verified');
   const piRender=path.join(root,'pi-render'), ccRender=path.join(root,'cc-render');
-  run(['sync','--target','pi','--out',piRender,'--force'],{json:false}); run(['sync','--target','cc','--out',ccRender,'--force'],{json:false});
+  if(actors.includes('pi')) run(['sync','--target','pi','--out',piRender,'--force'],{json:false});
+  if(actors.includes('claude')) run(['sync','--target','cc','--out',ccRender,'--force'],{json:false});
   const team=run(['team','create','Real Team','--project',project,'--json']);
   const human= native(['tab','create','--workspace',team.herdr_workspace_id,'--label','Actual human shell']).root_pane;
   assert.ok(human?.pane_id);
@@ -35,7 +38,6 @@ try {
   native(['pane','run',human.pane_id,...['bash','-c',`${shell(process.execPath)} ${shell(cli)} context --json > ${shell(humanFile)}`].map(shell)]);
   const humanContext=await waitFile(humanFile,10000); assert.equal(humanContext.resolution.team_id,team.team_id); assert.equal(humanContext.resolution.provenance.team_id,'caller-pane-workspace');
   console.log(JSON.stringify({actual_human:'native shell inferred mapped workspace',team_id:team.team_id}));
-  const actors = process.env.GOLEM_REAL_ACTORS ? process.env.GOLEM_REAL_ACTORS.split(',') : ['pi','claude'];
   if (actors.length !== 2) console.log('PARTIAL DIAGNOSTIC: selected real actors only; never full acceptance');
   for (const harness of actors) {
     const sourceTeam = harness === 'claude' ? run(['team','create','Claude Source','--project',project,'--json']) : team;
@@ -50,7 +52,7 @@ try {
     const promptFile=path.join(root,`${harness}-prompt.txt`); fs.writeFileSync(promptFile,prompt);
     const created=native(['tab','create','--workspace',sourceTeam.herdr_workspace_id,'--label',`Actual ${harness}`]).root_pane; assert.ok(created?.pane_id);
     let command;
-    if(harness==='pi') command=['pi','--no-extensions','-e',path.join(piRender,'golem.ts'),'-e',process.env.GOLEM_REAL_HERDR_PI_REPORTER || path.join(originalHome,'.pi','agent','extensions','herdr-agent-state.ts'),'--no-skills','--no-context-files','--provider','openai-codex','--model','gpt-6.1-sol','--thinking','xhigh','--tools','bash',`@${promptFile}`];
+    if(harness==='pi') command=['pi','--no-extensions','-e',path.join(piRender,'golem.ts'),'-e',setup.facilities.pi.reporter,'--no-skills','--no-context-files','--provider','openai-codex','--model','gpt-6.1-sol','--thinking','xhigh','--tools','bash',`@${promptFile}`];
     else command=['claude','--plugin-dir',ccRender,'--session-id',crypto.randomUUID(),'--permission-mode','bypassPermissions','--tools','Bash','--allowedTools','Bash','--output-format','stream-json','--verbose','-p',prompt];
     const runner = path.join(root, `${harness}-runner.sh`);
     fs.writeFileSync(runner, `#!/bin/bash\ncd ${shell(project)}\n${command.map(shell).join(' ')}${harness === 'claude' ? ` >${shell(log)} 2>&1` : ''}\n`, { mode: 0o700 });
@@ -115,11 +117,11 @@ try {
   console.log(`REAL PARTIAL JOURNEY PASS: actual ${actors.join('/')} caller/cwd/transfer/move assertions only; Claude authentication/control and full-matrix acceptance remain separate unverified gaps`);
 } finally {
   // Physical session belongs exclusively to this test. Stop/delete before
-  // deleting HOME/auth/socket paths; never use caller/shared native session.
+  // deleting owned HOME/socket paths; never delete supplied actor facilities.
   spawnSync('herdr',['session','stop',nativeName],{env,encoding:'utf8',timeout:10000}); await new Promise(r=>setTimeout(r,500));
   spawnSync('herdr',['session','delete',nativeName],{env,encoding:'utf8',timeout:10000});
   const ps=spawnSync('ps',['-axo','pid=,args='],{encoding:'utf8'}); assert.equal(ps.status,0); assert.equal(ps.stdout.split('\n').some(line=>line.includes(`--session ${nativeName}`)&&/\bherdr\b/.test(line)),false,'owned native server must be gone before private resource removal');
   if(dashboard?.exitCode===null)dashboard.kill('SIGTERM'); if(dashExit)await dashExit;
   fs.rmSync(root,{recursive:true,force:true}); fs.rmSync(xdg,{recursive:true,force:true});
-  console.log('real management cleanup passed: owned native/dashboard stopped before HOME/credential/socket removal');
+  console.log('real management cleanup passed: owned native/dashboard stopped before test HOME/socket removal; supplied facilities retained');
 }

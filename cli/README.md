@@ -155,17 +155,30 @@ but marks dashboard delivery readiness unavailable.
 ## Real management acceptance
 
 `npm run test:management:real` explicitly runs actual installed Pi/Claude plus a
-human shell in owned temporary native resources. It needs authenticated harness
-configuration and the standard Herdr Pi reporter; the test explicitly loads that
-existing reporter in its private HOME. Set `GOLEM_REAL_HERDR_PI_REPORTER` only to the
-actual installed reporter path when it differs. Golem does not add a second default
+human shell in owned temporary native resources. Select `GOLEM_REAL_ACTORS` before
+setup. Every selected actor requires an explicitly authorized, already provisioned
+private facility: `GOLEM_REAL_PI_AGENT_DIR` or `GOLEM_REAL_CLAUDE_CONFIG_DIR`.
+Pi also requires `GOLEM_REAL_HERDR_PI_REPORTER`, the explicit existing Herdr reporter
+file. These inputs configure prerequisites; they do not authorize login or prove
+that a directory is authenticated. Missing/unknown prerequisites return INCOMPLETE
+before native/dashboard/auth setup. No facility is currently authorized by these docs. Golem does not add a second default
 native reporter. The existing Pi application lease carries PID/birth evidence;
 Claude MCP sidecar leases do not identify the Claude application.
 
 `GOLEM_REAL_ACTORS=pi` or `claude` selects a **partial diagnostic**, never full
-acceptance. Actual startup/login errors remain unverified gaps. Credentials use
-private mode0600 copies, never repository/log content; owned native/dashboard
-processes stop before HOME/socket/auth copies are removed.
+acceptance. Actual startup/login errors remain unverified gaps. The test never
+copies live credentials/configuration or falls back to live HOME; Pi-only setup
+never touches Claude facilities. Actor environments retain only OS/terminal
+necessities, not inherited provider credentials/configuration/helpers. Pi session
+storage is separately test-owned. Facility authorization must cover owned-test use
+and any normal refresh within that dedicated facility; Claude keyless Console
+isolation needs the documented account-boundary caveat. Owned processes stop before
+test HOME/socket deletion; the supplied private facility is never deleted.
+
+`GOLEM_REAL_SETUP_ONLY=1` checks selected facility metadata without actor/auth/API
+execution or resource creation. Its INCOMPLETE receipt is not authentication or
+management acceptance. `node test/real-actor-setup.test.mjs` proves selection and
+missing-prerequisite/no-copy boundaries using only owned metadata fixtures.
 
 ## Runtime compatibility
 
