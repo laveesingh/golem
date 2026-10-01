@@ -315,17 +315,17 @@ export async function runTeam(family, args, {
         try {
           const dead = await workers.killWorker(member.name, { projectId: member.project_id, teamId: team.team_id, workerId: member.worker_id, constraints: { teamId: team.team_id } });
           stopped.push(dead?.name ?? member.name);
-          targets.push({ id: member.session_id ?? member.worker_id, name: member.name, status: 'completed' });
+          targets.push({ id: member.session_id ?? member.worker_id, name: member.name, status: 'completed', pane_retained: dead?.pane_retained ?? null });
         } catch (error) { targets.push({ id: member.session_id ?? member.worker_id, name: member.name, status: 'failed', error: error.message }); }
       }
       if (targets.some(t => t.status === 'failed')) return partial('independent agent stops completed with failures; retry exact remaining targets', { stopped, targets });
       let workspaceClosed = false;
       let keptFor = [];
       if (team.herdr_workspace_id) {
-        // A pane running an agent golem did not start (an owner started by
-        // hand) keeps the workspace open (GOL-382 R4).
+        // Post-stop inventory is authoritative. Initial worker membership
+        // cannot turn a retained/unknown/replacement pane into absent content.
         try {
-          keptFor = herdr.unmanagedAgentPanes(team.herdr_session, team.herdr_workspace_id, members.map((row) => row.herdr_pane_id));
+          keptFor = herdr.unmanagedAgentPanes(team.herdr_session, team.herdr_workspace_id);
         } catch (error) { return partial(`native inventory unavailable: ${error.message}`, { stopped, targets, workspace_closed: false }); }
         if (!keptFor.length) {
           workspaceClosed = herdr.closeTeamWorkspace(team.herdr_session, team.herdr_workspace_id);

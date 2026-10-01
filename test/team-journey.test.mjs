@@ -350,15 +350,22 @@ async function main() {
     return false;
   })();
   assert.ok(detected, 'herdr detects the hand-started agent');
+  // Deliberately remove only fixture shell ownership. The real agent stop
+  // must retain its now-unknown native shell; team close cannot discard it.
+  const { updateWorker } = await import('../lib/worker-registry.js');
+  updateWorker(betaBuilder.worker_id,{pane_shell_ownership:null});
   const betaClosed = await runCli(['team', 'close', 'beta-team', '--project', project, '--json']);
   assert.equal(betaClosed.status, 0, betaClosed.stderr);
   const betaResult = JSON.parse(betaClosed.stdout);
   assert.deepEqual(betaResult.stopped, ['builder1']);
   assert.equal(betaResult.workspace_closed, false, 'workspace stays open for the unmanaged agent');
   const betaUnmanaged = [...panesAfter.values()].filter(p => p.workspace_id === beta.herdr_workspace_id && p.pane_id !== betaBuilder.herdr_pane_id).map(p => p.pane_id);
-  assert.deepEqual(betaResult.workspace_kept_for.slice().sort(), [...betaUnmanaged, handPane.pane_id].sort(), 'unmanaged blank shells and hand-started agent all retain their exact workspace');
+  assert.deepEqual(betaResult.workspace_kept_for.slice().sort(), [...betaUnmanaged, handPane.pane_id, betaBuilder.herdr_pane_id].sort(), 'retained managed shell plus unmanaged activity all keep their exact workspace');
   assert.ok(paneList(herdrSession).some((pane) => pane.pane_id === handPane.pane_id), 'the hand-started pane survives the close');
-  assert.ok(!paneList(herdrSession).some((pane) => pane.pane_id === betaBuilder.herdr_pane_id), 'the team agent pane is gone');
+  assert.equal(betaResult.targets[0].pane_retained,true);
+  assert.ok(paneList(herdrSession).some((pane) => pane.pane_id === betaBuilder.herdr_pane_id), 'the unknown post-stop managed shell remains');
+  const retriedBeta=await runCli(['team','close',beta.team_id,'--project',project,'--json']); assert.equal(retriedBeta.status,0,retriedBeta.stderr);
+  assert.deepEqual(JSON.parse(retriedBeta.stdout).workspace_kept_for.slice().sort(),betaResult.workspace_kept_for.slice().sort(),'actual native retry retains all residual panes');
 
   const listed = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json', '--ended']);
   assert.equal(listed.status, 0, listed.stderr);

@@ -146,7 +146,7 @@ setResponse(['pane', 'list'], { panes: [
   { pane_id: 'owned-pane', workspace_id: 'w1', agent: {} },
 ] });
 const { unmanagedAgentPanes } = await import('../lib/team-herdr.js');
-assert.deepEqual(unmanagedAgentPanes(session, 'w1', ['owned-pane']).map(p => p.pane_id), ['foreign-shell']);
+assert.deepEqual(unmanagedAgentPanes(session, 'w1').map(p => p.pane_id), ['foreign-shell','owned-pane'], 'post-stop inventory must not exclude initially managed retained panes');
 check('unmanaged shells retain workspace even without detected agents', true);
 
 // 4. tab create + pane run + agent rename shapes
