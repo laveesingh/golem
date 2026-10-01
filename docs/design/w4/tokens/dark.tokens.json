@@ -1,0 +1,100 @@
+{
+  "semantic": {
+    "surface": {
+      "page": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.page}"
+      },
+      "panel": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.panel}"
+      },
+      "raised": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.raised}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.hover}"
+      },
+      "selected": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.selected}"
+      },
+      "disabled": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.raised}"
+      }
+    },
+    "text": {
+      "primary": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.primary}"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.secondary}"
+      },
+      "muted": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.muted}"
+      },
+      "disabled": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.muted}"
+      }
+    },
+    "status": {
+      "working": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.working}"
+      },
+      "idle": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.idle}"
+      },
+      "review": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.review}"
+      },
+      "blocked": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.blocked}"
+      },
+      "done": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.done}"
+      },
+      "triage": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.triage}"
+      },
+      "open": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.open}"
+      }
+    },
+    "accent": {
+      "fill": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.accent}"
+      },
+      "ink": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.page}"
+      }
+    },
+    "focus": {
+      "color": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.accent}"
+      }
+    },
+    "border": {
+      "control": {
+        "$type": "color",
+        "$value": "{primitive.color.dark.muted}"
+      }
+    }
+  }
+}
