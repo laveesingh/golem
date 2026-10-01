@@ -30,11 +30,13 @@ CTX=$(mktemp -d /tmp/gol458-linux-build.XXXXXX)
 tar --exclude='node_modules' --exclude='./.git' --exclude='./dashboard/dist' --exclude='./.test-results' -cf - . | (cd "$CTX" && tar -xf -)
 docker build -t golem-gol458-ci:local -f "$CTX/.devcontainer/Dockerfile.ci" "$CTX"
 rm -rf "$CTX"
-docker run --rm --network none --name golem-gol458-ci-$(date +%s) golem-gol458-ci:local
+docker run --rm --init --network none --name golem-gol458-ci-$(date +%s) golem-gol458-ci:local
 docker image rm golem-gol458-ci:local
 ```
 
 Actual final build exits0: /tmp/gol458-linux-build-final.log. Actual final runtime exits0: /tmp/gol458-linux-run-final.log. Runtime CMD is npm run check, unfiltered projects, native smoke, type mutations. No installed Golem state is mounted.
+
+The results above are historical multi-command launches with a retained shell. Arbitrary container entrypoints without an init/reaping parent are NOT certified: GOL-472's final-command Node/PID1 launch failed6/16. Supported Linux verification now requires explicit `--init` (devcontainer `init:true`, Actions `container.options: --init`); see `w2-linux-init.md` and the preserved `gol472-linux-faults.log.gz`.
 
 ## Failure-to-pass contracts
 

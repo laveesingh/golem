@@ -8,7 +8,9 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    container: node:22.22.3-bookworm
+    container:
+      image: node:22.22.3-bookworm
+      options: --init
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +21,9 @@ jobs:
       - run: git diff --check
   test:
     runs-on: ubuntu-24.04
-    container: node:22.22.3-bookworm
+    container:
+      image: node:22.22.3-bookworm
+      options: --init
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

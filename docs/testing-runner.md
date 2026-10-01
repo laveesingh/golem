@@ -144,6 +144,8 @@ Reviewed debt groups:
 
 ## Linux parity and remaining acceptance
 
-Node **22.22.3**, Debian bookworm CI/devcontainer; Linux needs git, python3/make/g++ (native SQLite), procps (process birth), **jq** (actual SessionStart hook). GitHub Actions check/test jobs are configured. Docker CI-parity image has dependency provisioning network access, then runtime uses `docker run --rm --network none`: no HOME/credentials/socket mounts, published ports, named volumes or shared stacks.
+Node **22.22.3**, Debian bookworm CI/devcontainer; Linux needs git, python3/make/g++ (native SQLite), procps (process birth), **jq** (actual SessionStart hook), and an explicit **init/reaping parent**. Devcontainer sets `init:true`; both Actions job containers set `options: --init`. Docker CI-parity image has dependency provisioning network access, then supported runtime uses `docker run --rm --init --network none`: no HOME/credentials/socket mounts, published ports, named volumes or shared stacks.
+
+Do not depend on a shell remaining PID1. GOL-472's final-command Node launch without init failed6/16 from orphan-reaping absence; its retained-bash launch passed16. Preserve that failed topology, do not reinterpret it as generic Linux success: `docs/testing/gol472-linux-faults.log.gz`, `docs/testing/w2-linux-init.md`. Main/runtime/test source remains the reviewed2bd7db1 snapshot; this configuration change makes the consumer prerequisite explicit.
 
 Remote Actions run is separate from local Docker Linux evidence. CI checks are not reported as passed merely because macOS is green. E2E/release job staging stays explicitly pending W3/W4/W5/W7.
