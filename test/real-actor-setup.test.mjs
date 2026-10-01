@@ -1,6 +1,6 @@
 // Hermetic setup safety only. No actual actor, provider, credential or login call.
 import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
-import {planRealActorSetup,verifyRealActorSetup,realActorEnvironment} from './_real-actor-setup.mjs';
+import {planRealActorSetup,verifyRealActorSetup,realActorEnvironment,createRealJourneyResources} from './_real-actor-setup.mjs';
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'golemtest-actor-setup-')),home=path.join(root,'home'),pi=path.join(root,'private-pi'),claude=path.join(root,'private-claude'),reporter=path.join(root,'reporter.ts');
 for(const p of [home,pi,claude])fs.mkdirSync(p);fs.writeFileSync(reporter,'// metadata fixture only');
 const base={HOME:home,GOLEM_REAL_ACTORS:'pi',GOLEM_REAL_PI_AGENT_DIR:pi,GOLEM_REAL_HERDR_PI_REPORTER:reporter};
@@ -15,6 +15,15 @@ try {
  assert.throws(()=>planRealActorSetup({...base,GOLEM_REAL_PI_AGENT_DIR:path.join(home,'.pi','agent')}),/live HOME/);
  fs.mkdirSync(path.join(home,'.pi','agent'),{recursive:true});const alias=path.join(root,'alias');fs.symlinkSync(path.join(home,'.pi','agent'),alias,'dir');
  assert.throws(()=>verifyRealActorSetup(planRealActorSetup({...base,GOLEM_REAL_PI_AGENT_DIR:alias})),/resolves to live/);
+ const nonOwnedXdg=path.join(root,'existing-non-owned-xdg');fs.mkdirSync(nonOwnedXdg);const suppliedPi=path.join(nonOwnedXdg,'private-pi'),suppliedCc=path.join(nonOwnedXdg,'private-claude');fs.mkdirSync(suppliedPi);fs.mkdirSync(suppliedCc);
+ const suppliedAlias=path.join(root,'supplied-alias');fs.symlinkSync(suppliedPi,suppliedAlias,'dir');
+ const both=verifyRealActorSetup(planRealActorSetup({...base,GOLEM_REAL_ACTORS:'pi,claude',GOLEM_REAL_PI_AGENT_DIR:suppliedAlias,GOLEM_REAL_CLAUDE_CONFIG_DIR:suppliedCc}));
+ const resources=createRealJourneyResources(both,{tempParent:root,xdgParent:nonOwnedXdg});assert.notEqual(resources.xdg,nonOwnedXdg);resources.cleanup();
+ assert.equal(fs.existsSync(resources.root),false);assert.equal(fs.existsSync(resources.xdg),false);for(const p of [nonOwnedXdg,suppliedPi,suppliedCc,suppliedAlias])assert.equal(fs.existsSync(p),true,'supplied directories/alias/non-owned parent retained');
+ assert.throws(()=>createRealJourneyResources(both,{tempParent:suppliedPi,xdgParent:nonOwnedXdg}),/overlaps a resource allocation parent/);assert.deepEqual(fs.readdirSync(suppliedPi),[],'overlap fails before allocation');
+ const short=createRealJourneyResources(both);assert.ok(short.xdg.length<40,'exclusive XDG remains short for native socket limit');short.cleanup();
+ const raced=createRealJourneyResources(both,{tempParent:root,xdgParent:nonOwnedXdg});const original=both.facilities.pi.directory;both.facilities.pi.directory=raced.xdg;
+ assert.throws(()=>raced.cleanup(),/overlaps resource cleanup/);assert.ok(fs.existsSync(raced.root)&&fs.existsSync(raced.xdg),'ALL cleanup refused before any deletion');both.facilities.pi.directory=original;raced.cleanup();
  const isolated=realActorEnvironment({PATH:'/fixture',TERM:'xterm',OPENAI_API_KEY:'fixture-not-a-key',CLAUDE_CONFIG_DIR:'/live',PI_CODING_AGENT_DIR:'/live',ARBITRARY_PROVIDER_SECRET:'fixture-not-a-key',NODE_OPTIONS:'--import /live/helper'});
  assert.deepEqual(isolated,{PATH:'/fixture',TERM:'xterm'});
  const guard=path.join(root,'guard.mjs');fs.writeFileSync(guard,`import fs from 'node:fs';for(const method of ['readFileSync','copyFileSync','writeFileSync','mkdirSync']){const original=fs[method];fs[method]=function(p,...args){if(/(?:auth\\.json|models\\.json|credentials\\.json|\\.claude)/.test(String(p)))throw Error('FORBIDDEN credential/config touch');return original.call(this,p,...args);};}`);

@@ -174,6 +174,9 @@ storage is separately test-owned. Facility authorization must cover owned-test u
 and any normal refresh within that dedicated facility; Claude keyless Console
 isolation needs the documented account-boundary caveat. Owned processes stop before
 test HOME/socket deletion; the supplied private facility is never deleted.
+Both resource roots are exclusively allocated; XDG uses a short random directory,
+never a reusable PID path. Supplied-facility/cleanup overlap or changed root
+ownership refuses all recursive cleanup before deletion.
 
 `GOLEM_REAL_SETUP_ONLY=1` checks selected facility metadata without actor/auth/API
 execution or resource creation. Its INCOMPLETE receipt is not authentication or

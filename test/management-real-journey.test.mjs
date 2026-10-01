@@ -2,7 +2,7 @@
 // Explicit real-app acceptance. No fake harness or silent skip/pass substitute.
 import assert from 'node:assert/strict'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import crypto from 'node:crypto'; import http from 'node:http'; import { spawn, spawnSync } from 'node:child_process'; import { once } from 'node:events'; import { fileURLToPath } from 'node:url';
-import { planRealActorSetup, verifyRealActorSetup, realActorEnvironment } from './_real-actor-setup.mjs';
+import { planRealActorSetup, verifyRealActorSetup, realActorEnvironment, createRealJourneyResources } from './_real-actor-setup.mjs';
 if (process.env.GOLEM_REAL_HARNESS !== '1') { console.error('UNVERIFIED: real harness opt-in required: GOLEM_REAL_HARNESS=1'); process.exit(2); }
 let setup;
 try { setup=verifyRealActorSetup(planRealActorSetup(process.env)); }
@@ -10,7 +10,7 @@ catch(error) { console.error(error.message); process.exit(3); }
 const actors=setup.actors;
 if(process.env.GOLEM_REAL_SETUP_ONLY==='1') { console.log(JSON.stringify({state:'INCOMPLETE',actors,setup:'metadata-only prerequisites configured; authentication and owned-test use still require explicit authorization',auth_run:false})); process.exit(0); }
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), cli = path.join(repo,'cli/golem.js');
-const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'golemtest-management-real-'))), xdg = `/tmp/golem-real-${process.pid}`;
+const resources=createRealJourneyResources(setup), {root,xdg}=resources;
 const home = path.join(root,'home'), state = path.join(root,'state'), project = path.join(root,'project'), outside = path.join(root,'outside');
 for (const dir of [home,state,project,outside]) fs.mkdirSync(dir,{recursive:true}); fs.chmodSync(root,0o700); fs.writeFileSync(path.join(project,'CLAUDE.md'),'# Disposable actual management acceptance\n');
 const originalHome = process.env.HOME, nativeName = `golem-test-${process.pid}-real`;
@@ -122,6 +122,6 @@ try {
   spawnSync('herdr',['session','delete',nativeName],{env,encoding:'utf8',timeout:10000});
   const ps=spawnSync('ps',['-axo','pid=,args='],{encoding:'utf8'}); assert.equal(ps.status,0); assert.equal(ps.stdout.split('\n').some(line=>line.includes(`--session ${nativeName}`)&&/\bherdr\b/.test(line)),false,'owned native server must be gone before private resource removal');
   if(dashboard?.exitCode===null)dashboard.kill('SIGTERM'); if(dashExit)await dashExit;
-  fs.rmSync(root,{recursive:true,force:true}); fs.rmSync(xdg,{recursive:true,force:true});
+  resources.cleanup();
   console.log('real management cleanup passed: owned native/dashboard stopped before test HOME/socket removal; supplied facilities retained');
 }
