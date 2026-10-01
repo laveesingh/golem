@@ -12,6 +12,11 @@ try {
  fs.writeFileSync(file,JSON.stringify(dead));let nested=0;calls=0;
  withManagementLock(()=>calls++,{file,timeoutMs:0,probe:()=>{fs.unlinkSync(file);assert.throws(()=>withManagementLock(()=>nested++,{file,timeoutMs:0}),/reclamation uncertain/);return null;}});assert.equal(calls,1);assert.equal(nested,0,'normal successor acquisitions also honor reclamation guard');
  fs.writeFileSync(file,'unknown owner');assert.throws(()=>withManagementLock(()=>calls++,{file,timeoutMs:0}),/owner unknown/);assert.equal(fs.readFileSync(file,'utf8'),'unknown owner');fs.unlinkSync(file);
+ fs.writeFileSync(file,JSON.stringify(ownerIncarnation()));let prior;
+ try{withManagementLock(()=>{throw Error('prior callback must not enter');},{file,timeoutMs:0});}catch(error){prior=error;}
+ assert.equal(prior?.code,'MANAGEMENT_LOCK_BUSY');fs.unlinkSync(file);let replayCalls=0;
+ assert.throws(()=>withManagementLock(()=>{replayCalls++;throw prior;},{file,timeoutMs:150}),error=>error===prior,'genuine earlier contention propagates unchanged after callback entry');
+ assert.equal(replayCalls,1,'callback effects must NEVER replay, regardless of genuine contention provenance');assert.equal(fs.existsSync(file)||fs.existsSync(`${file}.reclaim`),false);
  let failedCalls=0;assert.throws(()=>withManagementLock(()=>{failedCalls++;throw Error('callback failure');},{file,timeoutMs:0}),/callback failure/);assert.equal(failedCalls,1);
  assert.equal(fs.existsSync(file),false,'failed callback releases its own lock');
  console.log('lock race passed: release during probe safe; successor preserved; every acquisition fenced; live/unknown not evicted; callback never replayed');
