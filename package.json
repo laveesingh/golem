@@ -16,7 +16,7 @@
   },
   "type": "module",
   "bin": {
-    "golem": "./cli/golem.js"
+    "golem": "./cli/golem-bin.js"
   },
   "exports": {
     ".": "./cli/golem.js"

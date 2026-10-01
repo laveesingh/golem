@@ -20,7 +20,7 @@
 // Sessions started before v4 / never registered have no central journal at all
 // → events:[] (+ a note), which the UI renders as a clear empty state.
 
-import os from 'node:os';
+import { claudeConfigDir } from '../../lib/claude-paths.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -28,8 +28,7 @@ import readline from 'node:readline';
 import { CENTRAL_JOURNALS_DIR } from './project-id.js';
 import { safeJsonParse, tsMs } from './util.js';
 
-const HOME = os.homedir();
-const CLAUDE_PROJECTS_DIR = path.join(HOME, '.claude', 'projects');
+const CLAUDE_PROJECTS_DIR = path.join(claudeConfigDir(), 'projects');
 
 // How many recent matching events to surface in the drawer.
 const EVENT_CAP = 40;

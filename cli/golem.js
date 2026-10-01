@@ -21,13 +21,13 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, symlinkSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
+import { claudeConfigDir } from '../lib/claude-paths.js';
 import { basename, dirname, resolve, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { golemHome, legacyConfigDir, migratedHomeDir, trackerDbPath, renderDirFor, projectsJsonPath } from '../lib/golem-home.js';
 import { projectIdFor } from '../lib/project-id.js';
 import { updateProjectLsp } from '../lib/lsp.js';
 import * as compiler from '../lib/compiler/engine.js';
-import { lintSubstrate } from '../lib/compiler/lint.js';
 import * as ccAdapter from '../lib/compiler/adapters/cc.js';
 import * as piAdapter from '../lib/compiler/adapters/pi.js';
 import { isHarnessEnabled, loadConfig, saveConfig } from '../lib/golem-config.js';
@@ -169,6 +169,11 @@ async function cmdDashboardRestart(args) {
   log('Restarting dashboard...');
   const stopped = await stopDashboard();
   log(stopped.length ? `  OK dashboard stopped (${stopped.map(({ pid }) => `pid=${pid}`).join(', ')})` : '  dashboard was not running');
+  if (process.env.GOLEM_PROFILE) {
+    const { assertPortBlockFree } = await import('./bootstrap.ts');
+    try { await assertPortBlockFree(Number(process.env.PORT)); }
+    catch (error) { fatal(2, `golem dashboard:restart: ${error.message}`); }
+  }
   log('  starting dashboard detached...');
   const started = await startDashboardDetached(args);
   log(`  log: ${started.logFile}`);
@@ -185,6 +190,7 @@ async function cmdDashboardRestart(args) {
 }
 
 async function cmdMigrateHome(args) {
+  if (process.env.GOLEM_PROFILE) fatal(2, 'migrate-home is production-only; profiles already own isolated state');
   const src = legacyConfigDir();
   const dest = migratedHomeDir();
 
@@ -486,13 +492,6 @@ async function cmdSyncCheckAll({ quiet = false } = {}) {
   if (!quiet) log('');
   say('golem sync --check --all');
 
-  // Source size report runs once, before any render-drift check. GOL-377
-  // addendum: it can never fail — an over-cap total is only a warning.
-  const lint = lintSubstrate({ substrateRoot: substrateRoot() });
-  if (!quiet) log('');
-  say(`substrate lint: ${lint.files} files, ${lint.total} words`);
-  for (const w of lint.warnings ?? []) log(`  warning: ${w.check}: ${w.file} — ${w.detail}`);
-
   const ccOut = renderDirFor('cc');
   const cc = compiler.checkDrift({ target: 'cc', outDir: ccOut, items: planForTarget('cc') });
   const ccInstrOut = ccAdapter.instructionOutDir();
@@ -553,7 +552,7 @@ async function cmdDoctor() {
   // The Claude plugin is installed from the workspace render; a stale install
   // means every Claude session runs old skills and hooks (GOL-303 C9).
   try {
-    const installed = JSON.parse(readFileSync(join(homedir(), '.claude', 'plugins', 'installed_plugins.json'), 'utf8'));
+    const installed = JSON.parse(readFileSync(join(claudeConfigDir(), 'plugins', 'installed_plugins.json'), 'utf8'));
     const entry = installed?.plugins?.['golem@golem-workspace']?.[0];
     const want = readPackageVersion();
     if (!entry) skip('claude plugin golem@golem-workspace not installed');
@@ -595,21 +594,25 @@ async function cmdDoctor() {
   }
 
   log('');
-  log('Workspace (~/.golem)');
-  const legacy = legacyConfigDir();
-  const migrated = migratedHomeDir();
-  const legacyStat = existsSync(legacy) ? lstatSync(legacy) : null;
-  if (existsSync(migrated)) {
-    ok(`~/.golem exists (${migrated})`);
-    if (legacyStat && legacyStat.isSymbolicLink()) {
-      ok(`${legacy} is a compat symlink -> ${readlinkSync(legacy)}`);
-    } else if (legacyStat && legacyStat.isDirectory()) {
-      fail(`split-brain: ~/.golem exists AND ${legacy} is still a real directory (not a symlink) — a migration was interrupted or something recreated the old dir`);
-    } else {
-      skip(`${legacy} does not exist — nothing points at it`);
-    }
+  log(process.env.GOLEM_PROFILE ? `Workspace (profile ${process.env.GOLEM_PROFILE})` : 'Workspace (~/.golem)');
+  if (process.env.GOLEM_PROFILE) {
+    skip('production migration diagnostics skipped for isolated profile');
   } else {
-    skip(`not yet migrated — run \`golem migrate-home\` to move off ${legacy}`);
+    const legacy = legacyConfigDir();
+    const migrated = migratedHomeDir();
+    const legacyStat = existsSync(legacy) ? lstatSync(legacy) : null;
+    if (existsSync(migrated)) {
+      ok(`~/.golem exists (${migrated})`);
+      if (legacyStat && legacyStat.isSymbolicLink()) {
+        ok(`${legacy} is a compat symlink -> ${readlinkSync(legacy)}`);
+      } else if (legacyStat && legacyStat.isDirectory()) {
+        fail(`split-brain: ~/.golem exists AND ${legacy} is still a real directory (not a symlink) — a migration was interrupted or something recreated the old dir`);
+      } else {
+        skip(`${legacy} does not exist — nothing points at it`);
+      }
+    } else {
+      skip(`not yet migrated — run \`golem migrate-home\` to move off ${legacy}`);
+    }
   }
   const dbPath = trackerDbPath();
   existsSync(dbPath) ? ok(`tracker DB readable (${dbPath})`) : fail(`tracker DB missing at ${dbPath}`);
@@ -785,6 +788,12 @@ Usage:
   node cli/golem.js <command> [args]
 
 Run:
+  --profile <name> [--port N] <command>
+                       Use private paths and a persisted three-port block.
+                       This global flag precedes the command; command-local
+                       --profile still selects a model preset.
+  --profile <name> dev
+                       Start the private dashboard and Vite together.
 ${helpDashboard()}
 ${helpDashboardRestart()}
   claude|cc [--backend native|ollama] [--model <id>] [-- <claude args...>]
@@ -842,7 +851,7 @@ Environment:
   GOLEM_ROOT           Workspace anchor (default: repo containing cli/golem.js).
 
 Install:
-  npm link             Symlinks ./cli/golem.js as a global \`golem\` command.
+  npm link             Symlinks ./cli/golem-bin.js as a global \`golem\` command.
   npx golem <cmd>      Run without installing, from the repo root.
 `);
 }
