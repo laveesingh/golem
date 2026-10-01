@@ -411,4 +411,65 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   await assert.rejects(peekWorker('legacy-worker', { projectId }), /legacy tmux row.*legacy-exact/);
   await assert.rejects(killWorker('legacy-worker', { projectId }), /legacy tmux row.*legacy-exact/);
 }
-console.log('agent CLI passed: help, verb map, scope defaults, ambiguity, create, role, dedup, removed verbs, new reservations + actual legacy refusal');
+// New agent controls: real owned process-incarnation fixture + injected native DTOs.
+{
+  const { spawn } = await import('node:child_process'); const { once } = await import('node:events');
+  const { captureProcessGroup } = await import('../lib/process-group.js'); const { readWorkers } = await import('../lib/worker-registry.js');
+  const { upsertSessionFact } = await import('../lib/session-facts.js');
+  const children = [0, 1, 2].map(() => spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' }));
+  const exits = children.map(child => once(child, 'exit'));
+  try {
+    const row = claimWorker({ role: 'builder', projectId, preset, teamId: alpha.team_id, name: 'controlled-agent' });
+    const own = updateWorker(row.worker_id, { state: 'live', session_id: 'controlled-conversation', herdr_pane_id: 'source-pane', herdr_tab_id: 'source-tab', herdr_workspace_id: 'source-w', process_ownership: captureProcessGroup(children[0].pid) });
+    const externalId = '12345678-1234-1234-1234-123456789abc', file = path.join(temp, 'external-native.jsonl');
+    upsertSessionFact({ canonical_id: externalId, harness: 'pi', name: 'external-adopted', project_path: projectDir, locator: { raw_session_id: externalId, session_file: file }, status: 'idle' });
+    const external = { agent: 'pi', name: 'existing-external-handle', pane_id: 'external-pane', tab_id: 'external-tab', workspace_id: 'external-w', agent_session: { kind: 'path', value: file } };
+    const unnamedId = 'abcdef12-1234-1234-1234-123456789abc', unnamedFile = path.join(temp, 'unnamed-native.jsonl');
+    upsertSessionFact({ canonical_id: unnamedId, harness: 'pi', name: 'unnamed-adopted', project_path: projectDir, locator: { raw_session_id: unnamedId, session_file: unnamedFile }, status: 'idle' });
+    const unnamed = { ...external, name: null, pane_id: 'unnamed-pane', tab_id: 'unnamed-tab', agent_session: { kind: 'path', value: unnamedFile } };
+    const effects = []; let displayFails = false, moveFails = false, handleFails = false;
+    let position = { pane_id: 'source-pane', tab_id: 'source-tab', workspace_id: 'source-w' };
+    const native = {
+      agentGet: ({ target }) => target === 'unnamed-pane' ? unnamed : target === 'external-pane' ? external : { ...position, name: own.herdr_agent_name },
+      agentList: () => [external, unnamed],
+      agentRename: value => { effects.push(['handle', value]); if (handleFails) throw new Error('native handle update unavailable'); unnamed.name = value.name; return true; },
+      paneProcessInfo: ({ paneId }) => paneId === 'unnamed-pane' ? { foreground_process_group_id: children[2].pid, foreground_processes: [{ pid: children[2].pid, argv0: 'pi', argv: ['pi', '--session', unnamedFile] }] } : paneId === 'external-pane' ? { foreground_process_group_id: children[1].pid, foreground_processes: [{ pid: children[1].pid, argv0: 'pi', argv: ['pi', '--session', file] }] } : { foreground_process_group_id: children[0].pid },
+      workspaceList: () => [{ workspace_id: 'source-w' }, { workspace_id: 'destination-w' }, { workspace_id: 'retry-w' }],
+      paneLabel: value => { effects.push(['label', value]); if (displayFails) throw new Error('display unavailable'); return true; },
+      paneMove: value => { effects.push(['move', value]); position = { pane_id: value.workspaceId === 'retry-w' ? 'retry-pane' : 'moved-pane', tab_id: 'moved-tab', workspace_id: value.workspaceId }; if (moveFails) throw new Error('move response unavailable'); return position; },
+    };
+    const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: projectDir, env: {}, native, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
+    const inspect = await run(['inspect', own.session_id]); assert.equal(inspect.exit, 0); assert.equal(inspect.value.native_handle, own.herdr_agent_name); assert.equal(inspect.value.capabilities.stop.state, 'available');
+    const bytes = () => JSON.stringify(['workers.json', 'teams.json', 'herdr-mappings.json'].map(name => fs.readFileSync(path.join(process.env.GOLEM_HOME, name), 'utf8')));
+    const before = bytes();
+    for (const args of [['rename', own.session_id, 'renamed-control'], ['move', own.session_id, '--workspace', 'destination-w'], ['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane']]) assert.equal((await run([...args, '--dry-run'])).exit, 0);
+    assert.equal(bytes(), before); assert.equal(effects.length, 0);
+    displayFails = true;
+    const partial = await run(['rename', own.session_id, 'renamed-control']); assert.equal(partial.exit, 1); assert.equal(partial.value.logical_changed, true); assert.equal(partial.value.herdr_agent_name, own.herdr_agent_name);
+    displayFails = false;
+    const renamed = await run(['rename', own.session_id, 'renamed-control']); assert.equal(renamed.exit, 0); assert.equal(renamed.value.logical_changed, false); assert.equal(renamed.value.team_id, alpha.team_id); assert.equal(renamed.value.role, own.role);
+    assert.equal((await run(['rename', own.session_id, 'renamed-control'])).value.noop, true);
+    assert.equal((await run(['rename', own.session_id, 'builder1'])).exit, 2);
+    const moved = await run(['move', own.session_id, '--workspace', 'destination-w']); assert.equal(moved.exit, 0); assert.equal(moved.value.herdr_pane_id, 'moved-pane'); assert.equal(moved.value.herdr_tab_id, 'moved-tab'); assert.equal(moved.value.team_id, alpha.team_id); assert.equal(moved.value.herdr_agent_name, own.herdr_agent_name);
+    assert.equal((await run(['move', own.session_id, '--workspace', 'destination-w'])).value.noop, true);
+    moveFails = true;
+    const partialMove = await run(['move', own.session_id, '--workspace', 'retry-w']); assert.equal(partialMove.exit, 1); assert.equal(partialMove.value.pending_native_move.workspace_id, 'retry-w');
+    const moveCalls = effects.filter(e => e[0] === 'move').length;
+    moveFails = false;
+    const recoveredMove = await run(['move', own.session_id, '--workspace', 'retry-w']); assert.equal(recoveredMove.exit, 0); assert.equal(recoveredMove.value.recovered_move, true); assert.equal(recoveredMove.value.herdr_pane_id, 'retry-pane'); assert.equal(effects.filter(e => e[0] === 'move').length, moveCalls, 'exact alias recovery never duplicates an uncertain move');
+    const cross = await run(['move', own.session_id, '--workspace', 'destination-w', '--session', 'different-server']); assert.equal(cross.exit, 1); assert.equal(cross.value.capability.state, 'unsupported');
+    const adopted = await run(['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane']); assert.equal(adopted.exit, 0, JSON.stringify(adopted.value)); assert.equal(adopted.value.session_id, externalId); assert.equal(adopted.value.role, null); assert.equal(adopted.value.herdr_agent_name, external.name); assert.equal(adopted.value.team_id, beta.team_id);
+    assert.equal((await run(['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane'])).value.noop, true);
+    handleFails = true;
+    const pendingAdopt = await run(['adopt', unnamedId, '--team', beta.team_id, '--pane', 'unnamed-pane']); assert.equal(pendingAdopt.exit, 1); assert.match(pendingAdopt.value.pending_native_handle, /^g-[0-9a-f]{28}$/);
+    const reservedHandle = pendingAdopt.value.herdr_agent_name;
+    handleFails = false;
+    const resumedAdopt = await run(['adopt', unnamedId, '--team', beta.team_id, '--pane', 'unnamed-pane']); assert.equal(resumedAdopt.exit, 0, JSON.stringify(resumedAdopt.value)); assert.equal(resumedAdopt.value.herdr_agent_name, reservedHandle); assert.equal(resumedAdopt.value.pending_native_handle, null); assert.equal(unnamed.name, reservedHandle);
+    const rows = readWorkers(); assert.equal(rows.find(w => w.session_id === own.session_id).team_id, alpha.team_id); assert.equal(rows.filter(w => w.session_id === unnamedId).length, 1, 'retry never allocates another adopted runtime');
+    const wrong = await runAgent('agent', ['adopt', externalId, '--team', beta.team_id, '--pane', 'wrong-pane', '--json'], { cwd: projectDir, env: {}, native: { ...native, agentGet: () => ({ ...external, agent_session: { kind: 'path', value: '/different-native' } }) }, resolveContext: () => null, stdout: () => {}, stderr: () => {} }); assert.equal(wrong, 1);
+  } finally {
+    for (const child of children) if (child.exitCode === null) process.kill(-child.pid, 'SIGKILL');
+    await Promise.all(exits);
+  }
+}
+console.log('agent CLI passed: existing toolkit plus inspect/adopt/rename/move, exact identity, stable handle/membership, partial retry/conflicts and zero-write plans');

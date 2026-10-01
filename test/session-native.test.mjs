@@ -34,6 +34,11 @@ try {
   const renamed = cli(['rename', team.team_id, 'Renamed Native Team'], 'team'); assert.equal(renamed.team_id, team.team_id); assert.equal(renamed.herdr_workspace_id, team.herdr_workspace_id); assert.equal(renamed.display_updated, true);
   const ws = native(['--session', session, 'workspace', 'create', '--label', 'Unowned Native Workspace']); assert.equal(ws.status, 0, ws.stderr);
   const workspaceId = JSON.parse(ws.stdout).result.workspace.workspace_id; assert.ok(workspaceId);
+  const panes = native(['--session', session, 'pane', 'list']); assert.equal(panes.status, 0);
+  const originalPane = JSON.parse(panes.stdout).result.panes.find(p => p.workspace_id === team.herdr_workspace_id); assert.ok(originalPane);
+  const labelResult = native(['--session', session, 'pane', 'rename', originalPane.pane_id, 'Logical pane display']); assert.equal(labelResult.status, 0);
+  const moveResult = native(['--session', session, 'pane', 'move', originalPane.pane_id, '--workspace', workspaceId, '--new-tab', '--no-focus']); assert.equal(moveResult.status, 0, moveResult.stderr);
+  const movedPane = JSON.parse(moveResult.stdout).result.move_result.pane; assert.ok(movedPane?.pane_id && movedPane?.tab_id, moveResult.stdout); assert.equal(movedPane.workspace_id, workspaceId);
   const adopted = cli(['adopt', 'Adopted Native Team', '--workspace', workspaceId, '--project', project], 'team'); assert.equal(adopted.herdr_workspace_id, workspaceId);
   assert.equal(cli(['adopt', 'Adopted Native Team', '--workspace', workspaceId, '--project', project], 'team').noop, true);
   const inspect = cli(['inspect', session]); assert.equal(inspect.native_running, true);

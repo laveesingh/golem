@@ -27,6 +27,9 @@ import {
 } from '../lib/notification-contract.js';
 import { roleNamesSnapshot, pushRoleBriefDirect, setSessionRole } from '../lib/session-role.js';
 import { listTeams } from '../lib/team-registry.js';
+import { normalizeName } from '../lib/worker-registry.js';
+import * as nativeDriver from '../lib/herdr-driver.js';
+import { inspectManagedAgent, renameManagedAgent, moveManagedAgent, adoptManagedAgent } from '../lib/management-agent.js';
 import { MANAGEMENT_SELECTOR_FLAGS, managementQuery, listReceipt, writeDryRun, requireManagementResolution, managedControlOptions, managementProjectInput } from '../lib/management-cli.js';
 import { herdrStateFor, listHerdrAgentStates, projectHerdrSession } from '../lib/team-herdr.js';
 import {
@@ -127,10 +130,16 @@ const commands = {
     ].join('\n') },
 };
 
-const managementVerbs = new Set(['agent list', 'agent create', 'agent read', 'agent attach', 'agent stop', 'agent role']);
+for (const [verb, count, flags, description] of [
+  ['inspect', 1, {}, 'Read known identity, canonical membership, actual placement/model evidence and control capabilities; no writes.'],
+  ['rename', 2, {}, 'Change managed logical name and pane display label; stable native handle/identity/membership remain. Display failure is partial and retryable.'],
+  ['move', 1, { '--workspace': 'value' }, 'Move within the same native session to an exact workspace; consume returned placement IDs and preserve logical membership. Cross-server unsupported.'],
+  ['adopt', 1, { '--pane': 'value' }, 'Adopt a registered conversation into --team using demonstrably matching native session/process identity. No restart, role assignment or physical move.'],
+]) commands[`agent ${verb}`] = { args: count, flags, help: `golem agent ${verb} <agent>${verb === 'rename' ? ' <name>' : verb === 'move' ? ' --workspace ID' : verb === 'adopt' ? ' --team T [--pane ID]' : ''} [--json]\n\n${description}\nExit0 completed/no-op, exit2 invalid scope, exit1 runtime/partial failure.` };
+const managementVerbs = new Set(['agent list', 'agent create', 'agent read', 'agent attach', 'agent stop', 'agent role', 'agent inspect', 'agent rename', 'agent move', 'agent adopt']);
 for (const key of managementVerbs) {
   Object.assign(commands[key].flags, MANAGEMENT_SELECTOR_FLAGS, { '--json': 'bool' });
-  if (['agent create', 'agent attach', 'agent stop', 'agent role'].includes(key)) commands[key].flags['--dry-run'] = 'bool';
+  if (['agent create', 'agent attach', 'agent stop', 'agent role', 'agent rename', 'agent move', 'agent adopt'].includes(key)) commands[key].flags['--dry-run'] = 'bool';
   commands[key].help += '\nSelectors: --project P --team T --session S --caller ID. Management mutations accept --dry-run.';
 }
 commands['agent list'].help += '\nJSON: {schema_version:2,items:[...],resolution:{...}}. Scripts read .items.';
@@ -612,6 +621,7 @@ export async function runAgent(family, args, {
   resolveContext = resolveCliSessionContext,
   client: injectedClient,
   manager = { spawnWorker, listWorkerViews, listAgentRoster, peekWorker, attachWorker, killWorker },
+  native = nativeDriver,
   ...collector
 } = {}) {
   let resolution = null;
@@ -635,17 +645,28 @@ export async function runAgent(family, args, {
     if (parsed.help) { stdout(json ? JSON.stringify({ help: parsed.help }) : parsed.help); return 0; }
     const { key, options: o, positional } = parsed;
     let query = null;
+    if (key === 'agent rename') { try { normalizeName(positional[1]); } catch (error) { throw new NotificationError(error.message); } }
     if (key === 'agent create' && !roleNamesSnapshot().includes(positional[0])) throw new NotificationError(`unknown role: ${positional[0]}`);
     if (key === 'agent role' && ![...roleNamesSnapshot(), 'clear', 'list'].includes(positional[0])) throw new NotificationError(`invalid role: ${positional[0]}`);
     if (managementVerbs.has(key) && !(key === 'agent role' && positional[0] === 'list')) {
       if (o['--scope'] && !['team', 'project', 'all'].includes(o['--scope'])) throw new NotificationError(`invalid scope: ${o['--scope']}`);
       query = await managementQuery({ operation: key, kind: 'agent', options: o,
-        target: ['agent read', 'agent attach', 'agent stop'].includes(key) ? positional[0] : key === 'agent role' ? positional[1] ?? 'self' : null,
-        requiresTeam: key === 'agent create', cwd, resolveContext, ...collector });
+        target: ['agent read', 'agent attach', 'agent stop', 'agent inspect', 'agent rename', 'agent move', 'agent adopt'].includes(key) ? positional[0] : key === 'agent role' ? positional[1] ?? 'self' : null,
+        requiresTeam: ['agent create', 'agent adopt'].includes(key), cwd, resolveContext, ...collector });
       resolution = query.resolution;
-      const dry = writeDryRun(query, o, stdout, { ...(key === 'agent create' ? { role: positional[0], name: o['--name'] ?? null, profile: o['--profile'] ?? null } : {}) });
+      if (key === 'agent move' && !o['--workspace']) { resolution.ok = false; resolution.missing.push({ field: 'workspace', message: 'agent move requires --workspace <exact-id>' }); }
+      if (key === 'agent adopt' && !o['--team']) { resolution.ok = false; resolution.missing.push({ field: 'team', message: 'agent adopt requires --team <exact-id>' }); }
+      const dry = writeDryRun(query, o, stdout, { ...(key === 'agent create' ? { role: positional[0], name: o['--name'] ?? null, profile: o['--profile'] ?? null } : {}), ...(key === 'agent rename' ? { name: positional[1] } : {}), ...(o['--workspace'] ? { workspace_id: o['--workspace'] } : {}), ...(o['--pane'] ? { pane_id: o['--pane'] } : {}) });
       if (dry != null) return dry;
       requireManagementResolution(resolution);
+    }
+    if (['agent inspect', 'agent rename', 'agent move', 'agent adopt'].includes(key)) {
+      const result = key === 'agent inspect' ? inspectManagedAgent(query, { native })
+        : key === 'agent rename' ? renameManagedAgent(query, positional[1], { native })
+        : key === 'agent move' ? moveManagedAgent(query, o['--workspace'], { native, session: o['--session'] ?? null })
+        : adoptManagedAgent(query, { native, paneId: o['--pane'] ?? null });
+      stdout(json ? JSON.stringify({ ...result, resolution }) : result.error ?? `agent ${result.name ?? result.logical_name ?? resolution.target.id} ${key.split(' ')[1]}${result.noop ? ' (no-op)' : ''}`);
+      return result.ok === false ? 1 : 0;
     }
     if (key === 'agent list') {
       await cmdAgentList(o, { stdout, cwd, manager, query });

@@ -115,6 +115,28 @@ does not prove a live runtime. Unverified replacement/shell panes are retained;
 a newly created root shell closes only with exact unchanged incarnation and no
 children. Teardown confirms process survivors before retiring the runtime record.
 
+## Agent identity and placement controls
+
+`agent inspect <agent>` reads logical membership, actual placement, native handle,
+model/identity evidence and supported controls. `agent rename <agent> <name>`
+changes logical lookup and pane display, never the stable native handle, role or
+membership. Failed display updates return exit1 with a retryable pending label.
+
+`agent move <agent> --workspace ID [--session S]` moves physically within one
+native session without changing membership. Cross-server destinations are
+unsupported, not kill/relaunch. Returned pane/tab/workspace IDs become canonical;
+uncertain moves carry an operation ID and recover exact native aliases instead of
+issuing a duplicate. Herdr can close emptied source tabs/workspaces; receipts name
+them without retargeting logical team ownership.
+
+`agent adopt <id> --team T [--session S] [--pane ID]` requires registered identity
+and demonstrably matching current native conversation/process evidence. It does
+not start/move the runtime or assign a role. Existing native handles remain exact;
+an unnamed adopted runtime reserves one opaque handle, with retryable partial
+registration if that native update fails. Foreign/duplicate ownership conflicts.
+All new mutations support zero-write `--dry-run`; known unsupported controls name
+the target rather than returning not-found.
+
 ## Runtime compatibility
 
 Pi 0.99.1 and Node.js 22.19+ are the tested baseline. `golem pi` warns on

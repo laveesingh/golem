@@ -795,7 +795,7 @@ ${helpDashboardRestart()}
                        --role applies a validated role preset and --profile
                        selects a reusable model config; Pi keeps its own
                        profile, providers, and sessions.
-  agent list|create|read|attach|stop|notify|role|dedup [--help]
+  agent list|create|inspect|adopt|rename|move|read|attach|stop|notify|role|dedup [--help]
                        One toolkit for every agent: list the roster, create a
                        managed agent in your team, read or attach to its
                        terminal, stop it, notify a session, set a role, or

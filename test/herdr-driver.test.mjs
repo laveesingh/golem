@@ -103,6 +103,15 @@ setResponse(['workspace', 'rename', 'w-denied', 'New'], { __error: { message: 'r
 assert.throws(() => driver.workspaceRename({ session, workspaceId: 'w-denied', label: 'New' }), /rename denied/);
 check('focus/rename errors never become successful UI outcomes', true);
 
+driver.paneLabel({ session, paneId: 'p-stable', label: 'Logical Display' });
+check('pane display label never changes native agent handle', JSON.stringify(argvOf()) === JSON.stringify(['--session', session, 'pane', 'rename', 'p-stable', 'Logical Display']));
+setResponse(['pane', 'move', 'p-stable', '--workspace', 'w-target', '--new-tab', '--no-focus'], { type: 'pane_move', move_result: { pane: { pane_id: 'p-new', tab_id: 't-new', workspace_id: 'w-target' } } });
+const moved = driver.paneMove({ session, paneId: 'p-stable', workspaceId: 'w-target' });
+check('move consumes actual returned pane/tab/workspace IDs', moved.pane_id === 'p-new' && moved.tab_id === 't-new' && moved.workspace_id === 'w-target');
+setResponse(['pane', 'move', 'p-missing', '--workspace', 'w-target', '--new-tab', '--no-focus'], { type: 'pane_move' });
+assert.throws(() => driver.paneMove({ session, paneId: 'p-missing', workspaceId: 'w-target' }), /no exact placement IDs/);
+check('missing move result stays uncertain rather than guessed', true);
+
 // 2. JSON envelope parsing: results and errors
 setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [{ workspace_id: 'w1', label: 'agents' }] });
 const list = driver.workspaceList(session);
