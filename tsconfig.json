@@ -14,5 +14,12 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["cli/bootstrap.ts"]
+  "include": [
+    "cli/bootstrap.ts",
+    "lib/contracts/pilot.ts",
+    "dashboard/server/contract-policy.ts",
+    "dashboard/server/contract-pilot.ts",
+    "tools/contracts-build.ts",
+    "dashboard/web/src/api/pilot-client.ts"
+  ]
 }

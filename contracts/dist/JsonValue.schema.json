@@ -1,0 +1,31 @@
+{
+  "$id": "JsonValue",
+  "anyOf": [
+    {
+      "type": "string"
+    },
+    {
+      "type": "number"
+    },
+    {
+      "type": "boolean"
+    },
+    {
+      "type": "null"
+    },
+    {
+      "type": "array",
+      "items": {
+        "$ref": "JsonValue"
+      }
+    },
+    {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "$ref": "JsonValue"
+        }
+      }
+    }
+  ]
+}

@@ -171,7 +171,12 @@
         "test/support/*.mjs",
         "test/fixtures/w2-safety-probe.mjs",
         "test/fixtures/w2-html-mutation-probe.mjs",
-        "tools/*.mjs"
+        "tools/*.mjs",
+        "tools/contracts-build.ts",
+        "test/fixtures/w3-route-baseline.mjs",
+        "test/fixtures/w3-openapi-export.mjs",
+        "test/fixtures/w3-client-probe.mjs",
+        "dashboard/web/src/api/types.d.ts"
       ],
       "project": [
         "**/*.{js,mjs,ts,jsx,tsx}",

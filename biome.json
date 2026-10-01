@@ -13,7 +13,11 @@
       "test/fixtures/w2-safety-probe.mjs",
       "test/cli-verb-help.test.mjs",
       "test/model-providers.test.mjs",
-      "dashboard/scripts/_scratch.mjs"
+      "dashboard/scripts/_scratch.mjs",
+      "lib/contracts/**",
+      "dashboard/server/contract-*.ts",
+      "dashboard/web/src/api/pilot-client.ts",
+      "test/fixtures/w3-*.mjs"
     ]
   },
   "formatter": {

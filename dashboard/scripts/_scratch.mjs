@@ -40,17 +40,21 @@ const apiBase = () => process.env.GOLEM_SMOKE_API || DEFAULT_API;
 
 // Create a scratch ticket in the smoke project. `fields` overrides defaults
 // (kind, body, assignee, parent_id, etc.); the title is SMOKE-prefixed.
-export async function createScratchTicket(fields = {}) {
+export async function createScratchTicket(fields = {}, transport = null) {
+  const payload = {
+    kind: 'task',
+    ...fields,
+    project_id: SMOKE_PROJECT,
+    created_by: 'smoke',
+    title: `SMOKE-${fields.title ?? 'scratch'}`,
+  };
+  // Owned typed-client tests use the same enforced fixture fields, not a
+  // parallel scratch convention. Default transport remains the existing API.
+  if (transport) return transport(payload);
   const res = await fetch(`${apiBase()}/api/tickets`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      kind: 'task',
-      ...fields,
-      project_id: SMOKE_PROJECT,
-      created_by: 'smoke',
-      title: `SMOKE-${fields.title ?? 'scratch'}`,
-    }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok)
     throw new Error(`createScratchTicket: ${res.status} ${await res.text()}`);

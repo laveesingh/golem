@@ -1,0 +1,26 @@
+{
+  "$id": "HealthResponse",
+  "additionalProperties": true,
+  "type": "object",
+  "properties": {
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "projects_root": {
+      "type": "string"
+    },
+    "project_count": {
+      "type": "integer"
+    },
+    "server_time": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "projects_root",
+    "project_count",
+    "server_time"
+  ]
+}

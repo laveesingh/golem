@@ -6,6 +6,8 @@ for (const [label, args] of [
   ['TypeScript strict', ['node_modules/typescript/bin/tsc', '--noEmit']],
   ['Knip debt', ['tools/knip-check-child.mjs']],
   ['Native backend import', ['tools/native-import.mjs']],
+  ['Contracts freshness', ['tools/contracts-build.ts', '--check']],
+  ['Contract baseline policy', ['tools/contracts-compatibility.mjs']],
 ]) {
   const result = spawnSync(process.execPath, args, {
     encoding: 'utf8',
@@ -18,6 +20,6 @@ for (const [label, args] of [
   if (result.error || result.status !== 0) failed = true;
 }
 console.log(
-  'Pending later gates: W3 contract freshness/diff; W4 token literals; W3/W7 shipped artefacts.',
+  'Pending later gates: actual released-schema compatibility after initial6.0 bootstrap; W3 versioned stores/installed artefacts; W4 tokens/components; W7 emitted renders.',
 );
 process.exitCode = failed ? 1 : 0;
