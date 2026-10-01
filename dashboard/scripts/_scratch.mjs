@@ -45,10 +45,10 @@ export async function createScratchTicket(fields = {}) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      project_id: SMOKE_PROJECT,
-      created_by: 'smoke',
       kind: 'task',
       ...fields,
+      project_id: SMOKE_PROJECT,
+      created_by: 'smoke',
       title: `SMOKE-${fields.title ?? 'scratch'}`,
     }),
   });

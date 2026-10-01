@@ -170,6 +170,7 @@
         "test/integration/**/*.test.mjs",
         "test/support/*.mjs",
         "test/fixtures/w2-safety-probe.mjs",
+        "test/fixtures/w2-html-mutation-probe.mjs",
         "tools/*.mjs"
       ],
       "project": [

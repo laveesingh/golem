@@ -41,20 +41,39 @@ for (const mode of ['absent-fake', 'production-port']) {
     assert.match(receipt.stdout, /safety proof:/);
   });
 }
-for (const mode of ['fail-group', 'timeout-group']) {
+for (const mode of [
+  'fail-group',
+  'timeout-group',
+  'timeout-pipe-group',
+  'exit-pipe-group',
+]) {
   test(`${mode} preserves nonzero/timeout evidence and cleans detached groups`, async () => {
+    const started = Date.now();
     let failure;
     try {
       await runScript('test/fixtures/w2-safety-probe.mjs', {
         args: [mode],
-        timeout: mode === 'timeout-group' ? 1000 : 5000,
+        timeout: mode.startsWith('timeout') ? 1000 : 5000,
       });
     } catch (error) {
       failure = error;
     }
     assert.ok(failure?.receipt, String(failure));
     assert.equal(fs.existsSync(failure.receipt.sandboxRoot), false);
-    if (mode === 'timeout-group') assert.equal(failure.receipt.timedOut, true);
+    assert.ok(
+      Date.now() - started < 6000,
+      'process deadline and pipe drain are bounded',
+    );
+    assert.equal(failure.receipt.pipeDrainTimedOut, false);
+    for (const group of failure.receipt.ownedGroups)
+      assert.throws(() => process.kill(group.pid, 0), { code: 'ESRCH' });
+    if (mode.includes('pipe-group')) {
+      assert.match(failure.receipt.stdout, /inherited-pipe-ready/);
+      assert.match(failure.receipt.stdout, /owned-detached-pid:/);
+    }
+    if (mode.startsWith('timeout'))
+      assert.equal(failure.receipt.timedOut, true);
+    else if (mode === 'exit-pipe-group') assert.equal(failure.receipt.code, 1);
     else {
       assert.equal(failure.receipt.code, 1);
       assert.match(failure.receipt.stderr, /deliberate adapter failure/);

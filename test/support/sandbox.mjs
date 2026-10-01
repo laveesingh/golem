@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 export const repo = fileURLToPath(new URL('../../', import.meta.url));
 
 export function createSandbox() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gol458-'));
+  // Unix test roots are siblings, not nested below a Vitest worker's TMPDIR:
+  // uncertain child roots must survive the worker's ordinary afterAll cleanup.
+  const base = process.platform === 'win32' ? os.tmpdir() : '/tmp';
+  const root = fs.mkdtempSync(path.join(base, 'gol458-'));
   const home = path.join(root, 'home');
   const bin = path.join(root, 'bin');
   const state = path.join(root, 'state');
