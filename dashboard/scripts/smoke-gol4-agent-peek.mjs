@@ -2,6 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -166,7 +167,10 @@ try {
   console.log('✅ GOL-4 background agent peek & interaction smoke tests passed successfully!');
 } finally {
   if (child && child.exitCode == null) {
+    const closed = once(child, 'close');
     child.kill('SIGTERM');
+    const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
+    try { await closed; } finally { clearTimeout(timer); }
   }
   if (endpoint?.server) {
     await typed.closeTypedWorkerEndpoint(endpoint.server);

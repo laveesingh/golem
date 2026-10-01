@@ -1,0 +1,267 @@
+[
+  {
+    "file": "test/agent-cli.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/claude-cli.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/dashboard-model-profiles.test.mjs",
+    "timeout": 90000,
+    "ports": [7634]
+  },
+  {
+    "file": "test/dispatch-brief.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/gol369-integration.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/herdr-driver.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/html-block-service.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/instruction-block.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/intake-suggestion.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/management-consumers.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/management-lock-race.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/management-process.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/management-registry.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/management-resolve.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/md-body.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/mermaid-check.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/notification-cli.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/notification-delivery.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/notification-schedule.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/pi-cli.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/pi-delivery-failures.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/pi-tracker-integration.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/real-actor-setup.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/real-resource-allocation.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/role-preset.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/runtime-compatibility.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/scrub-legacy-harnesses.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/session-cli.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/session-facts.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/session-project-pinning.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/session-start-role.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/spec-sharing-recovery.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/spec-sharing.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/state-watcher.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/team-registry.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/team-retained-pane.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/ticket-cli.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/typed-immediate-retry.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/typed-worker-endpoint.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/worker-ancestor.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/worker-claude-control.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/worker-control.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "dashboard/scripts/api-smoke.mjs",
+    "timeout": 90000,
+    "ports": [7611]
+  },
+  {
+    "file": "dashboard/scripts/dispatch-smoke.mjs",
+    "timeout": 90000,
+    "ports": [7612]
+  },
+  {
+    "file": "dashboard/scripts/queue-when-idle-smoke.mjs",
+    "timeout": 90000,
+    "ports": [7612]
+  },
+  {
+    "file": "dashboard/scripts/smoke-gol-197.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "dashboard/scripts/smoke-gol-256.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "dashboard/scripts/smoke-gol-318.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "dashboard/scripts/smoke-gol-422-drainer.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "dashboard/scripts/smoke-gol4-agent-peek.mjs",
+    "timeout": 90000,
+    "ports": [7842]
+  },
+  {
+    "file": "dashboard/scripts/tracker-smoke.mjs",
+    "timeout": 90000,
+    "ports": []
+  },
+  {
+    "file": "test/profile-isolation.test.mjs",
+    "timeout": 120000,
+    "ports": []
+  },
+  {
+    "file": "mcp/channel/tracker-client.test.mjs",
+    "timeout": 90000,
+    "ports": []
+  }
+]

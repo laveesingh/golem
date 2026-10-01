@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "./node_modules/knip/schema.json",
   "workspaces": {
     ".": {
       "entry": [
@@ -33,7 +33,6 @@
         "test/management-resolve.test.mjs",
         "test/md-body.test.mjs",
         "test/mermaid-check.test.mjs",
-        "test/model-catalog.test.mjs",
         "test/model-profiles.test.mjs",
         "test/model-providers.test.mjs",
         "test/notification-cli.test.mjs",
@@ -63,7 +62,6 @@
         "test/team-registry.test.mjs",
         "test/team-retained-pane.test.mjs",
         "test/ticket-cli.test.mjs",
-        "test/ticket-compact.test.mjs",
         "test/typed-immediate-retry.test.mjs",
         "test/typed-worker-endpoint.test.mjs",
         "test/worker-ancestor.test.mjs",
@@ -160,7 +158,19 @@
         "lib/typed-delivery-tombstones.js",
         "lib/pi-native-adapter.js",
         "lib/management-lock.js",
-        "lib/session-registry.js"
+        "lib/session-registry.js",
+        "cli/bootstrap.ts",
+        "cli/golem-bin.js",
+        "cli/dev.js",
+        "lib/claude-paths.js",
+        "dashboard/.ladle/config.mjs",
+        "test/profile-isolation.test.mjs",
+        "vitest.config.mjs",
+        "test/unit/**/*.test.mjs",
+        "test/integration/**/*.test.mjs",
+        "test/support/*.mjs",
+        "test/fixtures/w2-safety-probe.mjs",
+        "tools/*.mjs"
       ],
       "project": [
         "**/*.{js,mjs,ts,jsx,tsx}",

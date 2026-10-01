@@ -41,21 +41,24 @@
     "node": ">=22.19"
   },
   "scripts": {
-    "check": "node --check cli/golem.js && npm run audit:skills && node cli/golem.js sync --check --all",
-    "audit:skills": "node scripts/audit-skills.mjs && node scripts/audit-skills.mjs .claude/skills",
-    "test": "node test/claude-cli.test.mjs && node test/pi-cli.test.mjs && node test/role-preset.test.mjs && node test/session-start-role.test.mjs && node test/intake-suggestion.test.mjs && node test/model-profiles.test.mjs && node test/model-catalog.test.mjs && node test/dashboard-model-profiles.test.mjs && node test/worker-journey.test.mjs && node test/state-watcher.test.mjs && node test/dashboard-lifecycle.test.mjs && node test/instruction-block.test.mjs && node test/instruction-workflow.test.mjs && node test/session-facts.test.mjs && node test/session-project-pinning.test.mjs && node test/pi-journey.test.mjs && node test/pi-tools-journey.test.mjs && node test/pi-tracker-integration.test.mjs && node test/model-providers.test.mjs && node test/substrate-api.test.mjs && node test/session-cli.test.mjs && node test/team-registry.test.mjs && node test/team-retained-pane.test.mjs && node test/herdr-driver.test.mjs && node test/session-native.test.mjs && node test/team-journey.test.mjs && node test/management-dashboard.test.mjs && node test/management-registry.test.mjs && node test/management-lock-race.test.mjs && node test/management-process.test.mjs && node test/worker-control.test.mjs && node test/worker-ancestor.test.mjs && node test/worker-claude-control.test.mjs && node test/real-actor-setup.test.mjs && node test/real-resource-allocation.test.mjs && node test/management-consumers.test.mjs && node test/management-resolve.test.mjs && node test/ticket-compact.test.mjs && node test/dispatch-brief.test.mjs && node test/scrub-legacy-harnesses.test.mjs && node mcp/channel/tracker-client.test.mjs && npm run test:collaboration",
-    "test:collaboration": "node test/runtime-compatibility.test.mjs && node test/cross-harness-matrix.test.mjs && node test/notification-cli.test.mjs && node test/notification-schedule.test.mjs && node test/pi-delivery-failures.test.mjs && node test/notification-delivery.test.mjs && node test/typed-immediate-retry.test.mjs && node test/typed-worker-endpoint.test.mjs",
+    "check": "node tools/check.mjs",
+    "test": "vitest run --project unit --project component --project integration",
+    "test:collaboration": "vitest run --project integration -t 'notification|typed-|runtime-compatibility|pi-delivery'",
     "postinstall": "npm ci --omit=dev --prefix mcp/channel",
-    "test:release": "node test/release-smoke.mjs",
+    "test:release": "node tools/pending.mjs release",
     "test:management:real": "GOLEM_REAL_HARNESS=1 node test/management-real-journey.test.mjs",
     "measure:turns": "node scripts/measure-turns.mjs",
     "dashboard": "node dashboard/server/index.js",
     "dashboard:build": "vite build --config dashboard/vite.config.js",
     "dashboard:dev": "vite --config dashboard/vite.config.js",
     "dashboard:serve": "npm run dashboard:build && node dashboard/server/index.js",
-    "test:dashboard:browser": "node test/management-dashboard.test.mjs && node dashboard/scripts/gol-461-browser.mjs && node dashboard/scripts/gol-495-browser.mjs && node dashboard/scripts/nested-composer-overlay.browser.mjs && node dashboard/scripts/gol-129-pi-browser.mjs && node dashboard/scripts/comment-image-paste.browser.mjs && node dashboard/scripts/gol383-comment-dispatch.browser.mjs",
-    "test:pi:dashboard": "node test/typed-immediate-retry.test.mjs && npm run dashboard:build && node dashboard/scripts/gol-129-pi-browser.mjs",
-    "check:dashboard": "dashboard/scripts/check.sh"
+    "test:dashboard:browser": "node tools/pending.mjs e2e",
+    "test:pi:dashboard": "node tools/pending.mjs e2e",
+    "check:dashboard": "node tools/check.mjs",
+    "check:types": "tsc --noEmit",
+    "check:biome": "biome check",
+    "check:knip": "node tools/knip-check.mjs",
+    "check:native": "node tools/native-smoke.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -81,7 +84,16 @@
   },
   "devDependencies": {
     "@babel/parser": "^7.29.7",
+    "@biomejs/biome": "2.5.15",
+    "@playwright/test": "1.63.0",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "22.19.15",
+    "jsdom": "26.1.0",
+    "knip": "6.39.0",
     "playwright-core": "^1.61.0",
-    "vite": "^6.3.5"
+    "typescript": "5.9.3",
+    "vite": "^6.3.5",
+    "vitest": "5.0.3"
   }
 }

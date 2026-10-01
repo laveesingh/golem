@@ -1,15 +1,16 @@
 # REPO-MAP.md
-> Last verified: 2026-09-30 @ c445f19 — maintained via golem:docs-maintenance.
+> Last verified: 2026-10-01 @ b0ab579 — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
-- `cli/` — CLI entry points and command dispatch.
+- `cli/` — bin → native `bootstrap.ts` → commands.
 - `lib/` — shared runtime, compiler, delivery, and harness helpers.
 - `substrate/` — instruction, role, skill, hook, and plugin sources.
 - `plugin/` — generated CC rollback copy; never hand-edit.
 - `dashboard/` — Fastify tracker/API, web source, and built UI.
 - `mcp/channel/` — tracker MCP server and REST client.
 - `shims/` — Pi extension.
+- `tools/`, `test/` — gates/Vitest; `docs/testing-runner.md`.
 
 ## Key modules & entry points
 
@@ -22,8 +23,7 @@ Processes: `lib/worker-control.js` + `lib/process-group.js`.
 
 ### Instructions
 
-`substrate/skills/`: `spec-driven-development/` (spec method), `lead/`, `spec-writing/`,
-`tracker/` (records, templates, ticket CLI), `team-ops/` (teams, agents, reminders).
+`substrate/skills/`: spec methods, role methods, tracker authoring and team operations.
 
 ### Dashboard
 
@@ -36,7 +36,7 @@ Agents never touch SQLite directly.
 
 ### Compiler and delivery
 
-`lib/compiler/` renders substrate with drift/tamper checks; `lint.js` only reports word count.
+`lib/compiler/` renders substrate with drift/tamper checks; instruction lint is outside gates.
 `lib/typed-worker-endpoint.js` owns Pi envelopes; `lib/herdr-driver.js` native hosting.
 `lib/team-registry.js` never treats worker cache as membership authority.
 `lib/runtime-compatibility.js` separates policy warnings from initialization/native outcomes.
@@ -59,7 +59,7 @@ native/typed dispatch. Sharing tunnels the dashboard itself; Stop ends every sha
 | Work | Check |
 |---|---|
 | CLI | `node cli/golem.js help` |
-| Instructions/templates | `node test/instruction-workflow.test.mjs` |
+| Source check/tests | `npm run check` / `npm test` |
 | Installed render drift | `golem sync --check --all` |
 | Dashboard | `npm run check:dashboard` |
 | Collaboration | `npm run test:collaboration` |

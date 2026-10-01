@@ -1,5 +1,6 @@
 # Runtime / generated state
 journal/
+.test-results/
 node_modules/
 
 # Local-only Claude Code overrides (always per-developer)

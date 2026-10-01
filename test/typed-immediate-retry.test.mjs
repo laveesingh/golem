@@ -17,7 +17,7 @@ import {
   typedDeliveryResult,
 } from '../lib/typed-worker-endpoint.js';
 import { readTypedDeliveryTombstone, upsertTypedDeliveryTombstone } from '../lib/typed-delivery-tombstones.js';
-import { releaseEndpointLeases, renewEndpointLease, upsertSessionFact } from '../lib/session-facts.js';
+import { readEndpointLeases, releaseEndpointLeases, renewEndpointLease, upsertSessionFact } from '../lib/session-facts.js';
 
 // GOL-124 round-four production journey: a real dashboard's immediate route
 // loses the first typed response after native acceptance. It must queue the
@@ -130,7 +130,16 @@ let forceBusy = false;
 let pauseAfterNativeAcceptance = false;
 let forceBusyAfterDuplicateEnvelopeId = null;
 let endpoint;
+let leaseHeartbeat;
+let leaseRenewals = 0;
 let dashboard;
+function heartbeatOwnedLease() {
+  if (!endpoint?.server?.listening) return;
+  const rows = readEndpointLeases({ includeExpired: true }).filter(row => row.canonical_id === canonicalId);
+  if (rows.length !== 1 || rows[0].owner_token !== ownerToken || rows[0].host !== endpoint.host || rows[0].port !== endpoint.port) return;
+  renewEndpointLease({ ...rows[0] });
+  leaseRenewals += 1;
+}
 
 async function acceptNative(envelope) {
   const claim = claimTypedDelivery(inbox, envelope, {
@@ -194,6 +203,9 @@ try {
     kind: 'typed-worker',
     harness: 'pi',
   });
+  // Model endpoint liveness for this long multi-restart fixture. Never fill a
+  // deliberate release gap: only renew while the same owner's row exists.
+  leaseHeartbeat = setInterval(heartbeatOwnedLease, 5000);
   upsertSessionFact({
     canonical_id: canonicalId,
     continuation_key: `typed-immediate:${canonicalId}`,
@@ -371,6 +383,10 @@ try {
   const startsBeforeLeaseGap = nativeStarts;
   const requestsBeforeLeaseGap = endpointRequests;
   releaseEndpointLeases(ownerToken, { canonicalId });
+  const renewalsBeforeGap = leaseRenewals;
+  heartbeatOwnedLease(); // Exercise a timer opportunity while deliberately released.
+  assert.equal(leaseRenewals, renewalsBeforeGap, 'heartbeat cannot recreate a released lease');
+  assert.equal(readEndpointLeases({ includeExpired: true }).some(row => row.owner_token === ownerToken && row.canonical_id === canonicalId), false);
   const leaseGap = await postJson(dashboard.baseUrl, '/api/messages/notify', {
     project_id: 'typed-immediate-000000', sender_id: 'typed-lease-gap-source', session_id: canonicalId,
     text: 'typed capability lease gap notification',
@@ -385,6 +401,7 @@ try {
   } finally { leaseGapRetry.close(); }
   assert.equal(nativeStarts, startsBeforeLeaseGap, 'no native turn starts while the typed lease is absent');
   assert.equal(endpointRequests, requestsBeforeLeaseGap, 'no endpoint request is attempted through the lease gap');
+  assert.equal(leaseRenewals, renewalsBeforeGap, 'no heartbeat renewal occurs during the deliberate lease gap');
   renewEndpointLease({
     canonical_id: canonicalId, owner_token: ownerToken, host: endpoint.host, port: endpoint.port,
     kind: 'typed-worker', harness: 'pi',
@@ -606,6 +623,7 @@ try {
 
   console.log('typed immediate retry production journey passed: ticket/notification/control/comment lost response -> original shared envelope retry -> one native start; accepted-503, typed lease-gap, immediate+queued-ticket crash-after-accept settlement recovery, and exact older-comment CAS');
 } finally {
+  clearInterval(leaseHeartbeat);
   await stopProcess(dashboard?.child);
   await closeTypedWorkerEndpoint(endpoint?.server);
   if (previous.GOLEM_HOME == null) delete process.env.GOLEM_HOME; else process.env.GOLEM_HOME = previous.GOLEM_HOME;

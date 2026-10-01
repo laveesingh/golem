@@ -24,6 +24,8 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import url from 'node:url';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { createScratchTicket, archiveTicket, SMOKE_PROJECT } from './_scratch.mjs';
 import Database from 'better-sqlite3';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -36,6 +38,8 @@ const TAG = crypto.randomBytes(6).toString('hex');
 const TMP_DB = path.join(os.tmpdir(), `golem-dispatch-smoke-${TAG}.db`);
 const TMP_XDG = fs.mkdtempSync(path.join(os.tmpdir(), `golem-dispatch-smoke-xdg-${TAG}-`));
 
+const tickets = [];
+process.env.GOLEM_SMOKE_API = BASE;
 let failures = 0;
 function check(name, cond, detail = '') {
   const ok = !!cond;
@@ -50,9 +54,11 @@ function cleanupFiles() {
   try { fs.rmSync(TMP_XDG, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
-const child = spawn('node', [SERVER], {
+const serverEnv = { ...process.env };
+delete serverEnv.GOLEM_HOME;
+const child = spawn(process.execPath, [SERVER], {
   env: {
-    ...process.env,
+    ...serverEnv,
     PORT: String(PORT),
     HOST,
     GOLEM_TRACKER_DB: TMP_DB,
@@ -63,6 +69,7 @@ const child = spawn('node', [SERVER], {
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
+const childClosed = once(child, 'close');
 let childExited = false;
 child.on('exit', () => { childExited = true; });
 child.stderr.on('data', (d) => {
@@ -102,11 +109,13 @@ async function run() {
   await waitForHealth();
   check('server: /api/health ok', true);
 
-  const PID = 'dispatch-smoke-proj';
+  const PID = SMOKE_PROJECT;
   const SESSION = 'bogus-session-not-registered';
 
   // --- create a ticket to dispatch ------------------------------------
-  const mk = await jsend('POST', '/api/tickets', { project_id: PID, kind: 'task', title: 'Wire the widget', body: 'do the thing' });
+  const first = await createScratchTicket({ kind: 'task', title: 'Wire the widget', body: 'do the thing' });
+  tickets.push(first.id);
+  const mk = { status: 201, body: first };
   check('POST /api/tickets: 201 + TKT id', mk.status === 201 && /^TKT-\d{4}$/.test(mk.body?.id ?? ''), `status ${mk.status} id ${mk.body?.id}`);
   const tid = mk.body?.id;
 
@@ -143,7 +152,9 @@ async function run() {
 
   // A target with no live session/channel must remain queued, with a durable
   // envelope linked from the nullable queue column (legacy rows may still be null).
-  const queuedTicket = await jsend('POST', '/api/tickets', { project_id: PID, kind: 'task', title: 'Queue the widget' });
+  const second = await createScratchTicket({ kind: 'task', title: 'Queue the widget' });
+  tickets.push(second.id);
+  const queuedTicket = { status: 201, body: second };
   const queued = await jsend('POST', `/api/tickets/${queuedTicket.body?.id}/dispatch`, { session_id: 'offline-queued-session', mode: 'when_idle', sender_id: 'sender-session' });
   check('when_idle: truthful queued:true + delivered:false', queued.status === 200 && queued.body?.queued === true && queued.body?.delivered === false, JSON.stringify(queued.body));
   const queuedRows = await jget('/api/dispatch-queue?status=pending');
@@ -163,7 +174,7 @@ async function run() {
   const correlatedReply = await jsend('POST', `/api/message-envelopes/${queued.body?.envelope_id}/reply`, { text: 'completed' }, { 'x-golem-caller-session': 'offline-queued-session' });
   check('correlated envelope reply route is retired; delegated returns use session_notify', correlatedReply.status === 404, JSON.stringify(correlatedReply.body));
   const notification = await jsend('POST', '/api/messages/notify', { session_id: 'notify-recipient', sender_id: 'notify-sender', text: 'durable notification', project_id: PID });
-  check('session notify reports failed delivery truthfully', notification.status === 200 && notification.body?.ok === false, JSON.stringify(notification.body));
+  check('session notify reports admitted queue and failed delivery separately', notification.status === 200 && notification.body?.ok === true && notification.body?.queued === true && notification.body?.delivery?.ok === false && notification.body?.receipt?.accepted === false && notification.body?.receipt?.state === 'queued', JSON.stringify(notification.body));
   const notificationEnvelope = sql2.prepare('SELECT * FROM message_envelopes WHERE id = ?').get(notification.body?.envelope_id);
   check('session notify persists nullable-ticket sender/reply route', notificationEnvelope?.ticket_id == null && notificationEnvelope?.sender_id === 'notify-sender' && notificationEnvelope?.reply_to_session_id === 'notify-sender' && notificationEnvelope?.recipient_session_id === 'notify-recipient', JSON.stringify(notificationEnvelope));
   sql2.close();
@@ -176,9 +187,11 @@ try {
   failures++;
   console.log(`[FAIL] unexpected exception — ${err && err.stack ? err.stack : err}`);
 } finally {
+  for (const ticket of tickets) await archiveTicket(ticket);
   try { child.kill('SIGTERM'); } catch { /* ignore */ }
   await new Promise((res) => setTimeout(res, 400));
   if (!childExited) { try { child.kill('SIGKILL'); } catch { /* ignore */ } }
+  await childClosed;
   cleanupFiles();
   if (failures === 0) {
     console.log('\nALL CHECKS PASSED');
