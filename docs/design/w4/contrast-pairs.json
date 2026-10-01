@@ -1,0 +1,338 @@
+[
+  {
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)"
+  },
+  {
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text."
+  },
+  {
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.hover",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.hover",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.selected",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.selected",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary"
+  },
+  {
+    "foreground": "semantic.accent.ink",
+    "background": "semantic.accent.fill",
+    "minimum": 4.5,
+    "usage": "Primary button text"
+  }
+]

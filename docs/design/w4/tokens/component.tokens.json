@@ -1,0 +1,902 @@
+{
+  "component": {
+    "button": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.control}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      },
+      "primaryBackground": {
+        "$type": "color",
+        "$value": "{semantic.accent.fill}"
+      },
+      "primaryForeground": {
+        "$type": "color",
+        "$value": "{semantic.accent.ink}"
+      }
+    },
+    "iconButton": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.control}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      }
+    },
+    "input": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.control}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      }
+    },
+    "pill": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.pill}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      }
+    },
+    "badge": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.pill}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      }
+    },
+    "card": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.card}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      },
+      "padding": {
+        "$type": "dimension",
+        "$value": "{semantic.density.card}"
+      }
+    },
+    "listRow": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.card}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      },
+      "height": {
+        "$type": "dimension",
+        "$value": "{semantic.density.row}"
+      }
+    },
+    "menu": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.card}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      }
+    },
+    "searchField": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.surface.panel}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{semantic.surface.hover}"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "selectedForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "busyBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.selected}"
+      },
+      "busyForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.primary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.text.muted}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{semantic.surface.disabled}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{semantic.text.disabled}"
+      },
+      "focusColor": {
+        "$type": "color",
+        "$value": "{semantic.focus.color}"
+      },
+      "borderColor": {
+        "$type": "color",
+        "$value": "{semantic.border.control}"
+      },
+      "invalidColor": {
+        "$type": "color",
+        "$value": "{semantic.status.blocked}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.control}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingX}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{semantic.density.paddingY}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{semantic.density.gap}"
+      },
+      "minHeight": {
+        "$type": "dimension",
+        "$value": "{semantic.density.control}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{semantic.density.target}"
+      },
+      "focusWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.width}"
+      },
+      "focusOffset": {
+        "$type": "dimension",
+        "$value": "{semantic.focus.offset}"
+      },
+      "borderWidth": {
+        "$type": "dimension",
+        "$value": "{semantic.border.width}"
+      },
+      "type": {
+        "$type": "typography",
+        "$value": "{semantic.type.label}"
+      },
+      "feedback": {
+        "$type": "duration",
+        "$value": "{semantic.motion.feedback}"
+      }
+    }
+  }
+}

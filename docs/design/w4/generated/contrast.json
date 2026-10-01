@@ -1,0 +1,898 @@
+[
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 15.373364
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 13.544989
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 11.691381
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 9.782765
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 8.009568
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 11.691381
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 12.351445
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 10.882471
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 9.393224
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 7.859782
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.435139
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 9.393224
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 8.717874
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 7.681046
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.629908
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 5.547576
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 4.542038
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.629908
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 8.717874
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 7.681046
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.629908
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 5.547576
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 4.542038
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.629908
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 8.528305
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 7.514022
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.485741
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 8.384176
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 7.387035
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.376132
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 8.676808
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 7.644864
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.598677
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.883094
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.064478
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 5.234565
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 7.223554
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.364447
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 5.493483
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 7.89623
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.957121
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.005051
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 8.28636
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 7.300852
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 6.301743
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 6.978008
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 8.717874
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 6.148104
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 7.681046
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 5.306747
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 6.629908
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.hover",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 4.440421
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.hover",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 5.547576
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.selected",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 3.635563
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.selected",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 4.542038
+  },
+  {
+    "theme": "dark",
+    "foreground": "semantic.accent.ink",
+    "background": "semantic.accent.fill",
+    "minimum": 4.5,
+    "usage": "Primary button text",
+    "ratio": 6.978008
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 11.098111
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 11.829582
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 10.218975
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 9.018799
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 7.903999
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.primary",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 10.218975
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 7.529569
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 8.025839
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.933115
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.11885
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 5.362508
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.secondary",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.933115
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 7.529569
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 8.025839
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.933115
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.11885
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 5.362508
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.muted",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.933115
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.page",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 7.529569
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.panel",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 8.025839
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.raised",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.933115
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.hover",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.11885
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.selected",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 5.362508
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.text.disabled",
+    "background": "semantic.surface.disabled",
+    "minimum": 4.5,
+    "usage": "All body-sized text, including informational disabled text (stricter than WCAG exemption)",
+    "ratio": 6.933115
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.595312
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.898187
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.working",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.231295
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.178504
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.453908
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.idle",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 3.847505
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.459255
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.753163
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.review",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.106016
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.802354
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 5.118875
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.blocked",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.421936
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.683951
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.992668
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.done",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.312912
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.918082
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 5.242231
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.triage",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.528497
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.619468
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.923935
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.status.open",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Status dot/icon only; adjacent label uses text.primary. Never status-colored body text.",
+    "ratio": 4.253537
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 4.381098
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.page",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 11.098111
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 4.669854
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.panel",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 11.829582
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 4.034049
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.raised",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 10.218975
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.hover",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 3.560267
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.hover",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 9.018799
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.focus.color",
+    "background": "semantic.surface.selected",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 3.120188
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.border.control",
+    "background": "semantic.surface.selected",
+    "minimum": 3,
+    "usage": "Focus perimeter or necessary control boundary",
+    "ratio": 7.903999
+  },
+  {
+    "theme": "light",
+    "foreground": "semantic.accent.ink",
+    "background": "semantic.accent.fill",
+    "minimum": 4.5,
+    "usage": "Primary button text",
+    "ratio": 4.669854
+  }
+]
