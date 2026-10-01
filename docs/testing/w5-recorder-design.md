@@ -2,10 +2,12 @@
 
 ## Status and boundaries
 
-Stage A contains dependency-free native-Node TS format/scrub tooling and three
-**untimed executable prototypes**. It does not contain a recorder, shared clock,
-production seam edits, runner tests or golden recordings. Stage B is blocked on
-accepted W2 integration and explicit coordinator release. W3 adopts the local
+Stage A established dependency-free native-Node TS format/scrub tooling and three
+**untimed executable prototypes**. Released Stage B1 now adds strict/native and
+existing Vitest unit/integration/failure coverage plus supported offline Linux
+checks; builder evidence is in `w5-b1-evidence.md`, review/verification pending.
+A recorder, shared clock, production seam edits and golden recordings are still
+absent. Stage B2 awaits explicit release and W3 JSONL/header/seam coordination. W3 adopts the local
 scenario DTO into its canonical TypeBox/JSON Schema contracts; these local types
 and allowlists are not a second shared contracts layer.
 
