@@ -1,0 +1,34 @@
+{
+  "semantic": {
+    "density": {
+      "control": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n40}"
+      },
+      "target": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n44}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n8}"
+      },
+      "paddingX": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n12}"
+      },
+      "paddingY": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n8}"
+      },
+      "row": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n44}"
+      },
+      "card": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n16}"
+      }
+    }
+  }
+}
