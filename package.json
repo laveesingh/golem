@@ -47,6 +47,7 @@
     "test:collaboration": "node test/runtime-compatibility.test.mjs && node test/cross-harness-matrix.test.mjs && node test/notification-cli.test.mjs && node test/notification-schedule.test.mjs && node test/pi-delivery-failures.test.mjs && node test/notification-delivery.test.mjs && node test/typed-immediate-retry.test.mjs && node test/typed-worker-endpoint.test.mjs",
     "postinstall": "npm ci --omit=dev --prefix mcp/channel",
     "test:release": "node test/release-smoke.mjs",
+    "test:management:real": "GOLEM_REAL_HARNESS=1 node test/management-real-journey.test.mjs",
     "measure:turns": "node scripts/measure-turns.mjs",
     "dashboard": "node dashboard/server/index.js",
     "dashboard:build": "vite build --config dashboard/vite.config.js",

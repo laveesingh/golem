@@ -152,6 +152,21 @@ with the same reason when attach is unavailable/unsupported and copies an exact
 conversation ID when available. Offline CLI fallback retains known external facts
 but marks dashboard delivery readiness unavailable.
 
+## Real management acceptance
+
+`npm run test:management:real` explicitly runs actual installed Pi/Claude plus a
+human shell in owned temporary native resources. It needs authenticated harness
+configuration and the standard Herdr Pi reporter; the test explicitly loads that
+existing reporter in its private HOME. Set `GOLEM_REAL_HERDR_PI_REPORTER` only to the
+actual installed reporter path when it differs. Golem does not add a second default
+native reporter. The existing Pi application lease carries PID/birth evidence;
+Claude MCP sidecar leases do not identify the Claude application.
+
+`GOLEM_REAL_ACTORS=pi` or `claude` selects a **partial diagnostic**, never full
+acceptance. Actual startup/login errors remain unverified gaps. Credentials use
+private mode0600 copies, never repository/log content; owned native/dashboard
+processes stop before HOME/socket/auth copies are removed.
+
 ## Runtime compatibility
 
 Pi 0.99.1 and Node.js 22.19+ are the tested baseline. `golem pi` warns on

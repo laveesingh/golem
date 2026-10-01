@@ -34,7 +34,7 @@ try {
   const agent = { agent: 'pi', pane_id: 'moved-pane', agent_session: { kind: 'path', value: fact.locator.session_file } };
   assert.equal(nativeConversationMatches(fact, agent), true);
   assert.equal(nativeConversationMatches(fact, { agent_session: { kind: 'path', value: path.join(temp, 'different.jsonl') } }), false);
-  assert.equal(nativeConversationMatches(fact, { agent_session: { kind: 'uuid', value: fact.locator.raw_session_id } }), true);
+  assert.equal(nativeConversationMatches(fact, { agent_session: { kind: 'id', value: fact.locator.raw_session_id } }), true);
   const replacementInfo = { foreground_process_group_id: child.pid, foreground_processes: [{ pid: child.pid, argv0: 'pi', argv: ['pi', '--session', path.join(temp, 'conversation-B.jsonl')] }] };
   const staleA = workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: { agentGet: () => agent, paneProcessInfo: () => replacementInfo } });
   assert.equal(staleA.state, 'unavailable', 'stale A metadata must not bind the current B process incarnation');
@@ -55,6 +55,17 @@ try {
   assert.equal(alive(), true);
   const cachedOnly = workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: { agentGet: () => agent, paneProcessInfo: () => ({ foreground_process_group_id: child.pid, foreground_processes: [{ pid: child.pid, argv0: 'zsh' }] }) } });
   assert.equal(cachedOnly.state, 'unavailable', 'cached native metadata alone cannot adopt a shell as a restarted agent');
+  const lease = { canonical_id: fact.canonical_id, harness: 'pi', kind: 'typed-worker', owner_token: 'actual-runtime-owner', pid: child.pid, process_birth: identity.members.find(p => p.pid === child.pid).birth, expires_at: new Date(Date.now()+60000).toISOString() };
+  const opaqueArgvNative = { agentGet: () => agent, paneProcessInfo: () => ({ foreground_process_group_id: child.pid, foreground_processes: [{ pid: child.pid, argv0: 'pi' }] }) };
+  assert.equal(workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: opaqueArgvNative, leases: [lease], refreshLeases: () => [lease] }).state, 'available', 'actual canonical endpoint PID/birth binds a Pi whose title hides argv');
+  assert.equal(workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: opaqueArgvNative, leases: [{ ...lease, process_birth: 'ended-incarnation' }], refreshLeases: () => [lease] }).state, 'unavailable', 'old lease birth never owns a replacement');
+  assert.equal(workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: opaqueArgvNative, leases: [lease], refreshLeases: () => [] }).state, 'unavailable', 'lease released during binding never authorizes control');
+  assert.equal(workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: opaqueArgvNative, leases: [lease, { ...lease, owner_token: 'other-live-owner', process_birth: null }], refreshLeases: () => [lease] }).state, 'unavailable', 'ambiguous live owner is not filtered away by missing birth');
+  assert.equal(workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: opaqueArgvNative, leases: [{ ...lease, kind: 'claude-channel' }], refreshLeases: () => [lease] }).state, 'unavailable', 'MCP sidecar lease is never application ownership');
+  assert.equal(workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: opaqueArgvNative, leases: [{ ...lease, expires_at: new Date(0).toISOString() }], refreshLeases: () => [lease] }).state, 'unavailable', 'expired lease never owns the current app');
+  let leaseReads = 0;
+  const leaseThenB = { ...opaqueArgvNative, paneProcessInfo: () => ++leaseReads === 1 ? opaqueArgvNative.paneProcessInfo() : replacementInfo };
+  assert.equal(workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: leaseThenB, leases: [lease], refreshLeases: () => [lease] }).state, 'unavailable', 'live lease cannot override conflicting B arguments at second bracket');
   assert.equal(recovered.state, 'available'); assert.equal(recovered.pane_id, 'moved-pane'); assert.equal(recovered.identity.pgid, child.pid);
   assert.match(workerProcessEvidence(worker, { facts: [fact], native: { ...native, agentGet: () => ({ ...agent, agent_session: { kind: 'path', value: '/different-conversation' } }) } }).reason, /does not match/);
   updateWorker(worker.worker_id, { process_ownership: identity });
