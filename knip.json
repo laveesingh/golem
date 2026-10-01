@@ -171,7 +171,13 @@
         "test/support/*.mjs",
         "test/fixtures/w2-safety-probe.mjs",
         "test/fixtures/w2-html-mutation-probe.mjs",
-        "tools/*.mjs"
+        "tools/*.mjs",
+        "tools/scenario-scrub.ts",
+        "test/sim/claude",
+        "test/sim/pi",
+        "test/sim/herdr",
+        "test/integration/scenario-probe.mjs",
+        "test/sim/support.ts"
       ],
       "project": [
         "**/*.{js,mjs,ts,jsx,tsx}",

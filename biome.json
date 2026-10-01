@@ -13,7 +13,8 @@
       "test/fixtures/w2-safety-probe.mjs",
       "test/cli-verb-help.test.mjs",
       "test/model-providers.test.mjs",
-      "dashboard/scripts/_scratch.mjs"
+      "dashboard/scripts/_scratch.mjs",
+      "test/sim/**"
     ]
   },
   "formatter": {

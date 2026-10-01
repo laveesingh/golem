@@ -14,5 +14,12 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["cli/bootstrap.ts"]
+  "include": [
+    "cli/bootstrap.ts",
+    "tools/scenario-format.ts",
+    "tools/scenario-scrub-core.ts",
+    "tools/scenario-io.ts",
+    "tools/scenario-scrub.ts",
+    "test/sim/support.ts"
+  ]
 }
