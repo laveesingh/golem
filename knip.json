@@ -4,6 +4,8 @@
     ".": {
       "entry": [
         "cli/golem.js",
+        "docs/design/w4/prototype.mjs",
+        "docs/design/w4/static-check.mjs",
         "dashboard/server/index.js",
         "dashboard/web/src/entry.jsx",
         "dashboard/vite.config.js",
@@ -175,6 +177,7 @@
       ],
       "project": [
         "**/*.{js,mjs,ts,jsx,tsx}",
+        "!docs/design/w4/generated/**",
         "!node_modules/**",
         "!**/node_modules/**",
         "!.worktrees/**",
