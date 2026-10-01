@@ -448,6 +448,54 @@
     "ratio": 6.978008
   },
   {
+    "theme": "dark",
+    "foreground": "component.button.primary.default.foreground",
+    "background": "component.button.primary.default.background",
+    "minimum": 4.5,
+    "usage": "Primary Button default: retain accent pair",
+    "ratio": 6.978008
+  },
+  {
+    "theme": "dark",
+    "foreground": "component.button.primary.hover.foreground",
+    "background": "component.button.primary.hover.background",
+    "minimum": 4.5,
+    "usage": "Primary Button hover: retain accent pair; never generic hover background",
+    "ratio": 6.978008
+  },
+  {
+    "theme": "dark",
+    "foreground": "component.button.primary.active.foreground",
+    "background": "component.button.primary.active.background",
+    "minimum": 4.5,
+    "usage": "Primary Button active: retain accent pair; never generic active background",
+    "ratio": 6.978008
+  },
+  {
+    "theme": "dark",
+    "foreground": "component.button.primary.focus.foreground",
+    "background": "component.button.primary.focus.background",
+    "minimum": 4.5,
+    "usage": "Primary Button focus-visible: retain accent pair; outline has separate offset/perimeter pair",
+    "ratio": 6.978008
+  },
+  {
+    "theme": "dark",
+    "foreground": "component.button.primary.busy.foreground",
+    "background": "component.button.primary.busy.background",
+    "minimum": 4.5,
+    "usage": "Primary Button busy: retain accent pair, fixed paint and geometry, no opacity",
+    "ratio": 6.978008
+  },
+  {
+    "theme": "dark",
+    "foreground": "component.button.primary.disabled.foreground",
+    "background": "component.button.primary.disabled.background",
+    "minimum": 4.5,
+    "usage": "Primary Button disabled: checked disabled surface/text pair, no opacity; no contrast exemption",
+    "ratio": 6.629908
+  },
+  {
     "theme": "light",
     "foreground": "semantic.text.primary",
     "background": "semantic.surface.page",
@@ -894,5 +942,53 @@
     "minimum": 4.5,
     "usage": "Primary button text",
     "ratio": 4.669854
+  },
+  {
+    "theme": "light",
+    "foreground": "component.button.primary.default.foreground",
+    "background": "component.button.primary.default.background",
+    "minimum": 4.5,
+    "usage": "Primary Button default: retain accent pair",
+    "ratio": 4.669854
+  },
+  {
+    "theme": "light",
+    "foreground": "component.button.primary.hover.foreground",
+    "background": "component.button.primary.hover.background",
+    "minimum": 4.5,
+    "usage": "Primary Button hover: retain accent pair; never generic hover background",
+    "ratio": 4.669854
+  },
+  {
+    "theme": "light",
+    "foreground": "component.button.primary.active.foreground",
+    "background": "component.button.primary.active.background",
+    "minimum": 4.5,
+    "usage": "Primary Button active: retain accent pair; never generic active background",
+    "ratio": 4.669854
+  },
+  {
+    "theme": "light",
+    "foreground": "component.button.primary.focus.foreground",
+    "background": "component.button.primary.focus.background",
+    "minimum": 4.5,
+    "usage": "Primary Button focus-visible: retain accent pair; outline has separate offset/perimeter pair",
+    "ratio": 4.669854
+  },
+  {
+    "theme": "light",
+    "foreground": "component.button.primary.busy.foreground",
+    "background": "component.button.primary.busy.background",
+    "minimum": 4.5,
+    "usage": "Primary Button busy: retain accent pair, fixed paint and geometry, no opacity",
+    "ratio": 4.669854
+  },
+  {
+    "theme": "light",
+    "foreground": "component.button.primary.disabled.foreground",
+    "background": "component.button.primary.disabled.background",
+    "minimum": 4.5,
+    "usage": "Primary Button disabled: checked disabled surface/text pair, no opacity; no contrast exemption",
+    "ratio": 6.933115
   }
 ]

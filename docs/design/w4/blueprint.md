@@ -40,7 +40,7 @@ status labels always use `text.primary`, not colored body-sized text.
 
 - `tokens/*.tokens.json`: seven DTCG-shaped source sets, complete-token overrides.
 - `sets.json`: explicit composition order and isolated defaults (dark/cozy).
-- `contrast-pairs.json`: 56 declared usage pairs; `generated/contrast.json`: both themes, 112 calculations.
+- `contrast-pairs.json`: 62 declared usage pairs, including six primary Button states; `generated/contrast.json`: both themes, 124 calculations.
 - `fonts/`: seven unmodified Latin normal WOFF2 files, two licenses, inventory, local `@font-face` CSS.
 - `prototype.mjs`: isolated generator/validator sketch; `static-check.mjs`: bounded artifact probes.
 - `generated/tokens.css`, `tokens.ts`: deterministic design exemplars, not production imports.
@@ -166,7 +166,7 @@ Recommendations fit all three lab shells; they are not production components.
 
 | Layer / name | States and semantic use | Keyboard / aria obligations |
 |---|---|---|
-| Atom Button | default, hover, active, focus-visible, disabled, busy; primary/quiet; stable label and size | Native button; Enter/Space; type=button default; busy aria-busy with meaningful label; no duplicate action |
+| Atom Button | default, hover, active, focus-visible, disabled, busy; primary/quiet; complete variant paint pairs below; stable label and size | Native button; Enter/Space; type=button default; busy aria-busy + aria-disabled preserves focus and suppresses duplicate actions; disabled uses native disabled |
 | Atom IconButton | same states; density.target separate from visual glyph | Accessible name required; decorative icon aria-hidden; focus ring not clipped; ≥24px hit target (32 compact / 44 cozy) |
 | Atom Input | empty, populated, placeholder, focus, invalid, disabled, read-only | Native input + id/label; aria-invalid and describedby error; read-only focusable; no placeholder-only label |
 | Atom Pill | neutral and working/idle/review/blocked/done/triage/open; long label | Text label plus decorative status dot; not clickable by default; no redundant live announcement |
@@ -176,8 +176,45 @@ Recommendations fit all three lab shells; they are not production components.
 | Molecule Menu | closed/open; no options; active/selected/disabled; long list; searchable variant | Trigger expanded/controls; listbox semantics for selection, menu for commands (never mix); arrows/Home/End/typeahead; Escape closes top overlay + restores focus |
 | Molecule SearchField | Input + clear IconButton; empty/query/busy/no matches/error | Label; clear named; Escape clears only when specified by consumer; status via scoped polite region, not every keystroke |
 
-Generic component tokens provide semantic states; they do not prescribe product data. `busy`
-uses stable geometry and text, not opacity. In reduced-motion mode use a static busy indicator.
+### Primary Button variant-state paint policy (GOL-468 concern)
+
+Primary paint is a **complete state pair**, never independent fallback selection of one color.
+Use `component.button.primary.<state>.background` and `.foreground` together. The old unqualified
+`primaryBackground`/`primaryForeground` names have been removed to prevent ambiguous mixing.
+Generic `button.hover`, `button.active`, `button.busyBackground` and generic foreground names
+are for the quiet variant only; they must not override a primary state paint.
+
+| Primary state | Background / foreground alias pair | Behavior / fixture obligation |
+|---|---|---|
+| default | accent.fill / accent.ink | Enabled native button, 14px label |
+| hover | accent.fill / accent.ink | Retain accent paint, not generic hover surface; pointer entry/exit fixture |
+| active | accent.fill / accent.ink | Retain accent paint during pointer press or Space keydown; release fixture |
+| focus | accent.fill / accent.ink | Retain paint; separate 2px focus outline + 2px surface gap; keyboard-only fixture |
+| busy | accent.fill / accent.ink | No opacity; stable label/geometry, aria-busy and aria-disabled=true; retain focus, guard click/Enter/Space against duplicate activation |
+| disabled | surface.disabled / text.disabled | Switch **both** paints; no opacity/filter, native disabled, no action and removed from tab order; readable label, not contrast-exempt |
+
+Disabled wins over busy; busy wins over pointer paint states; active then hover then default
+chooses enabled paint. Focus-visible is an orthogonal outline: it does not erase hover/active/busy
+semantics or change their paired paints. For focus+busy use the busy pair plus the outline.
+A native-disabled button cannot be focused/activated; don't synthesize a disabled focus ring.
+The outline is offset into the adjacent approved surface: its AA contract is perimeter-vs-surface,
+not outline-vs-accent-fill (which would be identical). Never clip the 2px gap/perimeter.
+
+All six state pairs appear explicitly in the contrast manifest at 4.5:1, including disabled.
+No hover/active opacity, color mixing or generic background substitution is permitted. This
+retained-paint policy reuses the existing palette and needs no new shell or visual direction.
+Builder state fixtures must assert both computed paints (not just a foreground token) for all six
+states × both themes × both densities; exercise busy+focus, disabled+busy precedence, Enter/Space
+and pointer down/up, duplicate-action suppression and no disabled activation. Keep the matched
+state token pair visible in each story. Axe/screenshots remain required after W2, not proven here.
+
+Static probes check all 24 state/theme/density combinations, reject omitted/duplicated/weakened
+state-pair declarations, corrupt each state's paint pair, and reproduce rejection of the original
+unsafe generic-hover/active + primary-ink combinations in both themes. They prove the artifact
+contract; they do not prove the future CSS cascade or event behavior.
+
+Other generic component tokens provide semantic states; they do not prescribe product data.
+Quiet `busy` uses stable geometry and primary text, not opacity. In reduced-motion mode use a static busy indicator.
 InvalidColor/status colors are UI markers on approved surfaces; an error sentence is primary text.
 Color alone never represents selected, busy, invalid or status. Story fixtures include extremely
 long labels, keyboard-only paths, zero counts, narrow 320px container and reduced motion.

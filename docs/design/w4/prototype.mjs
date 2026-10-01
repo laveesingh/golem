@@ -102,11 +102,20 @@ function overlay(base, data, scope) {
   }
   return { ...base, ...next };
 }
-export function build() {
-  const sets = read('sets.json'), pairs = read('contrast-pairs.json');
+export const primaryStates = ['default', 'hover', 'active', 'focus', 'busy', 'disabled'];
+export function validatePrimaryPairs(pairs) {
+  for (const state of primaryStates) {
+    const prefix = `component.button.primary.${state}`;
+    const matches = pairs.filter(p => p.foreground === `${prefix}.foreground` && p.background === `${prefix}.background`);
+    if (matches.length !== 1 || matches[0].minimum !== 4.5) fail('PRIMARY_PAIR_COVERAGE', state);
+  }
+}
+export function build(overrides = {}) {
+  const sets = read('sets.json'), pairs = overrides.pairs ?? read('contrast-pairs.json');
+  validatePrimaryPairs(pairs);
   let base = flatten(read(sets.primitive));
   base = overlay(base, read(sets.semantic), 'semantic.');
-  base = overlay(base, read(sets.component), 'component.');
+  base = overlay(base, overrides.component ?? read(sets.component), 'component.');
   const combinations = {}, report = [];
   for (const theme of ['dark', 'light']) for (const density of ['cozy', 'compact']) {
     let tokens = overlay(base, read(sets.themes[theme]), 'semantic.');

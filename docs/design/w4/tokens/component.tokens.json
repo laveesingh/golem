@@ -97,13 +97,32 @@
         "$type": "duration",
         "$value": "{semantic.motion.feedback}"
       },
-      "primaryBackground": {
-        "$type": "color",
-        "$value": "{semantic.accent.fill}"
-      },
-      "primaryForeground": {
-        "$type": "color",
-        "$value": "{semantic.accent.ink}"
+      "primary": {
+        "$description": "Complete variant-state paint pairs. Never mix these foregrounds with generic button state backgrounds. Enabled states retain accent paint; disabled uses disabled surface/text without opacity.",
+        "default": {
+          "background": { "$type": "color", "$value": "{semantic.accent.fill}" },
+          "foreground": { "$type": "color", "$value": "{semantic.accent.ink}" }
+        },
+        "hover": {
+          "background": { "$type": "color", "$value": "{semantic.accent.fill}" },
+          "foreground": { "$type": "color", "$value": "{semantic.accent.ink}" }
+        },
+        "active": {
+          "background": { "$type": "color", "$value": "{semantic.accent.fill}" },
+          "foreground": { "$type": "color", "$value": "{semantic.accent.ink}" }
+        },
+        "focus": {
+          "background": { "$type": "color", "$value": "{semantic.accent.fill}" },
+          "foreground": { "$type": "color", "$value": "{semantic.accent.ink}" }
+        },
+        "busy": {
+          "background": { "$type": "color", "$value": "{semantic.accent.fill}" },
+          "foreground": { "$type": "color", "$value": "{semantic.accent.ink}" }
+        },
+        "disabled": {
+          "background": { "$type": "color", "$value": "{semantic.surface.disabled}" },
+          "foreground": { "$type": "color", "$value": "{semantic.text.disabled}" }
+        }
       }
     },
     "iconButton": {
