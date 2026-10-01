@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "scenario": "synthetic-herdr-worker-lifecycle",
+  "source": { "harness": "herdr", "harness_version": "synthetic", "golem_version": "synthetic" },
+  "seed": 7,
+  "events": [
+    { "seq": 1, "at_ms": 0, "boundary": "process", "direction": "in", "operation": "process-spawn", "fields": { "harness": "herdr", "argv": ["--version"] } },
+    { "seq": 2, "at_ms": 0, "boundary": "process", "direction": "out", "operation": "process-stdout", "fields": { "harness": "herdr", "stdout_recipe": "version" } },
+    { "seq": 3, "at_ms": 0, "boundary": "process", "direction": "out", "operation": "process-exit", "fields": { "harness": "herdr", "exit_code": 0 } },
+    { "seq": 4, "at_ms": 1, "boundary": "process", "direction": "in", "operation": "process-spawn", "fields": { "harness": "herdr", "argv": ["--session", "$session:1", "workspace", "create", "--label", "<redacted:label>", "--no-focus"] } },
+    { "seq": 5, "at_ms": 1, "boundary": "process", "direction": "out", "operation": "process-stdout", "fields": { "harness": "herdr", "stdout_recipe": "json", "result": { "result": { "workspace": { "workspace_id": "$workspace:1", "tab_id": "$tab:1", "pane_id": "$pane:1" } } } } },
+    { "seq": 6, "at_ms": 1, "boundary": "process", "direction": "out", "operation": "process-exit", "fields": { "harness": "herdr", "exit_code": 0 } },
+    { "seq": 7, "at_ms": 2, "boundary": "process", "direction": "in", "operation": "process-spawn", "fields": { "harness": "herdr", "argv": ["--session", "$session:1", "workspace", "list"] } },
+    { "seq": 8, "at_ms": 2, "boundary": "process", "direction": "out", "operation": "process-stdout", "fields": { "harness": "herdr", "stdout_recipe": "json", "result": { "result": { "workspaces": [{ "workspace_id": "$workspace:1", "label": "<redacted:label>" }] } } } },
+    { "seq": 9, "at_ms": 2, "boundary": "process", "direction": "out", "operation": "process-exit", "fields": { "harness": "herdr", "exit_code": 0 } },
+    { "seq": 10, "at_ms": 3, "boundary": "process", "direction": "in", "operation": "process-spawn", "fields": { "harness": "herdr", "argv": ["--session", "$session:1", "session", "stop", "$session:1"] } },
+    { "seq": 11, "at_ms": 3, "boundary": "process", "direction": "out", "operation": "process-stdout", "fields": { "harness": "herdr", "stdout_recipe": "empty" } },
+    { "seq": 12, "at_ms": 3, "boundary": "process", "direction": "out", "operation": "process-exit", "fields": { "harness": "herdr", "exit_code": 0 } },
+    { "seq": 13, "at_ms": 4, "boundary": "process", "direction": "in", "operation": "process-spawn", "fields": { "harness": "claudecode", "argv": ["agents", "--json"] } },
+    { "seq": 14, "at_ms": 4, "boundary": "process", "direction": "out", "operation": "process-stdout", "fields": { "harness": "claudecode", "stdout_recipe": "json", "result": { "agents": [] } } },
+    { "seq": 15, "at_ms": 4, "boundary": "process", "direction": "out", "operation": "process-exit", "fields": { "harness": "claudecode", "exit_code": 0 } },
+    { "seq": 16, "at_ms": 5, "boundary": "process", "direction": "in", "operation": "process-spawn", "fields": { "harness": "pi", "argv": ["--version"] } },
+    { "seq": 17, "at_ms": 5, "boundary": "process", "direction": "out", "operation": "process-stdout", "fields": { "harness": "pi", "stdout_recipe": "version" } },
+    { "seq": 18, "at_ms": 5, "boundary": "process", "direction": "out", "operation": "process-exit", "fields": { "harness": "pi", "exit_code": 7 } }
+  ]
+}
