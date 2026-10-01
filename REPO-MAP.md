@@ -16,6 +16,10 @@
 ### CLI and collaboration
 
 Management: `lib/management-{context,resolve,registry,session,team,agent,capabilities}.js`.
+Acceptance: `test/management-real-journey.test.mjs` (explicit actual-app opt-in),
+`test/_interactive-attach.py` (owned client PTY), and `test/session-native.test.mjs`
+(real cold legacy CLI import plus container lifecycle). Native reporting stays
+Herdr-owned; Pi application PID/birth lives in its typed lease, not an MCP sidecar.
 Processes: `lib/worker-control.js` + `lib/process-group.js`.
 `cli/collaboration.js` schedules/messages; `cli/ticket.js` tracker authoring.
 `lib/session-role.js` defines roles; retired names only migrate.

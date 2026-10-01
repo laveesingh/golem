@@ -29,6 +29,24 @@ try {
   assert.match(session, /^g-[0-9a-f]{28}$/); assert.equal(started.started, true);
   const again = cli(['start', '--project', project]); assert.equal(again.noop, true); assert.equal(again.session, session);
   const team = cli(['create', 'Native Team', '--project', project], 'team');
+  // A cold legacy store references this actual owned container/workspace.
+  // Exercise migration through CLI storage/native consumers, not just a service seam.
+  const legacyState = path.join(root,'legacy-state'); fs.mkdirSync(legacyState);
+  const legacyTeam = { ...team, owner_session_id:'external-legacy-owner', member_session_ids:[], closed_at:null };
+  fs.writeFileSync(path.join(legacyState,'teams.json'),JSON.stringify({version:1,teams:[legacyTeam]}));
+  fs.writeFileSync(path.join(legacyState,'workers.json'),JSON.stringify({version:1,workers:[{worker_id:'legacy-ended',project_id:team.project_id,team_id:team.team_id,session_id:'ended-conversation',name:'legacy-worker',role:'builder',state:'dead',herdr_session:session,herdr_agent_name:'exact-legacy-handle'}]}));
+  const originalLegacy=fs.readFileSync(path.join(legacyState,'teams.json'),'utf8');
+  env.GOLEM_HOME=legacyState;
+  try {
+    const legacyInspect=cli(['inspect',team.team_id],'team'); assert.equal(legacyInspect.herdr_workspace_id,team.herdr_workspace_id); assert.equal(legacyInspect.capabilities.focus.state,'available');
+    assert.equal(fs.readFileSync(path.join(legacyState,'teams.json'),'utf8'),originalLegacy); assert.equal(fs.existsSync(path.join(legacyState,'management-backup-v2')),false,'actual inspect cannot migrate');
+    const imported=cli(['rename',team.team_id,'Imported Native Team'],'team'); assert.equal(imported.herdr_workspace_id,team.herdr_workspace_id); assert.equal(imported.display_updated,true);
+    const manifestFile=path.join(legacyState,'management-backup-v2','manifest.json'); const manifestBytes=fs.readFileSync(manifestFile,'utf8'), manifest=JSON.parse(manifestBytes);
+    const backup=JSON.parse(fs.readFileSync(path.join(legacyState,'management-backup-v2',manifest.files.teams.snapshot),'utf8')); assert.equal(backup.bytes,originalLegacy); assert.equal(fs.statSync(manifestFile).mode&0o777,0o600);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(legacyState,'workers.json'),'utf8')).workers[0].herdr_agent_name,'exact-legacy-handle');
+    cli(['rename',team.team_id,'Imported Native Team'],'team'); assert.equal(fs.readFileSync(manifestFile,'utf8'),manifestBytes,'retry preserves original immutable backup');
+    assert.equal(cli(['inspect',session]).native_running,true,'import/rename cannot restart or replace native server');
+  } finally { env.GOLEM_HOME=state; }
   const teamInspect = cli(['inspect', team.team_id], 'team'); assert.equal(teamInspect.capabilities.focus.state, 'available');
   assert.equal(cli(['focus', team.team_id], 'team').focused, true);
   const renamed = cli(['rename', team.team_id, 'Renamed Native Team'], 'team'); assert.equal(renamed.team_id, team.team_id); assert.equal(renamed.herdr_workspace_id, team.herdr_workspace_id); assert.equal(renamed.display_updated, true);
@@ -49,7 +67,7 @@ try {
   const restarted = cli(['start', '--project', project]); assert.equal(restarted.session, session); assert.equal(restarted.started, true);
   const closed = cli(['close', session]); assert.equal(closed.native_deleted, true); assert.equal(closed.lifecycle, 'closed');
   const retry = cli(['close', session]); assert.equal(retry.noop, true);
-  console.log('session/team native passed: real container lifecycle plus exact team create/inspect/focus/rename/adopt/no-op and retained definitions');
+  console.log('session/team native passed: real cold legacy CLI import/private immutable backup/exact handles/no restart, container lifecycle, team create/inspect/focus/rename/adopt/no-op and retained definitions');
 } finally {
   // Stop/delete before destroying the HOME/socket tree, even on assertion failure.
   if (!session) {
