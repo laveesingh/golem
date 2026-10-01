@@ -1,8 +1,8 @@
-# Unreleased — predictable local management
+# 5.26.0 preparation — predictable local management
 
 Built on `feat/management-contract`; this does not claim main rollout, an
-installed-plugin update or full real-harness acceptance. Source stays **5.25.1**
-until the lead chooses the management release number.
+installed-plugin update or full real-harness acceptance. The lead approved source
+**5.26.0** and isolated artifact preparation; shared cutover remains gated.
 
 ## CLI JSON migration
 
@@ -80,11 +80,11 @@ version/provider behavior remains; actual protocol/init/execution failures fail.
 
 ## Lead-owned landing checklist
 
-1. Resolve Claude acceptance and choose version; obtain fresh complete review and
+1. Resolve Claude acceptance; version5.26.0 is approved. Obtain fresh complete review and
    separate verification. Retain an explicit ran/failed/not-run matrix.
 2. Land from the spec branch, preserve original active-team definitions/backups and
    arrange a deliberate mixed-writer cutover. Report any required disruptive restart.
-3. From landed main only: bump the approved version, sync cc workspace render and
+3. From landed main only: verify approved source/lock version5.26.0, sync cc workspace render and
    `plugin/` round-trip; sync Pi only when its source bundle is safe. Source render
    refresh is not the installed plugin update.
 4. Update/reload installed plugin; restart the dashboard from landed main after

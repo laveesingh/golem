@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import { resolveProjectRoot } from '../lib/project-id.js';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -149,7 +150,7 @@ try {
   const context = await worker.tools.get('project_context').execute('context-call', {}, undefined, undefined, worker.ctx);
   assert.equal(context.details.ok, true, context.content[0].text);
   assert.match(context.content[0].text, /Recent commits(?: \(\d+ of \d+\))?:/, 'project context supports the budget-truncated header');
-  assert.ok(context.content[0].text.includes(execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()), 'bounded context contains an actual recent commit');
+  assert.ok(context.content[0].text.includes(execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: await resolveProjectRoot(repo), encoding: 'utf8' }).trim()), 'bounded context contains an actual registered-root commit');
 
   const roleChange = await fetch(`${baseUrl}/api/sessions/pi-tools-worker/role`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: 'reviewer' }),
