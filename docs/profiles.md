@@ -47,6 +47,9 @@ Bootstrap replaces dirty inherited path/port values. It removes inherited native
 session/socket/pane and Golem/Claude/Pi caller identity variables. Native allocated
 per-project handles then select their own namespace sockets. The legacy channel
 fallback points at an unavailable route on the private dashboard, never live7421.
+`GOLEM_CHANNEL_PORT` is forced to `0` before import: each rendered MCP child keeps
+its existing kernel-assigned ephemeral listener policy, independent of the fixed
+dashboard/Vite/Ladle block. Unprofiled channel-port settings remain unchanged.
 `CLAUDE_CONFIG_DIR` is resolved by `lib/claude-paths.js` and the shell mirror in
 `substrate/hooks/_golem-home.sh`. Both harness render copy lists include the new
 runtime helper. CC instruction outputs now use that configured directory directly.
@@ -95,8 +98,9 @@ one retains the other. It never watches the user's real private paths.
 
 The herdr simulator follows the source above; it is **not native acceptance**.
 Actual herdr server/harness launch and adoption remain prohibited/pending overnight.
-The rendered helper import checks exercise W1's changed copy lists, not full
-standalone MCP tool execution or Pi loader acceptance.
+The rendered helper imports and actual two-profile MCP listener/health/lease
+cleanup checks exercise W1's changed copy lists and ephemeral listener boundary.
+MCP initialization/tool validation and Pi loader acceptance still await W7.
 Installed emitted tarball and standalone rendered-helper acceptance remain W3/W7
 work. Ladle process acceptance awaits W4. No version bump, main merge, live dashboard
 restart, plugin reinstall or shared render sync belongs to these checks.

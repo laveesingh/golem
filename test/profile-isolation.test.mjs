@@ -58,7 +58,7 @@ const dirty = {
   GOLEM_TRACKER_DB: path.join(home, '.golem', 'tracker.db'), GOLEM_ASSETS_DIR: home,
   GOLEM_TYPED_DELIVERY_TOMBSTONES_DB: path.join(home, '.golem', 'typed.db'),
   GOLEM_VITE_CACHE_DIR: path.join(home, '.golem', 'live-vite-cache'),
-  GOLEM_DASHBOARD_URL: 'http://127.0.0.1:7420', GOLEM_CHANNEL_URL: 'http://127.0.0.1:7421', PORT: '7420', HOST: '0.0.0.0',
+  GOLEM_DASHBOARD_URL: 'http://127.0.0.1:7420', GOLEM_CHANNEL_URL: 'http://127.0.0.1:7421', GOLEM_CHANNEL_PORT: '7421', PORT: '7420', HOST: '0.0.0.0',
   GOLEM_HERDR_BIN: herdr, GOLEM_HERDR_SESSION: 'live', HERDR_SESSION: 'live', HERDR_SOCKET_PATH: '/forbidden/live.sock',
   HERDR_CLIENT_SOCKET_PATH: '/forbidden/client.sock', HERDR_CONFIG_PATH: '/forbidden/config.toml', HERDR_ENV: '1', HERDR_PANE_ID: 'live-pane',
   GOLEM_SESSION_ID: 'live', GOLEM_CEO_SESSION_ID: 'live', CLAUDE_CODE_SESSION_ID: 'live', PI_SESSION_ID: 'live', PI_SESSION_FILE: '/forbidden/session',
@@ -118,6 +118,10 @@ try {
     for (const key of ['GOLEM_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'GOLEM_USER_SKILLS_ROOT', 'GOLEM_PROJECTS_ROOT', 'GOLEM_IDEAS_ROOT']) assert.ok(fs.realpathSync(env[key]).startsWith(fs.realpathSync(env.GOLEM_PROFILE_ROOT) + path.sep), key);
     assert.equal(env.PORT, String(ports[i])); assert.equal(env.HOST, '127.0.0.1'); assert.equal(env.GOLEM_VITE_PORT, String(ports[i] + 1)); assert.equal(env.GOLEM_LADLE_PORT, String(ports[i] + 2));
     assert.equal(env.GOLEM_DASHBOARD_URL, `http://127.0.0.1:${ports[i]}`);
+    assert.equal(env.GOLEM_CHANNEL_PORT, '0', 'dirty inherited channel port must be reset before any MCP listener can start');
+    const rawPort = env.GOLEM_CHANNEL_PORT;
+    const consumerPort = rawPort != null && rawPort.trim() !== '' && Number.isFinite(Number(rawPort)) ? Number(rawPort) : 0;
+    assert.equal(consumerPort, 0);
     for (const key of ['GOLEM_HERDR_SESSION', 'HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_CONFIG_PATH', 'HERDR_PANE_ID', 'GOLEM_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'PI_SESSION_FILE', 'CLAUDE_PLUGIN_ROOT', 'GOLEM_RENDER_ROOT']) assert.equal(env[key], undefined, key);
     assert.equal(fs.existsSync(path.join(env.CLAUDE_CONFIG_DIR, '.credentials.json')), false);
     assert.equal(fs.existsSync(path.join(env.PI_CODING_AGENT_DIR, 'auth.json')), false);
@@ -249,6 +253,47 @@ try {
   assert.ok(doctor.status === 0 || doctor.status === 1, doctor.stderr);
   assert.match(doctor.stdout, /production migration diagnostics skipped for isolated profile/);
   console.log('private CC sync/default and explicit output exit 0; CC/Pi render helper imports pass; doctor skips production migration diagnostics; native inventory boundary simulated from verified v0.9.1 source; no native acceptance claimed');
+
+  // Start BOTH real rendered MCP consumers from the dirty environment. Assert
+  // the resolved port before importing the listener, so a regression cannot
+  // accidentally bind a production port during this test.
+  const mcps = ['alpha', 'beta'].map((name, i) => {
+    const url = pathToFileURL(path.join(envs[i].GOLEM_HOME, 'renders/cc-plugin/mcp/channel/index.js')).href;
+    const script = `const {resolveProfile}=await import('./cli/bootstrap.ts'); resolveProfile(['--profile','${name}','help']); if(process.env.GOLEM_CHANNEL_PORT!=='0')throw Error('unsafe inherited MCP listener port'); await import(${JSON.stringify(url)});`;
+    const child = spawn(node, ['--input-type=module', '-e', script], {cwd:repo,env:dirty,stdio:['pipe','pipe','pipe']});
+    const row = {child,ended:once(child,'exit'),log:'',env:envs[i],name};
+    child.stderr.on('data', data => row.log += data); children.push(row); return row;
+  });
+  const mcpConsumers = [];
+  for (const row of mcps) {
+    let lease;
+    for (let i = 0; i < 100; i++) {
+      assert.equal(row.child.exitCode, null, row.log);
+      try { lease = JSON.parse(fs.readFileSync(path.join(row.env.GOLEM_HOME,'endpoint-leases.json'),'utf8')).leases.find(l => l.pid === row.child.pid); } catch {}
+      if (lease) break; await sleep(100);
+    }
+    assert.ok(lease, 'rendered MCP listener startup must be bounded: ' + row.log);
+    assert.equal(lease.host, '127.0.0.1'); assert.ok(lease.port > 0);
+    assert.ok(![7420,7421,...ports.flatMap(p=>[p,p+1,p+2])].includes(lease.port));
+    const health = `http://127.0.0.1:${lease.port}/healthz?session_id=${encodeURIComponent(lease.canonical_id)}&owner_token=${encodeURIComponent(lease.owner_token)}`;
+    const response = await fetch(health, {signal:AbortSignal.timeout(5000)});
+    assert.equal(response.status, 200, await (!response.ok ? response.text() : Promise.resolve('')));
+    assert.equal((await response.json()).canonical_id, `${row.name}-native`);
+    const channels = JSON.parse(fs.readFileSync(path.join(row.env.GOLEM_HOME,'channels.json'),'utf8')).channels;
+    assert.ok(channels.some(c => c.pid === row.child.pid && c.port === lease.port && c.session_id === `${row.name}-native`));
+    assert.ok(channels.every(c => c.session_id !== `${row.name === 'alpha' ? 'beta' : 'alpha'}-native`));
+    mcpConsumers.push({row,lease,health});
+  }
+  assert.notEqual(mcpConsumers[0].lease.port, mcpConsumers[1].lease.port);
+  await stop(mcps[0]); assert.equal(mcps[0].child.exitCode,0,mcps[0].log);
+  assert.equal((await fetch(mcpConsumers[1].health,{signal:AbortSignal.timeout(5000)})).status,200);
+  await stop(mcps[1]); assert.equal(mcps[1].child.exitCode,0,mcps[1].log);
+  for (const {row} of mcpConsumers) {
+    const leases = JSON.parse(fs.readFileSync(path.join(row.env.GOLEM_HOME,'endpoint-leases.json'),'utf8')).leases;
+    const channels = JSON.parse(fs.readFileSync(path.join(row.env.GOLEM_HOME,'channels.json'),'utf8')).channels;
+    assert.ok(leases.every(l => l.pid !== row.child.pid)); assert.ok(channels.every(c => c.pid !== row.child.pid));
+  }
+  console.log('two real private rendered MCP listeners: dirty channel7421 resets to0, distinct ephemeral ports, isolated lease/registry health, stop alpha retains beta, both registrations cleaned');
 
   const rows = ['alpha', 'beta'].map(launch);
   const bases = ports.map(port => `http://127.0.0.1:${port + 1}`);

@@ -93,6 +93,9 @@ export function resolveProfile(args: string[], env: NodeJS.ProcessEnv = process.
     GOLEM_PROFILE: name, GOLEM_PROFILE_ROOT: root, GOLEM_ROOT: checkout, HOST: '127.0.0.1', PORT: String(profile.port),
     GOLEM_VITE_PORT: String(profile.port + 1), GOLEM_LADLE_PORT: String(profile.port + 2),
     GOLEM_VITE_CACHE_DIR: path.join(dirs.GOLEM_HOME!, 'vite-cache'),
+    // MCP children keep their existing ephemeral listener policy. Never inherit
+    // the production channel port into an isolated instance.
+    GOLEM_CHANNEL_PORT: '0',
     GOLEM_DASHBOARD_URL: `http://127.0.0.1:${profile.port}`,
     // The legacy channel fallback must never reach the production 7421 port.
     GOLEM_CHANNEL_URL: `http://127.0.0.1:${profile.port}/profile-channel-unavailable`,
