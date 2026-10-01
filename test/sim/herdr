@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+// Synthetic/provisional scenario replay only; never delegates to a native CLI.
+import('./support.ts').then(({ simulatorMain }) => simulatorMain('herdr')).catch(() => { console.error('simulator loader failed'); process.exitCode = 2; });

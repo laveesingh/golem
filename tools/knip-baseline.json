@@ -131,6 +131,7 @@
     "test/_real-actor-setup.mjs|exports||selectRealActors",
     "test/cross-harness-matrix.test.mjs|unlisted||@modelcontextprotocol/sdk",
     "test/fixtures/w2-safety-probe.mjs|binaries||pi",
+    "test/integration/scenario-probe.mjs|binaries||mkfifo",
     "test/management-dashboard.test.mjs|unlisted||esbuild",
     "test/management-real-journey.test.mjs|binaries||herdr",
     "test/model-profiles.test.mjs|binaries||pgrep",
