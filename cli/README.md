@@ -137,6 +137,21 @@ registration if that native update fails. Foreign/duplicate ownership conflicts.
 All new mutations support zero-write `--dry-run`; known unsupported controls name
 the target rather than returning not-found.
 
+## Roster and terminal capabilities
+
+CLI items, dashboard projections and MCP roster arrays share `capabilities` and
+`placement`. Each control is `available`, `unavailable` (current evidence missing)
+or `unsupported` (runtime integration absent), with reason/recovery. `host:
+external` does not mean outside Herdr: exact matching native metadata enables
+read/attach. Stop needs an adopted control record; adoption needs current exact
+conversation/incarnation proof. Delivery readiness is independent.
+
+Known ended identities remain inspectable, with terminal controls unavailable.
+Native probe failures never become empty inventory. Dashboard Attach Cmd is disabled
+with the same reason when attach is unavailable/unsupported and copies an exact
+conversation ID when available. Offline CLI fallback retains known external facts
+but marks dashboard delivery readiness unavailable.
+
 ## Runtime compatibility
 
 Pi 0.99.1 and Node.js 22.19+ are the tested baseline. `golem pi` warns on

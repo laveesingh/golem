@@ -591,9 +591,10 @@ try {
   assertNoStrayPi('golemtest-t2-herdr-real');
   await assert.rejects(
     () => peekWorker('golemtest-t2-herdr-real', { projectId, lines: 5 }),
-    /pane_not_found|has no herdr pane/,
-    'killed pane is gone from herdr',
+    /retained ended identity; no live terminal control/,
+    'known ended identity reports unavailable capability, not not-found',
   );
+  assert.equal((await import('../lib/herdr-driver.js')).paneList(herdrSession).some(p => p.pane_id === realSpawned.herdr_pane_id), false, 'killed exact pane is actually absent');
   console.log(JSON.stringify({ real_herdr: { spawn: 'dispatchable', peek: 'pane output', kill: 'group empty, row dead', session: herdrSession } }));
 
   process.env.GOLEM_WORKER_READY_TIMEOUT_MS = '500';

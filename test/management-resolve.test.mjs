@@ -62,12 +62,14 @@ const nativeLog = path.join(temp, 'native.jsonl');
 const fakeNative = path.join(bin, 'herdr');
 fs.writeFileSync(fakeNative, `#!${process.execPath}
 const fs=require('fs');const raw=process.argv.slice(2);const args=raw[0]==='--session'?raw.slice(2):raw;
-const key=args.join(' ');const mutation=!(key==='session list --json'||key==='agent list'||key.startsWith('pane read')||key.startsWith('agent get')||key==='pane current --current');
+const key=args.join(' ');const mutation=!(key==='session list --json'||key==='agent list'||key.startsWith('pane read')||key.startsWith('agent get')||key==='pane list'||key.startsWith('pane process-info')||key==='pane current --current');
 fs.appendFileSync(${JSON.stringify(nativeLog)},JSON.stringify({key,mutation})+'\\n');
 if(key==='session list --json'){console.log(JSON.stringify({sessions:process.env.GOLEM_FIXTURE_EMPTY_NATIVE==='1'?[]:${JSON.stringify(nativeSessions)}}));}
 else if(key==='agent list'){console.log(JSON.stringify({result:{agents:[]}}));}
 else if(key.startsWith('pane read')){process.stdout.write('safe native scrollback');}
-else if(key.startsWith('agent get')){console.log(JSON.stringify({result:{agent:{name:args[2],pane_id:'wa:p1'}}}));}
+else if(key==='pane list'){console.log(JSON.stringify({result:{panes:${JSON.stringify(fixtureWorkers.filter(w => w.herdr_pane_id).map(w => ({ pane_id: w.herdr_pane_id, tab_id: w.herdr_tab_id, workspace_id: w.herdr_workspace_id })))}}}));}
+else if(key.startsWith('pane process-info')){console.log(JSON.stringify({result:{process_info:{foreground_process_group_id:null,foreground_processes:[]}}}));}
+else if(key.startsWith('agent get')){console.log(JSON.stringify({result:{agent:{name:args[2],pane_id:args[2],workspace_id:args[2].split(':')[0],tab_id:args[2].split(':')[0]+':t1'}}}));}
 else if(key==='pane current --current'){console.log(JSON.stringify({result:{pane:{pane_id:'wa:moved',workspace_id:'wa',tab_id:'wa:t2',focused:false}}}));}
 else if(key.startsWith('agent attach')||key===''){process.stdout.write('native attach UI text\\n');}
 else {process.stderr.write('unexpected native mutation');process.exit(99);}

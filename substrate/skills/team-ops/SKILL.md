@@ -30,7 +30,8 @@ description: The team surface for every role — see teammates, message them, di
 | Manage reminders | `golem schedule list/inspect/cancel` |
 | Hand a ticket to a teammate | `ticket_dispatch({id, session_id})` |
 | See, create, read, attach, stop agents | `golem agent list`, `golem agent create <role>`, `golem agent read <agent>`, `golem agent attach <agent>`, `golem agent stop <agent>` |
-| Manage teams | `golem team list`, `golem team create <label>`, `golem team join <team> [--owner]`, `golem team close <team>` |
+| Manage teams | `golem team list/create/join/close`; join accepts `--agent ID`, not only caller self. |
+| Inspect controls and scope | `golem context --json`; `agent inspect/adopt/rename/move`, `team inspect/focus/attach/rename/leave/adopt`, `session start/adopt/inspect/stop` — use each verb's `--help` and mutation `--dry-run`. Delivery readiness does not imply control support. |
 
 ## Reminders
 

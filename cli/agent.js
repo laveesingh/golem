@@ -29,6 +29,7 @@ import { roleNamesSnapshot, pushRoleBriefDirect, setSessionRole } from '../lib/s
 import { listTeams } from '../lib/team-registry.js';
 import { normalizeName } from '../lib/worker-registry.js';
 import * as nativeDriver from '../lib/herdr-driver.js';
+import { managementRosterSnapshot } from '../lib/management-capabilities.js';
 import { inspectManagedAgent, renameManagedAgent, moveManagedAgent, adoptManagedAgent } from '../lib/management-agent.js';
 import { MANAGEMENT_SELECTOR_FLAGS, managementQuery, listReceipt, writeDryRun, requireManagementResolution, managedControlOptions, managementProjectInput } from '../lib/management-cli.js';
 import { herdrStateFor, listHerdrAgentStates, projectHerdrSession } from '../lib/team-herdr.js';
@@ -234,6 +235,10 @@ export function buildRosterRows(entries, { teams = [] } = {}) {
       dispatchable: deliveryReady,
       delivery: deliveryReady ? 'ready' : (row?.delivery_reason || 'not ready'),
       idle_seconds: row?.idle_seconds ?? null,
+      capabilities: row?.capabilities ?? null,
+      placement: row?.placement ?? null,
+      control_provenance: row?.control_provenance ?? null,
+      attach_hint: row?.attach_hint ?? null,
     };
   });
 }
@@ -266,6 +271,8 @@ export function buildAgentRows(views, { teams = [], herdrStates = new Map() } = 
       dispatchable: view.dispatchable,
       delivery: view.dispatchable ? 'ready' : 'not ready',
       idle_seconds: view.idle_seconds ?? null,
+      capabilities: view.capabilities ?? null,
+      placement: view.placement ?? null,
     };
   });
 }
@@ -532,25 +539,44 @@ function managedTarget(query) {
   return row;
 }
 
-async function cmdAgentRead(ref, o, { stdout, manager, query }) {
+function externalControl(query, operation, native) {
+  const sid = query.resolution.target?.session_id ?? query.resolution.target?.id;
+  const target = query.evidence.agents.find(a => a.session_id === sid);
+  const row = managementRosterSnapshot([target], { snapshot: query.evidence.snapshot, facts: query.evidence.sources.facts.value ?? [], native })[0];
+  if (row.capabilities[operation].state !== 'available') throw Object.assign(new Error(`known agent ${sid}: ${row.capabilities[operation].reason}`), { code: 'UNAVAILABLE_CAPABILITY', capabilities: row.capabilities });
+  return row;
+}
+async function cmdAgentRead(ref, o, { stdout, manager, query, native }) {
   let lines = null;
   if (o['--lines'] != null) {
     lines = Number(o['--lines']);
     if (!Number.isInteger(lines) || lines < 1) throw new NotificationError('golem agent read --lines requires a positive integer');
+  }
+  if (!query.resolution.target?.worker_id) {
+    const row = externalControl(query, 'read', native);
+    const text = native.paneRead({ session: row.placement.session, paneId: row.placement.pane_id, lines });
+    stdout(o['--json'] ? JSON.stringify({ text, capabilities: row.capabilities, resolution: query.resolution }) : text); return;
   }
   const row = managedTarget(query);
   const output = await manager.peekWorker(row.name, { ...managedControlOptions(query.resolution, o), lines });
   stdout(o['--json'] ? JSON.stringify({ text: output, resolution: query.resolution }) : output);
 }
 
-async function cmdAgentAttach(ref, o, { stdout, manager, query }) {
+async function cmdAgentAttach(ref, o, { stdout, manager, query, native }) {
+  if (!query.resolution.target?.worker_id) {
+    const row = externalControl(query, 'attach', native);
+    const status = native.agentAttach({ session: row.placement.session, agentTarget: row.placement.pane_id, outputToStderr: !!o['--json'] });
+    if (o['--json']) stdout(JSON.stringify({ attached: status === 0, status, session_id: row.session_id, capabilities: row.capabilities, resolution: query.resolution }));
+    return status;
+  }
   const row = managedTarget(query);
   const status = await manager.attachWorker(row.name, { ...managedControlOptions(query.resolution, o), ...(o['--json'] ? { outputToStderr: true } : {}) });
   if (o['--json']) stdout(JSON.stringify({ attached: status === 0, status, session_id: row.session_id, resolution: query.resolution }));
   return status;
 }
 
-async function cmdAgentStop(ref, o, { stdout, manager, query }) {
+async function cmdAgentStop(ref, o, { stdout, manager, query, native }) {
+  if (!query.resolution.target?.worker_id) externalControl(query, 'stop', native);
   const row = managedTarget(query);
   const stopped = await manager.killWorker(row.name, managedControlOptions(query.resolution, o));
   const rows = buildAgentRows([stopped], { teams: listTeams({ projectId: row.project_id }) });
@@ -634,7 +660,7 @@ export async function runAgent(family, args, {
       || /unknown command|unknown option|duplicate option|requires a value|invalid scope|invalid role|agent (name is ambiguous|not found|is retired)|no team|unknown team|session not found|bound session|requires an exact id|provide exactly one/.test(error.message);
     const uncertain = mutationStarted && !invalid && !refused;
     const output = { ok: false, code: error.code || 'AGENT_FAILED', error: error.message,
-      ...(operationId ? { operation_id: operationId } : {}), ...(resolution || error.resolution ? { resolution: error.resolution ?? resolution } : {}), state: uncertain ? 'uncertain' : 'rejected',
+      ...(operationId ? { operation_id: operationId } : {}), ...(error.capabilities ? { capabilities: error.capabilities } : {}), ...(resolution || error.resolution ? { resolution: error.resolution ?? resolution } : {}), state: uncertain ? 'uncertain' : 'rejected',
       ...(uncertain ? { next_action: 'inspect or retry the same request id; do not create a fresh message' } : {}) };
     if (json) stdout(JSON.stringify(output)); else stderr(`golem agent: ${output.error}${operationId ? ` (operation ${operationId})` : ''}`);
     return uncertain ? 3 : invalid ? 2 : 1;
@@ -677,15 +703,15 @@ export async function runAgent(family, args, {
       return 0;
     }
     if (key === 'agent read') {
-      await cmdAgentRead(positional[0], o, { stdout, manager, query });
+      await cmdAgentRead(positional[0], o, { stdout, manager, query, native });
       return 0;
     }
     if (key === 'agent attach') {
-      const status = await cmdAgentAttach(positional[0], o, { stdout, manager, query });
+      const status = await cmdAgentAttach(positional[0], o, { stdout, manager, query, native });
       return status ?? 0;
     }
     if (key === 'agent stop') {
-      await cmdAgentStop(positional[0], o, { stdout, manager, query });
+      await cmdAgentStop(positional[0], o, { stdout, manager, query, native });
       return 0;
     }
     if (key === 'agent role') {

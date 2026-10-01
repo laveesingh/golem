@@ -15,8 +15,8 @@
 
 ### CLI and collaboration
 
-Management: `lib/management-{context,resolve,registry,session,team,agent}.js`.
-Process control: `lib/worker-control.js` + `lib/process-group.js`.
+Management: `lib/management-{context,resolve,registry,session,team,agent,capabilities}.js`.
+Processes: `lib/worker-control.js` + `lib/process-group.js`.
 `cli/collaboration.js` schedules/messages; `cli/ticket.js` tracker authoring.
 `lib/session-role.js` defines roles; retired names only migrate.
 

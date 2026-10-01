@@ -112,6 +112,14 @@ setResponse(['pane', 'move', 'p-missing', '--workspace', 'w-target', '--new-tab'
 assert.throws(() => driver.paneMove({ session, paneId: 'p-missing', workspaceId: 'w-target' }), /no exact placement IDs/);
 check('missing move result stays uncertain rather than guessed', true);
 
+setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [] });
+check('already absent workspace close is a confirmed no-op', driver.workspaceClose({ session, workspaceId: 'gone' }) === true);
+setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [{ workspace_id: 'still-present' }] });
+check('successful close command without inventory disappearance remains partial', driver.workspaceClose({ session, workspaceId: 'still-present' }) === false);
+setResponse(['workspace', 'list'], { __error: { message: 'inventory failed' } });
+assert.throws(() => driver.workspaceClose({ session, workspaceId: 'unknown' }), /inventory failed/);
+check('unknown workspace inventory is never confirmed deletion', true);
+
 // 2. JSON envelope parsing: results and errors
 setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [{ workspace_id: 'w1', label: 'agents' }] });
 const list = driver.workspaceList(session);

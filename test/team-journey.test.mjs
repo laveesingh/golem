@@ -287,11 +287,11 @@ async function main() {
   });
   assert.equal(leadCode, 0, leadStdout.join('\n'));
   const afterMove = listTeams({ projectId });
-  assert.deepEqual(afterMove.find((row) => row.team_id === beta.team_id).member_session_ids, ['lead-A']);
+  assert.deepEqual(afterMove.find((row) => row.team_id === beta.team_id).member_session_ids.slice().sort(), [betaBuilder.session_id, 'lead-A'].sort(), 'registered managed member and transferred owner are both canonical');
   assert.equal(afterMove.find((row) => row.team_id === alpha.team_id).owner_session_id, null, 'joining beta leaves alpha');
   const teamsFile = JSON.parse(fs.readFileSync(path.join(state, 'teams.json'), 'utf8'));
-  assert.ok(teamsFile.teams.every((row) => Object.hasOwn(row, 'lead_session_id') && row.lead_session_id === row.owner_session_id),
-    'writes mirror lead_session_id = owner for an old dashboard');
+  assert.equal(teamsFile.version, 2);
+  assert.ok(teamsFile.teams.every(row => !Object.hasOwn(row, 'lead_session_id')), 'v2 removes the old competing owner mirror');
   assert.equal(
     resolveCallerTeam({ projectId, callerSessionId: 'lead-A', teams: afterMove }).team_id,
     beta.team_id,
@@ -301,8 +301,14 @@ async function main() {
   // An unbound spawn without --team refuses.
   const refused = await runCli(['agent', 'create', 'builder', '--project', project]);
   assert.equal(refused.status, 2, 'unbound spawn without --team refuses');
-  assert.match(refused.stderr, /no team: pass --team or run golem team join <team>/);
+  assert.match(refused.stderr, /no team: pass --team <exact-team-id>/);
 
+  // This positive-close fixture contains only the managed alpha runtime.
+  // Remove its test-owned native default blank shell explicitly; an untracked
+  // shell is real unmanaged activity and production must retain it.
+  const { paneClose: closeFixturePane } = await import('../lib/herdr-driver.js');
+  const alphaShells = paneList(herdrSession).filter(p => p.workspace_id === alpha.herdr_workspace_id && p.pane_id !== alphaBuilder.herdr_pane_id);
+  for (const shell of alphaShells) { assert.ok(!shell.agent, 'owned fixture default pane is not an external agent'); assert.equal(closeFixturePane({ session: herdrSession, paneId: shell.pane_id }), true); }
   // team close retires only its own team: the CLI-spawned agents are live.
   const panesBefore = new Map(paneList(herdrSession).map((pane) => [pane.pane_id, pane]));
   assert.ok(panesBefore.has(alphaBuilder.herdr_pane_id), 'alpha pane exists before close');
@@ -313,7 +319,7 @@ async function main() {
   assert.ok(piBefore >= 2, `both builder1 workers run before close (saw ${piBefore})`);
 
   const closed = await runCli(['team', 'close', 'alpha-team', '--project', project, '--json']);
-  assert.equal(closed.status, 0, closed.stderr);
+  assert.equal(closed.status, 0, closed.stderr || closed.stdout);
   const closeResult = JSON.parse(closed.stdout);
   assert.equal(closeResult.state, 'closed');
   assert.deepEqual(closeResult.stopped, ['builder1']);
@@ -324,7 +330,8 @@ async function main() {
   assert.ok(panesAfter.has(betaBuilder.herdr_pane_id), 'beta pane kept');
   assert.equal(strayPiCount('builder1'), piBefore - 2, 'only the beta builder1 processes survive the close');
   const { findWorker } = await import('../lib/worker-registry.js');
-  assert.equal(findWorker('builder1', { projectId, teamId: alpha.team_id }).state, 'dead');
+  const { readWorkers: readEndedWorkers } = await import('../lib/worker-registry.js');
+  assert.equal(readEndedWorkers().find(w => w.worker_id === alphaBuilder.worker_id).state, 'dead');
   assert.equal(findWorker('builder1', { projectId, teamId: beta.team_id }).state, 'live');
 
   const workspaces = await listHerdrWorkspaces(herdrSession);
@@ -348,14 +355,15 @@ async function main() {
   const betaResult = JSON.parse(betaClosed.stdout);
   assert.deepEqual(betaResult.stopped, ['builder1']);
   assert.equal(betaResult.workspace_closed, false, 'workspace stays open for the unmanaged agent');
-  assert.deepEqual(betaResult.workspace_kept_for, [handPane.pane_id]);
+  const betaUnmanaged = [...panesAfter.values()].filter(p => p.workspace_id === beta.herdr_workspace_id && p.pane_id !== betaBuilder.herdr_pane_id).map(p => p.pane_id);
+  assert.deepEqual(betaResult.workspace_kept_for.slice().sort(), [...betaUnmanaged, handPane.pane_id].sort(), 'unmanaged blank shells and hand-started agent all retain their exact workspace');
   assert.ok(paneList(herdrSession).some((pane) => pane.pane_id === handPane.pane_id), 'the hand-started pane survives the close');
   assert.ok(!paneList(herdrSession).some((pane) => pane.pane_id === betaBuilder.herdr_pane_id), 'the team agent pane is gone');
 
   const listed = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json', '--ended']);
   assert.equal(listed.status, 0, listed.stderr);
   const rows = parseManagementList(listed.stdout);
-  assert.ok(rows.some((row) => row.team_id === beta.team_id), 'list shows team rows (ended included)');
+  assert.ok(rows.some(row => row.session_id === betaBuilder.session_id && row.state === 'dead'), 'ended identity stays listed; closed team no longer supplies open responsibility');
   const tabled = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended']);
   assert.match(tabled.stdout, /TEAM/, 'table carries the TEAM column');
 
