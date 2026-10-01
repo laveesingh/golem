@@ -105,6 +105,16 @@ steals another team's workspace. Team close continues independent agent stops,
 reports each failure, and retains foreign/transferred/unmanaged native activity.
 All new mutations and UI controls accept read-only `--dry-run` plans.
 
+## Agent stop ownership
+
+Stop verifies captured process incarnations or demonstrably matching native
+conversation identity, not logical `--name` arguments. Rename and provider labels
+do not retarget ownership. Missing/failed probes and replacement incarnations are
+explicit failures, never empty-group success. Native cached session metadata alone
+does not prove a live runtime. Unverified replacement/shell panes are retained;
+a newly created root shell closes only with exact unchanged incarnation and no
+children. Teardown confirms process survivors before retiring the runtime record.
+
 ## Runtime compatibility
 
 Pi 0.99.1 and Node.js 22.19+ are the tested baseline. `golem pi` warns on
