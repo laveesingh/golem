@@ -35,9 +35,24 @@ try {
   assert.equal(nativeConversationMatches(fact, agent), true);
   assert.equal(nativeConversationMatches(fact, { agent_session: { kind: 'path', value: path.join(temp, 'different.jsonl') } }), false);
   assert.equal(nativeConversationMatches(fact, { agent_session: { kind: 'uuid', value: fact.locator.raw_session_id } }), true);
+  const replacementInfo = { foreground_process_group_id: child.pid, foreground_processes: [{ pid: child.pid, argv0: 'pi', argv: ['pi', '--session', path.join(temp, 'conversation-B.jsonl')] }] };
+  const staleA = workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: { agentGet: () => agent, paneProcessInfo: () => replacementInfo } });
+  assert.equal(staleA.state, 'unavailable', 'stale A metadata must not bind the current B process incarnation');
+  assert.equal(alive(), true, 'replacement B survives the stale-A refusal');
+  assert.equal(workerProcessEvidence(worker, { facts: [fact], native: { agentGet: () => agent, paneProcessInfo: () => replacementInfo } }).state, 'unavailable', 'even a surviving captured ancestor cannot authorize contradictory B arguments');
+  const wrapperAndB = { ...replacementInfo, foreground_processes: [{ pid: child.pid, argv0: 'node', argv: ['node', 'golem.js', 'pi', '--session', fact.locator.session_file] }, ...replacementInfo.foreground_processes] };
+  assert.equal(workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: { agentGet: () => agent, paneProcessInfo: () => wrapperAndB } }).state, 'unavailable', 'wrapper A arguments cannot bind the Pi B process');
+  updateWorker(worker.worker_id, { process_ownership: old });
+  await assert.rejects(killWorker(worker.name, { workerId: worker.worker_id, native: { ...native, agentGet: () => agent, paneProcessInfo: () => replacementInfo }, evidenceOptions: { facts: [fact] } }), /refusing to stop/);
+  assert.equal(alive(), true); assert.equal(closes, 0);
   const recovered = workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: {
-    agentGet: () => agent, paneProcessInfo: ({ paneId }) => { assert.equal(paneId, 'moved-pane'); return { foreground_process_group_id: child.pid, foreground_processes: [{ pid: child.pid, argv0: 'pi' }] }; },
+    agentGet: () => agent, paneProcessInfo: ({ paneId }) => { assert.equal(paneId, 'moved-pane'); return { foreground_process_group_id: child.pid, foreground_processes: [{ pid: child.pid, argv0: 'pi', argv: ['pi', '--session', fact.locator.session_file] }] }; },
   } });
+  let bindingReads = 0;
+  const racedBinding = workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: { agentGet: () => agent,
+    paneProcessInfo: () => ++bindingReads === 1 ? { ...replacementInfo, foreground_processes: [{ pid: child.pid, argv0: 'pi', argv: ['pi', '--session', fact.locator.session_file] }] } : replacementInfo } });
+  assert.equal(racedBinding.state, 'unavailable', 'A to B change during incarnation binding must refuse');
+  assert.equal(alive(), true);
   const cachedOnly = workerProcessEvidence({ ...worker, process_ownership: old }, { facts: [fact], native: { agentGet: () => agent, paneProcessInfo: () => ({ foreground_process_group_id: child.pid, foreground_processes: [{ pid: child.pid, argv0: 'zsh' }] }) } });
   assert.equal(cachedOnly.state, 'unavailable', 'cached native metadata alone cannot adopt a shell as a restarted agent');
   assert.equal(recovered.state, 'available'); assert.equal(recovered.pane_id, 'moved-pane'); assert.equal(recovered.identity.pgid, child.pid);
