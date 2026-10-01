@@ -8,6 +8,23 @@ Only new `tools/scenario-*`, `test/sim/` and `docs/testing/` sources are include
 No package/lock/runner/config/W2 fixture or production clock/seam file changes.
 Both dependency trees were copied from main with `cp -Rc`, not installed.
 
+## GOL-476 bounded repair
+
+The first Stage A review found canonical argv slot bypass and a generated/caller
+identity collision at `ef451ef`. That checkpoint is superseded for acceptance.
+Raw and canonical argv now use one positional/flag grammar before values can be
+symbols/markers. Runtime matching uses the same slots; relative paths and a
+structural flag hidden in a prompt/label wildcard fail before output/cursor write.
+Generated bindings use the same typed-domain validation/injectivity checks as
+caller bindings, selecting the first deterministic non-colliding candidate before
+persistence/emission. Numeric PID/port identities are canonicalized; malformed
+persisted numeric bindings are rejected. No production/native integration change.
+
+The complete recipe below includes the reviewer's exact two argv cases and
+workspace collision, missing/wrong-kind slots, relative path, two generated IDs,
+multiple caller-bound collisions, numeric port collision, reopen/next-cursor
+consistency and unchanged pre-existing collision files. All pass on the repair.
+
 ## Commands actually run
 
 From the ticket worktree:
@@ -32,6 +49,7 @@ ran successfully: **exit 0**, actual output:
 format/scrub: exact schema+sequence, bounded structural allowlist, stable typed symbols, semantic redactions/no secret bytes, unknown/malformed/mixed input exit2, exclusive600 candidate and non-golden label PASS
 failure cleanup: external TERM during inherited-open stdin retains signal after cleanup; unread stdout exits2 within2s; dangling unknown cursor symlink preserved PASS
 sim prototypes: all three exact argv/stdout/exit paths, symbol continuity, mismatch/exhaustion exit2, stdin+stderr, own SIGTERM after lock cleanup, collision preserved, no fallback/network/model/clock integration PASS
+GOL476 repairs: raw/canonical typed-slot grammar, leading hidden flags/wildcards/symbols/missing values refused, relative path and prompt-hidden flag exit2 before cursor/output; caller/generated + double-collision fresh IDs, two generated distinct IDs, numeric port collision, reopen consistency and retained collision files PASS
 owned scratch inputs/cursors/candidates removed PASS
 ```
 
@@ -135,6 +153,34 @@ try {
   console.log('failure cleanup: external TERM during inherited-open stdin retains signal after cleanup; unread stdout exits2 within2s; dangling unknown cursor symlink preserved PASS');
   for(const dir of stateDirs)assert.equal(fs.readdirSync(dir).some(n=>n.endsWith('.lock')||n.endsWith('.tmp')),false);
   console.log('sim prototypes: all three exact argv/stdout/exit paths, symbol continuity, mismatch/exhaustion exit2, stdin+stderr, own SIGTERM after lock cleanup, collision preserved, no fallback/network/model/clock integration PASS');
+  const transaction=(argv,result)=>[
+    {seq:1,at_ms:0,boundary:'process',direction:'in',operation:'process-spawn',fields:{harness:'herdr',argv}},
+    {seq:2,at_ms:0,boundary:'process',direction:'out',operation:'process-stdout',fields:{harness:'herdr',stdout_recipe:'json',result}},
+    {seq:3,at_ms:0,boundary:'process',direction:'out',operation:'process-exit',fields:{harness:'herdr',exit_code:0}}];
+  const caseScenario=(argv,result={ok:true},repeat=1)=>({...demo,events:Array.from({length:repeat},(_,n)=>transaction(argv,result).map((e,i)=>({...e,seq:n*3+i+1,at_ms:n}))).flat()});
+  for(const args of [['--cwd','$session:1'],['<redacted:argv>'],['$path:1'],['--cwd'],['--label'],['--provider'],['--session','<redacted:argv>'],['workspace','close','<redacted:argv>'],['--print','<redacted:label>'],['--unknown-private-flag'],['workspace','rename','$workspace:1']]) {
+    const bad=caseScenario(args);assert.throws(()=>scrubScenario(bad));assert.throws(()=>validateScenario(bad));
+    const p=write('bad-argv.json',bad);r2=sim('herdr',args[0]==='<redacted:argv>'?['--unknown-private-flag']:args,{scenario:p});assert.equal(r2.status,2);assert.equal(r2.stdout,'');assert.equal(fs.existsSync(path.join(r2.state,'herdr.json')),false);
+  }
+  const cwdCase=caseScenario(['--cwd','$path:1']);validateScenario(cwdCase);const cwdFile=write('cwd.json',cwdCase);
+  r2=sim('herdr',['--cwd','relative-path'],{scenario:cwdFile});assert.equal(r2.status,2);assert.equal(r2.stdout,'');assert.equal(fs.existsSync(path.join(r2.state,'herdr.json')),false);
+  r2=sim('herdr',['--cwd',path.join(root,'owned-cwd')],{scenario:cwdFile});assert.equal(r2.status,0,r2.stderr);
+  const promptFile=write('prompt-flag.json',caseScenario(['--print','<redacted:prompt>']));r2=sim('herdr',['--print','--unknown-private-flag'],{scenario:promptFile});assert.equal(r2.status,2);assert.equal(r2.stdout,'');
+  const workspaces={workspaces:[{workspace_id:'$workspace:1'},{workspace_id:'$workspace:2'}]};
+  const boundCase=caseScenario(['--workspace','$workspace:1','workspace','list'],workspaces,2);validateScenario(boundCase);const boundFile=write('bound-generated.json',boundCase);
+  r2=sim('herdr',['--workspace','sim-7-workspace-2','workspace','list'],{scenario:boundFile});assert.equal(r2.status,0,r2.stderr);const boundState=r2.state, first=JSON.parse(r2.stdout).workspaces.map(x=>x.workspace_id);
+  assert.equal(first[0],'sim-7-workspace-2');assert.equal(first[1],'sim-7-workspace-2-fresh-1');assert.notEqual(first[0],first[1]);
+  r2=sim('herdr',['--workspace','sim-7-workspace-2','workspace','list'],{scenario:boundFile,state:boundState});assert.equal(r2.status,0,r2.stderr);assert.deepEqual(JSON.parse(r2.stdout).workspaces.map(x=>x.workspace_id),first);
+  const boundCursor=path.join(boundState,'herdr.json'), retained=fs.readFileSync(boundCursor,'utf8');assert.equal(JSON.parse(retained).cursor,2);
+  const retainedLock=boundCursor+'.lock';fs.writeFileSync(retainedLock,'retained-collision',{mode:0o600});r2=sim('herdr',['--workspace','sim-7-workspace-2','workspace','list'],{scenario:boundFile,state:boundState});assert.equal(r2.status,2);assert.equal(fs.readFileSync(retainedLock,'utf8'),'retained-collision');assert.equal(fs.readFileSync(boundCursor,'utf8'),retained);fs.unlinkSync(retainedLock);
+  const generatedCase=caseScenario(['workspace','list'],workspaces,2), generatedFile=write('two-generated.json',generatedCase);r2=sim('herdr',['workspace','list'],{scenario:generatedFile});assert.equal(r2.status,0,r2.stderr);const generatedState=r2.state, generated=JSON.parse(r2.stdout).workspaces.map(x=>x.workspace_id);assert.notEqual(generated[0],generated[1]);
+  r2=sim('herdr',['workspace','list'],{scenario:generatedFile,state:generatedState});assert.equal(r2.status,0,r2.stderr);assert.deepEqual(JSON.parse(r2.stdout).workspaces.map(x=>x.workspace_id),generated);
+  const doubleBoundCase=caseScenario(['--workspace','$workspace:1','workspace','rename','$workspace:3','<redacted:label>'],workspaces), doubleBoundFile=write('double-bound.json',doubleBoundCase);
+  r2=sim('herdr',['--workspace','sim-7-workspace-2','workspace','rename','sim-7-workspace-2-fresh-1','synthetic-label'],{scenario:doubleBoundFile});assert.equal(r2.status,0,r2.stderr);assert.equal(JSON.parse(r2.stdout).workspaces[1].workspace_id,'sim-7-workspace-2-fresh-2');
+  const portCase=caseScenario(['workspace','list'],{sessions:[{port:'$port:1'},{port:'$port:2'}]}), portFile=write('port-collision.json',portCase), portState=path.join(root,'state-ports');fs.mkdirSync(portState,{mode:0o700});stateDirs.push(portState);fs.writeFileSync(path.join(portState,'herdr.json'),JSON.stringify({schema:1,scenario:portCase,cursor:0,bindings:{'$port:1':'30009'}}),{mode:0o600});
+  r2=sim('herdr',['workspace','list'],{scenario:portFile,state:portState});assert.equal(r2.status,0,r2.stderr);assert.deepEqual(JSON.parse(r2.stdout).sessions.map(x=>x.port),[30009,30010]);
+  for(const dir of stateDirs)assert.equal(fs.readdirSync(dir).some(n=>n.endsWith('.lock')||n.endsWith('.tmp')),false);
+  console.log('GOL476 repairs: raw/canonical typed-slot grammar, leading hidden flags/wildcards/symbols/missing values refused, relative path and prompt-hidden flag exit2 before cursor/output; caller/generated + double-collision fresh IDs, two generated distinct IDs, numeric port collision, reopen consistency and retained collision files PASS');
 } finally {for(const {child,ended} of asyncChildren){if(child.exitCode===null&&child.signalCode===null)child.kill('SIGTERM');const timeout=setTimeout(()=>child.kill('SIGKILL'),3000);try{await ended;}finally{clearTimeout(timeout);child.stdin?.destroy();child.stdout?.destroy();child.stderr?.destroy();}}fs.rmSync(root,{recursive:true,force:true});assert.equal(fs.existsSync(root),false);console.log('owned scratch inputs/cursors/candidates removed PASS');}
 
 JS

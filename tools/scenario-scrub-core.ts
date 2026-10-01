@@ -15,6 +15,38 @@ const CONTAINERS = new Set(['result', 'response', 'workspaces', 'workspace', 'se
 const STATES = ['queued', 'claimed', 'accepted', 'settled', 'acknowledged', 'returned', 'starting', 'working', 'busy', 'idle', 'blocked', 'running', 'stopped', 'failed', 'pending', 'unknown', 'complete', 'todo', 'in_progress', 'review', 'done', 'archived'] as const;
 const ARGV_LITERAL = new Set(['--', '--version', '--json', '--session', '--session-id', '--resume', '--cwd', '--label', '--name', '--model', '--provider', '--extension', '--no-focus', '--new-tab', '--workspace', '--no-session', '-p', '--print', 'agents', 'session', 'list', 'start', 'stop', 'status', 'server', 'workspace', 'create', 'close', 'focus', 'rename', 'tab', 'pane', 'run', 'read', 'agent', 'get', 'send-keys']);
 const VALUE_FLAGS: Record<string, string> = { '--session': 'session', '--session-id': 'session', '--resume': 'session', '--workspace': 'workspace', '--cwd': 'path', '--extension': 'path', '--model': 'model' };
+export type ArgSlot = { kind: 'literal' } | { kind: 'symbol'; type: string } | { kind: 'redacted'; tag: 'argv' | 'prompt' | 'label' | 'provider'; allowFlag: boolean };
+/** Shared raw/canonical grammar: classify the slot BEFORE interpreting its value. */
+export function argvSlots(value: unknown): ArgSlot[] {
+  if (!Array.isArray(value) || !value.length || value.length > 128 || value.some(v => typeof v !== 'string' || !v || v.length > 8192 || v.includes('\0'))) throw new ScenarioError('invalid bounded argv');
+  const args = value as string[], slots: ArgSlot[] = [];
+  let pending: ArgSlot | null = null, optional = false, context: string | undefined, payload = false, payloadRequired = false, afterSelector: 'label' | 'payload' | null = null;
+  for (const item of args) {
+    if (payload) { slots.push({ kind: 'redacted', tag: 'argv', allowFlag: true }); payloadRequired = false; continue; }
+    if (pending && !(optional && item.startsWith('-'))) {
+      if (item.startsWith('-')) throw new ScenarioError('missing flag/selector value');
+      slots.push(pending); pending = null; optional = false;
+      if (afterSelector === 'label') pending = { kind: 'redacted', tag: 'label', allowFlag: false };
+      if (afterSelector === 'payload') { payload = true; payloadRequired = true; }
+      afterSelector = null; continue;
+    }
+    pending = null; optional = false;
+    if (!ARGV_LITERAL.has(item)) throw new ScenarioError('unrecognized structural argv command/flag');
+    slots.push({ kind: 'literal' });
+    if (item === '--') { payload = true; continue; }
+    if (Object.hasOwn(VALUE_FLAGS, item)) { pending = { kind: 'symbol', type: VALUE_FLAGS[item]! }; continue; }
+    if (['--label', '--name', '--provider'].includes(item)) { pending = { kind: 'redacted', tag: item === '--provider' ? 'provider' : 'label', allowFlag: false }; continue; }
+    if (item === '--print' || item === '-p') { pending = { kind: 'redacted', tag: 'prompt', allowFlag: false }; optional = true; continue; }
+    if (['session', 'workspace', 'tab', 'pane', 'agent'].includes(item)) { context = item; continue; }
+    const selectors: Record<string, readonly string[]> = { session: ['stop'], workspace: ['close', 'focus', 'rename'], tab: ['close', 'focus', 'rename'], pane: ['run', 'read', 'close', 'rename', 'send-keys'], agent: ['get', 'rename', 'send-keys'] };
+    if (context && selectors[context]?.includes(item)) {
+      pending = { kind: 'symbol', type: context === 'agent' ? 'pane' : context };
+      afterSelector = item === 'rename' ? 'label' : ['run', 'send-keys'].includes(item) ? 'payload' : null;
+    }
+  }
+  if ((pending && !optional) || payloadRequired) throw new ScenarioError('missing flag/selector/payload value');
+  return slots;
+}
 function safeVersion(value: unknown, synthetic: boolean): string {
   if (value === 'synthetic' && synthetic) return value;
   if (typeof value !== 'string' || !/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(value)) throw new ScenarioError('invalid version metadata');
@@ -43,20 +75,17 @@ class Scrubber {
     return table.get(key)!;
   }
   argv(value: unknown): Value[] {
-    if (!Array.isArray(value) || !value.length || value.length > 128) throw new ScenarioError('invalid bounded argv');
-    return value.map((item, i) => {
-      if (typeof item !== 'string' || item.length > 8192 || item.includes('\0')) throw new ScenarioError('invalid argv element');
-      if (item.startsWith('$')) { const parsed = SYMBOL.exec(item); if (!parsed) throw new ScenarioError('invalid argv symbol'); return this.symbolic(parsed[1]!, item); }
-      if (/^<redacted:(?:argv|prompt|label|provider)>$/.test(item)) return item;
-      const previous = i ? value[i - 1] : '';
-      if (Object.hasOwn(VALUE_FLAGS, previous)) return this.symbolic(VALUE_FLAGS[previous]!, item);
-      if (['--label', '--name', '--provider'].includes(previous)) return `<redacted:${previous === '--provider' ? 'provider' : 'label'}>`;
-      if (ARGV_LITERAL.has(item)) return item;
-      const context = [...value.slice(0, i)].reverse().find(word => ['session', 'workspace', 'tab', 'pane', 'agent'].includes(word));
-      if (['stop', 'close', 'focus', 'rename', 'get', 'read', 'run', 'send-keys'].includes(previous) && context) return this.symbolic(context === 'agent' ? 'pane' : context, item);
-      if (!i || item.startsWith('-')) throw new ScenarioError('unrecognized argv command/flag');
-      // A redacted argument is a semantic wildcard, not code to be executed.
-      return '<redacted:argv>';
+    const slots = argvSlots(value), args = value as string[];
+    return args.map((item, index) => {
+      const slot = slots[index]!;
+      if (slot.kind === 'literal') return item;
+      if (slot.kind === 'symbol') {
+        if (item.startsWith('<redacted:')) throw new ScenarioError('redaction cannot erase a typed argv slot');
+        return this.symbolic(slot.type, item);
+      }
+      const marker = `<redacted:${slot.tag}>`;
+      if (item.startsWith('$') || (item.startsWith('<redacted:') && item !== marker)) throw new ScenarioError('wrong argv value kind');
+      return marker;
     });
   }
   fields(input: Record<string, unknown>, depth = 0): { [key: string]: Value } {

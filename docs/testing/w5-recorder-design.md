@@ -58,6 +58,28 @@ Retention allowlist:
 | Tokens, API/access keys, credentials, password, env dumps, username | Omitted completely |
 | Any unknown field or uncertain mixed raw/symbol identity class | Reject the candidate; no heuristic passthrough |
 
+Argv uses one slot grammar for raw normalization, canonical validation and runtime
+matching. Slot classification happens before interpreting a symbol or marker.
+Command/flag slots accept only the source's public literal vocabulary: no symbol
+or wildcard may replace structural syntax, including the leading argument.
+
+| Value position | Required type/marker |
+|---|---|
+| `--session`, `--session-id`, `--resume` | `$session:N` |
+| `--workspace` | `$workspace:N` |
+| `--cwd`, `--extension` | `$path:N`; runtime argument must be absolute |
+| `--model` | `$model:N` |
+| `--label`, `--name`, rename label | `<redacted:label>` |
+| `--provider` | `<redacted:provider>` |
+| Optional argument after `--print` / `-p` | `<redacted:prompt>`; a flag cannot hide in this wildcard |
+| Session stop; workspace/tab close/focus/rename; pane run/read/close/rename/send-keys; agent get/rename/send-keys | Typed selector for that owner (`agent` uses pane identity), followed by required label/payload where applicable |
+| Explicit `--` remainder or pane run/send-keys payload | `<redacted:argv>` values; payload is data, never executed |
+
+Required value/selector/payload slots cannot be missing or filled by another
+flag. Symbols must match the slot's type; content markers must match its role.
+The optional print argument can be absent for stdin use. Unknown bare structural
+commands/flags reject rather than becoming wildcard data.
+
 Argv preserves only known public command/flag literals. Dynamic values after
 known identity/path/model flags and ID-valued herdr selectors become symbols;
 label/provider/free-text arguments become semantic wildcards. Unknown leading
@@ -164,7 +186,12 @@ lock guards cooperating consumers; unknown/stale locks, symlinks, cursor/scenari
 mismatch, malformed transaction/argv, changed/collapsed symbols and exhaustion
 fail with exit 2. No stale-lease recovery or native fallback occurs. Runtime
 bindings may contain the test caller's temporary IDs/paths, never committed
-recording data. Unbound PID output is refused until Stage B supplies an owned
+recording data. Every caller and generated binding uses the same validation and
+injectivity checks within its typed identity domain. Generated values try the
+base deterministic value, then the first unused `-fresh-N` suffix (or increment
+for numeric ports), bounded to 10,000 retries. No candidate is persisted/emitted
+before that check; failure leaves the transaction unconsumed. Reopened cursors
+validate all bindings; numeric values must have canonical decimal spelling. Unbound PID output is refused until Stage B supplies an owned
 actor; generated path/port values are non-binding symbolic consequences, not
 actual listeners/files. Same-harness overlap and multiple stdin records are not
 supported by the Stage A transaction model.

@@ -6,7 +6,8 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { HARNESSES, ScenarioError, exactKeys, integer, member, record } from '../../tools/scenario-format.ts';
 import type { Harness, Scenario, ScenarioEvent, Value } from '../../tools/scenario-format.ts';
-import { SYMBOL, validateScenario } from '../../tools/scenario-scrub-core.ts';
+import { SYMBOL, argvSlots, validateScenario } from '../../tools/scenario-scrub-core.ts';
+import type { ArgSlot } from '../../tools/scenario-scrub-core.ts';
 import { privateTempDirectory, readScenarioFile, writeCandidate } from '../../tools/scenario-io.ts';
 
 interface Cursor { schema: 1; scenario: Scenario; cursor: number; bindings: Record<string, string> }
@@ -46,31 +47,55 @@ function cursorFile(file: string, scenario: Scenario): Cursor {
   const bindings = record(state.bindings);
   const identities = new Set<string>();
   for (const [key, value] of Object.entries(bindings)) {
-    const identity = `${validateBinding(key, value)}\0${value}`;
+    const type = validateBinding(key, value), canonical = canonicalBinding(key, value as string);
+    if (canonical !== value) throw new ScenarioError('noncanonical numeric binding');
+    const identity = `${type}\0${canonical}`;
     if (identities.has(identity)) throw new ScenarioError('distinct symbols collapsed'); identities.add(identity);
   }
   return { schema: 1, scenario, cursor: integer(state.cursor, 10_000), bindings: bindings as Record<string, string> };
 }
-function bindArg(expected: string, actual: string, bindings: Record<string, string>): void {
+function canonicalBinding(key: string, value: string): string {
+  const type = validateBinding(key, value);
+  return ['port', 'pid'].includes(type) ? String(Number(value)) : value;
+}
+function occupiedBinding(key: string, value: string, bindings: Record<string, string>): boolean {
+  const type = validateBinding(key, value);
+  return Object.entries(bindings).some(([other, existing]) => other !== key && other.startsWith(`$${type}:`) && canonicalBinding(other, existing) === value);
+}
+function setBinding(key: string, value: string, bindings: Record<string, string>): void {
+  value = canonicalBinding(key, value);
+  if (Object.hasOwn(bindings, key) && canonicalBinding(key, bindings[key]!) !== value) throw new ScenarioError('symbol identity changed');
+  if (occupiedBinding(key, value, bindings)) throw new ScenarioError('distinct symbols collapsed');
+  bindings[key] = value;
+}
+function bindArg(expected: string, actual: string, bindings: Record<string, string>, slot: ArgSlot): void {
   if (!actual || actual.length > 8192 || actual.includes('\0')) throw new ScenarioError('invalid argv');
   const symbol = SYMBOL.exec(expected);
   if (symbol) {
-    validateBinding(expected, actual);
-    if (Object.hasOwn(bindings, expected) && bindings[expected] !== actual) throw new ScenarioError('symbol identity changed');
-    if (!Object.hasOwn(bindings, expected) && Object.entries(bindings).some(([key, value]) => key.startsWith(`$${symbol[1]}:`) && value === actual)) throw new ScenarioError('distinct symbols collapsed');
-    bindings[expected] = actual; return;
+    if (slot.kind !== 'symbol' || slot.type !== symbol[1]) throw new ScenarioError('wrong argv symbol slot');
+    setBinding(expected, actual, bindings); return;
   }
-  if (/^<redacted:(?:argv|prompt|label|provider)>$/.test(expected)) return;
+  if (slot.kind === 'redacted') {
+    if (expected !== `<redacted:${slot.tag}>` || (!slot.allowFlag && actual.startsWith('-'))) throw new ScenarioError('argv redaction cannot hide a structural flag');
+    return;
+  }
   if (expected !== actual) throw new ScenarioError('argv contract mismatch');
 }
 function materialize(value: Value, state: Cursor, root: string): Value {
   if (typeof value === 'string') {
     const symbol = SYMBOL.exec(value); if (!symbol) return value;
     if (!Object.hasOwn(state.bindings, value)) {
-      state.bindings[value] = symbol[1] === 'path' ? path.join(root, `sim-path-${symbol[2]}`)
-        : symbol[1] === 'pid' ? (() => { throw new ScenarioError('unbound PID requires an owned runtime actor in Stage B'); })()
+      if (symbol[1] === 'pid') throw new ScenarioError('unbound PID requires an owned runtime actor in Stage B');
+      const base = symbol[1] === 'path' ? path.join(root, `sim-path-${symbol[2]}`)
         : symbol[1] === 'port' ? String(30000 + state.scenario.seed % 1000 + Number(symbol[2]))
         : `sim-${state.scenario.seed}-${symbol[1]}-${symbol[2]}`;
+      let generated: string | undefined;
+      for (let attempt = 0; attempt <= 10_000; attempt++) {
+        const candidate = canonicalBinding(value, attempt === 0 ? base : symbol[1] === 'port' ? String(Number(base) + attempt) : `${base}-fresh-${attempt}`);
+        if (!occupiedBinding(value, candidate, state.bindings)) { generated = candidate; break; }
+      }
+      if (generated === undefined) throw new ScenarioError('no injective generated binding; transaction retained');
+      setBinding(value, generated, state.bindings);
     }
     return ['pid', 'port'].includes(symbol[1]!) ? Number(state.bindings[value]) : state.bindings[value]!;
   }
@@ -124,7 +149,8 @@ export async function runSimulator(harnessValue: string, argv = process.argv.sli
     if (!group) throw new ScenarioError('scenario exhausted; unknown invocation refused');
     const expected = group[0]!.fields.argv;
     if (!Array.isArray(expected) || expected.length !== argv.length || expected.some(value => typeof value !== 'string')) throw new ScenarioError('argv shape mismatch');
-    expected.forEach((value, index) => bindArg(value as string, argv[index]!, state.bindings));
+    const slots = argvSlots(expected);
+    expected.forEach((value, index) => bindArg(value as string, argv[index]!, state.bindings, slots[index]!));
     const inputEvents = group.filter(event => event.operation === 'process-stdin');
     if (inputEvents.length > 1) throw new ScenarioError('multiple stdin records unsupported in Stage A');
     if (inputEvents.length) await boundedStdin(signal);
