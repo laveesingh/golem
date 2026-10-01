@@ -8,6 +8,28 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 const root = process.env.GOLEM_W2_SANDBOX;
+// Only the allocated adapter main receives this IPC grant flag. Descendants
+// must never inherit it, including existing fixture-owned IPC consumers.
+const allocationGrant = process.env.GOLEM_W2_MAIN_GRANT;
+delete process.env.GOLEM_W2_MAIN_GRANT;
+if (allocationGrant) {
+  if (!process.send) throw Error('main allocation requires private IPC');
+  await new Promise((resolve) => {
+    const run = (message) => {
+      if (message?.kind !== 'w2-main-run' || message.grant !== allocationGrant)
+        return;
+      process.off('message', run);
+      process.disconnect();
+      resolve();
+    };
+    process.on('message', run);
+    process.send({
+      kind: 'w2-main-ready',
+      grant: allocationGrant,
+      pid: process.pid,
+    });
+  });
+}
 if (!root || !process.env.HOME?.startsWith(root + path.sep))
   throw Error('missing W2 isolation before import');
 const native = new Set([
@@ -48,19 +70,39 @@ for (const name of ['spawn', 'spawnSync', 'execFile', 'execFileSync']) {
   childProcess[name] = function (command, ...args) {
     const checked = checkCommand(command, args);
     const child = original.call(this, checked, ...args);
-    if (name === 'spawn' && args.some((value) => value?.detached === true)) {
+    if (name === 'spawn') {
       child.once('spawn', () => {
         const birth = childProcess.spawnSync(
           'ps',
           ['-p', String(child.pid), '-o', 'lstart='],
-          { encoding: 'utf8' },
+          { encoding: 'utf8', timeout: 2000 },
         );
-        if (birth.status === 0 && birth.stdout.trim())
+        const group = childProcess.spawnSync(
+          'ps',
+          ['-p', String(child.pid), '-o', 'pgid='],
+          { encoding: 'utf8', timeout: 2000 },
+        );
+        if (
+          birth.status === 0 &&
+          birth.stdout.trim() &&
+          group.status === 0 &&
+          Number(group.stdout.trim()) > 1
+        ) {
+          const record = {
+            pid: child.pid,
+            birth: birth.stdout.trim(),
+            pgid: Number(group.stdout.trim()),
+          };
           fs.appendFileSync(
-            path.join(root, 'groups.jsonl'),
-            JSON.stringify({ pid: child.pid, birth: birth.stdout.trim() }) +
-              '\n',
+            path.join(root, 'main-members.jsonl'),
+            `${JSON.stringify(record)}\n`,
           );
+          if (args.some((value) => value?.detached === true))
+            fs.appendFileSync(
+              path.join(root, 'groups.jsonl'),
+              `${JSON.stringify(record)}\n`,
+            );
+        }
       });
     }
     return child;

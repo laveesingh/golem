@@ -1,27 +1,13 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { cleanupGroups, groupPresent } from './cleanup-groups.mjs';
+import { captureProcessGroup } from '../../lib/process-group.js';
+import { cleanupGroups } from './cleanup-groups.mjs';
+import { stopMainGroup } from './main-group.mjs';
 import { createSandbox, repo } from './sandbox.mjs';
 
-async function stopMainGroup(child, root) {
-  if (!child?.pid) return;
-  try {
-    process.kill(-child.pid, 'SIGKILL');
-  } catch (error) {
-    if (
-      error.code !== 'ESRCH' &&
-      !(error.code === 'EPERM' && !groupPresent(child.pid))
-    )
-      throw error;
-  }
-  for (let i = 0; i < 100; i++) {
-    if (!groupPresent(child.pid)) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw Error(`owned child group survived cleanup; retained ${root}`);
-}
 async function waitBounded(promise, milliseconds) {
   let timer;
   try {
@@ -37,7 +23,13 @@ async function waitBounded(promise, milliseconds) {
 }
 export async function runScript(
   file,
-  { timeout = 90000, ports = [], args = [], drainTimeout = 2000 } = {},
+  {
+    timeout = 90000,
+    ports = [],
+    args = [],
+    drainTimeout = 2000,
+    mainControls = {},
+  } = {},
 ) {
   const sandbox = createSandbox();
   let child,
@@ -45,7 +37,9 @@ export async function runScript(
     failure,
     closed = Promise.resolve(true),
     code = null,
-    signal = null;
+    signal = null,
+    mainOwnership = null,
+    allocationHandler;
   let stdout = '',
     stderr = '',
     timedOut = false,
@@ -62,11 +56,37 @@ export async function runScript(
       });
       await new Promise((resolve) => server.close(resolve));
     }
+    const grant = randomUUID();
     child = spawn(process.execPath, [path.join(repo, file), ...args], {
       cwd: repo,
-      env: sandbox.env,
+      env: { ...sandbox.env, GOLEM_W2_MAIN_GRANT: grant },
       detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    });
+    const allocated = new Promise((resolve, reject) => {
+      allocationHandler = (message) => {
+        try {
+          if (
+            message?.kind !== 'w2-main-ready' ||
+            message.grant !== grant ||
+            message.pid !== child.pid
+          )
+            throw Error('invalid main allocation handshake');
+          mainOwnership = captureProcessGroup(child.pid);
+          if (!mainOwnership.members.some((member) => member.pid === child.pid))
+            throw Error('allocated main leader incarnation missing');
+          fs.writeFileSync(
+            path.join(sandbox.root, 'main-ownership.json'),
+            JSON.stringify(mainOwnership),
+            { flag: 'wx', mode: 0o400 },
+          );
+          child.send({ kind: 'w2-main-run', grant });
+          resolve(true);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      child.once('message', allocationHandler);
     });
     // EXIT, not CLOSE, is the process deadline. Detached inherited-pipe holders
     // are torn down independently before waiting for the pipe-close boundary.
@@ -91,14 +111,21 @@ export async function runScript(
         resolve();
       }, timeout);
     });
-    await Promise.race([exited, deadline]);
+    const allocation = await Promise.race([
+      allocated,
+      exited.then(() => false),
+      deadline.then(() => false),
+    ]);
+    if (allocation === true) await Promise.race([exited, deadline]);
   } catch (error) {
     failure = error;
   }
   clearTimeout(timer);
+  if (allocationHandler) child?.off('message', allocationHandler);
   // This path runs on deadline even when inherited pipes keep CLOSE pending.
   try {
-    await stopMainGroup(child, sandbox.root);
+    if (child?.pid)
+      await stopMainGroup(mainOwnership, sandbox.root, mainControls);
   } catch (error) {
     cleanupErrors.push(error);
   }
@@ -107,6 +134,9 @@ export async function runScript(
   } catch (error) {
     cleanupErrors.push(error);
   }
+  // A capture failure leaves source entry ungranted; close only this private
+  // IPC allocation channel, never borrow a numeric PID as signal authority.
+  if (child?.connected) child.disconnect();
   if (!(await waitBounded(closed, drainTimeout))) {
     pipeDrainTimedOut = true;
     child?.stdout?.destroy();
@@ -127,6 +157,7 @@ export async function runScript(
     stderr,
     sandboxRoot: sandbox.root,
     ownedGroups,
+    mainOwnership,
     cleanupErrors: cleanupErrors.map((error) => error.message),
   };
   // Receipts exist even after timeout, launch failure, uncertain cleanup or

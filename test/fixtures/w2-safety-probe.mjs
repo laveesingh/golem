@@ -27,6 +27,20 @@ if (mode === 'absent-fake') {
     /refused production port/,
   );
   assert.throws(() => fetch('https://example.com/'), /refused external host/);
+} else if (mode === 'main-fence-hold') {
+  console.log('main-fence-ready');
+  setInterval(() => {}, 1000);
+  await new Promise(() => {});
+} else if (mode === 'main-residual-exit') {
+  const child = spawn(
+    process.execPath,
+    ['-e', "console.log('main-residual-ready');setInterval(()=>{},1000)"],
+    { stdio: ['ignore', 'inherit', 'inherit'] },
+  );
+  await new Promise((resolve) => child.once('spawn', resolve));
+  console.log(`owned-main-residual-pid:${child.pid}`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  process.exit(1);
 } else if (
   mode === 'timeout-pipe-group' ||
   mode === 'exit-pipe-group' ||
