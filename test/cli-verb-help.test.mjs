@@ -9,8 +9,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { test } from 'vitest';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cli = path.join(repo, 'cli', 'golem.js');
@@ -51,7 +51,11 @@ for (const [verb, usage] of VERBS) {
   for (const flag of ['--help', '-h']) {
     test(`golem ${verb} ${flag} prints help and exits 0`, () => {
       const result = runHelp(verb, flag);
-      assert.equal(result.status, 0, `exit status with stderr: ${result.stderr}`);
+      assert.equal(
+        result.status,
+        0,
+        `exit status with stderr: ${result.stderr}`,
+      );
       assert.ok(
         String(result.stdout || '').includes(usage),
         `stdout contains the usage line ${JSON.stringify(usage)}: ${String(result.stdout || '').slice(0, 300)}`,

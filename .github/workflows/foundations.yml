@@ -1,0 +1,38 @@
+name: Foundations
+on:
+  pull_request:
+  push:
+    branches: [spec/gol-438-foundations]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    container:
+      image: node:22.22.3-bookworm
+      options: --init
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native addon and hook prerequisites
+        run: apt-get update && apt-get install -y --no-install-recommends python3 make g++ git procps jq
+      - run: npm ci
+      - run: npm run check
+      - run: git diff --check
+  test:
+    runs-on: ubuntu-24.04
+    container:
+      image: node:22.22.3-bookworm
+      options: --init
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native addon and hook prerequisites
+        run: apt-get update && apt-get install -y --no-install-recommends python3 make g++ git procps jq
+      - run: npm ci
+      - name: Hermetic layers (component pending W4; no component coverage claimed)
+        run: npx vitest run --project unit --project component --project integration
+      - run: npm run check:native
+  # W4/W5 own e2e journeys/axe/screenshots and simulated harness fixtures.
+  # W3/W7 own release npm-pack/render artefact checks. No success placeholders:
+  # test:dashboard:browser/test:release explicitly fail with pending prerequisites.

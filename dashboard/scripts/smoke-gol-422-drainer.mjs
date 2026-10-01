@@ -8,12 +8,15 @@ import fs from 'node:fs';
 import { strict as assert } from 'node:assert';
 import { openTrackerDb } from '../server/tracker-db.js';
 import { initDispatchDrainer } from '../server/dispatch-queue.js';
+import { createPrivateScratchFixture, archivePrivateScratchFixture } from './_scratch.mjs';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-422-'));
 const dbPath = path.join(dir, 'tracker.db');
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const ticket = { project_id: 'smoketests-000000', kind: 'task', title: 'SMOKE-GOL-422 recovery', body: '', created_by: 'smoke' };
+const ticket = { kind: 'task', title: 'GOL-422 recovery', body: '' };
 let tracker;
+let created;
+let drainer;
 let pushed = [];
 const state = { nativeSessions: () => [] };
 const chat = { record() {} };
@@ -21,13 +24,13 @@ const start = () => initDispatchDrainer({ tracker, state, chat, listChannels: as
 
 try {
   tracker = openTrackerDb(dbPath);
-  const created = tracker.createTicket(ticket);
+  created = createPrivateScratchFixture(tracker, dbPath, ticket);
   const root = tracker.createDispatchEnvelope(created.id, { session_id: 'target', actor: 'sender', sender_id: 'sender' });
   tracker.markEnvelopeDelivery(root.id); // config default window is 5m; make the test due without sleeping.
   const sql = (statement, ...args) => tracker.raw().prepare(statement).run(...args);
   sql("UPDATE message_envelopes SET ack_deadline_at = '2000-01-01T00:00:00.000Z' WHERE id = ?", root.id);
   const ownerBefore = tracker.getTicket(created.id);
-  let drainer = start();
+  drainer = start();
   await wait(5_300);
   drainer.close();
   assert.equal(pushed.length, 1, 'first due pass sent exactly one ping');
@@ -71,6 +74,8 @@ try {
   assert.equal(pushed.length, pushedBeforeLegacy, 'legacy warning did not create another durable child');
   console.log('PASS GOL-422 drainer/restart journey');
 } finally {
+  drainer?.close();
+  if (created) archivePrivateScratchFixture(tracker, created.id);
   try { tracker?.close(); } catch {}
   fs.rmSync(dir, { recursive: true, force: true });
 }

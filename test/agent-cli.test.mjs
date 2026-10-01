@@ -430,16 +430,16 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
     const effects = []; let displayFails = false, moveFails = false, handleFails = false;
     let position = { pane_id: 'source-pane', tab_id: 'source-tab', workspace_id: 'source-w' };
     const native = {
-      agentGet: ({ target }) => target === 'unnamed-pane' ? unnamed : target === 'external-pane' ? external : { ...position, name: own.herdr_agent_name },
+      agentGet: ({ target }) => target === 'unnamed-pane' ? unnamed : target === 'external-pane' ? external : { ...position, name: own.herdr_agent_name, agent: 'pi' },
       agentList: () => [external, unnamed],
       agentRename: value => { effects.push(['handle', value]); if (handleFails) throw new Error('native handle update unavailable'); unnamed.name = value.name; return true; },
-      paneProcessInfo: ({ paneId }) => paneId === 'unnamed-pane' ? { foreground_process_group_id: children[2].pid, foreground_processes: [{ pid: children[2].pid, argv0: 'pi', argv: ['pi', '--session', unnamedFile] }] } : paneId === 'external-pane' ? { foreground_process_group_id: children[1].pid, foreground_processes: [{ pid: children[1].pid, argv0: 'pi', argv: ['pi', '--session', file] }] } : { foreground_process_group_id: children[0].pid },
+      paneProcessInfo: ({ paneId }) => paneId === 'unnamed-pane' ? { foreground_process_group_id: children[2].pid, foreground_processes: [{ pid: children[2].pid, argv0: 'pi', argv: ['pi', '--session', unnamedFile] }] } : paneId === 'external-pane' ? { foreground_process_group_id: children[1].pid, foreground_processes: [{ pid: children[1].pid, argv0: 'pi', argv: ['pi', '--session', file] }] } : { foreground_process_group_id: children[0].pid, foreground_processes: [{ pid: children[0].pid, argv0: 'pi', argv: ['pi'] }] },
       workspaceList: () => [{ workspace_id: 'source-w' }, { workspace_id: 'destination-w' }, { workspace_id: 'retry-w' }],
       paneLabel: value => { effects.push(['label', value]); if (displayFails) throw new Error('display unavailable'); return true; },
       paneMove: value => { effects.push(['move', value]); position = { pane_id: value.workspaceId === 'retry-w' ? 'retry-pane' : 'moved-pane', tab_id: 'moved-tab', workspace_id: value.workspaceId }; if (moveFails) throw new Error('move response unavailable'); return position; },
     };
     const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: projectDir, env: {}, native, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
-    const inspect = await run(['inspect', own.session_id]); assert.equal(inspect.exit, 0); assert.equal(inspect.value.native_handle, own.herdr_agent_name); assert.equal(inspect.value.capabilities.stop.state, 'available');
+    const inspect = await run(['inspect', own.session_id]); assert.equal(inspect.exit, 0); assert.equal(inspect.value.native_handle, own.herdr_agent_name); assert.equal(inspect.value.capabilities.stop.state, 'available', JSON.stringify(inspect.value));
     const bytes = () => JSON.stringify(['workers.json', 'teams.json', 'herdr-mappings.json'].map(name => fs.readFileSync(path.join(process.env.GOLEM_HOME, name), 'utf8')));
     const before = bytes();
     for (const args of [['rename', own.session_id, 'renamed-control'], ['move', own.session_id, '--workspace', 'destination-w'], ['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane']]) assert.equal((await run([...args, '--dry-run'])).exit, 0);

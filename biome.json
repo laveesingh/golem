@@ -1,0 +1,42 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "files": {
+    "includes": [
+      "cli/bootstrap.ts",
+      "tools/**",
+      "test/support/**",
+      "test/unit/**",
+      "test/integration/**",
+      "vitest.config.mjs",
+      "tsconfig.json",
+      "biome.json",
+      "test/fixtures/w2-safety-probe.mjs",
+      "test/cli-verb-help.test.mjs",
+      "test/model-providers.test.mjs",
+      "dashboard/scripts/_scratch.mjs"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

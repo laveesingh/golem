@@ -1,0 +1,9 @@
+FROM node:22.22.3-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends git python3 make g++ procps jq && rm -rf /var/lib/apt/lists/*
+WORKDIR /work/golem
+COPY . .
+RUN npm ci
+RUN git init -q && git config user.name "Linux Fixture" && git config user.email "linux@example.invalid" && git add cli lib dashboard mcp shims substrate test tools package.json package-lock.json knip.json biome.json tsconfig.json vitest.config.mjs .nvmrc && git commit -qm "Disposable W2 source snapshot"
+ENV HOME=/tmp/gol458-container-home
+RUN mkdir -p /tmp/gol458-container-home
+CMD ["bash", "-lc", "npm run check && npx vitest run --project unit --project component --project integration && npm run check:native && node tools/type-mutations.mjs"]
