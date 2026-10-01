@@ -20,6 +20,8 @@
     "dashboard/server/contract-policy.ts",
     "dashboard/server/contract-pilot.ts",
     "tools/contracts-build.ts",
-    "dashboard/web/src/api/pilot-client.ts"
+    "dashboard/web/src/api/pilot-client.ts",
+    "lib/package-root.ts",
+    "lib/compiler/runtime-source.ts"
   ]
 }

@@ -9,6 +9,7 @@ import websocket from '@fastify/websocket';
 import swagger from '@fastify/swagger';
 import { installContractPolicy } from './contract-policy.ts';
 import { registerContractPilot } from './contract-pilot.ts';
+import { packageRoot } from '../../lib/package-root.ts';
 import { CONFIG } from './config.js';
 import { createState } from './state.js';
 import { roleMetaMap } from './roles.js';
@@ -59,15 +60,15 @@ import {
 } from './model-catalog.js';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
-const WEB_SOURCE_ROOT = path.resolve(__dirname, '..', 'web');
-const WEB_DIST_ROOT = path.resolve(__dirname, '..', 'dist');
+const ASSET_ROOT = packageRoot(import.meta.url);
+const WEB_SOURCE_ROOT = path.join(ASSET_ROOT, 'dashboard', 'web');
+const WEB_DIST_ROOT = path.join(ASSET_ROOT, 'dashboard', 'dist');
 const WEB_ROOT = fs.existsSync(path.join(WEB_DIST_ROOT, 'index.html')) ? WEB_DIST_ROOT : WEB_SOURCE_ROOT;
 // The tracker genre templates live OUTSIDE dashboard/, in the substrate
 // source tree at substrate/skills/tracker/templates/ (TKT-0574 — plugin/ is
-// now a generated render of substrate/, not the SoT). Resolve the repo root
-// two levels up from this file (dashboard/server/index.js → dashboard/ →
-// repo root) and point at that dir. Used by GET /api/templates.
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+// generated, not the SoT). Caller-based packageRoot survives mirrored dist/
+// paths and never inherits a parent render's source root. Used by /api/templates.
+const REPO_ROOT = ASSET_ROOT;
 const TEMPLATES_DIR = path.join(REPO_ROOT, 'substrate', 'skills', 'tracker', 'templates');
 
 function modelProfilesPayload() {

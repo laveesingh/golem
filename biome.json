@@ -17,7 +17,9 @@
       "lib/contracts/**",
       "dashboard/server/contract-*.ts",
       "dashboard/web/src/api/pilot-client.ts",
-      "test/fixtures/w3-*.mjs"
+      "test/fixtures/w3-*.mjs",
+      "lib/package-root.ts",
+      "lib/compiler/runtime-source.ts"
     ]
   },
   "formatter": {

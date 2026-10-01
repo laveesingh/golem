@@ -20,6 +20,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { URL, fileURLToPath } from 'node:url';
+import { packageLocation } from '../../lib/package-root.ts';
 import { execFile, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -386,11 +387,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     // "what does a session need to know" would drift, and the drift would be
     // invisible because each looks correct on its own.
     try {
-      const here = path.dirname(fileURLToPath(import.meta.url));
-      const script = [
-        path.join(here, '..', '..', 'hooks', 'tracker-context.sh'),
-        path.join(here, '..', '..', 'substrate', 'hooks', 'tracker-context.sh'),
-      ].find((p) => fs.existsSync(p));
+      const location = packageLocation(import.meta.url);
+      const candidate = path.join(location.root, location.kind === 'render' ? 'hooks' : 'substrate/hooks', 'tracker-context.sh');
+      const script = fs.existsSync(candidate) ? candidate : null;
       if (!script) {
         return { isError: true, content: [{ type: 'text', text: 'project_context: tracker-context.sh not found relative to this server.' }] };
       }

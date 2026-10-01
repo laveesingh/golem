@@ -37,10 +37,11 @@ import { resolveRolePreset } from '../lib/role-preset.js';
 import { CLAUDE_CHANNEL_FLAG, GOLEM_CLAUDE_CHANNEL } from '../lib/claude-channel.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
 import { HERDR_SUPPORTED_VERSION, herdrSessionForProject, herdrVersion } from '../lib/herdr-driver.js';
+import { packageRoot, runtimeFile } from '../lib/package-root.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const GOLEM_ROOT = resolve(__dirname, '..');
+const GOLEM_ROOT = packageRoot(import.meta.url);
 const DASHBOARD_DIR = resolve(GOLEM_ROOT, 'dashboard');
 function dashboardPortFromArgs(args) {
   const index = args.findIndex((arg) => arg === '--port' || arg.startsWith('--port='));
@@ -123,7 +124,7 @@ function publicSupervisorRecord(record) {
 
 
 async function cmdDashboard(args) {
-  const serverEntry = resolve(DASHBOARD_DIR, 'server', 'index.js');
+  const serverEntry = runtimeFile(import.meta.url, 'dashboard/server/index.js');
   if (!existsSync(serverEntry)) {
     fatal(1, `dashboard server entry missing: ${serverEntry}`);
   }
@@ -154,9 +155,8 @@ async function cmdDashboard(args) {
 }
 
 async function cmdDashboardRestart(args) {
-  if (!existsSync(resolve(DASHBOARD_DIR, 'server', 'index.js'))) {
-    fatal(1, `dashboard server entry missing: ${resolve(DASHBOARD_DIR, 'server', 'index.js')}`);
-  }
+  try { runtimeFile(import.meta.url, 'dashboard/server/index.js'); }
+  catch (error) { fatal(1, error.message); }
   if (!existsSync(resolve(GOLEM_ROOT, 'node_modules'))) {
     fatal(1, 'root deps missing — npm install (from the repo root)');
   }

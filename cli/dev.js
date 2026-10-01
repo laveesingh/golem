@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { packageRoot, runtimeFile } from '../lib/package-root.ts';
 
 // One foreground owner, two private children. No detached server survives it.
 export async function runDev(args = []) {
@@ -9,7 +9,7 @@ export async function runDev(args = []) {
     return;
   }
   if (args.length) throw new Error('golem dev accepts only --help; profile and --port precede dev');
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const root = packageRoot(import.meta.url);
   const children = [];
   let stopping = false;
   let exitCode = 0;
@@ -29,7 +29,7 @@ export async function runDev(args = []) {
   process.on('SIGTERM', onSignal);
   try {
     const commands = [
-      [path.join(root, 'dashboard/server/index.js')],
+      [runtimeFile(import.meta.url, 'dashboard/server/index.js')],
       [path.join(root, 'node_modules/vite/bin/vite.js'), '--config', path.join(root, 'dashboard/vite.config.js')],
     ];
     await Promise.all(commands.map(argv => new Promise(resolve => {
