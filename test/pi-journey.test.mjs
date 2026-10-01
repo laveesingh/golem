@@ -6,7 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { projectIdFor } from '../lib/project-id.js';
+import { projectIdFor, resolveProjectRoot } from '../lib/project-id.js';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-pi-native-'));
@@ -239,7 +239,7 @@ async function main() {
   await harness.start();
   const stripAnsi = (value) => value.replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, '');
   const footerLines = harness.footer.render(140).map(stripAnsi);
-  assert.match(footerLines[0], /^[^\/]+\/golem \(main\) • pi-native-test$/, 'footer shortens cwd and follows it with branch and session name');
+  assert.equal(footerLines[0], `${path.basename(path.dirname(repo))}/${path.basename(repo)} (main) • pi-native-test`, 'footer shortens the actual checkout cwd and follows it with branch and session name');
   assert.doesNotMatch(footerLines[0], /Documents/, 'footer omits the full home-relative path');
   assert.match(footerLines[1], /▏░{9} 1\.4% 14k\/1\.0M/, 'footer renders context as a fractional progress bar with used and total tokens');
   assert.match(footerLines[1], /\(ollama\) deepseek-v4-flash:0731-cloud • medium$/, 'footer retains provider, model, and thinking level');
@@ -301,7 +301,7 @@ async function main() {
   for (const role of ['lead', 'reviewer', 'builder', 'designer']) assert.ok(!rolePrompt.includes(renderedCard(role)), `roles.default null injects no card (${role})`);
   fs.rmSync(configPath);
   assert.equal((await harness.tools.get('session_role').execute('tool-role-builder', { role: 'builder' }, undefined, undefined, harness.ctx)).details.ok, true);
-  assert.ok(prompt.systemPrompt.includes(execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()), 'L4 includes a real recent commit, not only a heading');
+  assert.ok(prompt.systemPrompt.includes(execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: await resolveProjectRoot(repo), encoding: 'utf8' }).trim()), 'L4 includes a real registered-root commit, not only a heading');
   assert.ok(fs.existsSync(path.join(discovered.skillPaths[0], 'spec-writing', 'SKILL.md')), 'the discovered skill pool includes spec-writing');
   let lease = readJson(path.join(env.GOLEM_HOME, 'endpoint-leases.json')).leases.find((row) => row.canonical_id === sessionId);
   assert.equal(lease.kind, 'typed-worker');
@@ -740,7 +740,7 @@ async function main() {
   assert.equal(timeoutHarness.sent.length, 1);
   await timeoutHarness.emit('session_shutdown', { reason: 'quit' });
 
-  const journal = fs.readFileSync(path.join(env.GOLEM_HOME, 'journals', projectIdFor(repo), 'hook.jsonl'), 'utf8');
+  const journal = fs.readFileSync(path.join(env.GOLEM_HOME, 'journals', projectIdFor(await resolveProjectRoot(repo)), 'hook.jsonl'), 'utf8');
   assert.match(journal, /"event":"agent_start"/);
   assert.doesNotMatch(journal, /owner_token|api.key|authorization/i, 'journal contains no endpoint/auth secrets');
 

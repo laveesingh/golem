@@ -57,8 +57,11 @@ function NsdTerminalView({ sessionId, session, alive, events = [], peek = null }
     userScrolledUp.current = !isAtBottom;
   };
 
+  const attachCapability = terminal?.capabilities?.attach ?? session?.capabilities?.attach;
+  const canAttach = attachCapability?.state === 'available';
   const copyAttach = () => {
-    const hint = terminal?.attach_hint || `golem agent attach ${session?.name || sessionId}`;
+    if (!canAttach) return;
+    const hint = terminal?.attach_hint || `golem agent attach ${sessionId}`;
     navigator.clipboard?.writeText(hint).then(() => {
       setCopiedAttach(true);
       setTimeout(() => setCopiedAttach(false), 2000);
@@ -123,7 +126,8 @@ function NsdTerminalView({ sessionId, session, alive, events = [], peek = null }
             type="button"
             className="orch-btn small ghost nsd-copy-btn"
             onClick={copyAttach}
-            title={terminal?.attach_hint || 'Copy attach command'}
+            disabled={!canAttach}
+            title={canAttach ? terminal?.attach_hint || 'Copy attach command' : attachCapability?.reason || 'Native attach evidence unavailable'}
           >
             {copiedAttach ? 'Copied Cmd ✓' : 'Attach Cmd'}
           </button>
@@ -140,6 +144,7 @@ function NsdTerminalView({ sessionId, session, alive, events = [], peek = null }
         </div>
       </div>
 
+      {attachCapability && !canAttach && <div className="nsd-terminal-empty" role="status">Attach {attachCapability.state}: {attachCapability.reason}</div>}
       <div className="nsd-terminal-viewport" ref={terminalBodyRef} onScroll={handleScroll}>
         {loading && !terminal ? (
           <div className="nsd-terminal-empty">Connecting to agent terminal…</div>

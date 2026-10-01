@@ -34,6 +34,7 @@ import { projectIdFor } from '../../lib/project-id.js';
 import { buildDispatchBrief } from './dispatch-brief.js';
 import { createRole, defaultSessionRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.js';
 import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../../lib/worker-manager.js';
+import { managementRosterSnapshot } from '../../lib/management-capabilities.js';
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
 import { recordTypedEnvelopeOutcome } from './typed-delivery.js';
 import { sameEndpointSecret } from '../../lib/typed-worker-endpoint.js';
@@ -523,7 +524,7 @@ async function main() {
       arr.push(warning);
       unackedBySession.set(warning.session_id, arr);
     }
-    return (rows || []).map((s) => {
+    return managementRosterSnapshot((rows || []).map((s) => {
       const delivery = deriveSessionDelivery(s, channelById.get(s.session_id));
       return {
         ...s,
@@ -536,7 +537,7 @@ async function main() {
         active_unacked_dispatches: unackedBySession.get(s.session_id) ?? [],
         project_id: s.project_id ?? null,
       };
-    });
+    }));
   }
 
   function slimTicket(ticket) {

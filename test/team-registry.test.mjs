@@ -3,6 +3,7 @@
 // resolution. Temp GOLEM_HOME only; no herdr, no tmux, no dashboard.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +11,7 @@ import path from 'node:path';
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'golemtest-team-registry-'));
 process.env.GOLEM_HOME = path.join(temp, 'state');
 delete process.env.XDG_CONFIG_HOME;
+delete process.env.HERDR_ENV;
 
 const { teamsJsonPath } = await import('../lib/golem-home.js');
 const {
@@ -48,12 +50,10 @@ assert.throws(() => slugifyTeamLabel('9 lives'), /valid slug/);
 assert.throws(() => slugifyTeamLabel('x'.repeat(100)), /valid slug/);
 
 // --- herdr agent names --------------------------------------------------------
-assert.equal(herdrAgentNameFor('blue-team', 'builder1'), 'blue-team-builder1');
-const long = herdrAgentNameFor('a-very-long-team-slug-here', 'builder12345');
-assert.ok(long.length <= 32, `cut to 32 chars: ${long}`);
-assert.match(long, /^[a-z][a-z0-9_-]{0,31}$/);
-assert.equal(herdrAgentNameFor('blue-team', 'Builder One'), 'blue-team-builder-one');
-assert.throws(() => herdrAgentNameFor('Bad Slug', 'builder1'), /team slug is required/);
+assert.match(herdrAgentNameFor('stable-runtime-1'), /^g-[0-9a-f]{28}$/);
+assert.equal(herdrAgentNameFor('stable-runtime-1'), herdrAgentNameFor('stable-runtime-1'));
+assert.notEqual(herdrAgentNameFor('stable-runtime-1'), herdrAgentNameFor('stable-runtime-2'));
+assert.throws(() => herdrAgentNameFor(''), /runtime ID is required/);
 
 // --- team rows ----------------------------------------------------------------
 const blue = createTeam({ label: 'Blue Team', projectId: projectA, herdrSession: 'herdr-a' });
@@ -119,7 +119,7 @@ assert.throws(() => joinTeam('missing-id', 'lead-9'), /team not found/);
   setTeamWorkspace(red.team_id, 'w9');
   const written = JSON.parse(fs.readFileSync(file, 'utf8')).teams.find((row) => row.team_id === red.team_id);
   assert.equal(written.owner_session_id, 'legacy-lead');
-  assert.equal(written.lead_session_id, 'legacy-lead', 'lead_session_id is mirrored on write');
+  assert.equal(written.lead_session_id, undefined, 'v2 removes the superseded owner mirror');
 }
 
 // --- workspace + close -----------------------------------------------------------
@@ -185,7 +185,7 @@ const teams = listTeams({ projectId: projectA });
 // --team wins, by id and by slug.
 assert.equal(resolveCallerTeam({ teamRef: team1.team_id, projectId: projectA, teams }).team_id, team1.team_id);
 assert.equal(resolveCallerTeam({ teamRef: 'team-two', projectId: projectA, teams }).team_id, team2.team_id);
-assert.throws(() => resolveCallerTeam({ teamRef: 'nope', projectId: projectA, teams }), /unknown team: nope/);
+assert.throws(() => resolveCallerTeam({ teamRef: 'nope', projectId: projectA, teams }), /unknown or ambiguous team: nope/);
 // A slug shared with a closed row resolves to the open team.
 assert.equal(resolveCallerTeam({ teamRef: 'blue-team', projectId: projectA, teams }).team_id, blue2.team_id);
 
@@ -214,6 +214,7 @@ assert.equal(
   team2.team_id,
 );
 // Lead wins over own worker row.
+joinTeam(team1.team_id, 'sess-builder-2');
 updateWorker(first2.worker_id, { session_id: 'lead-alpha' });
 const leadAlsoWorker = findWorkerBySession('lead-alpha');
 assert.equal(
@@ -243,10 +244,73 @@ assert.throws(
     const out = [];
     const status = await runTeam('team', ['list', '--project', projectC, '--json', ...args], { stdout: (t) => out.push(t), stderr: () => {} });
     assert.equal(status, 0);
-    return JSON.parse(out.join('')).map((row) => row.slug);
+    return parseManagementList(out.join('')).map((row) => row.slug);
   };
   assert.deepEqual(await listed([]), [openTeam.slug], 'default list shows open teams only');
   assert.deepEqual((await listed(['--all'])).sort(), [openTeam.slug, shutTeam.slug].sort(), '--all includes closed teams');
 }
 
-console.log('team registry journey passed: slugs, rows, owner/member join, legacy lead read + mirror, close, team-scoped naming, session lookup, G8 resolution');
+// Exact team controls, native failures/retry and canonical explicit members.
+{
+  const { runTeam } = await import('../cli/team.js');
+  fs.writeFileSync(path.join(process.env.GOLEM_HOME, 'sessions.json'), JSON.stringify({ sessions: [{ session_id: 'external-team-member', project_id: projectA }] }));
+  const target = createTeam({ label: 'Control Team', projectId: projectA, herdrSession: 'herdr-a', herdrWorkspaceId: 'control-w', ownerSessionId: 'external-team-member' });
+  const nativeRows = [{ workspace_id: 'control-w', label: 'Control Team' }, { workspace_id: 'free-w', label: 'Same Native Label' }];
+  const effects = []; let failRename = false, failInventory = false, failAttach = false;
+  const native = {
+    workspaceList: session => { assert.equal(session, 'herdr-a'); if (failInventory) throw new Error('native probe failed'); return nativeRows; },
+    workspaceFocus: pair => { effects.push(['focus', pair]); return true; },
+    workspaceRename: pair => { effects.push(['rename', pair]); if (failRename) throw new Error('display rejected'); nativeRows.find(w => w.workspace_id === pair.workspaceId).label = pair.label; return true; },
+    sessionAttach: (session, options) => { effects.push(['attach', session, options]); return failAttach ? 1 : 0; },
+  };
+  const run = async args => { const out = []; const exit = await runTeam('team', [...args, '--json'], { cwd: temp, env: {}, herdr: native, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
+  const inspected = await run(['inspect', target.team_id]); assert.equal(inspected.exit, 0); assert.equal(inspected.value.owner.session_id, 'external-team-member'); assert.equal(inspected.value.capabilities.focus.state, 'available'); assert.equal(effects.length, 0);
+  const bytes = () => JSON.stringify(['teams.json', 'herdr-mappings.json', 'workers.json', 'sessions.json'].map(name => { const file = path.join(process.env.GOLEM_HOME, name); return [name, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null]; })); const before = bytes();
+  for (const args of [['focus', target.team_id], ['attach', target.team_id], ['rename', target.team_id, 'Renamed Control'], ['leave', target.team_id, '--agent', 'external-team-member'], ['adopt', 'New Adopted', '--workspace', 'free-w', '--project', projectA]]) {
+    const dry = await run([...args, '--dry-run']); assert.equal(dry.exit, 0, JSON.stringify(dry.value));
+  }
+  assert.equal(bytes(), before); assert.equal(effects.length, 0);
+  assert.equal((await run(['focus', target.team_id])).exit, 0);
+  assert.equal((await run(['attach', target.team_id])).value.attached, true);
+  assert.deepEqual(effects[0], ['focus', { session: 'herdr-a', workspaceId: 'control-w' }]); assert.equal(effects[2][0], 'attach'); assert.equal(effects[2][2].outputToStderr, true);
+  failAttach = true;
+  const attachFailed = await run(['attach', target.team_id]); assert.equal(attachFailed.exit, 1); assert.equal(attachFailed.value.focused, true); assert.equal(attachFailed.value.attached, false);
+  failAttach = false;
+  failRename = true;
+  const partial = await run(['rename', target.team_id, 'Renamed Control']); assert.equal(partial.exit, 1); assert.equal(partial.value.logical_changed, true); assert.equal(findTeam(target.team_id).pending_native_label, 'Renamed Control');
+  failRename = false;
+  const renamed = await run(['rename', target.team_id, 'Renamed Control']); assert.equal(renamed.exit, 0); assert.equal(renamed.value.logical_changed, false); assert.equal(renamed.value.display_updated, true); assert.equal(renamed.value.slug, 'renamed-control');
+  assert.equal(findTeam(target.team_id).herdr_workspace_id, 'control-w'); assert.equal(findTeam(target.team_id).owner_session_id, 'external-team-member');
+  const n = effects.length; assert.equal((await run(['rename', target.team_id, 'Renamed Control'])).value.noop, true); assert.equal(effects.length, n);
+  const workerBefore = findWorkerBySession('sess-builder-1');
+  assert.equal((await run(['join', target.team_id, '--agent', 'sess-builder-1', '--owner'])).exit, 0);
+  assert.ok(findTeam(target.team_id).member_session_ids.includes('external-team-member'));
+  const workerAfter = findWorkerBySession('sess-builder-1'); for (const field of ['role', 'herdr_session', 'herdr_agent_name', 'herdr_pane_id', 'herdr_workspace_id']) assert.equal(workerAfter[field], workerBefore[field]);
+  const left = await run(['leave', '--agent', 'sess-builder-1']); assert.equal(left.exit, 0, JSON.stringify(left.value)); assert.deepEqual(left.value.left, [target.team_id]); assert.equal(findWorkerBySession('sess-builder-1').team_id, null);
+  const again = await run(['leave', '--agent', 'sess-builder-1']); assert.equal(again.exit, 0); assert.equal(again.value.noop, true);
+  const adopted = await run(['adopt', 'New Adopted', '--workspace', 'free-w', '--project', projectA]); assert.equal(adopted.exit, 0, JSON.stringify(adopted.value)); assert.equal(adopted.value.herdr_workspace_id, 'free-w');
+  assert.equal((await run(['adopt', 'New Adopted', '--workspace', 'free-w', '--project', projectA])).value.noop, true);
+  const aligned = await run(['rename', adopted.value.team_id, 'New Adopted']); assert.equal(aligned.exit, 0); assert.equal(aligned.value.display_updated, true); assert.equal(nativeRows.find(w => w.workspace_id === 'free-w').label, 'New Adopted');
+  assert.equal((await run(['focus', target.team_id, '--session', 'foreign-session'])).exit, 2);
+  assert.equal((await run(['leave', '--agent', 'sess-builder-1', '--project', projectB])).exit, 2);
+  assert.equal((await run(['adopt', 'Steal Workspace', '--workspace', 'control-w', '--project', projectA])).exit, 2);
+  const absent = await run(['adopt', 'Absent Workspace', '--workspace', 'missing-w', '--project', projectA]); assert.equal(absent.exit, 1); assert.match(absent.value.error, /absent/);
+  assert.equal((await run(['rename', target.team_id, 'New Adopted'])).exit, 2);
+  failInventory = true;
+  const unknown = await run(['inspect', target.team_id]); assert.equal(unknown.exit, 0); assert.equal(unknown.value.capabilities.focus.state, 'unavailable'); assert.match(unknown.value.capabilities.focus.reason, /probe failed/);
+  const unavailable = await run(['focus', target.team_id]); assert.equal(unavailable.exit, 1); assert.match(unavailable.value.error, /probe failed/);
+}
+// One failed target must not prevent independent stops or close metadata.
+{
+  const { runTeam } = await import('../cli/team.js');
+  const team = createTeam({ label: 'Partial close', projectId: projectA, herdrSession: 'herdr-a' });
+  const rows = [{ worker_id: 'close-a', name: 'first', project_id: projectA, state: 'live' }, { worker_id: 'close-b', name: 'second', project_id: projectA, state: 'live' }];
+  const calls = []; let fail = true;
+  const workers = { listWorkers: () => rows, killWorker: async (name, options) => { calls.push(name); assert.equal(options.constraints.teamId, team.team_id); if (name === 'first' && fail) throw new Error('birth evidence mismatch'); rows.find(r => r.name === name).state = 'dead'; return { name }; } };
+  const run = async () => { const out = []; const exit = await runTeam('team', ['close', team.team_id, '--json'], { workers, cwd: temp, env: {}, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
+  const partial = await run(); assert.equal(partial.exit, 1); assert.deepEqual(calls, ['first', 'second']); assert.deepEqual(partial.value.targets.map(t => t.status), ['failed', 'completed']); assert.equal(findTeam(team.team_id).closed_at, null);
+  fail = false; calls.length = 0;
+  const retried = await run(); assert.equal(retried.exit, 0); assert.deepEqual(calls, ['first']); assert.equal(retried.value.operation_id, partial.value.operation_id); assert.ok(findTeam(team.team_id).closed_at);
+}
+console.log('team registry journey passed: canonical registry/naming/scope plus inspect/focus/attach/rename partial-retry/adopt conflicts/explicit join/leave/dry-run controls');
+fs.rmSync(temp, { recursive: true, force: true });

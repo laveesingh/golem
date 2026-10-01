@@ -7,6 +7,7 @@
 // stop/read refuse with the exact tmux command.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -56,7 +57,7 @@ const envKeys = [
   'GOLEM_TEST_REGISTRATION_DIR', 'GOLEM_TEST_PROJECT_ID', 'GOLEM_WORKER_READY_TIMEOUT_MS',
   'GOLEM_WORKER_POLL_MS', 'GOLEM_WORKER_REQUEST_TIMEOUT_MS', 'GOLEM_HERDR_BIN',
   'GOLEM_TEST_REGISTRATION_DIR', 'GOLEM_FAKE_NO_REGISTER', 'GOLEM_WORKER_CLI', 'GOLEM_BIN',
-  'XDG_CONFIG_HOME',
+  'XDG_CONFIG_HOME', 'HERDR_ENV', 'HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID',
 ];
 for (const key of envKeys) originalEnv[key] = process.env[key];
 
@@ -108,6 +109,7 @@ setInterval(() => {}, 1000);
 `, { mode: 0o700 });
 
 Object.assign(process.env, {
+  HERDR_ENV: '0',
   GOLEM_HOME: state,
   HOME: path.join(temp, 'home'),
   PATH: `${bin}${path.delimiter}${originalEnv.PATH ?? ''}`,
@@ -125,6 +127,7 @@ Object.assign(process.env, {
 });
 delete process.env.GOLEM_WORKER_CLI;
 delete process.env.GOLEM_BIN;
+for (const key of ['HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID']) delete process.env[key];
 
 function readBody(request) {
   return new Promise((resolve) => {
@@ -279,6 +282,7 @@ try {
   const { createRole, readRoleRegistry } = await import('../lib/session-role.js');
   const {
     WORKER_TOMBSTONE_TTL_MS,
+    pruneWorkerTombstones,
     claimWorker,
     findWorker,
     listWorkers,
@@ -310,6 +314,8 @@ try {
   });
   assert.ok(readRoleRegistry().some((row) => row.name === 'golemtest-t2'));
 
+  const receiptsOnly = process.argv.includes('--receipts-only');
+  if (!receiptsOnly) {
   const claimed = await Promise.all(Array.from({ length: 5 }, () => claimChild()));
   assert.ok(claimed.every((result) => result.code === 0), JSON.stringify(claimed));
   const claimedNames = claimed.map((result) => JSON.parse(result.stdout).name);
@@ -317,8 +323,9 @@ try {
   assert.deepEqual(readWorkers({ file: path.join(lockState, 'workers.json') }).map((row) => row.name).sort(), claimedNames.slice().sort());
   const claimedRows = JSON.parse(fs.readFileSync(path.join(lockState, 'workers.json'), 'utf8')).workers;
   assert.ok(claimedRows.every((row) => !row.tmux_session && !row.tmux_socket), 'new herdr rows never write tmux_* fields');
-  assert.ok(claimedRows.every((row) => row.herdr_agent_name === row.name), 'new rows carry the herdr agent name');
+  assert.ok(claimedRows.every((row) => /^g-[0-9a-f]{28}$/.test(row.herdr_agent_name)), 'new reservations carry stable opaque native handles');
   console.log(JSON.stringify({ lock_claims: claimedNames.sort() }));
+  }
 
   // GOL-363 G8: spawn requires a team — create one and spawn into it.
   const { createTeam } = await import('../lib/team-registry.js');
@@ -342,16 +349,18 @@ try {
   assert.equal(cliSpawned.team_id, journeyTeam.team_id);
   console.log(JSON.stringify({ cli_spawn: ['gt2-cli-table', 'gt2-cli-json'], herdr_columns: true }));
 
-  const spawned = await Promise.all(Array.from({ length: 5 }, () => spawnWorker({ role: 'golemtest-t2', project, teamId: journeyTeam.team_id })));
+  const spawned = receiptsOnly ? [] : await Promise.all(Array.from({ length: 5 }, () => spawnWorker({ role: 'golemtest-t2', project, teamId: journeyTeam.team_id })));
   const names = spawned.map((worker) => worker.name);
   const panes = spawned.map((worker) => worker.herdr_pane_id);
-  assert.equal(new Set(names).size, 5, JSON.stringify(names));
-  assert.equal(new Set(panes).size, 5, JSON.stringify(panes));
+  assert.equal(new Set(names).size, receiptsOnly ? 0 : 5, JSON.stringify(names));
+  assert.equal(new Set(panes).size, receiptsOnly ? 0 : 5, JSON.stringify(panes));
   assert.ok(spawned.every((worker) => worker.state === 'live' && worker.dispatchable));
   assert.ok(spawned.every((worker) => !worker.tmux_session), 'spawned rows carry no tmux fields');
-  const enriched = enrichDispatchableRows([{ session_id: spawned[0].session_id, project_id: projectId }], { projectId });
-  assert.equal(enriched[0].worker_state, 'live');
-  assert.equal(enriched[0].worker_attach_hint, `golem agent attach ${spawned[0].name}`);
+  const enriched = enrichDispatchableRows([{ session_id: (spawned[0] ?? cliSpawned).session_id, project_id: projectId }], { projectId });
+  if (!receiptsOnly) {
+    assert.equal(enriched[0].worker_state, 'live');
+    assert.equal(enriched[0].worker_attach_hint, `golem agent attach ${spawned[0].name}`);
+  }
   console.log(JSON.stringify({ parallel_workers: names.slice().sort(), herdr_panes: panes.slice().sort(), dispatchable_worker_fields: true }));
 
   const directListed = await listWorkerViews({ project });
@@ -363,10 +372,13 @@ try {
   assert.doesNotMatch(cliList.stdout, /^\[/, 'table output is the default');
   const cliListJson = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(cliListJson.status, 0, cliListJson.stderr);
-  const listed = JSON.parse(cliListJson.stdout);
-  assert.equal(listed.length, 7);
+  const listed = parseManagementList(cliListJson.stdout);
+  assert.equal(listed.length, receiptsOnly ? 2 : 7);
   assert.ok(listed.every((worker) => worker.dispatchable && worker.model === 'deepseek-v4-flash:0731'));
   console.log(JSON.stringify({ cli_list_count: listed.length, table_default: true, json_stable: true }));
+  if (receiptsOnly) {
+    console.log('worker native receipt boundary passed: real owned herdr + fake Pi, actual schema-v2 consumer; full stress/teardown acceptance remains later');
+  } else {
 
   const cliPeek = await runCli(['agent', 'read', names[0], '--project', project, '--lines', '3']);
   assert.equal(cliPeek.status, 0, cliPeek.stderr);
@@ -377,11 +389,24 @@ try {
   assert.equal(terminalPeek.name, spawned[0].name);
   console.log(JSON.stringify({ peek: names[0], dashboard_terminal_shape: true }));
 
+  // New controls on a real native/fake-Pi runtime: logical rename cannot
+  // change process ownership or stable native handle; physical move keeps team.
+  const inspectedCli = await runCli(['agent', 'inspect', cliSpawnedTable.session_id, '--project', project, '--json']);
+  assert.equal(inspectedCli.status, 0, inspectedCli.stderr); assert.equal(JSON.parse(inspectedCli.stdout).capabilities.stop.state, 'available');
+  const originalNativeHandle = cliSpawnedTable.herdr_agent_name;
+  const renamedCli = await runCli(['agent', 'rename', cliSpawnedTable.session_id, 'renamed-native-agent', '--project', project, '--json']);
+  assert.equal(renamedCli.status, 0, renamedCli.stderr); const renamedRow = JSON.parse(renamedCli.stdout); assert.equal(renamedRow.herdr_agent_name, originalNativeHandle);
+  const { workspaceCreate: createMoveDestination } = await import('../lib/herdr-driver.js');
+  const moveDestination = createMoveDestination({ session: herdrSession, label: 'Physical move destination' });
+  const movedCli = await runCli(['agent', 'move', cliSpawnedTable.session_id, '--workspace', moveDestination.workspace_id, '--project', project, '--team', journeyTeam.team_id, '--json']);
+  assert.equal(movedCli.status, 0, movedCli.stderr); const movedRow = JSON.parse(movedCli.stdout); assert.equal(movedRow.herdr_workspace_id, moveDestination.workspace_id); assert.equal(movedRow.team_id, journeyTeam.team_id); assert.equal(movedRow.herdr_agent_name, originalNativeHandle); assert.notEqual(movedRow.herdr_pane_id, cliSpawnedTable.herdr_pane_id);
+  cliSpawnedTable.name = 'renamed-native-agent';
+  console.log(JSON.stringify({ agent_controls: 'real native inspect/rename/move; exact new IDs; stable handle/team/process ownership' }));
   const cliKillTable = await runCli(['agent', 'stop', cliSpawnedTable.name, '--project', project]);
   assert.equal(cliKillTable.status, 0, cliKillTable.stderr);
   const killedTable = readWorkers().find((worker) => worker.name === cliSpawnedTable.name);
   assert.equal(killedTable.state, 'dead');
-  assertNoStrayPi(cliSpawnedTable.name);
+  assertNoStrayPi(cliSpawnedTable.name); assertNoStrayPi('gt2-cli-table'); assert.deepEqual(processIdsInGroup(cliSpawnedTable.pid), []);
   const cliKillJson = await runCli(['agent', 'stop', cliSpawned.name, '--project', project, '--json']);
   assert.equal(cliKillJson.status, 0, cliKillJson.stderr);
   const killedByCli = JSON.parse(cliKillJson.stdout);
@@ -402,6 +427,10 @@ try {
   const youngTombstone = names[2];
   updateWorker(spawned[0].worker_id, { state: 'dead', ended_at: new Date(pruneNow - WORKER_TOMBSTONE_TTL_MS - 1).toISOString() });
   updateWorker(spawned[2].worker_id, { state: 'dead', ended_at: new Date(pruneNow - 60 * 60 * 1000).toISOString() });
+  const bytesBeforeRead = fs.readFileSync(path.join(state, 'workers.json'), 'utf8');
+  assert.equal(listWorkers({ projectId, now: pruneNow }).some(worker => worker.name === oldTombstone), true, 'read retains expired tombstones');
+  assert.equal(fs.readFileSync(path.join(state, 'workers.json'), 'utf8'), bytesBeforeRead, 'read never prunes/writes');
+  pruneWorkerTombstones({ now: pruneNow });
   const afterPrune = listWorkers({ projectId, now: pruneNow });
   assert.equal(afterPrune.some((worker) => worker.name === oldTombstone), false);
   assert.equal(afterPrune.some((worker) => worker.name === youngTombstone), true);
@@ -410,7 +439,7 @@ try {
   assert.equal(hiddenDead.stdout.trim(), 'No agents.');
   const allDead = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended', '--json']);
   assert.equal(allDead.status, 0, allDead.stderr);
-  const allDeadRows = JSON.parse(allDead.stdout);
+  const allDeadRows = parseManagementList(allDead.stdout);
   assert.ok(allDeadRows.some((worker) => worker.name === youngTombstone));
   assert.equal(allDeadRows.some((worker) => worker.name === oldTombstone), false);
   const allDeadTable = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended']);
@@ -472,28 +501,34 @@ try {
     preset: { harness: 'pi', provider: 'ollama-cloud', model: 'deepseek-v4-flash:0731', thinking: 'medium', name: null },
   });
   updateWorker(staleClaim.worker_id, { state: 'failed', pid: recycledDead.pid });
-  const staleResult = await killWorker(staleClaim.name, { projectId });
-  assert.equal(staleResult.state, 'dead');
+  await assert.rejects(killWorker(staleClaim.name, { projectId }), /missing or changed captured incarnation/);
+  assert.equal(readWorkers().find(row => row.worker_id === staleClaim.worker_id).state, 'failed', 'unknown ownership is not falsely retired');
   assert.ok(processIdsInGroup(recycledDead.pid).includes(recycledDead.pid), 'recycled unrelated pgid must not be signalled');
   console.log(JSON.stringify({ stale_pgid: recycledDead.pid, stale_kill: 'no signal', unrelated_group_alive: true }));
 
   // --- name uniqueness stays per project (herdr rows) ---
   const nameRegistryFile = path.join(temp, 'name-claims-workers.json');
+  const namingOverride = process.env.GOLEM_HERDR_SESSION;
+  delete process.env.GOLEM_HERDR_SESSION; // independent project namespaces cannot share the owned native container
+  try {
   const firstClaim = claimWorker({ role: 'builder', projectId: 'proj-111111', projectRoot: project, cwd: project, preset: { harness: 'pi' }, file: nameRegistryFile });
   assert.equal(firstClaim.name, 'builder1');
-  assert.ok(!firstClaim.tmux_session && firstClaim.herdr_agent_name === 'builder1');
+  assert.ok(!firstClaim.tmux_session && /^g-[0-9a-f]{28}$/.test(firstClaim.herdr_agent_name));
   assert.throws(
     () => claimWorker({ role: 'builder', projectId: 'proj-111111', name: 'builder1', preset: { harness: 'pi' }, file: nameRegistryFile }),
     /worker name already exists: builder1/,
   );
   const secondProject = claimWorker({ role: 'builder', projectId: 'proj-222222', preset: { harness: 'pi' }, file: nameRegistryFile });
   assert.equal(secondProject.name, 'builder1', 'the same name is free in another project');
-  console.log(JSON.stringify({ name_uniqueness: 'per project across hosts' }));
+  assert.notEqual(firstClaim.herdr_session, secondProject.herdr_session, 'distinct projects own distinct stable native associations');
+  console.log(JSON.stringify({ name_uniqueness: 'per project across hosts', native_associations_distinct: true }));
+  } finally { process.env.GOLEM_HERDR_SESSION = namingOverride; }
 
   // --- legacy tmux rows: reconcile by the pid group, refuse with the exact tmux command ---
   const legacyProject = path.join(temp, 'legacy-project');
   fs.mkdirSync(legacyProject, { recursive: true });
   const legacyProjectId = projectIdFor(legacyProject);
+  delete process.env.GOLEM_HERDR_SESSION;
   const legacyRow = claimWorker({
     role: 'builder',
     projectId: legacyProjectId,
@@ -504,6 +539,7 @@ try {
   });
   // Forge the pre-cutover shape: tmux fields present, no herdr fields.
   updateWorker(legacyRow.worker_id, {
+    session_id: 'golemtest-legacy-conversation',
     tmux_session: legacyRow.name,
     tmux_socket: 'golem-legacy-socket',
     herdr_session: null,
@@ -532,6 +568,7 @@ try {
     return views.some((worker) => worker.name === 'legacy-tmux-worker' && worker.state === 'live');
   }
 
+  process.env.GOLEM_HERDR_SESSION = herdrSession;
   // --- real-herdr journey under a throwaway session ---
   // (GOLEM_HERDR_SESSION is already the throwaway name; ensureSession starts
   // the headless server and the worker runs the fixture fake pi in the pane.)
@@ -554,9 +591,10 @@ try {
   assertNoStrayPi('golemtest-t2-herdr-real');
   await assert.rejects(
     () => peekWorker('golemtest-t2-herdr-real', { projectId, lines: 5 }),
-    /pane_not_found|has no herdr pane/,
-    'killed pane is gone from herdr',
+    /retained ended identity; no live terminal control/,
+    'known ended identity reports unavailable capability, not not-found',
   );
+  assert.equal((await import('../lib/herdr-driver.js')).paneList(herdrSession).some(p => p.pane_id === realSpawned.herdr_pane_id), false, 'killed exact pane is actually absent');
   console.log(JSON.stringify({ real_herdr: { spawn: 'dispatchable', peek: 'pane output', kill: 'group empty, row dead', session: herdrSession } }));
 
   process.env.GOLEM_WORKER_READY_TIMEOUT_MS = '500';
@@ -568,13 +606,16 @@ try {
     /did not become dispatchable within/,
   );
   const failed = readWorkers().find((worker) => worker.name === failedName);
-  assert.equal(failed.state, 'failed');
-  assert.ok(!failed.herdr_pane_id || failed.herdr_tab_id == null || true);
+  const failureIntent = JSON.parse(fs.readFileSync(path.join(state, 'herdr-mappings.json'), 'utf8')).intents.find(i => i.operation_id === failed.operation_id);
+  if (failed.state === 'dead') { assert.equal(failureIntent.phase, 'cleaned'); assert.deepEqual(processIdsInGroup(failed.pid), []); }
+  else { assert.equal(failed.state, 'failed'); assert.equal(failureIntent.phase, 'unresolved'); }
+  const { paneList: failurePanes } = await import('../lib/herdr-driver.js');
+  assert.equal(failurePanes(herdrSession).some(p => p.pane_id === failed.herdr_pane_id), false, 'failure cleanup removes its exact created pane');
   const failedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended', '--json']);
   assert.equal(failedList.status, 0, failedList.stderr);
   // The row was failed right after spawn (asserted above); listing
   // reconciles it, and the closed tab + empty group honestly read dead.
-  assert.ok(JSON.parse(failedList.stdout).some((worker) => worker.name === failedName && ['failed', 'dead'].includes(worker.state)));
+  assert.ok(parseManagementList(failedList.stdout).some((worker) => worker.name === failedName && ['failed', 'dead'].includes(worker.state)));
   console.log(JSON.stringify({ failed_spawn: failedName, state: failed.state, tab_closed_on_failure: true }));
   await killWorker(failedName, { projectId });
   assert.deepEqual(processIdsInGroup(failed.pid), []);
@@ -582,8 +623,8 @@ try {
   assert.equal(String(strayPi.stdout || '').trim(), '', `no survivor process for ${failedName}: ${strayPi.stdout}`);
 
   // --- identity-mismatch refusal: a pane running something else is left alone ---
-  const { workspaceEnsure: ensureWs, tabCreate: makeTab, paneRun: runInPane, tabClose: closeTab, paneProcessInfo: paneInfo } = await import('../lib/herdr-driver.js');
-  const mismatchWs = ensureWs({ session: herdrSession, label: 'agents' });
+  const { workspaceCreate: makeWs, tabCreate: makeTab, paneRun: runInPane, tabClose: closeTab, paneProcessInfo: paneInfo } = await import('../lib/herdr-driver.js');
+  const mismatchWs = makeWs({ session: herdrSession, label: 'Mismatch owned fixture' });
   const { pane: mismatchPane } = makeTab({ session: herdrSession, workspaceId: mismatchWs.workspace_id, label: 'mismatch', cwd: project });
   runInPane({ session: herdrSession, paneId: mismatchPane.pane_id, command: ['sleep', '300'] });
   await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -601,11 +642,12 @@ try {
     herdr_tab_id: mismatchPane.tab_id,
     herdr_pane_id: mismatchPane.pane_id,
     herdr_agent_name: 'golemtest-t2-mismatch',
+    session_id: 'golemtest-mismatch-conversation',
     state: 'live',
   });
   await assert.rejects(
     () => killWorker('golemtest-t2-mismatch', { projectId }),
-    /refusing to stop golemtest-t2-mismatch.*pane left running/,
+    /refusing to stop golemtest-t2-mismatch.*missing or changed captured incarnation/,
     'stop refuses when the foreground group is not this worker',
   );
   assert.equal(readWorkers().find((worker) => worker.name === 'golemtest-t2-mismatch').state, 'live', 'refused row stays live');
@@ -616,6 +658,7 @@ try {
   console.log(JSON.stringify({ identity_mismatch: 'refused, row live, sleeper untouched, tab closed in cleanup' }));
 
   console.log('Worker journey passed: locked naming in herdr panes, dispatchable readiness, table/JSON agent create-list-read-stop output, dead-row filtering and 24h prune, peek, dashboard terminal shape, stop/read legacy refusals with exact tmux commands, stale-pgid guard, launcher-path rejection, and zero-survivor teardown');
+  }
 } finally {
   if (recycled && recycled.exitCode === null) {
     try {
@@ -647,6 +690,7 @@ try {
     assert.equal(remaining.length, 0, `throwaway herdr session is gone: ${JSON.stringify(remaining)}`);
     const pgrep = spawnSync('pgrep', ['-f', `herdr --session ${throwaway}`], { encoding: 'utf8' });
     assert.equal(String(pgrep.stdout || '').trim(), '', `no throwaway herdr server process remains: ${pgrep.stdout}`);
+    console.log(JSON.stringify({ native_cleanup: 'registration and owned server absent before HOME/socket removal' }));
   }
   if (server) await new Promise((resolve) => server.close(resolve));
   for (const [key, value] of Object.entries(originalEnv)) {

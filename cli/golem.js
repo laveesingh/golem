@@ -795,17 +795,21 @@ ${helpDashboardRestart()}
                        --role applies a validated role preset and --profile
                        selects a reusable model config; Pi keeps its own
                        profile, providers, and sessions.
-  agent list|create|read|attach|stop|notify|role|dedup [--help]
+  agent list|create|inspect|adopt|rename|move|read|attach|stop|notify|role|dedup [--help]
                        One toolkit for every agent: list the roster, create a
                        managed agent in your team, read or attach to its
                        terminal, stop it, notify a session, set a role, or
                        clean up duplicate session rows.
                        See golem agent --help.
-  team create|list|join|close [--help]
+  context [--project P] [--team T] [--session S] [--caller ID] [--json]
+                       Read-only scope and resolution provenance. Management
+                       mutations accept --dry-run; list JSON is schema v2
+                       {schema_version:2,items:[...],resolution:{...}}.
+  team create|list|inspect|focus|attach|rename|join|leave|adopt|close [--help]
                        Teams: create a team and its herdr workspace, list
                        teams, join a team (or own it with --owner), or close
                        a team and stop only its agents.
-  session list|attach|close [--help]
+  session list|inspect|start|adopt|attach|stop|close [--help]
                        herdr sessions: list them with their project and open
                        teams, attach this terminal to one (default: the
                        current project's session), or close one with its
@@ -1237,6 +1241,11 @@ async function main() {
     case 'message': {
       const { runCollaboration } = await import('./collaboration.js');
       process.exitCode = await runCollaboration(cmd, rest);
+      break;
+    }
+    case 'context': {
+      const { runContext } = await import('./context.js');
+      process.exitCode = await runContext(rest);
       break;
     }
     case 'session': {

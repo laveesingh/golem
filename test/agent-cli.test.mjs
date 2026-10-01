@@ -7,6 +7,7 @@
 // verbs answering unknown command through the real CLI entry.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import { spawnSync } from 'node:child_process';
 import fs, { writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -17,6 +18,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'golemtest-agent-cli-'));
 process.env.GOLEM_HOME = path.join(temp, 'home');
 delete process.env.XDG_CONFIG_HOME;
+delete process.env.HERDR_ENV;
 const projectDir = path.join(temp, 'project');
 fs.mkdirSync(projectDir, { recursive: true });
 fs.writeFileSync(path.join(projectDir, 'CLAUDE.md'), '# agent cli fixture\n');
@@ -201,41 +203,41 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
 {
   const scoped = await run(['list', '--json']);
   assert.equal(scoped.exit, 0, scoped.text);
-  const rows = JSON.parse(scoped.text);
+  const rows = parseManagementList(scoped.text);
   assert.equal(rows.length, 1, 'lead-A default list holds only the alpha team');
   assert.equal(rows[0].session_id, 'sess-alpha-1');
   assert.equal(rows[0].team, 'alpha-team');
   assert.equal(rows[0].host, 'herdr');
 
   const team = await run(['list', '--scope', 'team', '--json']);
-  assert.deepEqual(JSON.parse(team.text).map((row) => row.session_id), ['sess-alpha-1']);
+  assert.deepEqual(parseManagementList(team.text).map((row) => row.session_id), ['sess-alpha-1']);
 
   const project = await run(['list', '--scope', 'project', '--json']);
   assert.equal(project.exit, 0, project.text);
-  const ids = JSON.parse(project.text).map((row) => row.session_id).sort();
+  const ids = parseManagementList(project.text).map((row) => row.session_id).sort();
   assert.deepEqual(ids, ['sess-alpha-1', 'sess-beta-1', 'sess-external-1'], '--scope project shows other teams agents and external sessions');
-  const external = JSON.parse(project.text).find((row) => row.session_id === 'sess-external-1');
+  const external = parseManagementList(project.text).find((row) => row.session_id === 'sess-external-1');
   assert.equal(external.host, 'external');
   assert.equal(external.team, null);
   assert.equal(external.name, 'field-lead');
   assert.equal(external.delivery, 'ready');
 
   const unbound = await run(['list', '--json'], { resolveContext: unboundContext });
-  assert.deepEqual(JSON.parse(unbound.text).map((row) => row.session_id).sort(), ['sess-alpha-1', 'sess-beta-1', 'sess-external-1'],
+  assert.deepEqual(parseManagementList(unbound.text).map((row) => row.session_id).sort(), ['sess-alpha-1', 'sess-beta-1', 'sess-external-1'],
     'an unbound shell lists the project scope without caller binding');
 
   const ended = await run(['list', '--scope', 'project', '--ended', '--json']);
-  const endedRows = JSON.parse(ended.text);
+  const endedRows = parseManagementList(ended.text);
   assert.ok(endedRows.some((row) => row.session_id === 'sess-beta-9'), '--ended adds retired rows');
   assert.equal(endedRows.find((row) => row.session_id === 'sess-beta-9').host, 'legacy');
-  assert.ok(!JSON.parse(project.text).some((row) => row.session_id === 'sess-beta-9'), 'retired rows hidden by default');
+  assert.ok(!parseManagementList(project.text).some((row) => row.session_id === 'sess-beta-9'), 'retired rows hidden by default');
 
   // An external session shows under team scope when it owns or joined the team.
   const { createTeam: createTeamInScope, joinTeam: joinInScope } = await import('../lib/team-registry.js');
   const gamma = createTeamInScope({ label: 'Gamma Team', projectId, herdrSession: 'agent-cli-test' });
   joinInScope(gamma.team_id, 'sess-external-1');
   const externalLead = await run(['list', '--json'], { resolveContext: () => ({ sessionId: 'sess-external-1', projectId }) });
-  assert.deepEqual(JSON.parse(externalLead.text).map((row) => row.session_id), ['sess-external-1'],
+  assert.deepEqual(parseManagementList(externalLead.text).map((row) => row.session_id), ['sess-external-1'],
     'a lead with no managed agents still sees its own external session');
 
   // The discovered external id is usable with agent notify.
@@ -272,12 +274,12 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   const read = await run(['read', 'builder1']);
   assert.equal(read.exit, 0, read.text);
   assert.equal(read.text.trim(), 'scrollback for builder1');
-  assert.deepEqual(calls.at(-1), ['peek', 'builder1', { projectId, teamId: alpha.team_id, lines: null }]);
+  assert.deepEqual(calls.at(-1), ['peek', 'builder1', { projectId, teamId: alpha.team_id, workerId: alphaBuilder.worker_id, lines: null }]);
 
   // Exact session id reaches across teams (no enforcement).
   const stop = await run(['stop', 'sess-beta-1', '--json']);
   assert.equal(stop.exit, 0, stop.text);
-  assert.deepEqual(calls.at(-1), ['stop', 'builder1', { projectId, teamId: beta.team_id }]);
+  assert.deepEqual(calls.at(-1), ['stop', 'builder1', { projectId, teamId: beta.team_id, workerId: betaBuilder.worker_id }]);
 
   // A caller with no team and a repeated name gets candidates, not a pick.
   const ambiguous = await run(['read', 'builder1'], { resolveContext: unboundContext });
@@ -291,7 +293,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
 
   const attach = await run(['attach', 'sess-alpha-1']);
   assert.equal(attach.exit, 0, attach.text);
-  assert.deepEqual(calls.at(-1), ['attach', 'builder1', { projectId, teamId: alpha.team_id }]);
+  assert.deepEqual(calls.at(-1), ['attach', 'builder1', { projectId, teamId: alpha.team_id, workerId: alphaBuilder.worker_id }]);
 
   // GOL-382 R6: an exact session id on two rows (a stale shared binding)
   // resolves to the live row instead of failing as ambiguous.
@@ -307,7 +309,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
 {
   const refused = await run(['create', 'builder'], { resolveContext: unboundContext });
   assert.equal(refused.exit, 2);
-  assert.match(refused.text, /no team: pass --team or run golem team join <team>/);
+  assert.match(refused.text, /no team: pass --team/);
 
   const created = await run(['create', 'explorer', '--team', 'beta-team', '--json']);
   assert.equal(created.exit, 0, created.text);
@@ -390,10 +392,84 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   ], { projectId });
   const managedRow = enriched.find((row) => row.session_id === 'sess-alpha-1');
   assert.equal(managedRow.delivery_ready, false, 'a managed row with delivery_ready:false stays not ready');
-  assert.equal(managedRow.host, 'legacy', 'row without herdr placement keeps the legacy host');
+  assert.equal(managedRow.host, 'herdr', 'a new reservation carries an exact native session');
   const externalRow = enriched.find((row) => row.session_id === 'sess-external-1');
   assert.equal(externalRow.delivery_ready, true, 'an external row with delivery_ready:true stays ready');
   assert.equal(externalRow.host, 'external');
 }
 
-console.log('agent CLI passed: help, verb map, scope defaults, ambiguity, create, role, dedup, removed verbs');
+// Actual pre-herdr legacy rows stay legacy and refuse native teardown/read.
+{
+  const { withManagementTransaction } = await import('../lib/management-registry.js');
+  const { enrichDispatchableRows, peekWorker, killWorker } = await import('../lib/worker-manager.js');
+  withManagementTransaction(state => state.workers.workers.push({ worker_id: 'actual-legacy', session_id: 'sess-real-legacy',
+    name: 'legacy-worker', project_id: projectId, state: 'live', tmux_session: 'legacy-exact', tmux_socket: 'legacy-socket',
+    herdr_session: null, herdr_pane_id: null, herdr_agent_name: 'legacy-control-exact' }));
+  const row = enrichDispatchableRows([{ session_id: 'sess-real-legacy', project_id: projectId, delivery_ready: false }])[0];
+  assert.equal(row.host, 'legacy', 'actual migrated legacy placement stays legacy');
+  assert.equal(row.delivery_ready, false);
+  await assert.rejects(peekWorker('legacy-worker', { projectId }), /legacy tmux row.*legacy-exact/);
+  await assert.rejects(killWorker('legacy-worker', { projectId }), /legacy tmux row.*legacy-exact/);
+}
+// New agent controls: real owned process-incarnation fixture + injected native DTOs.
+{
+  const { spawn } = await import('node:child_process'); const { once } = await import('node:events');
+  const { captureProcessGroup } = await import('../lib/process-group.js'); const { readWorkers } = await import('../lib/worker-registry.js');
+  const { upsertSessionFact } = await import('../lib/session-facts.js');
+  const children = [0, 1, 2].map(() => spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' }));
+  const exits = children.map(child => once(child, 'exit'));
+  try {
+    const row = claimWorker({ role: 'builder', projectId, preset, teamId: alpha.team_id, name: 'controlled-agent' });
+    const own = updateWorker(row.worker_id, { state: 'live', session_id: 'controlled-conversation', herdr_pane_id: 'source-pane', herdr_tab_id: 'source-tab', herdr_workspace_id: 'source-w', process_ownership: captureProcessGroup(children[0].pid) });
+    const externalId = '12345678-1234-1234-1234-123456789abc', file = path.join(temp, 'external-native.jsonl');
+    upsertSessionFact({ canonical_id: externalId, harness: 'pi', name: 'external-adopted', project_path: projectDir, locator: { raw_session_id: externalId, session_file: file }, status: 'idle' });
+    const external = { agent: 'pi', name: 'existing-external-handle', pane_id: 'external-pane', tab_id: 'external-tab', workspace_id: 'external-w', agent_session: { kind: 'path', value: file } };
+    const unnamedId = 'abcdef12-1234-1234-1234-123456789abc', unnamedFile = path.join(temp, 'unnamed-native.jsonl');
+    upsertSessionFact({ canonical_id: unnamedId, harness: 'pi', name: 'unnamed-adopted', project_path: projectDir, locator: { raw_session_id: unnamedId, session_file: unnamedFile }, status: 'idle' });
+    const unnamed = { ...external, name: null, pane_id: 'unnamed-pane', tab_id: 'unnamed-tab', agent_session: { kind: 'path', value: unnamedFile } };
+    const effects = []; let displayFails = false, moveFails = false, handleFails = false;
+    let position = { pane_id: 'source-pane', tab_id: 'source-tab', workspace_id: 'source-w' };
+    const native = {
+      agentGet: ({ target }) => target === 'unnamed-pane' ? unnamed : target === 'external-pane' ? external : { ...position, name: own.herdr_agent_name },
+      agentList: () => [external, unnamed],
+      agentRename: value => { effects.push(['handle', value]); if (handleFails) throw new Error('native handle update unavailable'); unnamed.name = value.name; return true; },
+      paneProcessInfo: ({ paneId }) => paneId === 'unnamed-pane' ? { foreground_process_group_id: children[2].pid, foreground_processes: [{ pid: children[2].pid, argv0: 'pi', argv: ['pi', '--session', unnamedFile] }] } : paneId === 'external-pane' ? { foreground_process_group_id: children[1].pid, foreground_processes: [{ pid: children[1].pid, argv0: 'pi', argv: ['pi', '--session', file] }] } : { foreground_process_group_id: children[0].pid },
+      workspaceList: () => [{ workspace_id: 'source-w' }, { workspace_id: 'destination-w' }, { workspace_id: 'retry-w' }],
+      paneLabel: value => { effects.push(['label', value]); if (displayFails) throw new Error('display unavailable'); return true; },
+      paneMove: value => { effects.push(['move', value]); position = { pane_id: value.workspaceId === 'retry-w' ? 'retry-pane' : 'moved-pane', tab_id: 'moved-tab', workspace_id: value.workspaceId }; if (moveFails) throw new Error('move response unavailable'); return position; },
+    };
+    const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: projectDir, env: {}, native, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
+    const inspect = await run(['inspect', own.session_id]); assert.equal(inspect.exit, 0); assert.equal(inspect.value.native_handle, own.herdr_agent_name); assert.equal(inspect.value.capabilities.stop.state, 'available');
+    const bytes = () => JSON.stringify(['workers.json', 'teams.json', 'herdr-mappings.json'].map(name => fs.readFileSync(path.join(process.env.GOLEM_HOME, name), 'utf8')));
+    const before = bytes();
+    for (const args of [['rename', own.session_id, 'renamed-control'], ['move', own.session_id, '--workspace', 'destination-w'], ['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane']]) assert.equal((await run([...args, '--dry-run'])).exit, 0);
+    assert.equal(bytes(), before); assert.equal(effects.length, 0);
+    displayFails = true;
+    const partial = await run(['rename', own.session_id, 'renamed-control']); assert.equal(partial.exit, 1); assert.equal(partial.value.logical_changed, true); assert.equal(partial.value.herdr_agent_name, own.herdr_agent_name);
+    displayFails = false;
+    const renamed = await run(['rename', own.session_id, 'renamed-control']); assert.equal(renamed.exit, 0); assert.equal(renamed.value.logical_changed, false); assert.equal(renamed.value.team_id, alpha.team_id); assert.equal(renamed.value.role, own.role);
+    assert.equal((await run(['rename', own.session_id, 'renamed-control'])).value.noop, true);
+    assert.equal((await run(['rename', own.session_id, 'builder1'])).exit, 2);
+    const moved = await run(['move', own.session_id, '--workspace', 'destination-w']); assert.equal(moved.exit, 0); assert.equal(moved.value.herdr_pane_id, 'moved-pane'); assert.equal(moved.value.herdr_tab_id, 'moved-tab'); assert.equal(moved.value.team_id, alpha.team_id); assert.equal(moved.value.herdr_agent_name, own.herdr_agent_name);
+    assert.equal((await run(['move', own.session_id, '--workspace', 'destination-w'])).value.noop, true);
+    moveFails = true;
+    const partialMove = await run(['move', own.session_id, '--workspace', 'retry-w']); assert.equal(partialMove.exit, 1); assert.equal(partialMove.value.pending_native_move.workspace_id, 'retry-w');
+    const moveCalls = effects.filter(e => e[0] === 'move').length;
+    moveFails = false;
+    const recoveredMove = await run(['move', own.session_id, '--workspace', 'retry-w']); assert.equal(recoveredMove.exit, 0); assert.equal(recoveredMove.value.recovered_move, true); assert.equal(recoveredMove.value.herdr_pane_id, 'retry-pane'); assert.equal(effects.filter(e => e[0] === 'move').length, moveCalls, 'exact alias recovery never duplicates an uncertain move');
+    const cross = await run(['move', own.session_id, '--workspace', 'destination-w', '--session', 'different-server']); assert.equal(cross.exit, 1); assert.equal(cross.value.capability.state, 'unsupported');
+    const adopted = await run(['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane']); assert.equal(adopted.exit, 0, JSON.stringify(adopted.value)); assert.equal(adopted.value.session_id, externalId); assert.equal(adopted.value.role, null); assert.equal(adopted.value.herdr_agent_name, external.name); assert.equal(adopted.value.team_id, beta.team_id);
+    assert.equal((await run(['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane'])).value.noop, true);
+    handleFails = true;
+    const pendingAdopt = await run(['adopt', unnamedId, '--team', beta.team_id, '--pane', 'unnamed-pane']); assert.equal(pendingAdopt.exit, 1); assert.match(pendingAdopt.value.pending_native_handle, /^g-[0-9a-f]{28}$/);
+    const reservedHandle = pendingAdopt.value.herdr_agent_name;
+    handleFails = false;
+    const resumedAdopt = await run(['adopt', unnamedId, '--team', beta.team_id, '--pane', 'unnamed-pane']); assert.equal(resumedAdopt.exit, 0, JSON.stringify(resumedAdopt.value)); assert.equal(resumedAdopt.value.herdr_agent_name, reservedHandle); assert.equal(resumedAdopt.value.pending_native_handle, null); assert.equal(unnamed.name, reservedHandle);
+    const rows = readWorkers(); assert.equal(rows.find(w => w.session_id === own.session_id).team_id, alpha.team_id); assert.equal(rows.filter(w => w.session_id === unnamedId).length, 1, 'retry never allocates another adopted runtime');
+    const wrong = await runAgent('agent', ['adopt', externalId, '--team', beta.team_id, '--pane', 'wrong-pane', '--json'], { cwd: projectDir, env: {}, native: { ...native, agentGet: () => ({ ...external, agent_session: { kind: 'path', value: '/different-native' } }) }, resolveContext: () => null, stdout: () => {}, stderr: () => {} }); assert.equal(wrong, 1);
+  } finally {
+    for (const child of children) if (child.exitCode === null) process.kill(-child.pid, 'SIGKILL');
+    await Promise.all(exits);
+  }
+}
+console.log('agent CLI passed: existing toolkit plus inspect/adopt/rename/move, exact identity, stable handle/membership, partial retry/conflicts and zero-write plans');

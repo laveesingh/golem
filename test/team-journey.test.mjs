@@ -9,6 +9,7 @@
 // killed, throwaway session stopped and deleted, zero server processes left.
 
 import assert from 'node:assert/strict';
+import { parseManagementList } from './_management-list.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -38,7 +39,8 @@ const herdrSession = `golem-test-${process.pid}-journey`;
 const xdgHome = `/tmp/golem-test-xdg-${process.pid}-journey`;
 const envKeys = ['GOLEM_HOME', 'HOME', 'PATH', 'GOLEM_HERDR_SESSION', 'GOLEM_DASHBOARD_URL', 'XDG_CONFIG_HOME',
   'GOLEM_TEST_REGISTRATION_DIR', 'GOLEM_TEST_PROJECT_ID',
-  'GOLEM_WORKER_READY_TIMEOUT_MS', 'GOLEM_WORKER_POLL_MS'];
+  'GOLEM_WORKER_READY_TIMEOUT_MS', 'GOLEM_WORKER_POLL_MS',
+  'HERDR_ENV', 'HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID'];
 const originalEnv = {};
 for (const key of envKeys) originalEnv[key] = process.env[key];
 
@@ -81,6 +83,7 @@ const { projectIdFor } = await import('../lib/project-id.js');
 const projectId = projectIdFor(project);
 
 Object.assign(process.env, {
+  HERDR_ENV: '0',
   GOLEM_HOME: state,
   HOME: home,
   PATH: `${bin}${path.delimiter}${originalEnv.PATH ?? ''}`,
@@ -91,6 +94,8 @@ Object.assign(process.env, {
   GOLEM_WORKER_READY_TIMEOUT_MS: '30000',
   GOLEM_WORKER_POLL_MS: '250',
 });
+
+for (const key of ['HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_WORKSPACE_ID', 'HERDR_TAB_ID', 'HERDR_PANE_ID']) delete process.env[key];
 
 const { readWorkers } = await import('../lib/worker-registry.js');
 const { listTeams, joinTeam } = await import('../lib/team-registry.js');
@@ -177,7 +182,7 @@ function strayPiCount(name) {
 }
 
 async function main() {
-  assert.equal(projectHerdrSession(projectId), herdrSession, 'tests run under the throwaway session');
+  assert.equal(projectHerdrSession(projectId, { create: true }), herdrSession, 'real fixture reservation uses the throwaway session; reads do not allocate');
   await startDashboard();
 
   // The pane's `golem pi` needs its render (isolated GOLEM_HOME).
@@ -223,8 +228,9 @@ async function main() {
   assert.equal(betaBuilder.name, 'builder1');
   assert.equal(alphaBuilder.state, 'live');
   assert.equal(betaBuilder.state, 'live');
-  assert.equal(alphaBuilder.herdr_agent_name, 'alpha-team-builder1');
-  assert.equal(betaBuilder.herdr_agent_name, 'beta-team-builder1');
+  assert.match(alphaBuilder.herdr_agent_name, /^g-[0-9a-f]{28}$/);
+  assert.match(betaBuilder.herdr_agent_name, /^g-[0-9a-f]{28}$/);
+  assert.notEqual(alphaBuilder.herdr_agent_name, betaBuilder.herdr_agent_name);
   assert.equal(alphaBuilder.herdr_workspace_id, alpha.herdr_workspace_id);
   // GOL-382 R5: same name in two teams, two sessions — binding is by launch
   // nonce, never by name.
@@ -235,21 +241,27 @@ async function main() {
 
   // GOL-379: the team agent name sticks after create — herdr resolves it,
   // the JSON list shows its state, and attach prefers the resolved name.
-  const alphaAgentInfo = agentGet({ session: herdrSession, target: 'alpha-team-builder1' });
+  const alphaAgentInfo = agentGet({ session: herdrSession, target: alphaBuilder.herdr_agent_name });
   assert.equal(alphaAgentInfo?.pane_id, alphaBuilder.herdr_pane_id, 'herdr resolves alpha-team-builder1 after create');
-  const betaAgentInfo = agentGet({ session: herdrSession, target: 'beta-team-builder1' });
+  const betaAgentInfo = agentGet({ session: herdrSession, target: betaBuilder.herdr_agent_name });
   assert.equal(betaAgentInfo?.pane_id, betaBuilder.herdr_pane_id, 'herdr resolves beta-team-builder1 after create');
-  assert.equal(herdrAttachTarget(alphaBuilder), 'alpha-team-builder1', 'attach prefers the resolved team agent name');
+  assert.equal(herdrAttachTarget(alphaBuilder), alphaBuilder.herdr_agent_name, 'attach prefers the stable opaque native handle');
   const namedList = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json']);
   assert.equal(namedList.status, 0, namedList.stderr);
-  const namedRows = JSON.parse(namedList.stdout);
+  const namedRows = parseManagementList(namedList.stdout);
   // Both teams run builder1 with their own sessions: the list shows both.
   const herdrRows = namedRows.filter((row) => row.host === 'herdr');
   assert.equal(new Set(herdrRows.map((row) => row.session_id)).size, 2, `list shows both builder1 sessions: ${namedList.stdout.slice(0, 500)}`);
   for (const row of herdrRows) {
     assert.ok(row.herdr_state != null, `herdr row shows state: ${JSON.stringify(row)}`);
   }
-  console.log(JSON.stringify({ agent_names_stick: ['alpha-team-builder1', 'beta-team-builder1'], herdr_list_states: herdrRows.map((row) => row.herdr_state) }));
+  console.log(JSON.stringify({ agent_names_stick: [alphaBuilder.herdr_agent_name, betaBuilder.herdr_agent_name], herdr_list_states: herdrRows.map((row) => row.herdr_state) }));
+  // Bounded slice-2 consumer proof; later close/capability journeys remain the
+  // full integration boundary. This is a test mode, never a CLI output bridge.
+  if (process.argv.includes('--receipts-only')) {
+    console.log('team native receipt boundary passed: real owned herdr + fake Pi, schema-v2 consumer and stable native handles');
+    return;
+  }
 
   // An owner spawns into its own team (G8): own the alpha team, resolve.
   // (A CLI subprocess cannot bind a session — no pi ancestry in tests —
@@ -275,11 +287,11 @@ async function main() {
   });
   assert.equal(leadCode, 0, leadStdout.join('\n'));
   const afterMove = listTeams({ projectId });
-  assert.deepEqual(afterMove.find((row) => row.team_id === beta.team_id).member_session_ids, ['lead-A']);
+  assert.deepEqual(afterMove.find((row) => row.team_id === beta.team_id).member_session_ids.slice().sort(), [betaBuilder.session_id, 'lead-A'].sort(), 'registered managed member and transferred owner are both canonical');
   assert.equal(afterMove.find((row) => row.team_id === alpha.team_id).owner_session_id, null, 'joining beta leaves alpha');
   const teamsFile = JSON.parse(fs.readFileSync(path.join(state, 'teams.json'), 'utf8'));
-  assert.ok(teamsFile.teams.every((row) => Object.hasOwn(row, 'lead_session_id') && row.lead_session_id === row.owner_session_id),
-    'writes mirror lead_session_id = owner for an old dashboard');
+  assert.equal(teamsFile.version, 2);
+  assert.ok(teamsFile.teams.every(row => !Object.hasOwn(row, 'lead_session_id')), 'v2 removes the old competing owner mirror');
   assert.equal(
     resolveCallerTeam({ projectId, callerSessionId: 'lead-A', teams: afterMove }).team_id,
     beta.team_id,
@@ -289,8 +301,14 @@ async function main() {
   // An unbound spawn without --team refuses.
   const refused = await runCli(['agent', 'create', 'builder', '--project', project]);
   assert.equal(refused.status, 2, 'unbound spawn without --team refuses');
-  assert.match(refused.stderr, /no team: pass --team or run golem team join <team>/);
+  assert.match(refused.stderr, /no team: pass --team <exact-team-id>/);
 
+  // This positive-close fixture contains only the managed alpha runtime.
+  // Remove its test-owned native default blank shell explicitly; an untracked
+  // shell is real unmanaged activity and production must retain it.
+  const { paneClose: closeFixturePane } = await import('../lib/herdr-driver.js');
+  const alphaShells = paneList(herdrSession).filter(p => p.workspace_id === alpha.herdr_workspace_id && p.pane_id !== alphaBuilder.herdr_pane_id);
+  for (const shell of alphaShells) { assert.ok(!shell.agent, 'owned fixture default pane is not an external agent'); assert.equal(closeFixturePane({ session: herdrSession, paneId: shell.pane_id }), true); }
   // team close retires only its own team: the CLI-spawned agents are live.
   const panesBefore = new Map(paneList(herdrSession).map((pane) => [pane.pane_id, pane]));
   assert.ok(panesBefore.has(alphaBuilder.herdr_pane_id), 'alpha pane exists before close');
@@ -301,7 +319,7 @@ async function main() {
   assert.ok(piBefore >= 2, `both builder1 workers run before close (saw ${piBefore})`);
 
   const closed = await runCli(['team', 'close', 'alpha-team', '--project', project, '--json']);
-  assert.equal(closed.status, 0, closed.stderr);
+  assert.equal(closed.status, 0, closed.stderr || closed.stdout);
   const closeResult = JSON.parse(closed.stdout);
   assert.equal(closeResult.state, 'closed');
   assert.deepEqual(closeResult.stopped, ['builder1']);
@@ -312,7 +330,8 @@ async function main() {
   assert.ok(panesAfter.has(betaBuilder.herdr_pane_id), 'beta pane kept');
   assert.equal(strayPiCount('builder1'), piBefore - 2, 'only the beta builder1 processes survive the close');
   const { findWorker } = await import('../lib/worker-registry.js');
-  assert.equal(findWorker('builder1', { projectId, teamId: alpha.team_id }).state, 'dead');
+  const { readWorkers: readEndedWorkers } = await import('../lib/worker-registry.js');
+  assert.equal(readEndedWorkers().find(w => w.worker_id === alphaBuilder.worker_id).state, 'dead');
   assert.equal(findWorker('builder1', { projectId, teamId: beta.team_id }).state, 'live');
 
   const workspaces = await listHerdrWorkspaces(herdrSession);
@@ -331,19 +350,27 @@ async function main() {
     return false;
   })();
   assert.ok(detected, 'herdr detects the hand-started agent');
+  // Deliberately remove only fixture shell ownership. The real agent stop
+  // must retain its now-unknown native shell; team close cannot discard it.
+  const { updateWorker } = await import('../lib/worker-registry.js');
+  updateWorker(betaBuilder.worker_id,{pane_shell_ownership:null});
   const betaClosed = await runCli(['team', 'close', 'beta-team', '--project', project, '--json']);
   assert.equal(betaClosed.status, 0, betaClosed.stderr);
   const betaResult = JSON.parse(betaClosed.stdout);
   assert.deepEqual(betaResult.stopped, ['builder1']);
   assert.equal(betaResult.workspace_closed, false, 'workspace stays open for the unmanaged agent');
-  assert.deepEqual(betaResult.workspace_kept_for, [handPane.pane_id]);
+  const betaUnmanaged = [...panesAfter.values()].filter(p => p.workspace_id === beta.herdr_workspace_id && p.pane_id !== betaBuilder.herdr_pane_id).map(p => p.pane_id);
+  assert.deepEqual(betaResult.workspace_kept_for.slice().sort(), [...betaUnmanaged, handPane.pane_id, betaBuilder.herdr_pane_id].sort(), 'retained managed shell plus unmanaged activity all keep their exact workspace');
   assert.ok(paneList(herdrSession).some((pane) => pane.pane_id === handPane.pane_id), 'the hand-started pane survives the close');
-  assert.ok(!paneList(herdrSession).some((pane) => pane.pane_id === betaBuilder.herdr_pane_id), 'the team agent pane is gone');
+  assert.equal(betaResult.targets[0].pane_retained,true);
+  assert.ok(paneList(herdrSession).some((pane) => pane.pane_id === betaBuilder.herdr_pane_id), 'the unknown post-stop managed shell remains');
+  const retriedBeta=await runCli(['team','close',beta.team_id,'--project',project,'--json']); assert.equal(retriedBeta.status,0,retriedBeta.stderr);
+  assert.deepEqual(JSON.parse(retriedBeta.stdout).workspace_kept_for.slice().sort(),betaResult.workspace_kept_for.slice().sort(),'actual native retry retains all residual panes');
 
   const listed = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json', '--ended']);
   assert.equal(listed.status, 0, listed.stderr);
-  const rows = JSON.parse(listed.stdout);
-  assert.ok(rows.some((row) => row.team_id === beta.team_id), 'list shows team rows (ended included)');
+  const rows = parseManagementList(listed.stdout);
+  assert.ok(rows.some(row => row.session_id === betaBuilder.session_id && row.state === 'dead'), 'ended identity stays listed; closed team no longer supplies open responsibility');
   const tabled = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--ended']);
   assert.match(tabled.stdout, /TEAM/, 'table carries the TEAM column');
 

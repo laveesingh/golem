@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,11 +31,9 @@ function run(file, args, cwd = temp) {
 }
 
 function runResult(file, args, cwd = temp, extraEnv = {}) {
-  try {
-    return { status: 0, stdout: execFileSync(file, args, { cwd, env: { ...env, ...extraEnv }, encoding: 'utf8', stdio: 'pipe' }), stderr: '' };
-  } catch (error) {
-    return { status: error.status, stdout: error.stdout || '', stderr: error.stderr || '' };
-  }
+  const result=spawnSync(file,args,{cwd,env:{...env,...extraEnv},encoding:'utf8',timeout:30000});
+  if(result.error) throw result.error;
+  return {status:result.status,stdout:result.stdout || '',stderr:result.stderr || ''};
 }
 
 try {
@@ -81,7 +79,8 @@ try {
   mkdirSync(fakeBin, { recursive: true });
 writeFileSync(path.join(fakeBin, 'pi'), `#!${process.execPath}
 const fs = require('node:fs');
-if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(process.env.GOLEM_FAKE_PI_VERSION || '0.80.10'); process.exit(0); }
+if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(process.env.GOLEM_FAKE_PI_VERSION || '0.99.1'); process.exit(0); }
+if (process.env.GOLEM_FAKE_PI_FAIL) process.exit(12);
 fs.writeFileSync(process.env.GOLEM_PI_RELEASE_CAPTURE, JSON.stringify({ args: process.argv.slice(2), profile: process.env.PI_CODING_AGENT_DIR, sessions: process.env.PI_CODING_AGENT_SESSION_DIR }));
 `, { mode: 0o700 });
   env.PATH = `${fakeBin}:${env.PATH}`;
@@ -95,10 +94,13 @@ fs.writeFileSync(process.env.GOLEM_PI_RELEASE_CAPTURE, JSON.stringify({ args: pr
   assert.equal(readFileSync(path.join(sourcePiProfile, 'models.json'), 'utf8'), sourceModels, 'installed Pi launch leaves the canonical profile untouched');
   assert.equal(existsSync(path.join(env.GOLEM_HOME, 'pi-agent')), false, 'installed launcher does not create a managed Pi profile');
   assert.equal(existsSync(path.join(env.GOLEM_HOME, 'pi-sessions')), false, 'installed launcher does not create a managed Pi session directory');
-  const unsupported = runResult(process.execPath, [cli, 'pi'], installDir, { GOLEM_FAKE_PI_VERSION: '0.80.9' });
-  assert.equal(unsupported.status, 1, unsupported.stderr);
-  assert.match(unsupported.stderr, /supports Pi 0\.80\.10; found 0\.80\.9/);
-  assert.equal(readFileSync(path.join(sourcePiProfile, 'models.json'), 'utf8'), sourceModels, 'unsupported installed Pi never mutates the canonical profile');
+  const advisory = runResult(process.execPath, [cli, 'pi'], installDir, { GOLEM_FAKE_PI_VERSION: '0.80.9' });
+  assert.equal(advisory.status, 0, advisory.stderr);
+  assert.match(advisory.stderr, /WARN: Golem tested on Pi 0\.99\.1; you have 0\.80\.9 — continuing/);
+  assert.equal(readFileSync(path.join(sourcePiProfile, 'models.json'), 'utf8'), sourceModels, 'nonbaseline installed Pi leaves canonical profile untouched');
+  assert.equal(runResult(process.execPath,[cli,'pi'],installDir,{GOLEM_FAKE_PI_FAIL:'1'}).status,12,'actual installed execution failure is not advisory');
+  for(const family of ['agent','team','session']) { const receipt=JSON.parse(run(process.execPath,[cli,family,'list','--scope','all','--json'],installDir)); assert.equal(receipt.schema_version,2); assert.ok(Array.isArray(receipt.items)); assert.ok(receipt.resolution); }
+  assert.ok(existsSync(path.join(piRoot,'lib','management-lock.js')),'Pi runtime closure includes application birth helper dependency');
   console.log(`release smoke passed: ${tarballName}`);
   console.log(`installed root: ${packageRoot}`);
   console.log(`rendered channel SDK: ${sdk}`);

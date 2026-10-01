@@ -14,12 +14,13 @@ const bin = path.join(temp, 'bin');
 fs.mkdirSync(bin, { recursive: true });
 
 const originalEnv = {};
-for (const key of ['GOLEM_HERDR_BIN', 'GOLEM_HERDR_SESSION', 'GOLEM_HERDR_LOG_DIR']) {
+for (const key of ['GOLEM_HOME', 'GOLEM_HERDR_BIN', 'GOLEM_HERDR_SESSION', 'GOLEM_HERDR_LOG_DIR']) {
   originalEnv[key] = process.env[key];
 }
 
 const session = 'gol370-driver-unit';
 const capture = path.join(temp, 'argv.txt');
+const envCapture = path.join(temp, 'inherited-env.json');
 const responses = {};
 const responsesFile = path.join(temp, 'responses.json');
 
@@ -28,10 +29,11 @@ function writeFakeHerdr() {
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.writeFileSync(${JSON.stringify(capture)}, args.join('\\u0000'));
+fs.writeFileSync(${JSON.stringify(envCapture)}, JSON.stringify(Object.fromEntries(['HERDR_ENV','HERDR_SESSION','HERDR_PANE_ID','HERDR_WORKSPACE_ID','HERDR_SOCKET_PATH','GOLEM_HERDR_SESSION'].map(k => [k, process.env[k] ?? null]))));
 let responses = {};
 try { responses = JSON.parse(fs.readFileSync(${JSON.stringify(responsesFile)}, 'utf8')); } catch {}
 const sessionIndex = args.indexOf('--session');
-const key = args.filter((a, index) => index !== sessionIndex && index !== sessionIndex + 1).join(' ');
+const key = args.filter((a, index) => sessionIndex < 0 || (index !== sessionIndex && index !== sessionIndex + 1)).join(' ');
 const entry = responses[key];
 if (entry == null) {
   process.stdout.write(JSON.stringify({ id: 'fake', result: { type: 'ok', key } }));
@@ -45,7 +47,7 @@ if (errPayload) {
   process.exit(0);
 }
 // pane read prints plain scrollback text (no JSON envelope).
-if (args[0] === 'pane' && args[1] === 'read') {
+if (key.startsWith('pane read ')) {
   process.stdout.write(entry?.text ?? '');
   process.exit(0);
 }
@@ -55,6 +57,7 @@ process.exit(0);
 }
 writeFakeHerdr();
 
+process.env.GOLEM_HOME = path.join(temp, 'state');
 process.env.GOLEM_HERDR_BIN = path.join(bin, 'herdr');
 process.env.GOLEM_HERDR_SESSION = session;
 
@@ -85,9 +88,37 @@ function setResponse(args, value) {
 }
 
 // 1. --session override lands first on every call
+setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [] });
 driver.workspaceList(session);
 let argv = fs.readFileSync(capture, 'utf8').split('\u0000');
 check('workspace list carries --session first', argv.slice(0, 2).join(' ') === `--session ${session}`, argv.join(' '));
+
+driver.workspaceFocus({ session, workspaceId: 'w-exact' });
+check('workspace focus targets exact ID/session', JSON.stringify(argvOf()) === JSON.stringify(['--session', session, 'workspace', 'focus', 'w-exact']));
+driver.workspaceRename({ session, workspaceId: 'w-exact', label: 'Label With Spaces' });
+check('workspace rename keeps exact ID and one label argument', JSON.stringify(argvOf()) === JSON.stringify(['--session', session, 'workspace', 'rename', 'w-exact', 'Label With Spaces']));
+setResponse(['workspace', 'focus', 'w-denied'], { __error: { message: 'focus denied' } });
+assert.throws(() => driver.workspaceFocus({ session, workspaceId: 'w-denied' }), /focus denied/);
+setResponse(['workspace', 'rename', 'w-denied', 'New'], { __error: { message: 'rename denied' } });
+assert.throws(() => driver.workspaceRename({ session, workspaceId: 'w-denied', label: 'New' }), /rename denied/);
+check('focus/rename errors never become successful UI outcomes', true);
+
+driver.paneLabel({ session, paneId: 'p-stable', label: 'Logical Display' });
+check('pane display label never changes native agent handle', JSON.stringify(argvOf()) === JSON.stringify(['--session', session, 'pane', 'rename', 'p-stable', 'Logical Display']));
+setResponse(['pane', 'move', 'p-stable', '--workspace', 'w-target', '--new-tab', '--no-focus'], { type: 'pane_move', move_result: { pane: { pane_id: 'p-new', tab_id: 't-new', workspace_id: 'w-target' } } });
+const moved = driver.paneMove({ session, paneId: 'p-stable', workspaceId: 'w-target' });
+check('move consumes actual returned pane/tab/workspace IDs', moved.pane_id === 'p-new' && moved.tab_id === 't-new' && moved.workspace_id === 'w-target');
+setResponse(['pane', 'move', 'p-missing', '--workspace', 'w-target', '--new-tab', '--no-focus'], { type: 'pane_move' });
+assert.throws(() => driver.paneMove({ session, paneId: 'p-missing', workspaceId: 'w-target' }), /no exact placement IDs/);
+check('missing move result stays uncertain rather than guessed', true);
+
+setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [] });
+check('already absent workspace close is a confirmed no-op', driver.workspaceClose({ session, workspaceId: 'gone' }) === true);
+setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [{ workspace_id: 'still-present' }] });
+check('successful close command without inventory disappearance remains partial', driver.workspaceClose({ session, workspaceId: 'still-present' }) === false);
+setResponse(['workspace', 'list'], { __error: { message: 'inventory failed' } });
+assert.throws(() => driver.workspaceClose({ session, workspaceId: 'unknown' }), /inventory failed/);
+check('unknown workspace inventory is never confirmed deletion', true);
 
 // 2. JSON envelope parsing: results and errors
 setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [{ workspace_id: 'w1', label: 'agents' }] });
@@ -96,17 +127,27 @@ check('workspace list parses the result payload', list.length === 1 && list[0].w
 
 setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [] });
 setResponse(['workspace', 'create', '--label', 'agents'], { type: 'workspace_created', workspace: { workspace_id: 'w9', label: 'agents' } });
-const workspaceCreated = driver.workspaceEnsure({ session, label: 'agents' });
-check('workspaceEnsure creates when the label is absent', workspaceCreated?.workspace_id === 'w9');
+const workspaceCreated = driver.workspaceCreate({ session, label: 'agents' });
+check('workspaceCreate returns a new exact owned resource', workspaceCreated?.workspace_id === 'w9');
 
 setResponse(['workspace', 'list'], { type: 'workspace_list', workspaces: [{ workspace_id: 'w1', label: 'agents' }] });
-const ensured = driver.workspaceEnsure({ session, label: 'agents' });
-check('workspaceEnsure returns the existing row', ensured?.workspace_id === 'w1');
+const owned = driver.workspaceCreate({ session, label: 'agents' });
+check('workspaceCreate never adopts a same-label workspace', owned?.workspace_id === 'w9');
 
 // 3. error envelopes throw with the herdr message
 setResponse(['pane', 'list'], { __error: { code: 'server_not_running', message: 'no herdr server is running at the fixture socket' } });
 assert.throws(() => driver.paneList(session), /no herdr server is running/);
 check('error envelopes throw with the herdr message', true);
+setResponse(['pane', 'list'], { type: 'ok' });
+assert.throws(() => driver.paneList(session), /inventory unavailable/);
+check('invalid inventory never becomes an empty native target', true);
+setResponse(['pane', 'list'], { panes: [
+  { pane_id: 'foreign-shell', workspace_id: 'w1' },
+  { pane_id: 'owned-pane', workspace_id: 'w1', agent: {} },
+] });
+const { unmanagedAgentPanes } = await import('../lib/team-herdr.js');
+assert.deepEqual(unmanagedAgentPanes(session, 'w1').map(p => p.pane_id), ['foreign-shell','owned-pane'], 'post-stop inventory must not exclude initially managed retained panes');
+check('unmanaged shells retain workspace even without detected agents', true);
 
 // 4. tab create + pane run + agent rename shapes
 setResponse(['tab', 'create', '--workspace', 'w1', '--cwd', '/tmp', '--label', 'builder1'], {
@@ -131,7 +172,7 @@ check('agent rename targets the pane with the agent name', argv.slice(-3).join('
 
 // 5. pane read returns text
 setResponse(['pane', 'read', 'w1:p2'], { type: 'pane_read', text: 'scrollback line' });
-check('pane read returns the text payload', String(driver.paneRead({ session, paneId: 'w1:p2' })).includes('scrollback line'));
+check('pane read returns plain terminal text, not an envelope', driver.paneRead({ session, paneId: 'w1:p2' }) === 'scrollback line');
 
 // 6. session stop is --session-scoped
 setResponse(['session', 'stop', 'gol370-driver-unit'], { type: 'session_stopped' });
@@ -175,29 +216,40 @@ assert.throws(() => driver.resolveSession(null), /herdr session is required/);
 check('resolveSession throws without any session', true);
 process.env.GOLEM_HERDR_SESSION = session;
 
-// 9. G2 session names: one function serves spawn, team create and doctor.
-// Without the override, derivation lowercases, collapses illegal runs to
-// one '-', and falls back to the project id on empty/collision.
+// 9. Stable mappings, not project-label derivation. Reads cannot allocate.
 delete process.env.GOLEM_HERDR_SESSION;
-const { projectHerdrSession } = await import('../lib/team-herdr.js');
-const known = [
-  { project_id: 'proj-myapp-111111', name: 'My App!' },
-  { project_id: 'proj-clash1-222222', name: 'Clash!' },
-  { project_id: 'proj-clash2-333333', name: 'clash?' },
-  { project_id: 'proj-empty-444444', name: '!!!' },
-];
-check('My App! derives my-app', driver.herdrSessionForProject('proj-myapp-111111', { knownProjects: known }) === 'my-app');
-check('team seam derives the same session as spawn', projectHerdrSession('proj-myapp-111111', { knownProjects: known }) === 'my-app');
-check('colliding names fall back to the project id',
-  driver.herdrSessionForProject('proj-clash1-222222', { knownProjects: known }) === 'proj-clash1-222222'
-  && projectHerdrSession('proj-clash2-333333', { knownProjects: known }) === 'proj-clash2-333333');
-check('empty derivations fall back to the project id', driver.herdrSessionForProject('proj-empty-444444', { knownProjects: known }) === 'proj-empty-444444');
-check('long names cap at the 32-char herdr limit',
-  driver.herdrSessionForProject('proj-long-555555', { knownProjects: [...known, { project_id: 'proj-long-555555', name: `${'a'.repeat(40)}!` }] }) === 'a'.repeat(32));
+const { projectHerdrSession, createTeamWorkspace } = await import('../lib/team-herdr.js');
+const { ensureProjectAssociation } = await import('../lib/management-registry.js');
+assert.throws(() => driver.herdrSessionForProject('proj-unmapped'), /no runtime association/);
+const mapped = ensureProjectAssociation('proj-myapp-111111');
+check('new project receives opaque handle', /^g-[0-9a-f]{28}$/.test(mapped.session));
+check('team and driver read the same stable mapping', projectHerdrSession('proj-myapp-111111') === mapped.session);
+check('rename/long-prefix labels do not retarget a mapping', driver.herdrSessionForProject('proj-myapp-111111', { knownProjects: [{ project_id: 'proj-myapp-111111', name: 'a'.repeat(64) }] }) === mapped.session);
+check('different projects get distinct handles', ensureProjectAssociation('proj-clash-222222').session !== mapped.session);
 process.env.GOLEM_HERDR_SESSION = session;
-check('GOLEM_HERDR_SESSION overrides derivation on both paths',
-  driver.herdrSessionForProject('proj-myapp-111111', { knownProjects: known }) === session
-  && projectHerdrSession('proj-myapp-111111', { knownProjects: known }) === session);
+setResponse(['workspace', 'create', '--label', 'agents'], { workspace: { workspace_id: 'new-owned', label: 'agents' } });
+check('team creation does not reuse a same-label workspace', createTeamWorkspace(session, 'agents') === 'new-owned');
+check('team creation invokes exact create', argvOf().slice(2).join(' ') === 'workspace create --label agents');
+
+// Inherited caller query: no target override, no focus, moved alias is current.
+const inherited = { ...process.env, HERDR_ENV: '1', HERDR_SESSION: 'caller-session', HERDR_PANE_ID: 'old:p1',
+  HERDR_WORKSPACE_ID: 'old', HERDR_SOCKET_PATH: '/tmp/fixture/caller-session/herdr.sock', GOLEM_HERDR_SESSION: 'different-target' };
+setResponse(['pane', 'current', '--current'], { type: 'pane_current', pane: { pane_id: 'moved:p9', workspace_id: 'moved', tab_id: 'moved:t9', focused: false } });
+const callerPane = driver.paneCurrentInherited({ env: inherited });
+assert.deepEqual(argvOf(), ['pane', 'current', '--current']);
+assert.equal(callerPane.session, 'caller-session');
+assert.equal(callerPane.pane_id, 'moved:p9'); assert.equal(callerPane.workspace_id, 'moved'); assert.equal(callerPane.focused, false);
+const nativeEnv = JSON.parse(fs.readFileSync(envCapture, 'utf8'));
+assert.equal(nativeEnv.HERDR_SESSION, 'caller-session'); assert.equal(nativeEnv.HERDR_SOCKET_PATH, inherited.HERDR_SOCKET_PATH);
+assert.equal(nativeEnv.GOLEM_HERDR_SESSION, null);
+check('inherited current query preserves caller socket/session and moved nonfocused IDs, ignoring target override', true);
+setResponse(['pane', 'current', '--current'], { __error: { message: 'caller alias unavailable' } });
+assert.throws(() => driver.paneCurrentInherited({ env: inherited }), /caller alias unavailable/);
+assert.throws(() => driver.paneCurrentInherited({ env: { HERDR_ENV: '1' } }), /context is missing/);
+const hang = path.join(bin, 'herdr-hang');
+fs.writeFileSync(hang, '#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n', { mode: 0o700 });
+assert.throws(() => driver.paneCurrentInherited({ env: { ...inherited, GOLEM_HERDR_BIN: hang }, timeoutMs: 25 }), /query failed/);
+check('inherited unavailable/timeout errors are bounded and never fall back to UI focus', true);
 
 console.log(failures === 0 ? '\nHERDR DRIVER UNIT TESTS PASS' : `\n${failures} FAILURE(S)`);
 process.exitCode = failures === 0 ? 0 : 1;
