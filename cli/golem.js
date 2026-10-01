@@ -28,7 +28,6 @@ import { golemHome, legacyConfigDir, migratedHomeDir, trackerDbPath, renderDirFo
 import { projectIdFor } from '../lib/project-id.js';
 import { updateProjectLsp } from '../lib/lsp.js';
 import * as compiler from '../lib/compiler/engine.js';
-import { lintSubstrate } from '../lib/compiler/lint.js';
 import * as ccAdapter from '../lib/compiler/adapters/cc.js';
 import * as piAdapter from '../lib/compiler/adapters/pi.js';
 import { isHarnessEnabled, loadConfig, saveConfig } from '../lib/golem-config.js';
@@ -492,13 +491,6 @@ async function cmdSyncCheckAll({ quiet = false } = {}) {
   const say = quiet ? () => {} : log;
   if (!quiet) log('');
   say('golem sync --check --all');
-
-  // Source size report runs once, before any render-drift check. GOL-377
-  // addendum: it can never fail — an over-cap total is only a warning.
-  const lint = lintSubstrate({ substrateRoot: substrateRoot() });
-  if (!quiet) log('');
-  say(`substrate lint: ${lint.files} files, ${lint.total} words`);
-  for (const w of lint.warnings ?? []) log(`  warning: ${w.check}: ${w.file} — ${w.detail}`);
 
   const ccOut = renderDirFor('cc');
   const cc = compiler.checkDrift({ target: 'cc', outDir: ccOut, items: planForTarget('cc') });

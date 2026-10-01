@@ -20,6 +20,9 @@ retains the existing command/GOLEM_HOME ownership filter and checks the private
 port block **after** stopping owned writers; a foreign occupant is never selected.
 The inherited restart sweep does not capture/revalidate PID birth immediately
 before signaling; W1 does not redesign that management/process boundary.
+The CLI sync-check/doctor path no longer performs advisory instruction-size lint
+or prints its word-count report/warnings. Render generation and drift checks stay;
+W6/W8 must document this visible output removal in the 6.0 release note.
 Direct legacy `node cli/golem.js` remains available but does not parse
 instance profiles. W3 owns emitting/re-writing this bootstrap graph for packages;
 a physical npm installation cannot yet execute its TypeScript import.
