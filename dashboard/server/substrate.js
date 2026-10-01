@@ -16,7 +16,7 @@ const SUBSTRATE_ROOT = path.join(REPO_ROOT, 'substrate');
 const SKILLS_ROOT = path.join(SUBSTRATE_ROOT, 'skills');
 const INSTRUCTIONS_ROOT = path.join(SUBSTRATE_ROOT, 'instructions');
 const ROLES_ROOT = path.join(SUBSTRATE_ROOT, 'roles');
-const USER_SKILLS_ROOT = path.join(os.homedir(), '.agents', 'skills');
+const USER_SKILLS_ROOT = process.env.GOLEM_USER_SKILLS_ROOT || path.join(os.homedir(), '.agents', 'skills');
 const PACKAGE_JSON = path.join(REPO_ROOT, 'package.json');
 const SYNC_TIMEOUT_MS = 30_000;
 

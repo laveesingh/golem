@@ -50,7 +50,7 @@ if command -v jq >/dev/null 2>&1 && [ -n "$PAYLOAD" ]; then
 fi
 
 if command -v jq >/dev/null 2>&1; then
-  PARENT_SESSION_FILE="${HOME:-}/.claude/sessions/${PPID:-}.json"
+  PARENT_SESSION_FILE="$CLAUDE_CONFIG_DIR_RESOLVED/sessions/${PPID:-}.json"
   if [ -f "$PARENT_SESSION_FILE" ]; then
     _sid="$(jq -r '.sessionId // .session_id // empty' "$PARENT_SESSION_FILE" 2>/dev/null || true)"
     _sname="$(jq -r '.name // empty' "$PARENT_SESSION_FILE" 2>/dev/null || true)"

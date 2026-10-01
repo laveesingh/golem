@@ -33,7 +33,7 @@
 // project_id is derived per the v4 contract from the session cwd's nearest
 // project root (walk up to .git / CLAUDE.md), via the shared project-id helper.
 
-import os from 'node:os';
+import { claudeConfigDir } from '../../lib/claude-paths.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -46,8 +46,7 @@ import { isSessionFactTerminal, readSessionFacts } from '../../lib/session-facts
 import { piCompatibility } from '../../lib/pi-compatibility.js';
 import { isTypedWorkerChannel } from './channels.js';
 
-const HOME = os.homedir();
-const SESSIONS_DIR = path.join(HOME, '.claude', 'sessions');
+const SESSIONS_DIR = path.join(claudeConfigDir(), 'sessions');
 const CHANNELS_REGISTRY = channelsJsonPath();
 
 // Non-CC harness sessions self-register into
