@@ -103,6 +103,12 @@ export function workersJsonPath() {
 export function teamsJsonPath() {
   return path.join(golemHome(), 'teams.json');
 }
+export function herdrMappingsJsonPath() {
+  return path.join(golemHome(), 'herdr-mappings.json');
+}
+export function managementLockPath() {
+  return path.join(golemHome(), 'management.lock');
+}
 // This is intentionally separate from generic session facts: it holds the
 // process/thread recovery mapping and must never be inferred from a hook.
 // Compact replay identity for typed native-worker delivery. Rich adapter

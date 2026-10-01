@@ -35,11 +35,10 @@ reset that at every human turn.
 
 # What and How
 
-Setting a reminder: `golem session notify --to self...`
+Setting a reminder: `golem agent notify --to self --message "check return" --after 25m --json`
 Reminder duration for agent return: 25 minutes
 Reminder interval for human return: 55 minutes in claude, 25 minutes in pi
 
-The reminder should run for maximum 4 times, after which you are allowed to go idle. Meaning, if 
-the reminder runs N<4 times, and I or the agents repond by then, the reminder gets reset, but if it
-has run N=4 times, and no response from me or the agent you were waiting for, then you can cancel any
-follow up and go idle.
+Apply the human wake cap from Global Rules or the authorized workstream. Reset it
+only when I return. When the cap is reached, cancel further idle reminders; direct
+agent returns still wake you. On an earlier return, cancel the pending check.
