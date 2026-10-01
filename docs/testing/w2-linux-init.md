@@ -26,14 +26,24 @@ This establishes supported syntax/default runner forwarding and actual local Doc
 
 ## Reproduction
 
-From the ticket checkout, build the owned CI image using the context recipe in w2-evidence.md, then:
+From the ticket checkout, use this complete **:init BUILD/RUN** chain. `set -e` prevents running a missing/stale image after a failed build:
 ```bash
+set -e
+CTX=$(mktemp -d /tmp/gol458-linux-build.XXXXXX)
+tar --exclude='node_modules' --exclude='./.git' --exclude='./dashboard/dist' --exclude='./.test-results' -cf - . | (cd "$CTX" && tar -xf -)
+docker build -t golem-gol458-ci:init -f "$CTX/.devcontainer/Dockerfile.ci" "$CTX"
+rm -rf "$CTX"
 docker run --rm --init --network none --name golem-gol458-init-$(date +%s) golem-gol458-ci:init
 ```
 
 A focused final-command launch with --init can no longer rely on incidental shell retention:
 ```bash
 docker run --rm --init --network none --name golem-gol458-init-focused-$(date +%s) golem-gol458-ci:init bash -lc './node_modules/.bin/vitest run --project integration test/integration/main-ownership.test.mjs test/integration/adapter-safety.test.mjs test/integration/retained-root.test.mjs test/integration/html-mutation-safety.test.mjs test/integration/scratch-fixture.test.mjs'
+```
+
+After the full run and any optional focused run above, **REMOVE the same :init tag**:
+```bash
+docker image rm golem-gol458-ci:init
 ```
 
 ## Actual rebuilt supported environment
