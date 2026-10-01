@@ -43,7 +43,7 @@ try {
     const actorFile=path.join(root,`${harness}-context.json`), cwdFile=path.join(root,`${harness}-cwd-context.json`), log=path.join(root,`${harness}.log`); actorLogs.push(log);
     const logicalFile=path.join(root,`${harness}-logical-context.json`), movedFile=path.join(root,`${harness}-moved-context.json`);
     const logicalTrigger=path.join(root,`${harness}-logical-ready`), moveTrigger=path.join(root,`${harness}-move-ready`), controlTrigger=path.join(root,`${harness}-control-ready`), probeScript=path.join(root,`${harness}-probe.sh`);
-    const contextCommand=`${shell(process.execPath)} ${shell(cli)} context --json`;
+    const contextCommand=`GOLEM_HERDR_SESSION=wrong-owned-test-target ${shell(process.execPath)} ${shell(cli)} context --json`;
     fs.writeFileSync(probeScript, `#!/bin/bash\nset -e\n${contextCommand} > ${shell(actorFile)}\ncd ${shell(outside)}\n${contextCommand} > ${shell(cwdFile)}\nfor i in {1..600}; do [ -f ${shell(logicalTrigger)} ] && break; sleep .2; done\n${contextCommand} > ${shell(logicalFile)}\nfor i in {1..600}; do [ -f ${shell(moveTrigger)} ] && break; sleep .2; done\n${contextCommand} > ${shell(movedFile)}\nfor i in {1..600}; do [ -f ${shell(controlTrigger)} ] && break; sleep .2; done\n`, { mode: 0o700 });
     const probeCommand=`bash ${shell(probeScript)}`;
     const prompt=`Actual application acceptance test. Use your bash/Bash tool to execute exactly this command once (allow up to240seconds for the bounded phase handshakes): ${probeCommand}. Do not read credentials or other files. Then answer DONE. These are disposable resources authorized by the owner.`;
@@ -77,8 +77,9 @@ try {
     let nativeIdentity; try { const actual=native(['agent','get',movement.pane_id]).agent; nativeIdentity={agent:actual?.agent,session_kind:actual?.agent_session?.kind,session_value:actual?.agent_session?.value?.replaceAll(root,'<private-test-root>'),registered_locator:actorFact.locator?.session_file?.replaceAll(root,'<private-test-root>'),sdk_report:actorFact.observations?.native_session_report}; } catch(error) { nativeIdentity={error:error.message}; }
     console.log(JSON.stringify({native_identity:nativeIdentity}));
     console.log(JSON.stringify({actual_harness:harness,caller:'resolved',project_pinned_after_cwd:true,logical_transfer_without_move:true,actual_moved_alias_context:true,controls:inspected.capabilities}));
+    native(['workspace','focus',destination.herdr_workspace_id]);
     const humanStill=path.join(root,`${harness}-human-still.json`);
-    native(['pane','run',sourceHuman.pane_id,...['bash','-c',`${shell(process.execPath)} ${shell(cli)} context --json > ${shell(humanStill)}`].map(shell)]);
+    native(['pane','run',sourceHuman.pane_id,...['bash','-c',`GOLEM_HERDR_SESSION=wrong-owned-test-target ${shell(process.execPath)} ${shell(cli)} context --json > ${shell(humanStill)}`].map(shell)]);
     assert.equal((await waitFile(humanStill,10000)).resolution.team_id,sourceTeam.team_id,'separate human shell remains in A');
     if (harness === 'pi') {
       assert.equal(inspected.capabilities.read.state,'available','standard integrated real Pi must map exact native identity');
@@ -91,20 +92,27 @@ try {
       const adopted=run(['agent','adopt',actorFact.canonical_id,'--team',destination.team_id,'--pane',movement.pane_id,'--project',project,'--json']); assert.equal(adopted.session_id,actorFact.canonical_id);
       const renamed=run(['agent','rename',actorFact.canonical_id,'actual-pi-renamed','--project',project,'--json']); assert.equal(renamed.herdr_agent_name,adopted.herdr_agent_name);
       const controlledMove=run(['agent','move',actorFact.canonical_id,'--workspace',team.herdr_workspace_id,'--team',destination.team_id,'--project',project,'--json']); assert.equal(controlledMove.team_id,destination.team_id); assert.equal(controlledMove.herdr_workspace_id,team.herdr_workspace_id);
+      const attachProbe=spawnSync('python3',[path.join(repo,'test','_interactive-attach.py'),process.execPath,cli,'agent','attach',actorFact.canonical_id,'--project',project],{cwd:project,env,encoding:'utf8',timeout:30000}); assert.equal(attachProbe.status,0,attachProbe.stderr || attachProbe.stdout); const attachResult=JSON.parse(attachProbe.stdout); assert.equal(attachResult.actual_pi_screen,true); assert.equal(attachResult.client_exited,true);
+      assert.equal(native(['agent','get',controlledMove.herdr_pane_id]).agent.agent_session.value,actorFact.locator.session_file,'client disconnect leaves actual app in its exact pane');
       const closedOld=run(['team','close',team.team_id,'--project',project,'--json']); assert.deepEqual(closedOld.stopped,[]); assert.equal(closedOld.workspace_closed,false); assert.ok(closedOld.workspace_kept_for.includes(controlledMove.herdr_pane_id),'old team retains transferred real app');
       fs.writeFileSync(controlTrigger,'ready');
       const reporterAfterMove=path.join(root,'pi-reporter-after-move.json');
-      const message=`Use bash to run exactly: ${shell(process.execPath)} ${shell(cli)} context --json > ${shell(reporterAfterMove)}. Then answer DONE. This is the same disposable acceptance test.`;
+      const failedPs=path.join(root,'failed-process-probe'); fs.writeFileSync(failedPs,'#!/bin/sh\nexit 1\n',{mode:0o700});
+      const explicitFile=path.join(root,'pi-explicit-without-caller.json'), selfError=path.join(root,'pi-self-without-caller.json');
+      const failureEnv=`env -u GOLEM_SESSION_ID -u GOLEM_CEO_SESSION_ID -u PI_SESSION_ID -u CLAUDE_CODE_SESSION_ID HERDR_ENV=0 GOLEM_PS_BIN=${shell(failedPs)}`;
+      const explicitScript=path.join(root,'pi-explicit-probe.sh'); fs.writeFileSync(explicitScript,`set -e\n${shell(process.execPath)} ${shell(cli)} context --json > ${shell(reporterAfterMove)}\n${failureEnv} ${shell(process.execPath)} ${shell(cli)} agent inspect ${shell(actorFact.canonical_id)} --project ${shell(project)} --json > ${shell(explicitFile)}\nif ${failureEnv} ${shell(process.execPath)} ${shell(cli)} agent inspect self --project ${shell(project)} --json > ${shell(selfError)} 2>&1; then exit 91; fi\n`);
+      const message=`Use bash to run exactly: bash ${shell(explicitScript)}. Then answer DONE. This is the same disposable acceptance test.`;
       run(['agent','notify','--to',actorFact.canonical_id,'--message',message,'--human','--json']);
       const reportedAfterMove=await waitFile(reporterAfterMove,120000); assert.equal(reportedAfterMove.resolution.placement.pane_id,controlledMove.herdr_pane_id);
+      const explicitWithoutCaller=await waitFile(explicitFile,30000); assert.equal(explicitWithoutCaller.session_id,actorFact.canonical_id); for(let i=0;i<100 && (!fs.existsSync(selfError)||fs.statSync(selfError).size===0);i++) await new Promise(r=>setTimeout(r,100)); assert.match(fs.readFileSync(selfError,'utf8'),/caller|context|self/i);
       const reporterIdentity=native(['agent','get',controlledMove.herdr_pane_id]).agent.agent_session; assert.equal(reporterIdentity.kind,'path'); assert.equal(reporterIdentity.value,actorFact.locator.session_file,'existing real reporter re-reports through its old inherited pane alias');
       await new Promise(r=>setTimeout(r,1000));
       const stopped=run(['agent','stop',actorFact.canonical_id,'--project',project,'--json']); assert.equal(stopped.state,'dead');
       const { processIdsInGroup }=await import('../lib/process-group.js'); assert.deepEqual(processIdsInGroup(adopted.pid),[],'actual adopted runtime group has no survivors');
-      console.log(JSON.stringify({actual_pi_controls:'read/adopt/rename/move/old-team foreign retention/verified stop',stable_native_handle:true}));
+      console.log(JSON.stringify({actual_pi_controls:'read/adopt/rename/move/owned-TTY attach/client disconnect/old-team foreign retention/verified stop',stable_native_handle:true}));
     } else fs.writeFileSync(controlTrigger,'ready');
   }
-  console.log(`REAL PARTIAL JOURNEY PASS: actual ${actors.join('/')} caller/cwd/transfer/move assertions only; credential, control and interactive attach gaps remain named separately`);
+  console.log(`REAL PARTIAL JOURNEY PASS: actual ${actors.join('/')} caller/cwd/transfer/move assertions only; Claude authentication/control and full-matrix acceptance remain separate unverified gaps`);
 } finally {
   // Physical session belongs exclusively to this test. Stop/delete before
   // deleting HOME/auth/socket paths; never use caller/shared native session.
