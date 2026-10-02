@@ -1,0 +1,9 @@
+{
+  "released_source_commit": "20a5cf5b2a2a7f72fb08029b88cc6c1c7e00871a",
+  "version": "5.26.0",
+  "schema_paths": [],
+  "capture_command": "git ls-tree -r --name-only 20a5cf5b contracts/ lib/contracts/",
+  "capture_exit": 0,
+  "package_sha256": "6083a4981753b589a431218ec2c9afbb3a389f6d49679c5c1a676213f8aa1228",
+  "claim": "source-grounded absence of canonical schema directories; not an artefact compatibility pass"
+}

@@ -1,0 +1,87 @@
+{
+  "name": "@laveesingh/golem",
+  "version": "5.26.0",
+  "description": "Golem — substrate compiler, dashboard/tracker, and CLI for the agentic harness.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/laveesingh/golem.git"
+  },
+  "bugs": {
+    "url": "https://github.com/laveesingh/golem/issues"
+  },
+  "homepage": "https://github.com/laveesingh/golem#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "golem": "./cli/golem.js"
+  },
+  "exports": {
+    ".": "./cli/golem.js"
+  },
+  "files": [
+    "cli/",
+    "dashboard/server/",
+    "dashboard/dist/",
+    "dashboard/web/",
+    "lib/",
+    "mcp/channel/",
+    "plugin/",
+    "shims/",
+    "substrate/",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "PRIVACY.md",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "check": "node --check cli/golem.js && npm run audit:skills && node cli/golem.js sync --check --all",
+    "audit:skills": "node scripts/audit-skills.mjs && node scripts/audit-skills.mjs .claude/skills",
+    "test": "node test/claude-cli.test.mjs && node test/pi-cli.test.mjs && node test/role-preset.test.mjs && node test/session-start-role.test.mjs && node test/intake-suggestion.test.mjs && node test/model-profiles.test.mjs && node test/model-catalog.test.mjs && node test/dashboard-model-profiles.test.mjs && node test/worker-journey.test.mjs && node test/state-watcher.test.mjs && node test/dashboard-lifecycle.test.mjs && node test/instruction-block.test.mjs && node test/instruction-workflow.test.mjs && node test/session-facts.test.mjs && node test/session-project-pinning.test.mjs && node test/pi-journey.test.mjs && node test/pi-tools-journey.test.mjs && node test/pi-tracker-integration.test.mjs && node test/model-providers.test.mjs && node test/substrate-api.test.mjs && node test/session-cli.test.mjs && node test/team-registry.test.mjs && node test/team-retained-pane.test.mjs && node test/herdr-driver.test.mjs && node test/session-native.test.mjs && node test/team-journey.test.mjs && node test/management-dashboard.test.mjs && node test/management-registry.test.mjs && node test/management-lock-race.test.mjs && node test/management-process.test.mjs && node test/worker-control.test.mjs && node test/worker-ancestor.test.mjs && node test/worker-claude-control.test.mjs && node test/real-actor-setup.test.mjs && node test/real-resource-allocation.test.mjs && node test/management-consumers.test.mjs && node test/management-resolve.test.mjs && node test/ticket-compact.test.mjs && node test/dispatch-brief.test.mjs && node test/scrub-legacy-harnesses.test.mjs && node mcp/channel/tracker-client.test.mjs && npm run test:collaboration",
+    "test:collaboration": "node test/runtime-compatibility.test.mjs && node test/cross-harness-matrix.test.mjs && node test/notification-cli.test.mjs && node test/notification-schedule.test.mjs && node test/pi-delivery-failures.test.mjs && node test/notification-delivery.test.mjs && node test/typed-immediate-retry.test.mjs && node test/typed-worker-endpoint.test.mjs",
+    "postinstall": "npm ci --omit=dev --prefix mcp/channel",
+    "test:release": "node test/release-smoke.mjs",
+    "test:management:real": "GOLEM_REAL_HARNESS=1 node test/management-real-journey.test.mjs",
+    "measure:turns": "node scripts/measure-turns.mjs",
+    "dashboard": "node dashboard/server/index.js",
+    "dashboard:build": "vite build --config dashboard/vite.config.js",
+    "dashboard:dev": "vite --config dashboard/vite.config.js",
+    "dashboard:serve": "npm run dashboard:build && node dashboard/server/index.js",
+    "test:dashboard:browser": "node test/management-dashboard.test.mjs && node dashboard/scripts/gol-461-browser.mjs && node dashboard/scripts/gol-495-browser.mjs && node dashboard/scripts/nested-composer-overlay.browser.mjs && node dashboard/scripts/gol-129-pi-browser.mjs && node dashboard/scripts/comment-image-paste.browser.mjs && node dashboard/scripts/gol383-comment-dispatch.browser.mjs",
+    "test:pi:dashboard": "node test/typed-immediate-retry.test.mjs && npm run dashboard:build && node dashboard/scripts/gol-129-pi-browser.mjs",
+    "check:dashboard": "dashboard/scripts/check.sh"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@fastify/static": "^7.0.4",
+    "@fastify/websocket": "^10.0.1",
+    "@lobehub/icons-static-svg": "1.94.0",
+    "better-sqlite3": "^12.11.1",
+    "chokidar": "^3.6.0",
+    "dompurify": "^3.2.6",
+    "fastify": "^4.28.1",
+    "gray-matter": "^4.0.3",
+    "jsonc-parser": "^3.3.1",
+    "marked": "^14.1.4",
+    "mermaid": "^11.16.1",
+    "parse5": "^7.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@babel/parser": "^7.29.7",
+    "playwright-core": "^1.61.0",
+    "vite": "^6.3.5"
+  }
+}

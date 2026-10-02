@@ -18,6 +18,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, symlinkSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -37,11 +38,17 @@ import { resolveRolePreset } from '../lib/role-preset.js';
 import { CLAUDE_CHANNEL_FLAG, GOLEM_CLAUDE_CHANNEL } from '../lib/claude-channel.js';
 import { getProfile, listProfileNames } from '../lib/model-profiles.js';
 import { HERDR_SUPPORTED_VERSION, herdrSessionForProject, herdrVersion } from '../lib/herdr-driver.js';
+import { packageRoot, runtimeFile } from '../lib/package-root.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const GOLEM_ROOT = resolve(__dirname, '..');
+const GOLEM_ROOT = packageRoot(import.meta.url);
 const DASHBOARD_DIR = resolve(GOLEM_ROOT, 'dashboard');
+const require = createRequire(import.meta.url);
+function dashboardDependenciesPresent() {
+  try { require.resolve('fastify'); require.resolve('better-sqlite3'); return true; }
+  catch { return false; }
+}
 function dashboardPortFromArgs(args) {
   const index = args.findIndex((arg) => arg === '--port' || arg.startsWith('--port='));
   if (index < 0) return null;
@@ -123,11 +130,11 @@ function publicSupervisorRecord(record) {
 
 
 async function cmdDashboard(args) {
-  const serverEntry = resolve(DASHBOARD_DIR, 'server', 'index.js');
+  const serverEntry = runtimeFile(import.meta.url, 'dashboard/server/index.js');
   if (!existsSync(serverEntry)) {
     fatal(1, `dashboard server entry missing: ${serverEntry}`);
   }
-  if (!existsSync(resolve(GOLEM_ROOT, 'node_modules'))) {
+  if (!dashboardDependenciesPresent()) {
     fatal(1, 'root deps missing — npm install (from the repo root)');
   }
 
@@ -150,14 +157,41 @@ async function cmdDashboard(args) {
     stdio: 'inherit',
     env,
   });
-  proc.on('error', (e) => fatal(1, `failed to start dashboard: ${e.message}`));
+  // A foreground wrapper must report the server's real outcome, not success
+  // merely because spawning returned. Forward wrapper-only termination and
+  // keep waiting so the child's graceful shutdown/cleanup can finish.
+  await new Promise((resolve) => {
+    let spawnError = false;
+    let forwarded = false;
+    const forward = (signal) => {
+      if (forwarded || proc.exitCode !== null || proc.signalCode !== null) return;
+      forwarded = true;
+      proc.kill(signal);
+    };
+    const interrupt = () => forward('SIGINT');
+    const terminate = () => forward('SIGTERM');
+    process.on('SIGINT', interrupt);
+    process.on('SIGTERM', terminate);
+    proc.once('error', (error) => {
+      spawnError = true;
+      err(`failed to start dashboard: ${error.message}`);
+    });
+    proc.once('close', (code, signal) => {
+      process.off('SIGINT', interrupt);
+      process.off('SIGTERM', terminate);
+      if (spawnError) process.exitCode = 1;
+      else if (code !== null) process.exitCode = code;
+      else if (signal) process.kill(process.pid, signal);
+      else process.exitCode = 1;
+      resolve();
+    });
+  });
 }
 
 async function cmdDashboardRestart(args) {
-  if (!existsSync(resolve(DASHBOARD_DIR, 'server', 'index.js'))) {
-    fatal(1, `dashboard server entry missing: ${resolve(DASHBOARD_DIR, 'server', 'index.js')}`);
-  }
-  if (!existsSync(resolve(GOLEM_ROOT, 'node_modules'))) {
+  try { runtimeFile(import.meta.url, 'dashboard/server/index.js'); }
+  catch (error) { fatal(1, error.message); }
+  if (!dashboardDependenciesPresent()) {
     fatal(1, 'root deps missing — npm install (from the repo root)');
   }
 
@@ -585,7 +619,7 @@ async function cmdDoctor() {
   log('');
   log('Dashboard');
   existsSync(DASHBOARD_DIR) ? ok(`dashboard dir exists (${DASHBOARD_DIR})`) : fail('dashboard dir exists');
-  existsSync(resolve(GOLEM_ROOT, 'node_modules')) ? ok('root node_modules') : fail('root node_modules — npm install (from the repo root)');
+  dashboardDependenciesPresent() ? ok('dashboard dependencies resolve') : fail('dashboard dependencies missing — npm install (from the repo root)');
   try {
     await import('better-sqlite3');
     ok('better-sqlite3 loads from root node_modules');

@@ -1,0 +1,25 @@
+{
+  "$id": "PilotError",
+  "additionalProperties": true,
+  "type": "object",
+  "properties": {
+    "error": {
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "statusCode": {
+      "type": "integer"
+    },
+    "message": {
+      "type": "string"
+    },
+    "block_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "error"
+  ]
+}

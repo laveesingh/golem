@@ -3,6 +3,7 @@
   "workspaces": {
     ".": {
       "entry": [
+        "test/fixtures/w3-installed-probe.mjs",
         "cli/golem.js",
         "docs/design/w4/prototype.mjs",
         "docs/design/w4/static-check.mjs",
@@ -179,7 +180,12 @@
         "test/sim/pi",
         "test/sim/herdr",
         "test/integration/scenario-probe.mjs",
-        "test/sim/support.ts"
+        "test/sim/support.ts",
+        "tools/contracts-build.ts",
+        "test/fixtures/w3-route-baseline.mjs",
+        "test/fixtures/w3-openapi-export.mjs",
+        "test/fixtures/w3-client-probe.mjs",
+        "dashboard/web/src/api/types.d.ts"
       ],
       "project": [
         "**/*.{js,mjs,ts,jsx,tsx}",

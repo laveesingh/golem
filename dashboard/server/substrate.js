@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { packageRoot } from '../../lib/package-root.ts';
 import * as compiler from '../../lib/compiler/engine.js';
 import * as ccAdapter from '../../lib/compiler/adapters/cc.js';
 import { loadConfig, saveConfig } from '../../lib/golem-config.js';
@@ -10,8 +10,7 @@ import { golemHome, projectsJsonPath, renderDirFor } from '../../lib/golem-home.
 import { projectIdFor } from '../../lib/project-id.js';
 import { listRoleCards, writeRoleCard } from '../../lib/session-role.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const REPO_ROOT = packageRoot(import.meta.url);
 const SUBSTRATE_ROOT = path.join(REPO_ROOT, 'substrate');
 const SKILLS_ROOT = path.join(SUBSTRATE_ROOT, 'skills');
 const INSTRUCTIONS_ROOT = path.join(SUBSTRATE_ROOT, 'instructions');

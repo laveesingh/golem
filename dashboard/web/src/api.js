@@ -1,5 +1,6 @@
 // Browser-side REST + WebSocket client for the dashboard backend.
-// Plain JS so it loads before babel-transformed JSX components.
+// Legacy islands retain JS; the health/create pilot uses generated types.
+import { createPilotTicket, pilotHealth } from './api/pilot-client.ts';
 
 (function () {
   const base = ''; // same-origin
@@ -270,7 +271,8 @@
     // title_match, match_start, match_len }[] — snippet carries the first body
     // match ±80 chars with offsets so the client can <mark> it. q <2 chars → 400.
     searchTickets: (params) => getJSON(`/api/tickets/search${qs(params)}`),
-    createTicket: (body) => postJSON('/api/tickets', body),
+    createTicket: createPilotTicket,
+    health: pilotHealth,
     getTicket: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}`),
     getShareStatus: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}/share`),
     shareTicket: (id) => postJSON(`/api/tickets/${encodeURIComponent(id)}/share`, {}),

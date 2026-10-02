@@ -1,15 +1,16 @@
 # REPO-MAP.md
-> Last verified: 2026-10-01 @ b0ab579 — maintained via golem:docs-maintenance.
+> Last verified: 2026-10-01 @ a4cf7f0 — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
 - `cli/` — bin → native `bootstrap.ts` → commands.
-- `lib/` — shared runtime, compiler, delivery, and harness helpers.
+- `lib/` — runtime/compiler plus leaf TypeBox `contracts/`.
 - `substrate/` — instruction, role, skill, hook, and plugin sources.
 - `plugin/` — generated CC rollback copy; never hand-edit.
 - `dashboard/` — Fastify tracker/API, web source, and built UI.
 - `mcp/channel/` — tracker MCP server and REST client.
 - `shims/` — Pi extension.
+- `contracts/` — generated pilot schemas + release provenance.
 - `tools/`, `test/` — gates/Vitest; `docs/testing-runner.md`.
 
 ## Key modules & entry points
@@ -27,19 +28,19 @@ Processes: `lib/worker-control.js` + `lib/process-group.js`.
 
 ### Dashboard
 
-`dashboard/server/index.js` owns admin REST/WS; `tracker-db.js` owns SQLite tickets.
+`index.js` owns REST/WS; `contract-pilot.ts` owns health/create; `tracker-db.js` owns SQLite.
 `share-tunnel.js` owns one Golem-owned cloudflared quick tunnel to the dashboard via
 `~/.golem/share-tunnel.json`: Share hands out `/read/<id>` links, Stop kills the tunnel.
 `html-body.js`/`md-body.js` patch strict anchors via `body-anchor.js`; `mermaid-check.js`
 validates diagrams. `notification-schedule*.js` schedules; `comment-dispatch.js` routes feedback.
-Agents never touch SQLite directly.
+Agents never write SQLite directly.
 
 ### Compiler and delivery
 
 `lib/compiler/` renders substrate with drift/tamper checks; instruction lint is outside gates.
 `lib/typed-worker-endpoint.js` owns Pi envelopes; `lib/herdr-driver.js` native hosting.
 `lib/team-registry.js` never treats worker cache as membership authority.
-`lib/runtime-compatibility.js` separates policy warnings from initialization/native outcomes.
+`lib/runtime-compatibility.js` keeps policy warnings separate from native outcomes.
 
 ## Data flow
 
@@ -50,7 +51,7 @@ native/typed dispatch. Sharing tunnels the dashboard itself; Stop ends every sha
 
 - Project rules come from `AGENTS.md`; shared rules come from `substrate/`, never renders.
 - Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
-- Pi 0.99.1 / Node.js 22.19+ are tested baselines; version/provider labels warn, not veto delivery.
+- Pi 0.99.1 / Node 22.19+ baselines; labels warn, never veto delivery.
 - Pi and Claude Code are the only harnesses. No test or lint check inspects instruction content.
 - Herdr tests must `session stop` before deleting a temp HOME; a deleted socket dir leaks a live server.
 

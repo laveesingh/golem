@@ -4,6 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { packageRoot } from '../lib/package-root.ts';
 
 export interface Profile {
   name: string;
@@ -11,10 +12,7 @@ export interface Profile {
   created_at: string;
   checkout: string;
 }
-const checkout = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-);
+const checkout = packageRoot(import.meta.url);
 
 /** Keep native Unix socket spellings short; canonical data stays in the profile. */
 export function profileNamespaceAlias(root: string): string {
@@ -197,8 +195,6 @@ export function resolveProfile(
     GOLEM_DASHBOARD_URL: `http://127.0.0.1:${profile.port}`,
     // The legacy channel fallback must never reach the production 7421 port.
     GOLEM_CHANNEL_URL: `http://127.0.0.1:${profile.port}/profile-channel-unavailable`,
-    GOLEM_SUBSTRATE_ROOT: path.join(checkout, 'substrate'),
-    GOLEM_ROLES_DIR: path.join(checkout, 'substrate', 'roles'),
     GOLEM_TRACKER_DB: path.join(dirs.GOLEM_HOME, 'tracker.db'),
     GOLEM_ASSETS_DIR: path.join(dirs.GOLEM_HOME, 'ticket-assets'),
     GOLEM_TYPED_DELIVERY_TOMBSTONES_DB: path.join(
@@ -210,6 +206,8 @@ export function resolveProfile(
   // one profile-wide session/socket: herdr 0.9.1 derives those under
   // XDG_CONFIG_HOME/herdr/sessions/<allocated handle> (session.rs:160–193).
   for (const key of [
+    'GOLEM_SUBSTRATE_ROOT',
+    'GOLEM_ROLES_DIR',
     'GOLEM_HERDR_SESSION',
     'HERDR_SESSION',
     'HERDR_SOCKET_PATH',

@@ -6,6 +6,10 @@ import { spawnSync } from 'node:child_process';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
+import swagger from '@fastify/swagger';
+import { installContractPolicy } from './contract-policy.ts';
+import { registerContractPilot } from './contract-pilot.ts';
+import { packageRoot } from '../../lib/package-root.ts';
 import { CONFIG } from './config.js';
 import { createState } from './state.js';
 import { roleMetaMap } from './roles.js';
@@ -56,15 +60,15 @@ import {
 } from './model-catalog.js';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
-const WEB_SOURCE_ROOT = path.resolve(__dirname, '..', 'web');
-const WEB_DIST_ROOT = path.resolve(__dirname, '..', 'dist');
+const ASSET_ROOT = packageRoot(import.meta.url);
+const WEB_SOURCE_ROOT = path.join(ASSET_ROOT, 'dashboard', 'web');
+const WEB_DIST_ROOT = path.join(ASSET_ROOT, 'dashboard', 'dist');
 const WEB_ROOT = fs.existsSync(path.join(WEB_DIST_ROOT, 'index.html')) ? WEB_DIST_ROOT : WEB_SOURCE_ROOT;
 // The tracker genre templates live OUTSIDE dashboard/, in the substrate
 // source tree at substrate/skills/tracker/templates/ (TKT-0574 — plugin/ is
-// now a generated render of substrate/, not the SoT). Resolve the repo root
-// two levels up from this file (dashboard/server/index.js → dashboard/ →
-// repo root) and point at that dir. Used by GET /api/templates.
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+// generated, not the SoT). Caller-based packageRoot survives mirrored dist/
+// paths and never inherits a parent render's source root. Used by /api/templates.
+const REPO_ROOT = ASSET_ROOT;
 const TEMPLATES_DIR = path.join(REPO_ROOT, 'substrate', 'skills', 'tracker', 'templates');
 
 function modelProfilesPayload() {
@@ -370,6 +374,8 @@ async function notifyGateResolved(tracker, comment, patchBody) {
 
 async function main() {
   const fastify = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
+  installContractPolicy(fastify);
+  await fastify.register(swagger, { openapi: { info: { title: 'Golem pilot contracts', version: '5.26.0' } } });
   const state = createState();
   // TKT-0107: tracker is opened BEFORE state.init() so the composite
   // last_activity_at signal in the sidebar can read maxTicketUpdatedAt.
@@ -620,12 +626,8 @@ async function main() {
 
   // ---- REST API ----
 
-  fastify.get('/api/health', async () => ({
-    ok: true,
-    projects_root: CONFIG.projectsRoot,
-    project_count: state.projects().length,
-    server_time: new Date().toISOString(),
-  }));
+  // Health and ticket creation are registered together by the typed pilot
+  // below, after their existing dependencies/error mapper are defined.
 
   fastify.get('/api/meta', async () => ({
     roles: roleMetaMap(),
@@ -1091,30 +1093,18 @@ async function main() {
     return reply.code(400).send({ error: String(err?.message ?? err) });
   };
 
-  // POST /api/tickets — create. 400 on validation error.
-  fastify.post('/api/tickets', async (req, reply) => {
-    const b = req.body ?? {};
-    const attribution = enforceAttribution(reply, b, 'created_by', 'createTicket');
-    if (attribution) return attribution;
-    try {
-      const ticket = tracker.createTicket({
-        project_id: b.project_id,
-        kind: b.kind,
-        title: b.title,
-        body: b.body,
-        body_format: b.body_format,
-        priority: b.priority,
-        labels: b.labels,
-        parent_id: resolveTicketIdField(b.parent_id),
-        assignee: b.assignee,
-        created_by: b.created_by,
-        source_ref: b.source_ref,
-      });
-      broadcastWS({ type: 'ticket-created', ticket });
-      return reply.code(201).send(ticket);
-    } catch (err) {
-      return sendTrackerError(reply, err);
-    }
+  registerContractPilot(fastify, {
+    projectsRoot: CONFIG.projectsRoot,
+    projectCount: () => state.projects().length,
+    enforceAttribution: (reply, body) => enforceAttribution(reply, body, 'created_by', 'createTicket'),
+    createTicket: (b) => tracker.createTicket({
+      project_id: b.project_id, kind: b.kind, title: b.title, body: b.body,
+      body_format: b.body_format, priority: b.priority, labels: b.labels,
+      parent_id: resolveTicketIdField(b.parent_id), assignee: b.assignee,
+      created_by: b.created_by, source_ref: b.source_ref,
+    }),
+    broadcast: (ticket) => broadcastWS({ type: 'ticket-created', ticket }),
+    sendTrackerError,
   });
 
   // GET /api/tickets/:id — ticket (+ comments/links from getTicket) plus its
@@ -2645,6 +2635,31 @@ async function main() {
   // Canonical URL is http://dashboard.golem.localhost:7420 (RFC 6761 *.localhost
   // resolves to 127.0.0.1 — no /etc/hosts edit needed).
   const boundPort = await tryListen(CONFIG.port);
+
+  // Build tooling exports only from an explicitly owned private fixture.
+  // No public route and no inherited checkout-root override are introduced.
+  if (process.env.GOLEM_OPENAPI_EXPORT) {
+    const owner = process.env.GOLEM_W2_SANDBOX;
+    const target = path.resolve(process.env.GOLEM_OPENAPI_EXPORT);
+    if (!owner || !target.startsWith(path.resolve(owner) + path.sep)) throw new Error('OpenAPI export requires an owned private path');
+    const document = fastify.swagger();
+    // Swagger8 leaves recursive additionalProperties refs in JSON-Schema
+    // definitions form. Map only existing component references, fail closed.
+    const mapRefs = (value) => {
+      if (Array.isArray(value)) return value.map(mapRefs);
+      if (!value || typeof value !== 'object') return value;
+      if (value.type === 'null') return { type: 'string', nullable: true, enum: [null] };
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+        if (key === '$ref' && typeof item === 'string' && item.startsWith('#/definitions/')) {
+          const name = item.slice('#/definitions/'.length);
+          if (!document.components?.schemas?.[name]) throw new Error(`unresolved OpenAPI reference: ${item}`);
+          return [key, `#/components/schemas/${name}`];
+        }
+        return [key, mapRefs(item)];
+      }));
+    };
+    fs.writeFileSync(target, JSON.stringify(mapRefs(document), null, 2) + '\n');
+  }
 
   // WS2: self-register so WS3's MCP discovery can find the live dashboard.
   // Atomic write (tmp + rename) into ~/.golem/dashboard.json. Best-effort

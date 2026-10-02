@@ -20,6 +20,13 @@
     "tools/scenario-scrub-core.ts",
     "tools/scenario-io.ts",
     "tools/scenario-scrub.ts",
-    "test/sim/support.ts"
+    "test/sim/support.ts",
+    "lib/contracts/pilot.ts",
+    "dashboard/server/contract-policy.ts",
+    "dashboard/server/contract-pilot.ts",
+    "tools/contracts-build.ts",
+    "dashboard/web/src/api/pilot-client.ts",
+    "lib/package-root.ts",
+    "lib/compiler/runtime-source.ts"
   ]
 }
