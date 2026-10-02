@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build } from 'vite';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { build, transformWithEsbuild } from 'vite';
 import {
   checkTokenFreshness,
   materializeTokens,
@@ -118,7 +120,7 @@ try {
     );
     result = tool('lint-tokens.ts', ['--root', root]);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /DYNAMIC_STYLE/);
+    assert.match(result.stderr, /unanalyzable style expression/);
     fs.rmSync(path.join(ui, 'bad.tsx'));
     const component = path.join(root, 'dashboard/web/converted.tsx');
     fs.writeFileSync(
@@ -224,7 +226,6 @@ try {
     for (const jsx of [
       'export const A=()=> <div {...{style:{color:"#fff",padding:12}}}/>;',
       'export const A=()=> <div style={{color:"#fff",padding:12}}/>;',
-      'const p={...{style:{color:"#fff",padding:12}}}; export const A=()=> <div {...p}/>;',
     ]) {
       fs.writeFileSync(path.join(ui, 'review.tsx'), jsx);
       result = tool('lint-tokens.ts', ['--root', root]);
@@ -232,21 +233,83 @@ try {
       assert.match(result.stderr, /COLOR/);
       assert.match(result.stderr, /LENGTH/);
     }
-    fs.writeFileSync(
-      path.join(ui, 'review.tsx'),
-      'const p={style:unknown}; export const A=()=> <div {...p}/>;',
-    );
+    const rawFixtures = [
+      'const p={[TEMPLATE_STYLE]:{color:"#fff",padding:12}}; export const A=()=> <div {...p}/>;'.replace(
+        'TEMPLATE_STYLE',
+        String.fromCharCode(96) + 'style' + String.fromCharCode(96),
+      ),
+      'const key="style" as const; const p={[key]:{color:"#fff",padding:12}}; export const A=()=> <div {...p}/>;',
+      'const p={}; const alias=p; alias.style={color:"#fff",padding:12}; export const A=()=> <div {...p}/>;',
+      'const p={}; p.style={color:"#fff",padding:12}; export const A=()=> <div {...p}/>;',
+      'const p={["style"]:{color:"#fff",padding:12}}; export const A=()=> <div {...p}/>;',
+    ];
+    for (const jsx of rawFixtures) {
+      fs.writeFileSync(path.join(ui, 'review.tsx'), jsx);
+      result = tool('lint-tokens.ts', ['--root', root]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /unanalyzable style expression/);
+      const transformed = await transformWithEsbuild(
+        jsx.replace('export const A', 'const A'),
+        'review.tsx',
+        { jsxFactory: 'React.createElement' },
+      );
+      const Component = new Function('React', transformed.code + '; return A;')(
+        React,
+      );
+      const html = renderToStaticMarkup(React.createElement(Component));
+      assert.match(html, /color:#fff/);
+      assert.match(html, /padding:12px/);
+    }
+    const reviewJs = path.join(ui, 'review.tsx');
+    fs.writeFileSync(reviewJs, 'export const A=(props)=> <div {...props}/>;');
     result = tool('lint-tokens.ts', ['--root', root]);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /DYNAMIC_STYLE/);
+    assert.match(result.stderr, /unanalyzable style expression/);
+    for (const jsx of [
+      'export const A=()=> <div {...{style:{padding:"var(--g-semantic-density-gap)"},title:"safe"}}/>;',
+      'export const A=()=> <div {...{title:"safe",className:"red"}}/>;',
+    ]) {
+      fs.writeFileSync(reviewJs, jsx);
+      result = tool('lint-tokens.ts', ['--root', root]);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /0 escapes/);
+    }
+    for (const suffix of [
+      ' // token-lint-disable-line:',
+      ' // token-lint-disable',
+      ' /* token-lint-disable-line: reason */',
+    ]) {
+      fs.writeFileSync(
+        reviewJs,
+        'export const A=(props)=> <div {...props}/>;' + suffix,
+      );
+      result = tool('lint-tokens.ts', ['--root', root]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /INLINE_ESCAPE/);
+    }
     fs.writeFileSync(
-      path.join(ui, 'review.tsx'),
-      'const paint={padding:"var(--g-semantic-density-gap)"}; const p={style:{...paint}}; export const A=()=> <div {...p} {...ordinary}/>;',
+      reviewJs,
+      'export const A=(props)=> <div {...props}/>; // token-lint-disable-line: adapter owns runtime props',
     );
     result = tool('lint-tokens.ts', ['--root', root]);
     assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /1 escapes \(1 inline, 0 exact\)/);
+    fs.writeFileSync(
+      reviewCss,
+      '.adapter{padding:12px} /* token-lint-disable-line: external adapter geometry */',
+    );
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /2 escapes \(2 inline, 0 exact\)/);
+    fs.writeFileSync(
+      reviewCss,
+      '@import "../../outside.css" screen; /* token-lint-disable-line: cannot hide import failure */',
+    );
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /CSS_IMPORT_SYNTAX/);
     console.log(
-      'CSS recursive/cyclic closure rejects actually Vite-reachable raw bytes; direct/static JSX spread controls PASS; opaque props not proven',
+      'CSS Vite-reachable raw bytes and React-rendered prior JSX repros rejected; unknown spread1/proved nonstyle0/inline counted controls PASS',
     );
   } else if (mode === 'build-package') {
     const pinned = checkTokenFreshness(tokens),

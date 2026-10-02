@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { lintTokenSource } from '../../tools/lint-tokens.ts';
+import {
+  lintTokenSource,
+  lintTokenSourceReport,
+} from '../../tools/lint-tokens.ts';
 
 import {
   cssStylesheetImports,
@@ -99,44 +102,44 @@ for (const text of [
       /CSS_(?:IMPORT_SYNTAX|SYNTAX)/,
     ));
 for (const text of [
-  'const A=()=> <div {...{style:{color:"#fff",padding:12}}}/>;',
-  'const props={style:{color:"#fff",padding:12}}; const A=()=> <div {...props}/>;',
-  'const props={...{style:{color:"#fff",padding:12}}}; const A=()=> <div {...{...props}}/>;',
-  'const paint={color:"#fff"}; const props={style:{...paint}}; const A=()=> <div {...props}/>;',
-  'const key="style"; const p={[key]:{color:"#fff"}}; const A=()=> <div {...p}/>;',
-  'const p={inner:{style:{padding:12}}}; const A=()=> <div {...p.inner}/>;',
+  'const A=()=> <div style={{padding:"var(--g-semantic-density-gap)",margin:0}}/>;',
+  'const A=()=> <div {...{style:{color:"var(--g-semantic-text-primary)",margin:0},title:"raw #fff prose"}}/>;',
+  'const A=()=> <div {...{title:"12px #fff",className:"red",onClick:handler}}/>;',
 ])
-  test('static JSX prop/style spreads cannot hide raw paint or length', () =>
-    assert.ok(lintTokenSource('ui/a.tsx', text, registry).length));
+  test('small literal token/style and proved non-style props pass', () =>
+    assert.deepEqual(lintTokenSource('ui/a.tsx', text, registry), []));
 for (const text of [
-  'const p={style:unknown}; const A=()=> <div {...p}/>;',
-  'const p={style:{...unknown}}; const A=()=> <div {...p}/>;',
-  'const p={...p,style:{margin:0}}; const A=()=> <div {...p}/>;',
-  'const p={[style]:{margin:0}}; const A=()=> <div {...p}/>;',
-  'let key="style"; const p={[key]:{margin:0}}; const A=()=> <div {...p}/>;',
-  'const p={style:{margin:0}}; const alias=p; alias.style.color="red"; const A=()=> <div {...p}/>;',
-  'let p={style:{margin:0}}; const A=()=> <div {...p}/>;',
-  'let p={}; p={style:{margin:0}}; const A=()=> <div {...p}/>;',
-  'const p={}; p.style.color="red"; const A=()=> <div {...p}/>;',
-  'const p={style:{margin:0}}; mutate(p); const A=()=> <div {...p}/>;',
-  'const p={style:{margin:0}}; const A=(p)=> <div {...p}/>;',
-  'const p={style:{margin:0}}; function A(){const p={title:"x"}; return <div {...p}/>;}',
+  'const p={[`style`]:{color:"#fff",padding:12}}; const A=()=> <div {...p}/>;',
+  'const key="style" as const; const p={[key]:{color:"#fff",padding:12}}; const A=()=> <div {...p}/>;',
+  'const p={}; const alias=p; alias.style={color:"#fff",padding:12}; const A=()=> <div {...p}/>;',
+  'const A=()=> <div {...{[`style`]:{margin:0}}}/>;',
+  'const A=()=> <div {...{["style"]:{margin:0}}}/>;',
+  'const p={style:{margin:0}}; const A=()=> <div {...p}/>;',
+  'const A=()=> <div {...unknown}/>;',
+  'const A=()=> <div {...{...{title:"safe"}}}/>;',
+  'const A=()=> <div style={{...{margin:0}}}/>;',
+  'const A=()=> <div style={object}/>;',
+  'const A=()=> <div style={{margin:zero}}/>;',
+  'const A=()=> <div style={{margin:0} as const}/>;',
+  'const A=()=> <div style={{[key]:0}}/>;',
+  'const A=(props)=> <div {...props}/>;',
 ])
-  test('visible unresolved cyclic computed mutable or shadowed style props fail explicitly', () =>
+  test('unproved computed alias mutated dynamic and unknown spread style positions fail closed', () =>
     assert.ok(
       lintTokenSource('ui/a.tsx', text, registry).some(
-        (i) => i.code === 'DYNAMIC_STYLE',
+        (i) => i.code === 'unanalyzable style expression',
       ),
     ));
-for (const text of [
-  'const paint={padding:"var(--g-semantic-density-gap)"}; const p={style:{...paint,margin:0}}; const A=()=> <div {...{...p}}/>;',
-  'const p={title:"12px #fff",className:"red"}; const A=()=> <div {...p} {...ordinary}/>;',
-  'const A=(props)=> <div {...props}/>;',
-  'const p={inner:{style:{margin:0}}}; const A=()=> <div {...p.inner}/>;',
-  'const key="style"; const p={[key]:{margin:0}}; const A=()=> <div {...p}/>;',
-])
-  test('supported static token spreads and ordinary non-style props remain permitted', () =>
-    assert.deepEqual(lintTokenSource('ui/a.tsx', text, registry), []));
+test('literal prop-spread paint and direct style paint retain literal diagnostics', () => {
+  for (const text of [
+    'const A=()=> <div {...{style:{color:"#fff",padding:12}}}/>;',
+    'const A=()=> <div style={{color:"#fff",padding:12}}/>;',
+  ]) {
+    const issues = lintTokenSource('ui/a.tsx', text, registry);
+    assert.ok(issues.some((i) => i.code === 'COLOR'));
+    assert.ok(issues.some((i) => i.code === 'LENGTH'));
+  }
+});
 test('comments/selectors/prose/URLs/SVG/aria are not style color or length values', () => {
   const css =
     '/* padding:12px;color:#fff */ .color-red::before {content:"12px #fff";background-image:url("data:image/svg+xml,%23fff");}';
@@ -155,21 +158,73 @@ for (const text of [
 ])
   test('Babel inline/object/assignment syntax rejects raw or untyped style values', () =>
     assert.ok(lintTokenSource('ui/card.tsx', text, registry).length));
-test('literal var style aliases and zero geometry pass, no arbitrary spread/dynamic style escape', () => {
-  assert.deepEqual(
-    lintTokenSource(
-      'ui/a.tsx',
-      'const styles={padding:"var(--g-semantic-density-gap)",margin:0}; const A=()=> <div style={styles}/>;',
-      registry,
-    ),
-    [],
+test('reasoned same-line actual comments are counted and do not escape adjacent lines', () => {
+  const js =
+    'const A=()=> <div {...unknown}/>; // token-lint-disable-line: reviewed adapter owns dynamic props';
+  assert.deepEqual(lintTokenSourceReport('ui/a.tsx', js, registry), {
+    issues: [],
+    inlineEscapes: 1,
+    exactEscapes: 0,
+  });
+  const css =
+    '.a{padding:12px;color:#fff} /* token-lint-disable-line: documented adapter geometry */\n.b{padding:13px}';
+  const report = lintTokenSourceReport('ui/a.css', css, registry);
+  assert.equal(report.inlineEscapes, 1);
+  assert.equal(report.issues.length, 1);
+  assert.equal(report.issues[0].line, 2);
+  const multiline =
+    '.a{\n padding:12px; /* token-lint-disable-line: owned geometry */\n color:#fff;\n}';
+  const attached = lintTokenSourceReport('ui/a.css', multiline, registry);
+  assert.equal(attached.inlineEscapes, 1);
+  assert.equal(attached.issues[0].line, 3);
+});
+for (const text of [
+  'const A=()=> <div {...unknown}/>; // token-lint-disable-line:',
+  'const A=()=> <div {...unknown}/>; // token-lint-disable',
+  'const A=()=> <div {...unknown}/>; /* token-lint-disable-line: reason */',
+  '// token-lint-disable-line: reason\nconst A=()=> <div {...unknown}/>;',
+  'const A=()=> <div/>; // token-lint-disable-line: unused',
+])
+  test('missing malformed wrong-kind or unattached escapes fail', () =>
+    assert.throws(
+      () => lintTokenSourceReport('ui/a.tsx', text, registry),
+      /INLINE_ESCAPE/,
+    ));
+for (const text of [
+  '.a{padding:12px} /* token-lint-disable-line: */',
+  '.a{padding:12px} /* token-lint-disable-line: one */ /* token-lint-disable-line: two */',
+  '.a{padding:12px} /* token-lint-disable-line:\n reason */',
+])
+  test('CSS missing duplicate or multiline escape fails', () =>
+    assert.throws(
+      () => lintTokenSourceReport('ui/a.css', text, registry),
+      /INLINE_ESCAPE/,
+    ));
+test('string prose cannot suppress issues and structural/import errors cannot be escaped', () => {
+  const js =
+    'const prose="// token-lint-disable-line: reason"; const A=()=> <div {...unknown}/>;';
+  assert.equal(
+    lintTokenSourceReport('ui/a.tsx', js, registry).inlineEscapes,
+    0,
   );
-  assert.ok(
-    lintTokenSource(
-      'ui/a.tsx',
-      'const A=()=> <div style={{...unknown}}/>;',
-      registry,
-    ).some((i) => i.code === 'DYNAMIC_STYLE'),
+  assert.equal(lintTokenSource('ui/a.tsx', js, registry).length, 1);
+  assert.throws(
+    () =>
+      lintTokenSource(
+        'a.css',
+        '@import "a.css" screen; /* token-lint-disable-line: reason */',
+        registry,
+      ),
+    /CSS_IMPORT_SYNTAX/,
+  );
+  assert.throws(
+    () =>
+      lintTokenSource(
+        'a.css',
+        '.a{padding 12px} /* token-lint-disable-line: reason */',
+        registry,
+      ),
+    /CSS_SYNTAX/,
   );
 });
 test('exact owned exception records do not disable neighboring values/files and malformed syntax fails', () => {
@@ -181,8 +236,8 @@ test('exact owned exception records do not disable neighboring values/files and 
     owner: 'layout-adapter',
   };
   assert.deepEqual(
-    lintTokenSource('ui/a.css', '.a{width:32px}', registry, [exception]),
-    [],
+    lintTokenSourceReport('ui/a.css', '.a{width:32px}', registry, [exception]),
+    { issues: [], inlineEscapes: 0, exactEscapes: 1 },
   );
   assert.equal(
     lintTokenSource('ui/b.css', '.a{width:32px}', registry, [exception]).length,

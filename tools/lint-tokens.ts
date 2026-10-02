@@ -8,6 +8,7 @@ import {
   cssStylesheetImports,
   importedStylesheets,
   inlineDeclarations,
+  inlineEscapeLines,
 } from './token-lint-parser.ts';
 import type { TokenType } from './tokens-core.ts';
 import { strictTokenJson, TokenError } from './tokens-core.ts';
@@ -120,7 +121,7 @@ function checkValue(
 ): string | null {
   const p = propertyName(decl.property),
     value = decl.value;
-  if (p === 'style' || value === null) return 'DYNAMIC_STYLE';
+  if (p === 'style' || value === null) return 'unanalyzable style expression';
   if (p.startsWith('--')) return 'HANDWRITTEN_ALIAS';
   if (typeof value === 'number') {
     if (value === 0 && dimensionProperty(p) && !fontProperty(p)) return null;
@@ -142,7 +143,7 @@ function checkValue(
       ? 'FONT'
       : dimensionProperty(p)
         ? 'LENGTH'
-        : 'DYNAMIC_STYLE';
+        : 'unanalyzable style expression';
   }
   const raw = value.trim();
   if (!raw) return 'VALUE_SYNTAX';
@@ -230,12 +231,12 @@ function checkValue(
   if (colorProperty(p)) return 'COLOR';
   return 'UNTYPED_LITERAL';
 }
-export function lintTokenSource(
+export function lintTokenSourceReport(
   file: string,
   text: string,
   registry: Record<string, TokenType>,
   exceptions: LiteralException[] = [],
-): LiteralIssue[] {
+): { issues: LiteralIssue[]; inlineEscapes: number; exactEscapes: number } {
   for (const exception of exceptions)
     if (
       !exception.file ||
@@ -248,7 +249,10 @@ export function lintTokenSource(
   const declarations = file.endsWith('.css')
       ? cssDeclarations(text)
       : inlineDeclarations(text),
-    issues: LiteralIssue[] = [];
+    issues: LiteralIssue[] = [],
+    escapes = inlineEscapeLines(file, text),
+    used = new Set<number>();
+  let exactEscapes = 0;
   for (const decl of declarations) {
     const code = checkValue(decl, registry);
     if (!code) continue;
@@ -259,8 +263,14 @@ export function lintTokenSource(
           propertyName(e.property) === propertyName(decl.property) &&
           e.value === decl.value,
       )
-    )
+    ) {
+      exactEscapes++;
       continue;
+    }
+    if (escapes.has(decl.line)) {
+      used.add(decl.line);
+      continue;
+    }
     issues.push({
       file,
       line: decl.line,
@@ -269,7 +279,17 @@ export function lintTokenSource(
       code,
     });
   }
-  return issues;
+  if ([...escapes.keys()].some((line) => !used.has(line)))
+    throw new TokenError('INLINE_ESCAPE_ATTACHMENT');
+  return { issues, inlineEscapes: used.size, exactEscapes };
+}
+export function lintTokenSource(
+  file: string,
+  text: string,
+  registry: Record<string, TokenType>,
+  exceptions: LiteralException[] = [],
+): LiteralIssue[] {
+  return lintTokenSourceReport(file, text, registry, exceptions).issues;
 }
 export function runTokenLint(args: string[]): number {
   if (args.length === 1 && args[0] === '--help') {
@@ -372,22 +392,31 @@ export function runTokenLint(args: string[]): number {
       files.push(relative);
     }
   }
-  const issues = [...new Set(files)]
+  const reports = [...new Set(files)]
     .sort()
-    .flatMap((file) =>
-      lintTokenSource(
+    .map((file) =>
+      lintTokenSourceReport(
         file,
         fs.readFileSync(path.join(root, file), 'utf8'),
         registry,
         scope.exceptions,
       ),
     );
+  const issues = reports.flatMap((report) => report.issues),
+    inlineEscapes = reports.reduce(
+      (sum, report) => sum + report.inlineEscapes,
+      0,
+    ),
+    exactEscapes = reports.reduce(
+      (sum, report) => sum + report.exactEscapes,
+      0,
+    );
   for (const issue of issues)
     console.error(
       `${issue.file}:${issue.line}:${issue.column}/${issue.property}/${issue.code}`,
     );
   console.log(
-    `token literal lint: ${new Set(files).size} explicit files, ${issues.length} issues`,
+    `token literal lint: ${new Set(files).size} explicit files, ${issues.length} issues, ${inlineEscapes + exactEscapes} escapes (${inlineEscapes} inline, ${exactEscapes} exact)`,
   );
   return issues.length ? 1 : 0;
 }
