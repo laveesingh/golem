@@ -203,7 +203,9 @@
         "test/support/component-setup.ts",
         "test/e2e/playwright.atoms.config.ts",
         "test/e2e/atoms.spec.ts",
-        "test/integration/atoms-workshop-probe.mjs"
+        "test/integration/atoms-workshop-probe.mjs",
+        "test/integration/atoms-linux-probe.mjs",
+        "test/integration/atoms-linux-entry.mjs"
       ],
       "project": [
         "**/*.{js,mjs,ts,jsx,tsx}",
