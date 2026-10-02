@@ -18,6 +18,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, symlinkSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -43,6 +44,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const GOLEM_ROOT = packageRoot(import.meta.url);
 const DASHBOARD_DIR = resolve(GOLEM_ROOT, 'dashboard');
+const require = createRequire(import.meta.url);
+function dashboardDependenciesPresent() {
+  try { require.resolve('fastify'); require.resolve('better-sqlite3'); return true; }
+  catch { return false; }
+}
 function dashboardPortFromArgs(args) {
   const index = args.findIndex((arg) => arg === '--port' || arg.startsWith('--port='));
   if (index < 0) return null;
@@ -128,7 +134,7 @@ async function cmdDashboard(args) {
   if (!existsSync(serverEntry)) {
     fatal(1, `dashboard server entry missing: ${serverEntry}`);
   }
-  if (!existsSync(resolve(GOLEM_ROOT, 'node_modules'))) {
+  if (!dashboardDependenciesPresent()) {
     fatal(1, 'root deps missing — npm install (from the repo root)');
   }
 
@@ -157,7 +163,7 @@ async function cmdDashboard(args) {
 async function cmdDashboardRestart(args) {
   try { runtimeFile(import.meta.url, 'dashboard/server/index.js'); }
   catch (error) { fatal(1, error.message); }
-  if (!existsSync(resolve(GOLEM_ROOT, 'node_modules'))) {
+  if (!dashboardDependenciesPresent()) {
     fatal(1, 'root deps missing — npm install (from the repo root)');
   }
 
@@ -585,7 +591,7 @@ async function cmdDoctor() {
   log('');
   log('Dashboard');
   existsSync(DASHBOARD_DIR) ? ok(`dashboard dir exists (${DASHBOARD_DIR})`) : fail('dashboard dir exists');
-  existsSync(resolve(GOLEM_ROOT, 'node_modules')) ? ok('root node_modules') : fail('root node_modules — npm install (from the repo root)');
+  dashboardDependenciesPresent() ? ok('dashboard dependencies resolve') : fail('dashboard dependencies missing — npm install (from the repo root)');
   try {
     await import('better-sqlite3');
     ok('better-sqlite3 loads from root node_modules');

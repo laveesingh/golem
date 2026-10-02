@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": [
+    "cli/**/*",
+    "lib/**/*",
+    "dashboard/server/**/*",
+    "mcp/channel/**/*",
+    "tools/**/*"
+  ],
+  "exclude": ["**/node_modules/**", "**/*.test.*"]
+}

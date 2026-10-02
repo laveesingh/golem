@@ -1,6 +1,8 @@
 # Runtime / generated state
 journal/
 .test-results/
+/dist/
+*.tgz
 node_modules/
 
 # Local-only Claude Code overrides (always per-developer)

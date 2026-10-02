@@ -3,6 +3,7 @@
   "workspaces": {
     ".": {
       "entry": [
+        "test/fixtures/w3-installed-probe.mjs",
         "cli/golem.js",
         "dashboard/server/index.js",
         "dashboard/web/src/entry.jsx",

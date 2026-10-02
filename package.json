@@ -19,16 +19,17 @@
     "golem": "./cli/golem-bin.js"
   },
   "exports": {
-    ".": "./cli/golem.js"
+    ".": "./dist/cli/golem.js"
   },
   "files": [
-    "cli/",
-    "dashboard/server/",
+    "cli/golem-bin.js",
+    "dist/",
+    "contracts/dist/",
+    "tools/",
     "dashboard/dist/",
     "dashboard/web/",
-    "lib/",
-    "mcp/channel/",
-    "plugin/",
+    "mcp/channel/package.json",
+    "mcp/channel/package-lock.json",
     "shims/",
     "substrate/",
     "CONTRIBUTING.md",
@@ -44,7 +45,8 @@
     "check": "node tools/check.mjs",
     "test": "vitest run --project unit --project component --project integration",
     "test:collaboration": "vitest run --project integration -t 'notification|typed-|runtime-compatibility|pi-delivery'",
-    "postinstall": "npm ci --omit=dev --prefix mcp/channel",
+    "prepack": "node tools/package-build.mjs",
+    "postinstall": "node tools/install-channel.mjs",
     "test:release": "node tools/pending.mjs release",
     "test:management:real": "GOLEM_REAL_HARNESS=1 node test/management-real-journey.test.mjs",
     "measure:turns": "node scripts/measure-turns.mjs",
