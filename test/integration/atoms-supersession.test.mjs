@@ -358,3 +358,31 @@ test('missing rollback path aggregates primary/fence failures and retains known 
     validateExactRejected(held);
     assert.equal(fs.existsSync(target), false);
   }));
+
+test('replaced evidence parent fails without touching replacement or deleting original backup', () =>
+  setup(({ root, target, candidate, evidence }) => {
+    const parent = path.join(root, 'evidence-parent');
+    fs.mkdirSync(parent);
+    const receipt = path.join(parent, 'receipt');
+    const checked = journalFault(receipt, 'old-evidence-verified', () => {
+      fs.renameSync(parent, path.join(root, 'original-parent-aside'));
+      fs.mkdirSync(parent);
+      fs.mkdirSync(receipt);
+      fs.writeFileSync(path.join(receipt, 'unknown.txt'), 'parent-replacement');
+    });
+    assert.throws(
+      () => replaceExactRejected(candidate, target, receipt),
+      (error) => error instanceof AggregateError && error.errors.length >= 2,
+    );
+    checked();
+    assert.equal(
+      fs.readFileSync(path.join(receipt, 'unknown.txt'), 'utf8'),
+      'parent-replacement',
+    );
+    const journal = JSON.parse(
+      fs.readFileSync(
+        path.join(root, 'original-parent-aside/receipt/transaction.json'),
+      ),
+    );
+    validateExactRejected(journal.backup);
+  }));
