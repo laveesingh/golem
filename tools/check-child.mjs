@@ -6,6 +6,8 @@ for (const [label, args] of [
   ['TypeScript strict', ['node_modules/typescript/bin/tsc', '--noEmit']],
   ['Knip debt', ['tools/knip-check-child.mjs']],
   ['Native backend import', ['tools/native-import.mjs']],
+  ['Token generation freshness', ['tools/tokens-build.ts', '--check']],
+  ['Converted token literals', ['tools/lint-tokens.ts']],
 ]) {
   const result = spawnSync(process.execPath, args, {
     encoding: 'utf8',
@@ -18,6 +20,6 @@ for (const [label, args] of [
   if (result.error || result.status !== 0) failed = true;
 }
 console.log(
-  'Pending later gates: W3 contract freshness/diff; W4 token literals; W3/W7 shipped artefacts.',
+  'Pending later gates: W3 contract freshness/diff; W4 component/browser/axe/glyph; W3/W7 shipped artefacts.',
 );
 process.exitCode = failed ? 1 : 0;

@@ -14,5 +14,12 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["cli/bootstrap.ts"]
+  "include": [
+    "cli/bootstrap.ts",
+    "tools/tokens-core.ts",
+    "tools/tokens-io.ts",
+    "tools/tokens-build.ts",
+    "tools/lint-tokens.ts",
+    "tools/token-lint-parser.ts"
+  ]
 }

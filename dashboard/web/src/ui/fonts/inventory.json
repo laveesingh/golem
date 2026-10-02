@@ -1,0 +1,457 @@
+[
+  {
+    "file": "geist-latin-400-normal.woff2",
+    "family": "Geist",
+    "weight": 400,
+    "style": "normal",
+    "subset": "latin",
+    "package": "@fontsource/geist",
+    "packageVersion": "5.3.0",
+    "upstreamMetadata": {
+      "id": "geist",
+      "family": "Geist",
+      "subsets": [
+        "cyrillic",
+        "cyrillic-ext",
+        "latin",
+        "latin-ext",
+        "vietnamese"
+      ],
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800,
+        900
+      ],
+      "styles": [
+        "italic",
+        "normal"
+      ],
+      "defSubset": "latin",
+      "variable": {
+        "ital": {
+          "default": "0",
+          "min": "0",
+          "max": "1",
+          "step": "1"
+        },
+        "wght": {
+          "default": "400",
+          "min": "100",
+          "max": "900",
+          "step": "1"
+        }
+      },
+      "lastModified": "2026-05-13",
+      "version": "v5",
+      "category": "sans-serif",
+      "license": {
+        "type": "OFL-1.1",
+        "url": "https://openfontlicense.org",
+        "attribution": "Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font) Geist-Italic[wght].ttf: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)"
+      },
+      "source": "https://github.com/google/fonts",
+      "type": "google"
+    },
+    "source": "https://registry.npmjs.org/@fontsource/geist/-/geist-5.3.0.tgz",
+    "license": "OFL-1.1",
+    "licenseFile": "geist-LICENSE.txt",
+    "sha256": "ead637fd0b6b887d829b3ce3f25fdc242b1de0cfb69c0d97987933675d1315ba",
+    "bytes": 12956
+  },
+  {
+    "file": "geist-latin-500-normal.woff2",
+    "family": "Geist",
+    "weight": 500,
+    "style": "normal",
+    "subset": "latin",
+    "package": "@fontsource/geist",
+    "packageVersion": "5.3.0",
+    "upstreamMetadata": {
+      "id": "geist",
+      "family": "Geist",
+      "subsets": [
+        "cyrillic",
+        "cyrillic-ext",
+        "latin",
+        "latin-ext",
+        "vietnamese"
+      ],
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800,
+        900
+      ],
+      "styles": [
+        "italic",
+        "normal"
+      ],
+      "defSubset": "latin",
+      "variable": {
+        "ital": {
+          "default": "0",
+          "min": "0",
+          "max": "1",
+          "step": "1"
+        },
+        "wght": {
+          "default": "400",
+          "min": "100",
+          "max": "900",
+          "step": "1"
+        }
+      },
+      "lastModified": "2026-05-13",
+      "version": "v5",
+      "category": "sans-serif",
+      "license": {
+        "type": "OFL-1.1",
+        "url": "https://openfontlicense.org",
+        "attribution": "Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font) Geist-Italic[wght].ttf: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)"
+      },
+      "source": "https://github.com/google/fonts",
+      "type": "google"
+    },
+    "source": "https://registry.npmjs.org/@fontsource/geist/-/geist-5.3.0.tgz",
+    "license": "OFL-1.1",
+    "licenseFile": "geist-LICENSE.txt",
+    "sha256": "6145bf6706dbc1b6686f04f871489cf724951f00b752745896ccdcac07639a53",
+    "bytes": 13296
+  },
+  {
+    "file": "geist-latin-600-normal.woff2",
+    "family": "Geist",
+    "weight": 600,
+    "style": "normal",
+    "subset": "latin",
+    "package": "@fontsource/geist",
+    "packageVersion": "5.3.0",
+    "upstreamMetadata": {
+      "id": "geist",
+      "family": "Geist",
+      "subsets": [
+        "cyrillic",
+        "cyrillic-ext",
+        "latin",
+        "latin-ext",
+        "vietnamese"
+      ],
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800,
+        900
+      ],
+      "styles": [
+        "italic",
+        "normal"
+      ],
+      "defSubset": "latin",
+      "variable": {
+        "ital": {
+          "default": "0",
+          "min": "0",
+          "max": "1",
+          "step": "1"
+        },
+        "wght": {
+          "default": "400",
+          "min": "100",
+          "max": "900",
+          "step": "1"
+        }
+      },
+      "lastModified": "2026-05-13",
+      "version": "v5",
+      "category": "sans-serif",
+      "license": {
+        "type": "OFL-1.1",
+        "url": "https://openfontlicense.org",
+        "attribution": "Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font) Geist-Italic[wght].ttf: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)"
+      },
+      "source": "https://github.com/google/fonts",
+      "type": "google"
+    },
+    "source": "https://registry.npmjs.org/@fontsource/geist/-/geist-5.3.0.tgz",
+    "license": "OFL-1.1",
+    "licenseFile": "geist-LICENSE.txt",
+    "sha256": "edde7cc4e2719898f981a6d970a756030fff75a8ed36dd6a457a60181b889ebf",
+    "bytes": 13372
+  },
+  {
+    "file": "geist-latin-700-normal.woff2",
+    "family": "Geist",
+    "weight": 700,
+    "style": "normal",
+    "subset": "latin",
+    "package": "@fontsource/geist",
+    "packageVersion": "5.3.0",
+    "upstreamMetadata": {
+      "id": "geist",
+      "family": "Geist",
+      "subsets": [
+        "cyrillic",
+        "cyrillic-ext",
+        "latin",
+        "latin-ext",
+        "vietnamese"
+      ],
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800,
+        900
+      ],
+      "styles": [
+        "italic",
+        "normal"
+      ],
+      "defSubset": "latin",
+      "variable": {
+        "ital": {
+          "default": "0",
+          "min": "0",
+          "max": "1",
+          "step": "1"
+        },
+        "wght": {
+          "default": "400",
+          "min": "100",
+          "max": "900",
+          "step": "1"
+        }
+      },
+      "lastModified": "2026-05-13",
+      "version": "v5",
+      "category": "sans-serif",
+      "license": {
+        "type": "OFL-1.1",
+        "url": "https://openfontlicense.org",
+        "attribution": "Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font) Geist-Italic[wght].ttf: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)"
+      },
+      "source": "https://github.com/google/fonts",
+      "type": "google"
+    },
+    "source": "https://registry.npmjs.org/@fontsource/geist/-/geist-5.3.0.tgz",
+    "license": "OFL-1.1",
+    "licenseFile": "geist-LICENSE.txt",
+    "sha256": "728e76ff0b76212419e83011f5202c2fd1144da9d7915a4fa787561f5a3f334d",
+    "bytes": 13364
+  },
+  {
+    "file": "jetbrains-mono-latin-400-normal.woff2",
+    "family": "JetBrains Mono",
+    "weight": 400,
+    "style": "normal",
+    "subset": "latin",
+    "package": "@fontsource/jetbrains-mono",
+    "packageVersion": "5.3.0",
+    "upstreamMetadata": {
+      "id": "jetbrains-mono",
+      "family": "JetBrains Mono",
+      "subsets": [
+        "cyrillic",
+        "cyrillic-ext",
+        "greek",
+        "latin",
+        "latin-ext",
+        "vietnamese"
+      ],
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800
+      ],
+      "styles": [
+        "italic",
+        "normal"
+      ],
+      "defSubset": "latin",
+      "variable": {
+        "ital": {
+          "default": "0",
+          "min": "0",
+          "max": "1",
+          "step": "1"
+        },
+        "wght": {
+          "default": "400",
+          "min": "100",
+          "max": "800",
+          "step": "1"
+        }
+      },
+      "lastModified": "2025-09-11",
+      "version": "v24",
+      "category": "monospace",
+      "license": {
+        "type": "OFL-1.1",
+        "url": "https://openfontlicense.org",
+        "attribution": "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) JetBrainsMono-Italic[wght].ttf: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+      },
+      "source": "https://github.com/google/fonts",
+      "type": "google"
+    },
+    "source": "https://registry.npmjs.org/@fontsource/jetbrains-mono/-/jetbrains-mono-5.3.0.tgz",
+    "license": "OFL-1.1",
+    "licenseFile": "jetbrains-mono-LICENSE.txt",
+    "sha256": "14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb",
+    "bytes": 21168
+  },
+  {
+    "file": "jetbrains-mono-latin-500-normal.woff2",
+    "family": "JetBrains Mono",
+    "weight": 500,
+    "style": "normal",
+    "subset": "latin",
+    "package": "@fontsource/jetbrains-mono",
+    "packageVersion": "5.3.0",
+    "upstreamMetadata": {
+      "id": "jetbrains-mono",
+      "family": "JetBrains Mono",
+      "subsets": [
+        "cyrillic",
+        "cyrillic-ext",
+        "greek",
+        "latin",
+        "latin-ext",
+        "vietnamese"
+      ],
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800
+      ],
+      "styles": [
+        "italic",
+        "normal"
+      ],
+      "defSubset": "latin",
+      "variable": {
+        "ital": {
+          "default": "0",
+          "min": "0",
+          "max": "1",
+          "step": "1"
+        },
+        "wght": {
+          "default": "400",
+          "min": "100",
+          "max": "800",
+          "step": "1"
+        }
+      },
+      "lastModified": "2025-09-11",
+      "version": "v24",
+      "category": "monospace",
+      "license": {
+        "type": "OFL-1.1",
+        "url": "https://openfontlicense.org",
+        "attribution": "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) JetBrainsMono-Italic[wght].ttf: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+      },
+      "source": "https://github.com/google/fonts",
+      "type": "google"
+    },
+    "source": "https://registry.npmjs.org/@fontsource/jetbrains-mono/-/jetbrains-mono-5.3.0.tgz",
+    "license": "OFL-1.1",
+    "licenseFile": "jetbrains-mono-LICENSE.txt",
+    "sha256": "cb182feeed4d798ff6961d3c79f7026279448fca0676438aaecb21f3fc39553a",
+    "bytes": 21832
+  },
+  {
+    "file": "jetbrains-mono-latin-600-normal.woff2",
+    "family": "JetBrains Mono",
+    "weight": 600,
+    "style": "normal",
+    "subset": "latin",
+    "package": "@fontsource/jetbrains-mono",
+    "packageVersion": "5.3.0",
+    "upstreamMetadata": {
+      "id": "jetbrains-mono",
+      "family": "JetBrains Mono",
+      "subsets": [
+        "cyrillic",
+        "cyrillic-ext",
+        "greek",
+        "latin",
+        "latin-ext",
+        "vietnamese"
+      ],
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800
+      ],
+      "styles": [
+        "italic",
+        "normal"
+      ],
+      "defSubset": "latin",
+      "variable": {
+        "ital": {
+          "default": "0",
+          "min": "0",
+          "max": "1",
+          "step": "1"
+        },
+        "wght": {
+          "default": "400",
+          "min": "100",
+          "max": "800",
+          "step": "1"
+        }
+      },
+      "lastModified": "2025-09-11",
+      "version": "v24",
+      "category": "monospace",
+      "license": {
+        "type": "OFL-1.1",
+        "url": "https://openfontlicense.org",
+        "attribution": "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) JetBrainsMono-Italic[wght].ttf: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+      },
+      "source": "https://github.com/google/fonts",
+      "type": "google"
+    },
+    "source": "https://registry.npmjs.org/@fontsource/jetbrains-mono/-/jetbrains-mono-5.3.0.tgz",
+    "license": "OFL-1.1",
+    "licenseFile": "jetbrains-mono-LICENSE.txt",
+    "sha256": "400c6bfda18d5d14acad1c15d6dcb9f8e13c015e7286317e0b9a482539bef147",
+    "bytes": 21860
+  }
+]

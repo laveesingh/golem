@@ -173,7 +173,10 @@
         "test/support/*.mjs",
         "test/fixtures/w2-safety-probe.mjs",
         "test/fixtures/w2-html-mutation-probe.mjs",
-        "tools/*.mjs"
+        "tools/*.mjs",
+        "tools/tokens-build.ts",
+        "tools/lint-tokens.ts",
+        "test/integration/token-tools-probe.mjs"
       ],
       "project": [
         "**/*.{js,mjs,ts,jsx,tsx}",
@@ -184,7 +187,9 @@
         "!plugin/**",
         "!dashboard/dist/**",
         "!dist/**",
-        "!mcp/channel/**"
+        "!mcp/channel/**",
+        "!dashboard/web/src/ui/tokens/.generations/**",
+        "!dashboard/web/src/ui/tokens/generated/**"
       ]
     },
     "mcp/channel": {
