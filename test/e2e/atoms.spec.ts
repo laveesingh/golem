@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './atoms.fixture.ts';
@@ -45,6 +46,26 @@ async function catalog(
 }
 for (const theme of themes)
   for (const density of densities) {
+    test(`real Ladle authoring axe panel ${theme}/${density}`, async ({
+      page,
+    }) => {
+      await page.goto(
+        `/?story=button--states&atomTheme=${theme}&atomDensity=${density}`,
+      );
+      await expect(page.locator('[data-atom-panel]')).toBeVisible();
+      await page
+        .getByRole('button', {
+          name: 'Show accessibility report.',
+          exact: true,
+        })
+        .click();
+      const dialog = page.getByRole('dialog', {
+        name: 'Dialog with the story accessibility report.',
+      });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText('There are no');
+      await expect(dialog).toContainText('accessibility violations. Good job!');
+    });
     test(`all five actual catalog panels axe clean ${theme}/${density}`, async ({
       page,
     }) => {
@@ -118,8 +139,19 @@ for (const theme of themes)
         });
         expect(
           rendered.fonts.some(
-            (font: { isCustomFont: boolean; glyphCount: number }) =>
-              font.isCustomFont && font.glyphCount > 0,
+            (font: {
+              isCustomFont: boolean;
+              glyphCount: number;
+              familyName: string;
+            }) =>
+              font.isCustomFont &&
+              font.glyphCount > 0 &&
+              font.familyName
+                .toLowerCase()
+                .replace(/[\s-]/g, '')
+                .includes(
+                  sample.startsWith('code') ? 'jetbrainsmono' : 'geist',
+                ),
           ),
         ).toBe(true);
       }
@@ -159,12 +191,16 @@ for (const theme of themes)
           return {
             background: css.backgroundColor,
             foreground: css.color,
+            opacity: css.opacity,
+            filter: css.filter,
             expectedBackground: background,
             expectedForeground: foreground,
           };
         }, expected);
         expect(actual.background).toBe(actual.expectedBackground);
         expect(actual.foreground).toBe(actual.expectedForeground);
+        expect(actual.opacity).toBe('1');
+        expect(actual.filter).toBe('none');
       };
       await paint('default');
       await button.hover();
@@ -192,7 +228,12 @@ for (const theme of themes)
       await page.keyboard.press('Shift');
       await paint('busy', busy);
       const count = await page.locator('text=Activations:').textContent();
-      await busy.click();
+      const busyBounds = await busy.boundingBox();
+      if (!busyBounds) throw Error('Busy action must remain visible');
+      await page.mouse.click(
+        busyBounds.x + busyBounds.width / 2,
+        busyBounds.y + busyBounds.height / 2,
+      );
       await page.keyboard.press('Enter');
       await page.keyboard.press('Space');
       expect(await page.locator('text=Activations:').textContent()).toBe(count);
@@ -250,9 +291,69 @@ for (const theme of themes)
             );
           await page.setViewportSize({ width, height: 1200 });
           const panel = await catalog(page, atom, theme, density);
-          await expect(panel).toHaveScreenshot(
-            `${atom.toLowerCase()}-${theme}-${density}-${width}.png`,
-            { animations: 'disabled', caret: 'hide', maxDiffPixels: 0 },
-          );
+          if (atom === 'Button' || atom === 'IconButton' || atom === 'Input') {
+            await page.keyboard.press('Tab');
+            const target = page.locator(
+              atom === 'Button'
+                ? '#busy'
+                : atom === 'IconButton'
+                  ? '#icon-busy'
+                  : '#invalid',
+            );
+            await target.focus();
+            await page.keyboard.press('Shift');
+            await expect(target).toBeFocused();
+            expect(
+              await target.evaluate(
+                (element) => getComputedStyle(element).outlineStyle,
+              ),
+            ).toBe('solid');
+          }
+          const accessibility = await new AxeBuilder({ page })
+            .include('[data-atom-panel]')
+            .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+            .analyze();
+          expect(accessibility.violations).toEqual([]);
+          const geometry = await panel.boundingBox();
+          if (!geometry) throw Error('Actual visible panel geometry required');
+          const name = `${atom.toLowerCase()}-${theme}-${density}-${width}.png`;
+          await expect(panel).toHaveScreenshot(name, {
+            animations: 'disabled',
+            caret: 'hide',
+            maxDiffPixels: 0,
+          });
+          if (process.env.GOLEM_ATOMS_CAPTURE === 'initial') {
+            const records = process.env.GOLEM_ATOMS_CAPTURE_RECORDS;
+            if (!records || !path.isAbsolute(records))
+              throw Error('Owned capture record facility required');
+            const browser = page.context().browser();
+            if (!browser)
+              throw Error('Actual captured browser identity missing');
+            fs.writeFileSync(
+              path.join(records, name + '.json'),
+              JSON.stringify(
+                {
+                  name,
+                  atom: atom.toLowerCase(),
+                  theme,
+                  density,
+                  viewport: { width, height: 1200 },
+                  panel: geometry,
+                  scale: 1,
+                  axeViolations: accessibility.violations.length,
+                  fontsReady: true,
+                  browserVersion: browser.version(),
+                  focusState: ['Button', 'IconButton'].includes(atom)
+                    ? 'busy+keyboard-focus'
+                    : atom === 'Input'
+                      ? 'invalid+keyboard-focus'
+                      : 'noninteractive',
+                },
+                null,
+                2,
+              ),
+              { flag: 'wx', mode: 0o600 },
+            );
+          }
         });
       }

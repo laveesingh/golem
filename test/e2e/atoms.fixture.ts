@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Browser } from '@playwright/test';
+import type { Browser, FullConfig } from '@playwright/test';
 import { test as base, chromium, expect } from '@playwright/test';
 
 // This module is import-safe for static tooling. Validation happens at real runner startup.
-export default function atomEnvironment() {
+export default async function atomEnvironment(config?: FullConfig) {
   const temp = process.env.TMPDIR,
     output = process.env.GOLEM_ATOMS_RESULTS_ROOT,
     baseURL = process.env.GOLEM_ATOMS_BASE_URL;
@@ -27,6 +28,56 @@ export default function atomEnvironment() {
   )
     throw new Error(
       'Atom browser checks require private loopback nonlive port',
+    );
+  if (
+    config &&
+    config.updateSnapshots !== 'none' &&
+    process.env.GOLEM_ATOMS_CAPTURE !== 'initial'
+  )
+    throw Error('Snapshot updates require explicit initial-candidate mode');
+  const identityFile = process.env.GOLEM_ATOMS_IDENTITY_FILE;
+  if (!identityFile || !path.isAbsolute(identityFile))
+    throw Error('Observed browser/image identity facility required');
+  const identityStat = fs.lstatSync(identityFile);
+  if (
+    !identityStat.isFile() ||
+    identityStat.isSymbolicLink() ||
+    identityStat.uid !== process.getuid?.() ||
+    identityStat.mode & 0o022
+  )
+    throw Error('Identity must be owned regular private metadata');
+  const identity = JSON.parse(fs.readFileSync(identityFile, 'utf8')) as {
+    imageDigest: string;
+    imageObserved: boolean;
+    executableObserved: boolean;
+    executable: string;
+    executableSha256: string;
+    chromiumVersion: string;
+    chromiumRevision: string;
+    platform: string;
+  };
+  if (
+    process.platform !== 'linux' ||
+    process.arch !== 'x64' ||
+    identity.platform !== 'linux/amd64' ||
+    identity.imageDigest !==
+      'sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7' ||
+    !identity.imageObserved ||
+    !identity.executableObserved ||
+    identity.chromiumRevision !== '1243' ||
+    identity.chromiumVersion !== '153.0.8010.12'
+  )
+    throw Error('Actual pinned Linux/browser proof missing or mismatched');
+  if (identity.executable !== chromium.executablePath())
+    throw Error(
+      'Observed browser executable path differs from actual facility',
+    );
+  const executableHash = createHash('sha256');
+  for await (const chunk of fs.createReadStream(identity.executable))
+    executableHash.update(chunk);
+  if (executableHash.digest('hex') !== identity.executableSha256)
+    throw Error(
+      'Observed browser executable hash differs from actual facility',
     );
   if (!fs.existsSync(chromium.executablePath()))
     throw new Error(
@@ -68,7 +119,7 @@ async function closedWithin(
 export const test = base.extend({
   browser: [
     async ({ browserName }, use) => {
-      atomEnvironment();
+      await atomEnvironment();
       if (browserName !== 'chromium')
         throw new Error('Atom browser fixture supports Chromium only');
       const temp = process.env.TMPDIR;
@@ -80,6 +131,7 @@ export const test = base.extend({
         chromium.executablePath(),
         [
           '--headless=new',
+          '--disable-gpu',
           '--no-sandbox',
           `--user-data-dir=${profile}`,
           '--remote-debugging-port=0',
@@ -165,7 +217,7 @@ export const test = base.extend({
   ],
   page: async ({ context }, use) => {
     const page = await context.newPage();
-    await page.clock.install({ time: new Date('2026-10-01T00:00:00Z') });
+    await page.clock.setFixedTime(new Date('2026-10-01T00:00:00Z'));
     await page.addInitScript(() => {
       try {
         localStorage.clear();

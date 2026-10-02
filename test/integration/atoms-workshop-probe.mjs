@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -9,6 +9,12 @@ import {
   checkTokenFreshness,
   materializeTokens,
 } from '../../tools/tokens-io.ts';
+import {
+  atomImageDigest,
+  ownedDirectory,
+  readRegular,
+  retainCandidates,
+} from './atoms-candidates.mjs';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url)),
   root = fs.realpathSync(
@@ -224,13 +230,61 @@ try {
   );
   const mode = process.argv[2] ?? 'build';
   if (mode === 'functional' || mode === 'visual' || mode === 'baseline') {
-    const results = path.join(root, 'results');
-    fs.mkdirSync(results);
+    const identityFile = process.argv[3],
+      destination = process.argv[4];
+    assert.ok(
+      identityFile && path.isAbsolute(identityFile),
+      'Observed browser identity facility required',
+    );
+    const identityBytes = readRegular(identityFile),
+      identity = JSON.parse(identityBytes.toString());
+    assert.equal(identity.platform, 'linux/amd64');
+    assert.equal(identity.imageDigest, atomImageDigest);
+    assert.equal(identity.imageObserved, true);
+    assert.equal(identity.executableObserved, true);
+    assert.equal(identity.playwright, '1.63.0');
+    assert.equal(identity.chromiumVersion, '153.0.8010.12');
+    assert.equal(identity.chromiumRevision, '1243');
+    assert.equal(process.platform, 'linux');
+    assert.equal(process.arch, 'x64');
+    if (mode !== 'functional')
+      assert.equal(
+        readRegular(
+          path.join(path.dirname(identityFile), 'functional-green.json'),
+        )
+          .toString()
+          .trim(),
+        createHash('sha256').update(identityBytes).digest('hex'),
+        'Actual functional green must precede candidate/comparison',
+      );
+    const results = path.join(root, 'results'),
+      records = path.join(results, 'capture-records');
+    fs.mkdirSync(results, { mode: 0o700 });
+    fs.mkdirSync(records, { mode: 0o700 });
+    const images = path.join(source, 'test/e2e/__screenshots__/atoms');
+    if (mode === 'baseline') {
+      assert.ok(destination && path.isAbsolute(destination));
+      ownedDirectory(path.dirname(destination));
+      assert.equal(fs.existsSync(destination), false);
+      assert.equal(
+        fs.existsSync(images),
+        false,
+        'Initial capture cannot overwrite old baselines',
+      );
+    }
     const env = {
       ...childEnv,
+      PLAYWRIGHT_BROWSERS_PATH: identity.browsersPath,
       GOLEM_ATOMS_BASE_URL: `http://127.0.0.1:${port}`,
       GOLEM_ATOMS_RESULTS_ROOT: results,
+      GOLEM_ATOMS_IMAGE_DIGEST: identity.imageDigest,
+      GOLEM_ATOMS_BROWSER_VERSION: identity.chromiumVersion,
+      GOLEM_ATOMS_IDENTITY_FILE: identityFile,
     };
+    if (mode === 'baseline') {
+      env.GOLEM_ATOMS_CAPTURE = 'initial';
+      env.GOLEM_ATOMS_CAPTURE_RECORDS = records;
+    }
     const args = [
       'test',
       '--config',
@@ -246,17 +300,59 @@ try {
         cwd: source,
         env,
         encoding: 'utf8',
-        timeout: 240000,
+        timeout: 300000,
         maxBuffer: 10 * 1024 * 1024,
       },
     );
     process.stdout.write(browser.stdout ?? '');
     process.stderr.write(browser.stderr ?? '');
-    assert.equal(browser.status, 0, 'Actual browser suite failed');
-    if (mode === 'baseline')
-      throw Error(
-        'Baseline output is owned private candidate; explicit reviewed copy path must be supplied, never silently published',
+    if (browser.status !== 0) {
+      const retained = path.join(
+        path.dirname(identityFile),
+        'failed-browser-' + randomUUID(),
       );
+      ownedDirectory(path.dirname(retained));
+      fs.mkdirSync(retained, { mode: 0o700 });
+      fs.cpSync(results, path.join(retained, 'results'), {
+        recursive: true,
+        dereference: false,
+        verbatimSymlinks: true,
+      });
+      fs.writeFileSync(
+        path.join(retained, 'browser.log'),
+        (browser.stdout ?? '') + (browser.stderr ?? ''),
+      );
+      throw Error(
+        `Actual browser suite failed; private failure artifacts retained at ${retained}`,
+      );
+    }
+    if (mode === 'baseline') {
+      const inventory = path.join(
+          repo,
+          'dashboard/web/src/ui/fonts/inventory.json',
+        ),
+        fonts = JSON.parse(readRegular(inventory).toString());
+      const provenance = {
+        ...identity,
+        functionalGreen: true,
+        generation: pinned.id,
+        fontInventorySha256: createHash('sha256')
+          .update(readRegular(inventory))
+          .digest('hex'),
+        fonts: fonts.map((font) => ({
+          file: font.file,
+          sha256: createHash('sha256')
+            .update(readRegular(path.join(path.dirname(inventory), font.file)))
+            .digest('hex'),
+          bytes: font.bytes,
+        })),
+        clock: '2026-10-01T00:00:00Z',
+        locale: 'en-US',
+        timezone: 'UTC',
+        scale: 1,
+      };
+      retainCandidates(images, records, destination, provenance);
+    }
   } else assert.equal(mode, 'build');
   await stop(server);
   assert.notEqual(server.exitCode === null && server.signalCode === null, true);

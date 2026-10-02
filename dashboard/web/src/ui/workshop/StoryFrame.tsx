@@ -19,7 +19,7 @@ export function StoryFrame({
     document.documentElement.lang = 'en';
   }, []);
   return (
-    <main className="g-workshop" data-atom-panel={title}>
+    <section className="g-workshop" aria-label={title} data-atom-panel={title}>
       <h1>{title}</h1>
       <div className="g-story-grid">{children}</div>
       <section className="g-font-samples" aria-label="Local Latin font samples">
@@ -45,6 +45,6 @@ export function StoryFrame({
           Aa0123
         </span>
       </section>
-    </main>
+    </section>
   );
 }

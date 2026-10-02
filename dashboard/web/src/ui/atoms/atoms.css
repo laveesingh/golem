@@ -14,6 +14,8 @@
   background: var(--g-component-button-background);
   color: var(--g-component-button-foreground);
   outline: none;
+  opacity: 1;
+  filter: none;
   white-space: normal;
   max-width: 100%; /* token-lint-disable-line: action layout containment is exact container geometry, not a spacing scale */
   overflow-wrap: anywhere; /* token-lint-disable-line: long accessible action labels wrap within their container; CSS grammar not a token value */
@@ -102,6 +104,8 @@
   color: var(--g-component-input-foreground);
   font: var(--g-component-input-type);
   letter-spacing: var(--g-component-input-type-letterSpacing);
+  opacity: 1;
+  filter: none;
   outline: none;
 }
 .g-input::placeholder {

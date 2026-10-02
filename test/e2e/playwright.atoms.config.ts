@@ -10,6 +10,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  updateSnapshots: 'none',
   timeout: 60000,
   outputDir: output ?? path.resolve('.test-results/atoms-unallocated'),
   globalSetup: './atoms.fixture.ts',
