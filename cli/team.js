@@ -16,7 +16,7 @@ import { readSessionFacts } from '../lib/session-facts.js';
 import { MANAGEMENT_SELECTOR_FLAGS, managementQuery, listReceipt, writeDryRun, requireManagementResolution } from '../lib/management-cli.js';
 import {
   admitProvisioning, beforeNativeCall, recordNativeResult, commitAdmission, settleAdmission,
-  reserveWorkspaceProvisioning, readManagementSnapshot, beginManagementClose, waitForManagementLaunches,
+  reserveWorkspaceProvisioning, readManagementSnapshot, beginManagementClose,
 } from '../lib/management-registry.js';
 import {
   closeTeamWorkspace,
@@ -304,9 +304,7 @@ export async function runTeam(family, args, {
     if (key === 'team close') {
       const team = findTeam(resolution.team_id);
       const closing = beginManagementClose({ teamId: team.team_id });
-      const flight = await waitForManagementLaunches({ teamId: team.team_id });
       const partial = (error, extra = {}) => controlOutput({ ok: false, team: { ...team, lifecycle: 'closing' }, lifecycle: 'closing', operation_id: closing.close_operation_id, error, ...extra });
-      if (!flight.completed) return partial(`team ${team.slug} remains closing; unresolved native launches`, { pending_operation_ids: flight.pending.map(i => i.operation_id) });
       const active = activeWorkerStates();
       const members = workers.listWorkers({ teamId: team.team_id })
         .filter((row) => active.has(String(row.state || '').toLowerCase()));
@@ -343,7 +341,8 @@ export async function runTeam(family, args, {
     throw new NotificationError(`unknown command: ${key}`);
   } catch (error) {
     const invalid = error.exitCode === 2 || error instanceof NotificationError || /unknown team|team slug|team label|workspace already owned|team adoption requires|team is closed|bound session|requires a value|unknown command|unknown option|duplicate option/.test(error.message);
-    if (json) stdout(JSON.stringify({ ok: false, error: error.message, resolution: error.resolution ?? resolution }));
+    if (json) stdout(JSON.stringify({ ok: false, code: error.code ?? 'NATIVE_ERROR', error: error.message, resolution: error.resolution ?? resolution, ...(error.resolution?.candidates?.length ? { candidates: error.resolution.candidates } : {}) }));
+    else if (error.code === 'TARGET_AMBIGUOUS') stdout(error.message);
     else stderr(`golem team: ${error.message}`);
     return invalid ? 2 : 1;
   }
