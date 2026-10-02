@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-09-30 @ c445f19 — maintained via golem:docs-maintenance.
+> Last verified: 2026-10-02 @ 20a5cf5 — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -16,7 +16,7 @@
 ### CLI and collaboration
 
 Management: `lib/management-{context,resolve,registry,session,team,agent,capabilities}.js`.
-Processes: `lib/worker-control.js` + `lib/process-group.js`.
+Controls target native panes, not process ownership.
 `cli/collaboration.js` schedules/messages; `cli/ticket.js` tracker authoring.
 `lib/session-role.js` defines roles; retired names only migrate.
 

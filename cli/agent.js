@@ -36,11 +36,15 @@ import { herdrStateFor, listHerdrAgentStates, projectHerdrSession } from '../lib
 import {
   attachWorker,
   killWorker,
+  closeNativeAgentPane,
   listAgentRoster,
   listWorkerViews,
   peekWorker,
   spawnWorker,
 } from '../lib/worker-manager.js';
+
+import { markSessionFactsEnded } from '../lib/session-facts.js';
+import { markSessionsEnded } from '../lib/session-registry.js';
 
 const AGENT_SCOPE_HELP = '--scope team|project|all (default team for a caller with a team, else project)';
 
@@ -576,7 +580,16 @@ async function cmdAgentAttach(ref, o, { stdout, manager, query, native }) {
 }
 
 async function cmdAgentStop(ref, o, { stdout, manager, query, native }) {
-  if (!query.resolution.target?.worker_id) externalControl(query, 'stop', native);
+  if (!query.resolution.target?.worker_id) {
+    const target = query.evidence.agents.find(a => a.session_id === query.resolution.target?.id);
+    const row = managementRosterSnapshot([target], { snapshot: query.evidence.snapshot, facts: query.evidence.sources.facts.value ?? [], native })[0];
+    if (!row.placement?.session || !row.placement?.pane_id) throw new Error(`Cannot stop ${target.name ?? target.session_id}: no terminal was found for this agent.`);
+    await closeNativeAgentPane({ session: row.placement.session, paneId: row.placement.pane_id, name: row.name }, native);
+    markSessionFactsEnded([row.session_id], { status: 'stopped' });
+    markSessionsEnded([row.session_id], { status: 'stopped' });
+    stdout(o['--json'] ? JSON.stringify({ ok: true, session_id: row.session_id, state: 'dead', resolution: query.resolution }) : `Stopped ${row.name ?? row.session_id}.`);
+    return;
+  }
   const row = managedTarget(query);
   const stopped = await manager.killWorker(row.name, managedControlOptions(query.resolution, o));
   const rows = buildAgentRows([stopped], { teams: listTeams({ projectId: row.project_id }) });
@@ -660,9 +673,12 @@ export async function runAgent(family, args, {
       || /unknown command|unknown option|duplicate option|requires a value|invalid scope|invalid role|agent (name is ambiguous|not found|is retired)|no team|unknown team|session not found|bound session|requires an exact id|provide exactly one/.test(error.message);
     const uncertain = mutationStarted && !invalid && !refused;
     const output = { ok: false, code: error.code || 'AGENT_FAILED', error: error.message,
-      ...(operationId ? { operation_id: operationId } : {}), ...(error.capabilities ? { capabilities: error.capabilities } : {}), ...(resolution || error.resolution ? { resolution: error.resolution ?? resolution } : {}), state: uncertain ? 'uncertain' : 'rejected',
+      ...(error.resolution?.candidates?.length ? { candidates: error.resolution.candidates } : {}),
+      ...(operationId ? { operation_id: operationId } : {}), ...(error.capabilities ? { capabilities: error.capabilities } : {}), ...(resolution || error.resolution ? { resolution: error.resolution ?? resolution } : {}), state: error.code === 'TARGET_AMBIGUOUS' ? 'needs_selection' : uncertain ? 'uncertain' : 'rejected',
       ...(uncertain ? { next_action: 'inspect or retry the same request id; do not create a fresh message' } : {}) };
-    if (json) stdout(JSON.stringify(output)); else stderr(`golem agent: ${output.error}${operationId ? ` (operation ${operationId})` : ''}`);
+    if (json) stdout(JSON.stringify(output));
+    else if (error.code === 'TARGET_AMBIGUOUS') stdout(output.error);
+    else stderr(`golem agent: ${output.error}${operationId ? ` (operation ${operationId})` : ''}`);
     return uncertain ? 3 : invalid ? 2 : 1;
   };
   try {
