@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { Declaration } from './token-lint-parser.ts';
 import {
   cssDeclarations,
+  cssStylesheetImports,
   importedStylesheets,
   inlineDeclarations,
 } from './token-lint-parser.ts';
@@ -329,13 +330,25 @@ export function runTokenLint(args: string[]): number {
       throw new TokenError('LINT_SCOPE');
     if (!excluded(relative)) files.push(relative);
   }
-  // A converted component cannot hide literals by importing CSS outside src/ui.
-  for (const file of [...new Set(files)]) {
-    if (file.endsWith('.css')) continue;
-    for (const specifier of importedStylesheets(
-      fs.readFileSync(path.join(root, file), 'utf8'),
-    )) {
-      if (!specifier.startsWith('.') || /[?#]/.test(specifier))
+  // Resolve the full static stylesheet closure, including CSS -> CSS edges and cycles.
+  const pending = [...new Set(files)],
+    visited = new Set<string>();
+  for (let index = 0; index < pending.length; index++) {
+    if (pending.length > 10_000) throw new TokenError('LINT_IMPORT_BOUNDS');
+    const file = pending[index];
+    if (visited.has(file)) continue;
+    visited.add(file);
+    const text = fs.readFileSync(path.join(root, file), 'utf8');
+    const css = file.endsWith('.css');
+    for (const specifier of css
+      ? cssStylesheetImports(text)
+      : importedStylesheets(text)) {
+      if (
+        (!css && !specifier.startsWith('.')) ||
+        !specifier.endsWith('.css') ||
+        /[?#\\\s:*]/.test(specifier) ||
+        path.isAbsolute(specifier)
+      )
         throw new TokenError('LINT_IMPORT_PATH');
       const target = path.resolve(root, path.dirname(file), specifier);
       const relative = path.relative(root, target).split(path.sep).join('/');
@@ -354,6 +367,8 @@ export function runTokenLint(args: string[]): number {
         path.isAbsolute(real)
       )
         throw new TokenError('LINT_IMPORT_PATH');
+      if (!visited.has(relative) && !pending.includes(relative))
+        pending.push(relative);
       files.push(relative);
     }
   }

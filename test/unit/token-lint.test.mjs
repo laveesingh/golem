@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { lintTokenSource } from '../../tools/lint-tokens.ts';
 
-import { importedStylesheets } from '../../tools/token-lint-parser.ts';
+import {
+  cssStylesheetImports,
+  importedStylesheets,
+} from '../../tools/token-lint-parser.ts';
 
 const registry = {
   '--g-semantic-density-gap': 'dimension',
@@ -73,6 +76,67 @@ test('stylesheet imports come from parsed component syntax, not comments or pros
   );
   assert.throws(() => importedStylesheets('import ;'), /JS_SYNTAX/);
 });
+test('CSS import parser recognizes only actual unconditional static dependencies', () => {
+  assert.deepEqual(
+    cssStylesheetImports(
+      '/* @import "ignored.css"; */ @import "a.css"; @import url(\'b.css\'); @import URL(c.css); .a{content:"@import fake"}',
+    ),
+    ['a.css', 'b.css', 'c.css'],
+  );
+});
+for (const text of [
+  '@import;',
+  '@import "a.css" screen;',
+  '@import url("a.css") layer(x);',
+  '@import url("a.css") supports(display:grid);',
+  '@import "a.css"',
+  '@import "a.css" {}',
+  '@import "\\\\61.css";',
+])
+  test(`unsupported or malformed CSS import fails: ${text}`, () =>
+    assert.throws(
+      () => cssStylesheetImports(text),
+      /CSS_(?:IMPORT_SYNTAX|SYNTAX)/,
+    ));
+for (const text of [
+  'const A=()=> <div {...{style:{color:"#fff",padding:12}}}/>;',
+  'const props={style:{color:"#fff",padding:12}}; const A=()=> <div {...props}/>;',
+  'const props={...{style:{color:"#fff",padding:12}}}; const A=()=> <div {...{...props}}/>;',
+  'const paint={color:"#fff"}; const props={style:{...paint}}; const A=()=> <div {...props}/>;',
+  'const key="style"; const p={[key]:{color:"#fff"}}; const A=()=> <div {...p}/>;',
+  'const p={inner:{style:{padding:12}}}; const A=()=> <div {...p.inner}/>;',
+])
+  test('static JSX prop/style spreads cannot hide raw paint or length', () =>
+    assert.ok(lintTokenSource('ui/a.tsx', text, registry).length));
+for (const text of [
+  'const p={style:unknown}; const A=()=> <div {...p}/>;',
+  'const p={style:{...unknown}}; const A=()=> <div {...p}/>;',
+  'const p={...p,style:{margin:0}}; const A=()=> <div {...p}/>;',
+  'const p={[style]:{margin:0}}; const A=()=> <div {...p}/>;',
+  'let key="style"; const p={[key]:{margin:0}}; const A=()=> <div {...p}/>;',
+  'const p={style:{margin:0}}; const alias=p; alias.style.color="red"; const A=()=> <div {...p}/>;',
+  'let p={style:{margin:0}}; const A=()=> <div {...p}/>;',
+  'let p={}; p={style:{margin:0}}; const A=()=> <div {...p}/>;',
+  'const p={}; p.style.color="red"; const A=()=> <div {...p}/>;',
+  'const p={style:{margin:0}}; mutate(p); const A=()=> <div {...p}/>;',
+  'const p={style:{margin:0}}; const A=(p)=> <div {...p}/>;',
+  'const p={style:{margin:0}}; function A(){const p={title:"x"}; return <div {...p}/>;}',
+])
+  test('visible unresolved cyclic computed mutable or shadowed style props fail explicitly', () =>
+    assert.ok(
+      lintTokenSource('ui/a.tsx', text, registry).some(
+        (i) => i.code === 'DYNAMIC_STYLE',
+      ),
+    ));
+for (const text of [
+  'const paint={padding:"var(--g-semantic-density-gap)"}; const p={style:{...paint,margin:0}}; const A=()=> <div {...{...p}}/>;',
+  'const p={title:"12px #fff",className:"red"}; const A=()=> <div {...p} {...ordinary}/>;',
+  'const A=(props)=> <div {...props}/>;',
+  'const p={inner:{style:{margin:0}}}; const A=()=> <div {...p.inner}/>;',
+  'const key="style"; const p={[key]:{margin:0}}; const A=()=> <div {...p}/>;',
+])
+  test('supported static token spreads and ordinary non-style props remain permitted', () =>
+    assert.deepEqual(lintTokenSource('ui/a.tsx', text, registry), []));
 test('comments/selectors/prose/URLs/SVG/aria are not style color or length values', () => {
   const css =
     '/* padding:12px;color:#fff */ .color-red::before {content:"12px #fff";background-image:url("data:image/svg+xml,%23fff");}';

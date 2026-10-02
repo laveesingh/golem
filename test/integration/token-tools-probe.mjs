@@ -152,6 +152,102 @@ try {
     result = tool('lint-tokens.ts', ['--root', root]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /CSS_SYNTAX/);
+    fs.writeFileSync(component, 'export const A=()=> <div/>;');
+    const reviewCss = path.join(ui, 'review.css');
+    fs.writeFileSync(reviewCss, '@import "../../outside.css";');
+    fs.writeFileSync(outside, '.fixture{padding:12px;color:#fff}');
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /outside\.css.*LENGTH/);
+    assert.match(result.stderr, /outside\.css.*COLOR/);
+    const reachable = path.join(root, 'reachable-consumer');
+    fs.mkdirSync(reachable);
+    fs.writeFileSync(
+      path.join(reachable, 'index.html'),
+      '<script type="module" src="/entry.js"></script>',
+    );
+    fs.writeFileSync(
+      path.join(reachable, 'entry.js'),
+      `import ${JSON.stringify(reviewCss)};`,
+    );
+    const emitted = path.join(root, 'reachable-build');
+    await build({
+      configFile: false,
+      root: reachable,
+      base: './',
+      build: { outDir: emitted, emptyOutDir: true },
+      logLevel: 'error',
+    });
+    const emittedCss = fs
+      .readdirSync(path.join(emitted, 'assets'))
+      .filter((n) => n.endsWith('.css'))
+      .map((n) => fs.readFileSync(path.join(emitted, 'assets', n), 'utf8'))
+      .join('');
+    assert.match(emittedCss, /padding:12px/);
+    assert.match(emittedCss, /color:#fff/);
+    fs.writeFileSync(reviewCss, '.fixture{padding:12px;color:#fff}');
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /review\.css.*LENGTH/);
+    assert.match(result.stderr, /review\.css.*COLOR/);
+    fs.writeFileSync(reviewCss, '@import url("../../outside.css");');
+    const nested = path.join(root, 'dashboard/web/nested.css');
+    fs.writeFileSync(outside, '@import "./nested.css";');
+    fs.writeFileSync(nested, '@import "./outside.css"; .fixture{padding:12px}');
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /nested\.css.*LENGTH/);
+    fs.writeFileSync(
+      nested,
+      '@import "./outside.css"; .fixture{padding:var(--g-semantic-density-gap)}',
+    );
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 0, result.stderr);
+    fs.writeFileSync(reviewCss, '@import "../../extra.css";');
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 0, result.stderr);
+    for (const dependency of [
+      '../../../outside.css',
+      'https://example.invalid/a.css',
+      '../../outside.css?inline',
+    ]) {
+      fs.writeFileSync(reviewCss, `@import "${dependency}";`);
+      result = tool('lint-tokens.ts', ['--root', root]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /LINT_IMPORT_PATH/);
+    }
+    fs.writeFileSync(reviewCss, '@import "../../outside.css" screen;');
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /CSS_IMPORT_SYNTAX/);
+    fs.rmSync(reviewCss);
+    for (const jsx of [
+      'export const A=()=> <div {...{style:{color:"#fff",padding:12}}}/>;',
+      'export const A=()=> <div style={{color:"#fff",padding:12}}/>;',
+      'const p={...{style:{color:"#fff",padding:12}}}; export const A=()=> <div {...p}/>;',
+    ]) {
+      fs.writeFileSync(path.join(ui, 'review.tsx'), jsx);
+      result = tool('lint-tokens.ts', ['--root', root]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /COLOR/);
+      assert.match(result.stderr, /LENGTH/);
+    }
+    fs.writeFileSync(
+      path.join(ui, 'review.tsx'),
+      'const p={style:unknown}; export const A=()=> <div {...p}/>;',
+    );
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /DYNAMIC_STYLE/);
+    fs.writeFileSync(
+      path.join(ui, 'review.tsx'),
+      'const paint={padding:"var(--g-semantic-density-gap)"}; const p={style:{...paint}}; export const A=()=> <div {...p} {...ordinary}/>;',
+    );
+    result = tool('lint-tokens.ts', ['--root', root]);
+    assert.equal(result.status, 0, result.stderr);
+    console.log(
+      'CSS recursive/cyclic closure rejects actually Vite-reachable raw bytes; direct/static JSX spread controls PASS; opaque props not proven',
+    );
   } else if (mode === 'build-package') {
     const pinned = checkTokenFreshness(tokens),
       pkg = path.join(root, 'package-source'),
