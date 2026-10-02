@@ -19,7 +19,7 @@
 
 `lib/management-*.js` controls native panes, not process ownership.
 `cli/collaboration.js` schedules/messages; `cli/ticket.js` authors tracker.
-`lib/session-role.ts`: roles/defaults; retired names only migrate.
+`lib/session-role.ts`: roles; retired names only migrate.
 Config: `lib/golem-config.ts` uses `read-versioned.ts`; hooks use `config-role-default.ts`.
 
 ### Instructions
