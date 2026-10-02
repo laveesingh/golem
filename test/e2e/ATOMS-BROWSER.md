@@ -92,6 +92,12 @@ checks, independent verification and coordinator rerun remain separate requireme
 
 ## Cleanup and limits
 
+Declared browser results are bound to the caller's canonical parent device/inode/UID before
+Playwright starts. After Playwright cleans its output leaf, globalSetup can recreate that leaf only
+under the same parent epoch inside private TMPDIR. Missing environment/identity, changed/symlink/
+writable parent or escaped/symlink leaf fails before recreation; no parent fallback is inferred.
+Capture records are restricted to the declared results/capture-records leaf.
+
 Each container is stopped/removed only after exact CID+nonce binding. Interrupted/failing/uncertain
 operations retain owned artifacts and report failures, not cleanup success. Own Chrome/context/CDP
 and preview are bounded and stopped before profile deletion; missing env fails before allocation.

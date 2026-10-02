@@ -5,6 +5,62 @@ import path from 'node:path';
 import type { Browser, FullConfig } from '@playwright/test';
 import { test as base, chromium, expect } from '@playwright/test';
 
+type ResultParent = {
+  device: number;
+  inode: number;
+  uid: number;
+  canonical: string;
+};
+export function recreateDeclaredResults(
+  temp: string,
+  output: string,
+  expected: ResultParent | undefined,
+): void {
+  if (
+    !temp ||
+    !path.isAbsolute(temp) ||
+    !output ||
+    !path.isAbsolute(output) ||
+    !expected
+  )
+    throw Error(
+      'Declared result facility and allocation parent identity required',
+    );
+  const parent = path.dirname(output),
+    parentStat = fs.lstatSync(parent),
+    canonical = fs.realpathSync(parent),
+    relative = path.relative(fs.realpathSync(temp), canonical);
+  if (
+    !parentStat.isDirectory() ||
+    parentStat.isSymbolicLink() ||
+    parentStat.uid !== process.getuid?.() ||
+    parentStat.mode & 0o022 ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  )
+    throw Error(
+      'Atom result parent must be owned and confined before recreation',
+    );
+  if (
+    parentStat.dev !== expected.device ||
+    parentStat.ino !== expected.inode ||
+    parentStat.uid !== expected.uid ||
+    canonical !== expected.canonical
+  )
+    throw Error(
+      'Atom result parent changed since allocation; no leaf recreation',
+    );
+  if (!fs.existsSync(output)) fs.mkdirSync(output, { mode: 0o700 });
+  const leaf = fs.lstatSync(output);
+  if (
+    !leaf.isDirectory() ||
+    leaf.isSymbolicLink() ||
+    leaf.uid !== process.getuid?.() ||
+    leaf.mode & 0o022
+  )
+    throw Error('Atom result leaf must be owned regular private directory');
+}
+
 // This module is import-safe for static tooling. Validation happens at real runner startup.
 export default async function atomEnvironment(config?: FullConfig) {
   const temp = process.env.TMPDIR,
@@ -83,38 +139,14 @@ export default async function atomEnvironment(config?: FullConfig) {
     throw new Error(
       'Atom browser executable facility is missing; no implicit download',
     );
-  // Playwright cleans its outputDir before globalSetup. Recreate only the declared owned facility.
-  const parent = path.dirname(output),
-    parentStat = fs.lstatSync(parent),
-    parentRelative = path.relative(
-      fs.realpathSync(temp),
-      fs.realpathSync(parent),
-    );
-  if (
-    !parentStat.isDirectory() ||
-    parentStat.isSymbolicLink() ||
-    parentStat.uid !== process.getuid?.() ||
-    parentStat.mode & 0o022 ||
-    parentRelative.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(parentRelative)
-  )
-    throw Error(
-      'Atom result parent must be owned and confined before recreation',
-    );
-  if (!fs.existsSync(output)) fs.mkdirSync(output, { mode: 0o700 });
-  const stat = fs.lstatSync(output),
-    relative = path.relative(fs.realpathSync(temp), fs.realpathSync(output));
-  if (
-    !stat.isDirectory() ||
-    stat.isSymbolicLink() ||
-    stat.uid !== process.getuid?.() ||
-    stat.mode & 0o022 ||
-    relative.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relative)
-  )
-    throw new Error(
-      'Atom results must be an owned directory under the private TMPDIR',
-    );
+  const parentIdentity = process.env.GOLEM_ATOMS_RESULTS_PARENT_IDENTITY;
+  if (!parentIdentity)
+    throw Error('Declared allocation parent identity required');
+  recreateDeclaredResults(
+    temp,
+    output,
+    JSON.parse(parentIdentity) as ResultParent,
+  );
   if (process.env.GOLEM_ATOMS_CAPTURE === 'initial') {
     const records = process.env.GOLEM_ATOMS_CAPTURE_RECORDS;
     if (

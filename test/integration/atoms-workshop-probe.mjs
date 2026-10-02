@@ -272,11 +272,18 @@ try {
         'Initial capture cannot overwrite old baselines',
       );
     }
+    const resultParent = fs.lstatSync(root);
     const env = {
       ...childEnv,
       PLAYWRIGHT_BROWSERS_PATH: identity.browsersPath,
       GOLEM_ATOMS_BASE_URL: `http://127.0.0.1:${port}`,
       GOLEM_ATOMS_RESULTS_ROOT: results,
+      GOLEM_ATOMS_RESULTS_PARENT_IDENTITY: JSON.stringify({
+        device: resultParent.dev,
+        inode: resultParent.ino,
+        uid: resultParent.uid,
+        canonical: fs.realpathSync(root),
+      }),
       GOLEM_ATOMS_IMAGE_DIGEST: identity.imageDigest,
       GOLEM_ATOMS_BROWSER_VERSION: identity.chromiumVersion,
       GOLEM_ATOMS_IDENTITY_FILE: identityFile,
