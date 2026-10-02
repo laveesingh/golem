@@ -31,6 +31,33 @@ INSTALLED PACKAGE PASS: CLI/profile/dashboard/body400/roles/templates/web/privat
 
 Post-run status still matched all17 preserved entries; `git diff --check` exited0. The probe archived scratch tickets, stopped its owned process group and removed its sandbox/profile alias. The separate owned installation prefix/archive remains at ROOT for evidence inspection. The slot was released at this boundary before this document edit. No new full-source or clean-link rerun is claimed; those results below belong to the predecessor. `test -S ~/.docker/run/docker.sock` returned1; final Linux remains pending and Docker was not restarted. This recovery proves the preserved macOS package slice, not full W3 acceptance or independent verification.
 
+## Review repair — installed dashboard manifest entry
+
+GOL-489 found one major real consumer failure at frozen `d1856c0`: physical installed `npm run dashboard` exited1 with `ERR_MODULE_NOT_FOUND` because the manifest still selected excluded `dashboard/server/index.js`. CLI dashboard passed; the original probe did not exercise the npm script. The reviewer also confirmed the already-declared installed generator closure gaps; those remain out of this repair.
+
+Bounded repair: ship a plain JS `cli/dashboard-bin.js`, point the existing dashboard npm script at it, preserve the global profile/port prefix and remaining dashboard arguments, and delegate native-checkout/emitted-installed selection to the existing shared bin. The launcher fixture covers both layouts, split/equal option order, remaining arguments, missing values, and installed missing-dist refusal despite stray TS. The physical installed probe now starts the real npm script under an isolated named profile, proves health/manifest port, and checks occupied-port and invalid-profile refusal while preserving the existing listener/profile. Its existing scratch/process-group/alias cleanup remains mandatory. The coordinator granted an exclusive repair slot after the W4 reviewer released it. Fresh repair results (Darwin arm64 / Node22.22.3 / npm10.9.8, same private sandbox policy):
+
+```sh
+node node_modules/@biomejs/biome/bin/biome check cli/dashboard-bin.js test/fixtures/w3-installed-probe.mjs test/integration/package-launcher.test.mjs
+node node_modules/vitest/vitest.mjs run --project integration test/integration/package-launcher.test.mjs
+ROOT=/private/tmp/gol477-b4-dashboard.ukQ18Q # mktemp-owned, home/prefix created
+NPM_CLI_PATH="$(dirname "$(command -v node)")/../lib/node_modules/npm/bin/npm-cli.js"
+npm pack --pack-destination "$ROOT"
+HOME="$ROOT/home" npm install --prefix "$ROOT/prefix" --omit=dev --no-audit --no-fund "$ROOT/laveesingh-golem-5.26.0.tgz"
+node test/fixtures/w3-installed-probe.mjs "$ROOT/prefix/node_modules/@laveesingh/golem" "$NPM_CLI_PATH"
+npm run check
+npm test
+git diff --check
+```
+
+Initial targeted Biome exited1 for fixture formatting only; `biome check --write` fixed the two owned fixtures. Final targeted Biome exited0 (two configured fixture files checked; the legacy JS launcher is outside the existing Biome scope). Runtime source/fixtures then stayed unchanged through sequential green checks. Launcher integration:1file/1test0. Pack/install/probe each0. Actual output:
+
+```text
+INSTALLED PACKAGE PASS: CLI/npm dashboard/profile/occupied-port refusal/invalid-profile refusal/body400/roles/templates/web/private CC generation/dist deps/render parent child; no dev compiler
+```
+
+The real npm script uses `--prefix <installed>` from empty cwd; its profile uses the persisted owned ephemeral port. A second same-profile npm start exits2 on occupied port, leaves profile bytes unchanged and the first health listener responding200. Invalid-profile npm start exits2 and creates no invalid profile directory. Probe scratch archival, fenced npm/dashboard process-group teardown and profile-alias/sandbox cleanup completed without error; ROOT archive/install is retained for inspection. `npm run check`0 (including strict/native/Knip/freshness; initial-bootstrap compatibility remains explicitly unverified). Fresh unfiltered `npm test`:16files/101tests/no skips0,209.74s; component coverage remains pending W4. Diffcheck0. Logs `/tmp/gol477-b4-dashboard-{biome,biome-fix,biome-final,launcher,pack,install,probe,check,full}.log`. The exclusive slot was released before evidence-doc reconciliation/commit. Final Linux NOT RUN (Docker socket absent), no restart; fresh clean-link/full W7/installed generators/persistence/materialization remain unaccepted. Untouched fix-delta review, separate verification and coordinator rerun still required.
+
 ## Predecessor macOS commands and results
 
 From `.worktrees/GOL-477-contracts-artefacts`:

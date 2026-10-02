@@ -23,6 +23,17 @@ assert.equal(
 assert.ok(!fs.existsSync(path.join(installed, 'cli/bootstrap.ts')));
 const sandbox = createSandbox();
 const bin = path.join(installed, 'cli/golem-bin.js');
+// Invoke the real npm script through Node, with no inherited agent environment
+// or reliance on an npm executable inside the sandbox's deliberately short PATH.
+const npmCli = fs.realpathSync(
+  process.argv[3] ??
+    process.env.npm_execpath ??
+    path.resolve(
+      path.dirname(process.execPath),
+      '../lib/node_modules/npm/bin/npm-cli.js',
+    ),
+);
+const dashboardScript = ['--prefix', installed, 'run', 'dashboard', '--'];
 const empty = path.join(sandbox.root, 'empty');
 fs.mkdirSync(empty);
 const env = {
@@ -58,7 +69,14 @@ try {
   assert.ok(![7420, 7421].includes(port));
   child = spawn(
     process.execPath,
-    [bin, '--profile', 'artefact', '--port', String(port), 'dashboard'],
+    [
+      npmCli,
+      ...dashboardScript,
+      '--profile',
+      'artefact',
+      '--port',
+      String(port),
+    ],
     { cwd: empty, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   closed = once(child, 'close');
@@ -88,6 +106,35 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   assert.ok(ready, logs);
+  const profileFile = path.join(
+    env.HOME,
+    '.golem-profiles/artefact/profile.json',
+  );
+  const profileBefore = fs.readFileSync(profileFile, 'utf8');
+  assert.equal(JSON.parse(profileBefore).port, port);
+  const occupied = spawnSync(
+    process.execPath,
+    [npmCli, ...dashboardScript, '--profile=artefact', `--port=${port}`],
+    { cwd: empty, env, encoding: 'utf8', timeout: 30000 },
+  );
+  assert.equal(occupied.error, undefined);
+  assert.equal(occupied.status, 2, `${occupied.stdout}\n${occupied.stderr}`);
+  assert.match(occupied.stderr, /occupied or unavailable/);
+  assert.equal(fs.readFileSync(profileFile, 'utf8'), profileBefore);
+  assert.equal(
+    (await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(3000) }))
+      .status,
+    200,
+  );
+  const invalid = spawnSync(
+    process.execPath,
+    [npmCli, ...dashboardScript, '--profile', 'INVALID'],
+    { cwd: empty, env, encoding: 'utf8', timeout: 30000 },
+  );
+  assert.equal(invalid.error, undefined);
+  assert.equal(invalid.status, 2, `${invalid.stdout}\n${invalid.stderr}`);
+  assert.match(invalid.stderr, /invalid profile name/);
+  assert.ok(!fs.existsSync(path.join(env.HOME, '.golem-profiles/INVALID')));
   process.env.GOLEM_SMOKE_API = base;
   tickets.push(
     (await createScratchTicket({ title: 'installed emitted contract' })).id,
@@ -154,7 +201,7 @@ try {
     `import assert from 'node:assert/strict'; import {createRequire} from 'node:module'; const require=createRequire(${JSON.stringify(pathToFileURL(path.join(installed, 'dist/mcp/channel/index.js')).href)}); assert.ok(require.resolve('@modelcontextprotocol/sdk/server/index.js').includes('/dist/mcp/channel/node_modules/')); assert.throws(() => require.resolve('typescript'), {code:'MODULE_NOT_FOUND'});`,
   ]);
   console.log(
-    'INSTALLED PACKAGE PASS: CLI/profile/dashboard/body400/roles/templates/web/private CC generation/dist deps/render parent child; no dev compiler',
+    'INSTALLED PACKAGE PASS: CLI/npm dashboard/profile/occupied-port refusal/invalid-profile refusal/body400/roles/templates/web/private CC generation/dist deps/render parent child; no dev compiler',
   );
   console.log(`Checkout source untouched by installed resolution: ${repo}`);
 } finally {

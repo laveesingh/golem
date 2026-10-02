@@ -23,6 +23,7 @@
   },
   "files": [
     "cli/golem-bin.js",
+    "cli/dashboard-bin.js",
     "dist/",
     "contracts/dist/",
     "tools/",
@@ -50,7 +51,7 @@
     "test:release": "node tools/pending.mjs release",
     "test:management:real": "GOLEM_REAL_HARNESS=1 node test/management-real-journey.test.mjs",
     "measure:turns": "node scripts/measure-turns.mjs",
-    "dashboard": "node dashboard/server/index.js",
+    "dashboard": "node cli/dashboard-bin.js",
     "dashboard:build": "vite build --config dashboard/vite.config.js",
     "dashboard:dev": "vite --config dashboard/vite.config.js",
     "dashboard:serve": "npm run dashboard:build && node dashboard/server/index.js",
