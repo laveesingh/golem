@@ -177,11 +177,27 @@ function discardOwnedStage(
 
 /** No output publication occurs until all input/build/stage checks have passed. */
 export function buildPackage(root: string): void {
-  owned(root);
+  const rootIdentity = owned(root);
+  const dashboard = path.join(root, 'dashboard');
+  const dashboardIdentity = owned(dashboard);
+  const originalOutputs = [
+    {
+      target: path.join(root, 'dist'),
+      old: present(path.join(root, 'dist'))
+        ? owned(path.join(root, 'dist'))
+        : undefined,
+    },
+    {
+      target: path.join(dashboard, 'dist'),
+      old: present(path.join(dashboard, 'dist'))
+        ? owned(path.join(dashboard, 'dist'))
+        : undefined,
+    },
+  ];
   const sourceTokens = path.join(root, 'dashboard/web/src/ui/tokens');
   if (packagedTokenRoot(sourceTokens))
     throw new TokenError('PACKAGED_BUILD_INPUT');
-  const snapshot = checkTokenFreshness(sourceTokens); // ONE immutable source pointer capture
+  const snapshot = checkTokenFreshness(sourceTokens);
   const lock = path.join(root, '.golem-package.lock');
   const fd = fs.openSync(lock, 'wx', 0o600),
     lockIdentity = fs.fstatSync(fd);
@@ -189,7 +205,8 @@ export function buildPackage(root: string): void {
     stageIdentity: fs.Stats | undefined;
   let retain = false;
   let failure: unknown;
-  const published: Array<{
+  const outputs: Array<{
+    source: string;
     target: string;
     previous: string;
     old?: fs.Stats;
@@ -197,12 +214,89 @@ export function buildPackage(root: string): void {
     movedOld: boolean;
     movedNext: boolean;
   }> = [];
+  const captured = (
+    file: string,
+    identity: fs.Stats | undefined,
+    label: string,
+  ) => {
+    if (!identity) {
+      if (present(file))
+        throw Error(
+          `package ${label} identity changed: expected absence; retain ${file}`,
+        );
+      return;
+    }
+    const current = identity.isDirectory() ? owned(file) : fs.lstatSync(file);
+    if (
+      !same(identity, current) ||
+      current.uid !== process.getuid?.() ||
+      current.mode & 0o022
+    )
+      throw Error(`package ${label} identity changed; retain ${file}`);
+  };
+  const governing = () => {
+    captured(root, rootIdentity, 'root');
+    captured(dashboard, dashboardIdentity, 'dashboard parent');
+    captured(lock, lockIdentity, 'lock');
+    if (stageIdentity) captured(stage, stageIdentity, 'stage');
+  };
+  const states = () => {
+    for (const row of outputs) {
+      captured(
+        row.source,
+        row.movedNext ? undefined : row.next,
+        'staged output',
+      );
+      captured(
+        row.target,
+        row.movedNext ? row.next : row.movedOld ? undefined : row.old,
+        'prior/output destination',
+      );
+      captured(
+        row.previous,
+        row.movedOld ? row.old : undefined,
+        'prior backup',
+      );
+    }
+  };
+  // Fences use only allocated/captured identities and known path transitions.
+  // They never fresh-stat a replacement and turn it into publication authority.
+  const fence = () => {
+    try {
+      governing();
+      states();
+    } catch (error) {
+      retain = true;
+      throw error;
+    }
+  };
   try {
+    governing();
     stage = fs.mkdtempSync(path.join(root, '.golem-package-stage-'));
     stageIdentity = owned(stage);
     const runtime = path.join(stage, 'runtime'),
       web = path.join(stage, 'web');
     fs.mkdirSync(runtime, { mode: 0o755 });
+    fs.mkdirSync(web, { mode: 0o755 });
+    outputs.push(
+      {
+        ...originalOutputs[0],
+        source: runtime,
+        previous: path.join(stage, 'previous-runtime'),
+        next: owned(runtime),
+        movedOld: false,
+        movedNext: false,
+      },
+      {
+        ...originalOutputs[1],
+        source: web,
+        previous: path.join(stage, 'previous-web'),
+        next: owned(web),
+        movedOld: false,
+        movedNext: false,
+      },
+    );
+    fence();
     const assets = path.join(runtime, 'assets');
     fs.mkdirSync(assets, { mode: 0o755 });
     stageTokenAssets(root, assets, snapshot);
@@ -230,14 +324,13 @@ export function buildPackage(root: string): void {
         ],
       ],
     ] as const) {
+      fence();
       const result = childProcess.spawnSync(process.execPath, [...args], {
         cwd: root,
         stdio: 'inherit',
         timeout: 120000,
       });
       if (result.error || result.status !== 0) {
-        // A deadline/signal leaves descendant cleanup indeterminate. Retain
-        // stage+lock evidence rather than deleting a possibly active writer.
         if (
           (result.error as NodeJS.ErrnoException | undefined)?.code ===
             'ETIMEDOUT' ||
@@ -248,73 +341,65 @@ export function buildPackage(root: string): void {
           `package ${label} failed: ${result.error?.message ?? result.status}`,
         );
       }
+      fence();
     }
+    fence();
     fs.mkdirSync(path.join(runtime, 'mcp/channel'), {
       recursive: true,
       mode: 0o755,
     });
-    for (const name of ['package.json', 'package-lock.json'])
+    for (const name of ['package.json', 'package-lock.json']) {
+      fence();
       copyFile(
         path.join(root, 'mcp/channel', name),
         path.join(runtime, 'mcp/channel', name),
       );
+    }
     checkTokenFreshness(path.join(assets, 'dashboard/web/src/ui/tokens'));
-    for (const [next, target, previousName] of [
-      [runtime, path.join(root, 'dist'), 'previous-runtime'],
-      [web, path.join(root, 'dashboard/dist'), 'previous-web'],
-    ]) {
-      owned(path.dirname(target));
-      const row = {
-        target,
-        previous: path.join(stage, previousName),
-        old: present(target) ? owned(target) : undefined,
-        next: owned(next),
-        movedOld: false,
-        movedNext: false,
-      };
-      published.push(row);
+    for (const row of outputs) {
       if (row.old) {
-        if (!same(row.old, fs.lstatSync(target)))
-          throw Error('package output identity changed before replacement');
-        fs.renameSync(target, row.previous);
+        fence();
+        fs.renameSync(row.target, row.previous);
         row.movedOld = true;
       }
-      fs.renameSync(next, target);
+      fence();
+      fs.renameSync(row.source, row.target);
       row.movedNext = true;
     }
+    fence();
   } catch (error) {
     failure = error;
-    try {
-      for (const row of [...published].reverse()) {
-        if (row.movedNext) {
-          if (!same(row.next, fs.lstatSync(row.target)))
-            throw Error('package rollback output identity changed');
-          fs.renameSync(
-            row.target,
-            path.join(stage, `failed-${path.basename(row.previous)}`),
-          );
+    // No transition means no rollback side effect is needed or authorized.
+    // Compiler+cleanup aggregation remains intact for lost prepublication scope.
+    if (outputs.some((row) => row.movedOld || row.movedNext)) {
+      try {
+        for (const row of [...outputs].reverse()) {
+          if (row.movedNext) {
+            fence();
+            fs.renameSync(row.target, row.source);
+            row.movedNext = false;
+          }
+          if (row.movedOld) {
+            fence();
+            fs.renameSync(row.previous, row.target);
+            row.movedOld = false;
+          }
         }
-        if (row.movedOld) {
-          if (
-            !row.old ||
-            !same(row.old, fs.lstatSync(row.previous)) ||
-            present(row.target)
-          )
-            throw Error('package rollback prior identity changed');
-          fs.renameSync(row.previous, row.target);
-        }
+      } catch (rollback) {
+        retain = true;
+        failure = new AggregateError(
+          [error, rollback],
+          `package rollback indeterminate; retained ${stage}`,
+        );
       }
-    } catch (rollback) {
-      retain = true;
-      failure = new AggregateError(
-        [error, rollback],
-        `package rollback indeterminate; retained ${stage}`,
-      );
     }
   } finally {
     try {
       fs.closeSync(fd);
-      if (!retain) discardOwnedStage(stage, stageIdentity, lock, lockIdentity);
+      if (!retain) {
+        fence();
+        discardOwnedStage(stage, stageIdentity, lock, lockIdentity);
+      }
     } catch (cleanup) {
       retain = true;
       failure = failure

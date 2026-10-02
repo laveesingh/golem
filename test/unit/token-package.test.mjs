@@ -252,6 +252,180 @@ test('failed second-directory publication rolls back both previous good trees by
     false,
   );
 });
+for (const kind of [
+  'lock',
+  'stage',
+  'runtime-source',
+  'web-source',
+  'runtime-prior',
+  'web-prior',
+  'runtime-absence',
+  'web-absence',
+])
+  test(`prepublication ${kind} replacement refuses before either output transition`, () => {
+    previous();
+    const target = kind.startsWith('web-')
+      ? path.join(root, 'dashboard/dist')
+      : path.join(root, 'dist');
+    if (kind.endsWith('absence')) fs.rmSync(target, { recursive: true });
+    const compiler = mockCompiler(),
+      original = compiler.getMockImplementation();
+    compiler.mockImplementation((node, args) => {
+      const result = original(node, args);
+      const index = args.indexOf('--outDir');
+      if (index >= 0 && path.basename(args[index + 1]) === 'web') {
+        const stage = path.dirname(args[index + 1]);
+        let replaced;
+        if (kind === 'lock') {
+          replaced = path.join(root, '.golem-package.lock');
+          fs.renameSync(replaced, path.join(root, 'held-original-lock'));
+          fs.writeFileSync(replaced, 'replacement-lock', {
+            flag: 'wx',
+            mode: 0o600,
+          });
+        } else if (kind === 'stage') {
+          replaced = stage;
+          fs.renameSync(stage, path.join(root, 'held-original-stage'));
+          fs.cpSync(path.join(root, 'held-original-stage'), stage, {
+            recursive: true,
+          });
+          fs.writeFileSync(
+            path.join(stage, 'replacement-sentinel'),
+            'untouched',
+          );
+        } else if (kind.endsWith('source')) {
+          replaced = path.join(
+            stage,
+            kind.startsWith('web-') ? 'web' : 'runtime',
+          );
+          fs.renameSync(replaced, path.join(root, `held-${kind}`));
+          fs.cpSync(path.join(root, `held-${kind}`), replaced, {
+            recursive: true,
+          });
+          fs.writeFileSync(
+            path.join(replaced, 'replacement-sentinel'),
+            'untouched',
+          );
+        } else {
+          replaced = target;
+          if (kind.endsWith('prior')) {
+            fs.renameSync(target, path.join(root, `held-${kind}`));
+            fs.cpSync(path.join(root, `held-${kind}`), target, {
+              recursive: true,
+            });
+          } else fs.mkdirSync(target);
+          fs.writeFileSync(
+            path.join(target, 'replacement-sentinel'),
+            'untouched',
+          );
+        }
+      }
+      return result;
+    });
+    assert.throws(() => buildPackage(root), /identity changed/);
+    if (!kind.endsWith('absence')) assertPrevious();
+    else {
+      assert.equal(
+        fs.readFileSync(path.join(target, 'replacement-sentinel'), 'utf8'),
+        'untouched',
+      );
+      assert.ok(
+        !fs.existsSync(
+          path.join(
+            target,
+            kind.startsWith('web-') ? 'index.html' : 'runtime-ok',
+          ),
+        ),
+      );
+      const other = kind.startsWith('web-')
+        ? path.join(root, 'dist/good')
+        : path.join(root, 'dashboard/dist/index.html');
+      assert.match(fs.readFileSync(other, 'utf8'), /^old /);
+    }
+    assert.equal(fs.existsSync(path.join(root, 'dist/runtime-ok')), false);
+    assert.equal(fs.existsSync(path.join(root, '.golem-package.lock')), true);
+    const stage = fs
+      .readdirSync(root)
+      .find((name) => name.startsWith('.golem-package-stage-'));
+    assert.ok(stage);
+    if (kind === 'lock')
+      assert.equal(
+        fs.readFileSync(path.join(root, '.golem-package.lock'), 'utf8'),
+        'replacement-lock',
+      );
+    if (kind === 'stage')
+      assert.equal(
+        fs.readFileSync(path.join(root, stage, 'replacement-sentinel'), 'utf8'),
+        'untouched',
+      );
+  });
+
+test('compiler failure plus lost lock cleanup retains both original causes without publication', () => {
+  previous();
+  vi.spyOn(childProcess, 'spawnSync').mockImplementation(() => {
+    fs.renameSync(
+      path.join(root, '.golem-package.lock'),
+      path.join(root, 'held-original-lock'),
+    );
+    fs.writeFileSync(
+      path.join(root, '.golem-package.lock'),
+      'replacement-lock',
+      { flag: 'wx', mode: 0o600 },
+    );
+    return { status: 1, signal: null };
+  });
+  let error;
+  try {
+    buildPackage(root);
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof AggregateError);
+  assert.equal(error.errors.length, 2);
+  assert.match(error.errors[0].message, /package strict failed: 1/);
+  assert.match(error.errors[1].message, /lock identity changed/);
+  assertPrevious();
+  assert.equal(
+    fs.readFileSync(path.join(root, '.golem-package.lock'), 'utf8'),
+    'replacement-lock',
+  );
+});
+
+test('missing captured rollback backup retains original and rollback causes without guessed recovery', () => {
+  previous();
+  mockCompiler();
+  const original = fs.renameSync;
+  vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+    if (
+      path.basename(from) === 'web' &&
+      to === path.join(root, 'dashboard/dist')
+    ) {
+      original(
+        path.join(path.dirname(from), 'previous-web'),
+        path.join(root, 'held-prior-web'),
+      );
+      throw Error('synthetic second publication failure');
+    }
+    return original(from, to);
+  });
+  let error;
+  try {
+    buildPackage(root);
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof AggregateError);
+  assert.equal(error.errors.length, 2);
+  assert.match(error.errors[0].message, /synthetic second publication failure/);
+  assert.equal(error.errors[1].code, 'ENOENT');
+  assert.equal(
+    fs.readFileSync(path.join(root, 'held-prior-web/index.html'), 'utf8'),
+    'old web',
+  );
+  assert.equal(fs.existsSync(path.join(root, 'dashboard/dist')), false);
+  assert.equal(fs.existsSync(path.join(root, '.golem-package.lock')), true);
+});
+
 test('indeterminate rollback retains owned evidence/lock and never guesses a replacement deletion', () => {
   previous();
   mockCompiler();

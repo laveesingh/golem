@@ -157,8 +157,87 @@ if (process.argv[1]?.endsWith('/tools/package-build.mjs')) {
     }
   }
   assert.equal(fs.readlinkSync(pointer), originalPointer);
+  // Real compiler outputs, then private namespace replacement before the
+  // publisher resumes. Replacement identities are logged by this owned hook.
+  for (const kind of ['lock', 'stage']) {
+    const faultHook = path.join(sandbox.root, `replace-${kind}.mjs`);
+    const faultLog = path.join(sandbox.root, `replace-${kind}.json`);
+    const held = path.join(source, `fixture-held-${kind}`);
+    const stableRuntime = digest(path.join(source, 'dist'));
+    const stableWeb = digest(path.join(source, 'dashboard/dist'));
+    const stableTar = sha(fs.readFileSync(tarball));
+    fs.writeFileSync(
+      faultHook,
+      `
+import fs from 'node:fs'; import path from 'node:path'; import cp from 'node:child_process';
+if(process.argv[1]?.endsWith('/tools/package-build.mjs')) {
+ const original=cp.spawnSync;
+ cp.spawnSync=function(command,args,options) {
+  const result=original.call(this,command,args,options);
+  const i=args.indexOf('--outDir');
+  if(i>=0 && path.basename(args[i+1])==='web' && result.status===0) {
+   const stage=path.dirname(args[i+1]),lock=${JSON.stringify(path.join(source, '.golem-package.lock'))};
+   if(${JSON.stringify(kind)}==='lock') { fs.renameSync(lock,${JSON.stringify(held)});fs.writeFileSync(lock,'replacement-lock',{flag:'wx',mode:0o600}); }
+   else { fs.renameSync(stage,${JSON.stringify(held)});fs.cpSync(${JSON.stringify(held)},stage,{recursive:true});fs.writeFileSync(path.join(stage,'replacement-sentinel'),'untouched'); }
+   const rows=[stage,lock,${JSON.stringify(held)}].map(file=>{const s=fs.lstatSync(file);return {file,ino:s.ino,dev:s.dev,directory:s.isDirectory()};});
+   fs.writeFileSync(${JSON.stringify(faultLog)},JSON.stringify(rows));
+  }
+  return result;
+ };
+}
+`,
+    );
+    try {
+      const result = runPack({
+        NODE_OPTIONS: `${sandbox.env.NODE_OPTIONS} --import=${faultHook}`,
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /identity changed/);
+      assert.deepEqual(
+        digest(path.join(source, 'dist')),
+        stableRuntime,
+        `${kind} must refuse before runtime publication`,
+      );
+      assert.deepEqual(
+        digest(path.join(source, 'dashboard/dist')),
+        stableWeb,
+        `${kind} must refuse before web publication`,
+      );
+      assert.equal(sha(fs.readFileSync(tarball)), stableTar);
+      const rows = JSON.parse(fs.readFileSync(faultLog));
+      if (kind === 'lock')
+        assert.equal(
+          fs.readFileSync(path.join(source, '.golem-package.lock'), 'utf8'),
+          'replacement-lock',
+        );
+      else
+        assert.equal(
+          fs.readFileSync(
+            path.join(rows[0].file, 'replacement-sentinel'),
+            'utf8',
+          ),
+          'untouched',
+        );
+    } finally {
+      if (fs.existsSync(faultLog)) {
+        const rows = JSON.parse(fs.readFileSync(faultLog));
+        for (const row of rows) {
+          const current = fs.lstatSync(row.file);
+          assert.equal(current.ino, row.ino);
+          assert.equal(current.dev, row.dev);
+          assert.ok(!current.isSymbolicLink());
+        }
+        // Exact hook-allocated retained fixtures only, never borrowed recovery
+        // authority in production or a guessed replacement directory deletion.
+        for (const row of rows) {
+          if (row.directory) fs.rmSync(row.file, { recursive: true });
+          else fs.unlinkSync(row.file);
+        }
+      }
+    }
+  }
   console.log(
-    'ACTUAL GOLEM PREPACK FAILURES PASS: tampered/missing/escaping inputs preserve prior runtime/web/tarball; one source pointer capture despite pointer replacement; owned fixture restored',
+    'ACTUAL GOLEM PREPACK FAILURES PASS: tampered/missing/escaping inputs preserve prior runtime/web/tarball; one source pointer capture despite pointer replacement; prepublication lock/stage replacements preserve prior outputs; owned fixture restored',
   );
 } finally {
   sandbox.cleanup();

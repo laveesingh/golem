@@ -33,9 +33,15 @@ publication protocol. Grammar errors exit2; validation/IO failures exit1.
 Prepack captures the source pointer once, verifies the snapshot, stages regular
 copies, revalidates copied inputs/outputs, emits JS/maps and stages web/MCP
 outputs. The source pointer/output bytes are never mutated by packaging.
-A source-local exclusive lock serializes publication. Runtime and web trees
-are replaced only after all staging/build validation, with inode/device fences
-and rollback of previous good trees. This is not one OS-atomic multi-directory
+A source-local exclusive lock serializes publication. Original root/dashboard,
+lock/stage, runtime/web allocation identities and prior output identities or
+explicit absence are captured before child callbacks. Governing and affected
+source/destination/backup identities are revalidated immediately before every
+backup/publication/rollback transition. Replacements are never fresh-statted
+into authority. Prepublication identity loss leaves both prior outputs and
+replacements untouched and retains evidence. Mid-transition uncertainty retains
+originals/backups/causes rather than guessing recovery. Runtime and web trees
+are replaced only after all staging/build validation and these fences. This is not one OS-atomic multi-directory
 switch. Indeterminate timeout/signal/rollback/cleanup retains stage+lock evidence;
 no guessed deletion or stale-owner reclamation is attempted.
 
@@ -66,7 +72,19 @@ an unconsumed output-name export; IO now uses that same canonical list, not a
 fake entry/baseline waiver. Formatting failure on unsafe finally was repaired
 by preserving original/rollback/cleanup errors rather than throwing over them.
 
-## Frozen artefact evidence
+## Publication fence repair — evidence pending
+
+GOL502 found a major on the prior frozen publisher: lock or stage replacement
+after compilation could publish both outputs before cleanup detected identity
+loss. The bounded repair captures original scope/output/absence states before
+child callbacks and fences each transition. New regressions cover lock/stage,
+staged runtime/web, prior runtime/web and absent-output replacement, plus the
+existing missing-backup and original+cleanup aggregation controls. Prior c27/60
+macOS/Linux artefact results below are historical; repair old-fail/new-pass and
+new frozen artefact checks must pass before fresh review and acceptance.
+No malicious-same-UID race-proof or multi-directory atomicity claim is made.
+
+## Prior frozen artefact evidence
 
 Runtime/source commit `c27f8a9d09446ce3c94474cd5a7dc97f5a221739` was tested;
 subsequent evidence-document changes do not alter shipped runtime/assets.
