@@ -280,7 +280,7 @@ try {
   }).trim().split('\n')[0];
   linkPiTui(piRender, realPiCli);
   fs.copyFileSync(path.join(piRender, 'golem.ts'), path.join(piRender, 'golem.mjs'));
-  const { createRole, readRoleRegistry } = await import('../lib/session-role.js');
+  const { createRole, readRoleRegistry } = await import('../lib/session-role.ts');
   const {
     WORKER_TOMBSTONE_TTL_MS,
     pruneWorkerTombstones,

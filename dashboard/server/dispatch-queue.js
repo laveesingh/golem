@@ -26,7 +26,7 @@
 // This module does NOT add another session poll. It reads state.nativeSessions()
 // (already refreshed every 3s by state.js) on its own 5s tick.
 
-import { loadConfig } from '../../lib/golem-config.js';
+import { loadConfig } from '../../lib/golem-config.ts';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { checkpointPiPickupAck, claimPiPickupAcks, completePiPickupAck } from '../../lib/pi-inbox.js';

@@ -20,7 +20,7 @@ import { trackerDbPath } from '../../lib/golem-home.js';
 import { notificationReceipt } from '../../lib/notification-receipt.js';
 import { NotificationError } from '../../lib/notification-contract.js';
 import { createNotificationSchedules } from './notification-schedules.js';
-import { loadConfig } from '../../lib/golem-config.js';
+import { loadConfig } from '../../lib/golem-config.ts';
 import { createCommentDispatchService, defaultDispatchStateForComment } from './comment-dispatch.js';
 import {
   BODY_FORMATS, TrackerInputError, applyBlockOperations, badRequest, blockHtmlFromDoc, notFound,

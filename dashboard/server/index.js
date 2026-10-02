@@ -36,7 +36,7 @@ import { teamAssists } from './team-assist.js';
 import { golemHome, dashboardJsonPath, journalDirFor, projectsJsonPath, sessionsJsonPath } from '../../lib/golem-home.js';
 import { projectIdFor } from '../../lib/project-id.js';
 import { buildDispatchBrief } from './dispatch-brief.js';
-import { createRole, defaultSessionRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.js';
+import { createRole, defaultSessionRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.ts';
 import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../../lib/worker-manager.js';
 import { managementRosterSnapshot } from '../../lib/management-capabilities.js';
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
