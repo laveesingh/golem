@@ -72,17 +72,55 @@ an unconsumed output-name export; IO now uses that same canonical list, not a
 fake entry/baseline waiver. Formatting failure on unsafe finally was repaired
 by preserving original/rollback/cleanup errors rather than throwing over them.
 
-## Publication fence repair — evidence pending
+## Publication fence repair — fresh builder evidence
 
 GOL502 found a major on the prior frozen publisher: lock or stage replacement
 after compilation could publish both outputs before cleanup detected identity
 loss. The bounded repair captures original scope/output/absence states before
-child callbacks and fences each transition. New regressions cover lock/stage,
-staged runtime/web, prior runtime/web and absent-output replacement, plus the
-existing missing-backup and original+cleanup aggregation controls. Prior c27/60
-macOS/Linux artefact results below are historical; repair old-fail/new-pass and
-new frozen artefact checks must pass before fresh review and acceptance.
-No malicious-same-UID race-proof or multi-directory atomicity claim is made.
+child callbacks and fences each transition, including known stage removal and
+final lock unlink. Replacement identities are not inferred into authority.
+
+Runtime/source `56b6d245dfa57a5d66299bdb7bb0d1be318ad9b0` is the tested repair;
+subsequent evidence-document changes do not alter shipped code. Private old60
+publisher plus NEW desired prepublication tests failed exactly8/8 lock/stage/
+staged-runtime/web/prior-runtime/web/absence replacements (17 filtered skips,
+not full acceptance). New targeted package/publication units2files/34tests0,
+including missing rollback and original compiler+cleanup cause aggregation.
+Old failing result is retained `/tmp/gol500-fence-old-regressions.log`.
+
+Final Mac source check0/native21/strict/Knip137baseline134current/no additions,
+24files284tests/no skips0,217.91s; static23negative24state7font0. Actual frozen56
+Golem source archive pack/install--omit=dev/token+existing+enhancednegativepack
+probes all0. REAL compiler then lock/stage replacements refuse before both old
+output transitions; old runtime/web/tarball/replacements remain intact. Exact
+hook-created fixture identities are restored/removed without borrowed production
+authority. Default/override/read-only/manifest/ViteCSS/sevenHTTPfont/pointer
+and prior package lifecycle/refusal consumers remain green. Logs:
+`/tmp/gol500-fence-final-{check,full}.log`,
+`/tmp/gol500-final-fence-mac-{pack,install,token,existing,negative}.log`.
+
+NEW final56 image/fresh writable upper source at provisioning AND runtime:
+--init --network none/offline fresh-ci/check0/full24files284tests0,196.15s/native21/
+type negatives/static/NEW physical offline actual pack+install/token+existing/
+enhancednegativepreservation/private-no-dist-link/help all0.61 receipt sandbox/
+main-PID absence assertions and complete tracked-source/pointer preservation0.
+Final process table only init/bash/ps. Both final56 tarballs SHA256:
+`7efecf0947c9a16ea42623d99ff239916032085783546bcd41a6fc97922e3885`.
+Regular27asset files/fourordinarygenerated outputs remain. Owned image
+`sha256:50ad20b5b766feb8e31cf478cdb7ab0220dca59da28d6b9ca4aae83a7fbaccd2`
+(task/session/source labels) removed/exact inspect absence; --rm container absent.
+All four repair-owned archive/prefix/context/HOME roots removed after empty
+survivor scan. Public verifier cache s3rrkA remains unchanged. Runtime slot
+released before DOCONLY reconciliation; no source/asset/schema/default/dependency
+or portable-EXDEV fallback changes outside the four-path repair.
+
+Provisioning `/tmp/gol500-fence-Dockerfile.upper` and
+`/tmp/gol500-fence-linux-runtime.sh`; logs
+`/tmp/gol500-fence-linux-{build,full,image,cleanup}.log` are retained. Earlier
+c27/60 results and their lower-layer EXDEV/unknown-cause retry timeout below are
+historical, never final repair acceptance. Fresh untouched fence-delta review,
+separate complete verifier and coordinator rerun remain required. No malicious
+same-UID race-proof, multi-directory atomicity or full W3 acceptance is claimed.
 
 ## Prior frozen artefact evidence
 
