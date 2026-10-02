@@ -162,7 +162,9 @@ function discardOwnedStage(
   identity: fs.Stats | undefined,
   lock: string,
   lockIdentity: fs.Stats,
+  beforeTransition: (stagePresent: boolean) => void,
 ): void {
+  beforeTransition(true);
   if (!same(lockIdentity, fs.lstatSync(lock)))
     throw Error(`package lock identity changed; retain ${lock}`);
   if (identity && stage) {
@@ -170,6 +172,7 @@ function discardOwnedStage(
       throw Error(`package stage identity changed; retain ${stage}`);
     fs.rmSync(stage, { recursive: true });
   }
+  beforeTransition(false);
   if (!same(lockIdentity, fs.lstatSync(lock)))
     throw Error(`package lock identity changed; retain ${lock}`);
   fs.unlinkSync(lock);
@@ -234,17 +237,18 @@ export function buildPackage(root: string): void {
     )
       throw Error(`package ${label} identity changed; retain ${file}`);
   };
-  const governing = () => {
+  const governing = (stagePresent = true) => {
     captured(root, rootIdentity, 'root');
     captured(dashboard, dashboardIdentity, 'dashboard parent');
     captured(lock, lockIdentity, 'lock');
-    if (stageIdentity) captured(stage, stageIdentity, 'stage');
+    if (stageIdentity)
+      captured(stage, stagePresent ? stageIdentity : undefined, 'stage');
   };
-  const states = () => {
+  const states = (stagePresent = true) => {
     for (const row of outputs) {
       captured(
         row.source,
-        row.movedNext ? undefined : row.next,
+        !stagePresent || row.movedNext ? undefined : row.next,
         'staged output',
       );
       captured(
@@ -254,17 +258,17 @@ export function buildPackage(root: string): void {
       );
       captured(
         row.previous,
-        row.movedOld ? row.old : undefined,
+        stagePresent && row.movedOld ? row.old : undefined,
         'prior backup',
       );
     }
   };
   // Fences use only allocated/captured identities and known path transitions.
   // They never fresh-stat a replacement and turn it into publication authority.
-  const fence = () => {
+  const fence = (stagePresent = true) => {
     try {
-      governing();
-      states();
+      governing(stagePresent);
+      states(stagePresent);
     } catch (error) {
       retain = true;
       throw error;
@@ -398,7 +402,7 @@ export function buildPackage(root: string): void {
       fs.closeSync(fd);
       if (!retain) {
         fence();
-        discardOwnedStage(stage, stageIdentity, lock, lockIdentity);
+        discardOwnedStage(stage, stageIdentity, lock, lockIdentity, fence);
       }
     } catch (cleanup) {
       retain = true;
