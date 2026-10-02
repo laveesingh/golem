@@ -281,7 +281,7 @@ export function retainCandidates(images, records, destination, provenance) {
   }
   return manifest;
 }
-export function copyValidatedCandidates(candidate, destination) {
+function validateRetainedCandidates(candidate) {
   ownedDirectory(candidate);
   const manifest = JSON.parse(
     readRegular(path.join(candidate, 'manifest.json')).toString('utf8'),
@@ -315,6 +315,11 @@ export function copyValidatedCandidates(candidate, destination) {
       manifest.provenance.chromiumVersion,
     );
   }
+  return manifest;
+}
+export function copyValidatedCandidates(candidate, destination) {
+  const manifest = validateRetainedCandidates(candidate),
+    names = expectedCandidates();
   assert.ok(path.isAbsolute(destination));
   ownedDirectory(path.dirname(destination));
   assert.equal(
@@ -342,4 +347,218 @@ export function copyValidatedCandidates(candidate, destination) {
     throw error;
   }
   return manifest;
+}
+
+export const rejectedInitialTuple = Object.freeze({
+  candidateCommit: '14f44e418f4297d6e67ff82c506329b723f635d8',
+  sourceCommit: 'fb13de1e2f66e0e931224c82251d4aa4f25795f6',
+  manifestSha256:
+    '3e3917bacf4b044e50fee66141e4d0245209238560e2dd8508a633e9b30100f5',
+  kind: 'initial-atom-baseline-candidates-NOT-ACCEPTED',
+});
+function pathPresent(file) {
+  try {
+    fs.lstatSync(file);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+function directoryIdentity(folder) {
+  const stat = ownedDirectory(folder);
+  return { device: stat.dev, inode: stat.ino, uid: stat.uid };
+}
+function fence(folder, expected) {
+  assert.deepEqual(
+    directoryIdentity(folder),
+    expected,
+    'Directory incarnation changed; leave unknown path untouched',
+  );
+}
+export function validateExactRejected(folder) {
+  const manifest = validateRetainedCandidates(folder),
+    bytes = readRegular(path.join(folder, 'manifest.json'));
+  assert.equal(
+    hash(bytes),
+    rejectedInitialTuple.manifestSha256,
+    'Only explicitly rejected initial manifest may supersede',
+  );
+  assert.equal(manifest.kind, rejectedInitialTuple.kind);
+  assert.equal(
+    manifest.provenance.sourceCommit,
+    rejectedInitialTuple.sourceCommit,
+  );
+  return {
+    manifest,
+    identity: directoryIdentity(folder),
+    manifestSha256: hash(bytes),
+  };
+}
+function copySet(source, destination) {
+  const manifest = validateRetainedCandidates(source);
+  assert.equal(pathPresent(destination), false);
+  fs.mkdirSync(destination, { mode: 0o700 });
+  const identity = directoryIdentity(destination);
+  for (const name of [...expectedCandidates(), 'manifest.json']) {
+    fence(destination, identity);
+    fs.writeFileSync(
+      path.join(destination, name),
+      readRegular(path.join(source, name)),
+      { flag: 'wx', mode: 0o644 },
+    );
+  }
+  validateRetainedCandidates(destination);
+  return { manifest, identity };
+}
+export function retireRejectedPrivate(privateCopy, folder, backup) {
+  const sandbox = process.env.GOLEM_W2_SANDBOX;
+  assert.ok(sandbox && path.isAbsolute(sandbox));
+  const privateRelative = path.relative(
+    fs.realpathSync(sandbox),
+    fs.realpathSync(privateCopy),
+  );
+  assert.ok(
+    privateRelative &&
+      !privateRelative.startsWith('..' + path.sep) &&
+      !path.isAbsolute(privateRelative),
+    'Retirement only within allocated W2 private copy',
+  );
+  assert.equal(
+    path.resolve(folder),
+    path.join(path.resolve(privateCopy), 'test/e2e/__screenshots__/atoms'),
+  );
+  assert.ok(path.isAbsolute(backup));
+  const parent = path.dirname(folder),
+    parentId = directoryIdentity(parent),
+    old = validateExactRejected(folder);
+  ownedDirectory(path.dirname(backup));
+  assert.equal(pathPresent(backup), false);
+  fence(parent, parentId);
+  fence(folder, old.identity);
+  validateExactRejected(folder);
+  fs.renameSync(folder, backup);
+  fence(backup, old.identity);
+  validateExactRejected(backup);
+  return old;
+}
+export function replaceExactRejected(candidate, target, evidence) {
+  assert.ok(
+    path.isAbsolute(target) &&
+      target.endsWith(path.join('test', 'e2e', '__screenshots__', 'atoms')),
+  );
+  const fresh = validateRetainedCandidates(candidate);
+  assert.deepEqual(
+    fresh.provenance.supersedes,
+    rejectedInitialTuple,
+    'New provenance must explicitly name rejected tuple',
+  );
+  const parent = path.dirname(target),
+    parentId = directoryIdentity(parent),
+    old = validateExactRejected(target);
+  assert.ok(path.isAbsolute(evidence));
+  ownedDirectory(path.dirname(evidence));
+  assert.equal(pathPresent(evidence), false);
+  fs.mkdirSync(evidence, { mode: 0o700 });
+  const evidenceId = directoryIdentity(evidence),
+    nonce = String(Date.now()) + '-' + process.pid,
+    stage = target + '.stage-' + nonce,
+    backup = target + '.rejected-' + nonce;
+  let stageId,
+    oldMoved = false,
+    newMoved = false;
+  const journal = {
+    schema: 1,
+    operation: 'EXACT_REJECTED_INITIAL_SUPERSESSION',
+    oldTuple: rejectedInitialTuple,
+    parentIdentity: parentId,
+    oldIdentity: old.identity,
+    newManifestSha256: hash(readRegular(path.join(candidate, 'manifest.json'))),
+    state: 'intent',
+    stage,
+    backup,
+    target,
+  };
+  const record = (state) => {
+    fence(evidence, evidenceId);
+    journal.state = state;
+    fs.writeFileSync(
+      path.join(evidence, 'transaction.json'),
+      JSON.stringify(journal, null, 2) + '\n',
+    );
+  };
+  record('intent');
+  try {
+    fence(parent, parentId);
+    fence(target, old.identity);
+    validateExactRejected(target);
+    const staged = copySet(candidate, stage);
+    stageId = staged.identity;
+    journal.stageIdentity = stageId;
+    record('stage-verified-before-moves');
+    fence(parent, parentId);
+    fence(target, old.identity);
+    validateExactRejected(target);
+    fence(stage, stageId);
+    validateRetainedCandidates(stage);
+    assert.equal(pathPresent(backup), false);
+    fs.renameSync(target, backup);
+    oldMoved = true;
+    fence(parent, parentId);
+    fence(backup, old.identity);
+    validateExactRejected(backup);
+    record('old-backed-up');
+    fence(parent, parentId);
+    fence(backup, old.identity);
+    fence(stage, stageId);
+    assert.equal(pathPresent(target), false);
+    fs.renameSync(stage, target);
+    newMoved = true;
+    fence(parent, parentId);
+    fence(target, stageId);
+    assert.equal(
+      hash(readRegular(path.join(target, 'manifest.json'))),
+      journal.newManifestSha256,
+    );
+    validateRetainedCandidates(target);
+    record('new-target-verified');
+    fence(parent, parentId);
+    fence(backup, old.identity);
+    validateExactRejected(backup);
+    copySet(backup, path.join(evidence, 'old-rejected'));
+    record('old-evidence-verified');
+    fence(parent, parentId);
+    fence(backup, old.identity);
+    validateExactRejected(backup);
+    fs.rmSync(backup, { recursive: true });
+    record('complete');
+    return { manifest: fresh, journal, evidence };
+  } catch (error) {
+    record('failure-evidence-retained');
+    if (oldMoved && !newMoved) {
+      fence(parent, parentId);
+      fence(backup, old.identity);
+      validateExactRejected(backup);
+      assert.equal(
+        pathPresent(target),
+        false,
+        'Unknown replacement target untouched',
+      );
+      fs.renameSync(backup, target);
+      fence(target, old.identity);
+      validateExactRejected(target);
+      record('known-old-restored');
+    }
+    if (stageId && pathPresent(stage)) {
+      fence(parent, parentId);
+      fence(stage, stageId);
+      validateRetainedCandidates(stage);
+      assert.equal(
+        hash(readRegular(path.join(stage, 'manifest.json'))),
+        journal.newManifestSha256,
+      );
+      fs.rmSync(stage, { recursive: true });
+    }
+    throw error;
+  }
 }

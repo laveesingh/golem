@@ -20,6 +20,15 @@ export function Button(props: ActionProps) {
       onKeyDown={(event) => actionKey(props, event)}
     >
       {props.label}
+      <span
+        className="g-busy-cue"
+        aria-hidden="true"
+        data-busy-indicator="static-hourglass"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M4 2h8v2l-4 4 4 4v2H4v-2l4-4-4-4Z" />
+        </svg>
+      </span>
     </button>
   );
 }

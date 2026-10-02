@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StoryFrame } from '../workshop/StoryFrame.tsx';
 import { IconButton } from './IconButton.tsx';
 
@@ -74,6 +75,7 @@ export function DisabledBusy() {
   );
 }
 export function States() {
+  const [busy, setBusy] = useState(false);
   return (
     <StoryFrame title="IconButton states">
       <section className="g-story-row">
@@ -86,6 +88,16 @@ export function States() {
         <IconButton label="Busy add item" id="icon-busy" icon={glyph} busy />
         <IconButton label="Disabled add item" icon={glyph} disabled />
         <IconButton label="Disabled busy add item" icon={glyph} busy disabled />
+      </section>
+      <section className="g-story-row">
+        <h2>Native visible static busy transition</h2>
+        <IconButton
+          id="icon-transition"
+          label="Run icon action"
+          icon={glyph}
+          busy={busy}
+          onClick={() => setBusy(true)}
+        />
       </section>
     </StoryFrame>
   );

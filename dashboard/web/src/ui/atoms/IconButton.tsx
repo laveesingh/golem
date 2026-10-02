@@ -62,11 +62,22 @@ export function IconButton(props: IconButtonProps) {
       onKeyDown={(event) => actionKey(props, event)}
     >
       <span className="g-icon-glyph" aria-hidden="true">
-        {cloneElement(props.icon, {
-          'aria-hidden': true,
-          focusable: 'false',
-          tabIndex: -1,
-        })}
+        <span className="g-icon-original">
+          {cloneElement(props.icon, {
+            'aria-hidden': true,
+            focusable: 'false',
+            tabIndex: -1,
+          })}
+        </span>
+        <span
+          className="g-busy-cue g-icon-cue"
+          data-busy-indicator="static-hourglass"
+          aria-hidden="true"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path d="M4 2h8v2l-4 4 4 4v2H4v-2l4-4-4-4Z" />
+          </svg>
+        </span>
       </span>
     </button>
   );

@@ -118,7 +118,7 @@ if (mode === 'prepare') {
   assert.equal(identity.imageObserved, true);
   assert.equal(identity.executableObserved, true);
   const green = path.join(owned, 'functional-green.json');
-  if (mode === 'capture' || mode === 'compare')
+  if (mode === 'capture' || mode === 'recapture' || mode === 'compare')
     assert.equal(
       readRegular(green).toString().trim(),
       digest(identityFile),
@@ -127,9 +127,11 @@ if (mode === 'prepare') {
   const args = [
     mode === 'capture'
       ? 'baseline'
-      : mode === 'compare'
-        ? 'visual'
-        : 'functional',
+      : mode === 'recapture'
+        ? 'baseline-rejected-14f44'
+        : mode === 'compare'
+          ? 'visual'
+          : 'functional',
     identityFile,
   ];
   if (candidate) args.push(candidate);
@@ -147,6 +149,9 @@ if (mode === 'prepare') {
       mode: 0o600,
     });
   else
-    assert.ok(['capture', 'compare'].includes(mode), 'Unknown browser stage');
+    assert.ok(
+      ['capture', 'recapture', 'compare'].includes(mode),
+      'Unknown browser stage',
+    );
   console.log(`GOL501 actual pinned ${mode} PASS with owned cleanup`);
 }

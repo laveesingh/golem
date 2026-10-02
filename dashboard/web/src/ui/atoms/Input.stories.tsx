@@ -77,6 +77,17 @@ export function Focus() {
     </StoryFrame>
   );
 }
+export function UnbrokenText() {
+  return (
+    <StoryFrame title="Input unbroken text">
+      <Input
+        id="unbroken-only"
+        label={'Label_'.repeat(20)}
+        error={'Error_'.repeat(20)}
+      />
+    </StoryFrame>
+  );
+}
 export function States() {
   const [value, setValue] = useState('Example');
   return (
@@ -119,6 +130,12 @@ export function States() {
         id="long"
         label="An extremely long descriptive field label that wraps in the narrow container"
         defaultValue="A long populated value does not replace the accessible field label"
+      />
+      <Input
+        id="unbroken"
+        label={'Label_'.repeat(20)}
+        error={'Error_'.repeat(20)}
+        defaultValue={'Native_value_'.repeat(20)}
       />
     </StoryFrame>
   );

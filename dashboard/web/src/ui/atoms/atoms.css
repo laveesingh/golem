@@ -74,6 +74,40 @@
 }
 .g-icon-glyph {
   display: inline-flex;
+  position: relative;
+  width: var(--g-semantic-density-card);
+  height: var(--g-semantic-density-card);
+}
+.g-icon-original {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+}
+.g-busy-cue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--g-semantic-density-card);
+  min-width: var(--g-semantic-density-card);
+  height: var(--g-semantic-density-card);
+  visibility: hidden;
+}
+.g-busy-cue svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--g-semantic-border-width);
+}
+.g-icon-cue {
+  position: absolute;
+  inset: 0;
+}
+.g-button[data-busy="true"] .g-busy-cue {
+  visibility: visible;
+}
+.g-button[data-busy="true"] .g-icon-original {
+  visibility: hidden;
 }
 .g-icon-glyph svg {
   width: var(--g-semantic-density-card);
@@ -91,6 +125,8 @@
   color: var(--g-component-input-foreground);
   font: var(--g-component-input-type);
   letter-spacing: var(--g-component-input-type-letterSpacing);
+  min-width: 0;
+  overflow-wrap: anywhere; /* token-lint-disable-line: unbroken field label and error text reflow */
 }
 .g-input {
   box-sizing: border-box; /* token-lint-disable-line: border box sizing */
@@ -178,6 +214,8 @@
   color: var(--g-component-badge-foreground);
   font: var(--g-component-badge-type);
   letter-spacing: var(--g-component-badge-type-letterSpacing);
+  min-width: 0;
+  overflow-wrap: anywhere; /* token-lint-disable-line: unbroken badge text reflow */
 }
 .g-visually-hidden {
   position: absolute;

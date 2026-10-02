@@ -247,6 +247,75 @@ for (const theme of themes)
       await expect(transition).toBeFocused();
       await expect(transition).toHaveAttribute('aria-busy', 'true');
     });
+    test(`visible static busy cues and unbroken reflow ${theme}/${density}`, async ({
+      page,
+    }) => {
+      expect(
+        await page.evaluate(
+          () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+        ),
+      ).toBe(true);
+      for (const atom of ['Button', 'IconButton']) {
+        await catalog(page, atom, theme, density);
+        const target = page.locator(
+            atom === 'Button' ? '#transition' : '#icon-transition',
+          ),
+          cue = target.locator('[data-busy-indicator]');
+        await page.keyboard.press('Tab');
+        await target.focus();
+        await page.keyboard.press('Shift');
+        const name = atom === 'Button' ? 'Run action' : 'Run icon action';
+        await expect(target).toHaveAccessibleName(name);
+        await expect(cue).toHaveCSS('visibility', 'hidden');
+        const beforeBox = await target.boundingBox(),
+          before = await target.screenshot({ animations: 'disabled' });
+        await page.keyboard.press('Enter');
+        await expect(target).toHaveAttribute('aria-busy', 'true');
+        await expect(target).toBeFocused();
+        await expect(target).toHaveAccessibleName(name);
+        await expect(cue).toHaveCSS('visibility', 'visible');
+        await expect(cue).toHaveAttribute('aria-hidden', 'true');
+        expect(await target.boundingBox()).toEqual(beforeBox);
+        const after = await target.screenshot({ animations: 'disabled' });
+        expect(createHash('sha256').update(after).digest('hex')).not.toBe(
+          createHash('sha256').update(before).digest('hex'),
+        );
+      }
+      await page.setViewportSize({ width: 320, height: 1200 });
+      for (const atom of ['Badge', 'Input']) {
+        const panel = await catalog(page, atom, theme, density),
+          panelBox = await panel.boundingBox();
+        if (!panelBox) throw Error('Visible reflow panel required');
+        const right = panelBox.x + panelBox.width;
+        const text =
+          atom === 'Badge'
+            ? panel.locator('.g-badge').last()
+            : panel.locator('label[for="unbroken"],#unbroken-error');
+        for (const element of await text.all()) {
+          const geometry = await element.evaluate((node) => {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            const box = range.getBoundingClientRect();
+            return {
+              right: box.right,
+              client: node.clientWidth,
+              scroll: node.scrollWidth,
+              height: box.height,
+            };
+          });
+          expect(geometry.right).toBeLessThanOrEqual(right + 1);
+          expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
+          expect(geometry.height).toBeGreaterThan(20);
+        }
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth),
+        ).toBeLessThanOrEqual(320);
+        if (atom === 'Input')
+          await expect(page.locator('#unbroken')).toHaveValue(
+            'Native_value_'.repeat(20),
+          );
+      }
+    });
     test(`Icon target, readonly/error and accessible full counts ${theme}/${density}`, async ({
       page,
     }) => {

@@ -10,6 +10,9 @@ import {
   assertProductionLineage,
   atomImageDigest,
   completeDockerCid,
+  validateExactRejected,
+  rejectedInitialTuple,
+  replaceExactRejected,
   copyValidatedCandidates,
   ownedDirectory,
   readRegular,
@@ -27,6 +30,7 @@ for (let i = 0; i < args.length; i += 2) {
       '--source-commit',
       '--mode',
       '--output',
+      '--evidence',
     ].includes(args[i]),
   );
   assert.equal(Object.hasOwn(options, args[i]), false);
@@ -38,7 +42,14 @@ const mode = options['--mode'],
   docker = options['--docker-bin'],
   host = options['--docker-host'];
 assert.ok(
-  ['functional', 'capture', 'compare', 'copy-candidates'].includes(mode),
+  [
+    'functional',
+    'capture',
+    'capture-rejected-14f44',
+    'compare',
+    'copy-candidates',
+    'replace-rejected-14f44',
+  ].includes(mode),
 );
 assert.match(pin, /^[a-f0-9]{40}$/);
 assert.ok(path.isAbsolute(root));
@@ -57,7 +68,7 @@ assert.equal(
   '',
   'No code changes during browser stage',
 );
-if (mode === 'copy-candidates') {
+if (mode === 'copy-candidates' || mode === 'replace-rejected-14f44') {
   const candidateManifest = JSON.parse(
     readRegular(path.join(root, 'manifest.json')).toString(),
   );
@@ -68,7 +79,20 @@ if (mode === 'copy-candidates') {
   );
   const destination = path.join(repo, 'test/e2e/__screenshots__/atoms');
   fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o755 });
-  copyValidatedCandidates(root, destination);
+  if (mode === 'replace-rejected-14f44') {
+    const ancestor = spawnSync(
+      'git',
+      [
+        'merge-base',
+        '--is-ancestor',
+        rejectedInitialTuple.candidateCommit,
+        pin,
+      ],
+      { cwd: repo, timeout: 10000 },
+    );
+    assert.equal(ancestor.status, 0);
+    replaceExactRejected(root, destination, options['--evidence']);
+  } else copyValidatedCandidates(root, destination);
   console.log(
     'Validated initial candidate40+manifest copied ONLY; visual acceptance still pending',
   );
@@ -146,6 +170,20 @@ if (mode === 'copy-candidates') {
   process.on('SIGTERM', interrupt);
   process.on('SIGINT', interrupt);
   try {
+    if (mode === 'capture-rejected-14f44') {
+      validateExactRejected(path.join(repo, 'test/e2e/__screenshots__/atoms'));
+      const ancestor = spawnSync(
+        'git',
+        [
+          'merge-base',
+          '--is-ancestor',
+          rejectedInitialTuple.candidateCommit,
+          pin,
+        ],
+        { cwd: repo, timeout: 10000 },
+      );
+      assert.equal(ancestor.status, 0);
+    }
     const archive = spawnSync('git', ['archive', '--format=tar', pin], {
       cwd: repo,
       timeout: 10000,
@@ -392,6 +430,7 @@ if (mode === 'copy-candidates') {
     }
     await phase('functional', 'none');
     if (mode === 'capture') await phase('capture', 'none');
+    if (mode === 'capture-rejected-14f44') await phase('recapture', 'none');
     if (mode === 'compare') await phase('compare', 'none');
     fs.copyFileSync(
       path.join(owned, 'identity.json'),
@@ -401,10 +440,15 @@ if (mode === 'copy-candidates') {
       path.join(owned, 'functional-green.json'),
       path.join(root, 'functional-green.json'),
     );
-    if (mode === 'capture') {
+    if (mode === 'capture' || mode === 'capture-rejected-14f44') {
       const retained = path.join(root, 'candidates');
       fs.renameSync(path.join(owned, 'candidates'), retained);
       assert.equal(fs.existsSync(path.join(retained, 'manifest.json')), true);
+      if (mode === 'capture-rejected-14f44')
+        fs.renameSync(
+          path.join(owned, 'rejected-evidence'),
+          path.join(root, 'rejected-evidence'),
+        );
     }
   } catch (error) {
     failure = error;
@@ -465,7 +509,9 @@ if (mode === 'copy-candidates') {
         mode,
         pin,
         cleanupErrors: [],
-        candidateStatus: mode === 'capture' ? 'NOT_ACCEPTED' : 'none',
+        candidateStatus: ['capture', 'capture-rejected-14f44'].includes(mode)
+          ? 'NOT_ACCEPTED'
+          : 'none',
       },
       null,
       2,

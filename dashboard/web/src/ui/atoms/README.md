@@ -15,17 +15,23 @@ router, store, theme migration, or remote-font removal is part of this task.
 | Badge | Plain count or nonempty text-only discriminated props. Counts are nonnegative safe integers, max is a positive safe integer (99 default). Zero is visible. Overflow text is max+; hidden full numeric text carries the full count and optional consumer label. No action or urgency inferred from color. |
 
 Native disabled wins over busy. Busy uses aria-busy and aria-disabled, retains native focus and the
-same label/geometry, and guards pointer/Enter/Space/default submission activation. Focus-visible
+same label/geometry, and guards pointer/Enter/Space/default submission activation. A static decorative
+hourglass makes busy visible in reduced motion: Button reserves its token-sized cue slot in idle and
+busy (an intentional idle-width change from rejected14f44), IconButton switches glyph/cue visibility
+inside the unchanged fixed glyph slot. Original glyph stays in DOM, accessible names do not change. Focus-visible
 is an independent outline with the approved gap/perimeter. Primary paints are always complete
 state pairs; focus cannot override hover/active/busy paint. No opacity/filter/color mixing or
 infinite animation is introduced. Icon target geometry is 32 compact / 44 cozy, separate from glyph.
 Read-only input remains focusable; error sentences use primary text, not marker color alone.
+Unbroken Badge text and Input label/error wrap inside narrow containers; native single-line Input
+values keep their ordinary internal scrolling. New unbroken examples are actual story props, not
+claimed from spaced-prose snapshots.
 
 ## Literal lint and counted exceptions
 
 No raw style props or unrestricted prop spreads are forwarded. The accepted fail-closed lint
 contract in `tools/token-lint.md` remains unchanged. Narrow same-line reasoned CSS escapes are
-used for `border-box` sizing grammar, container maximum-width containment, long-label `overflow-wrap: anywhere` grammar, and
+used for `border-box` sizing grammar, container maximum-width containment, label/error/badge `overflow-wrap: anywhere` grammar, and
 standard visually-hidden clipping geometry. Each is counted by the real lint report. They do not
 suppress paint/font/spacing values or neighboring lines. Exact final counts are checkpoint evidence,
 not assumed from this document.

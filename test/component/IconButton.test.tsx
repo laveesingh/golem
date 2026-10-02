@@ -32,6 +32,12 @@ test('busy retains focus and suppresses actions; native disabled wins', async ()
   );
   expect(button).toHaveFocus();
   expect(button).toHaveAttribute('aria-busy', 'true');
+  expect(button).toHaveAccessibleName('Add item');
+  expect(button.querySelector('[data-busy-indicator]')).toHaveAttribute(
+    'aria-hidden',
+    'true',
+  );
+  expect(button.querySelector('.g-icon-original svg')).toBeInTheDocument();
   await userEvent.click(button);
   await userEvent.keyboard('{Enter} ');
   expect(click).not.toHaveBeenCalled();

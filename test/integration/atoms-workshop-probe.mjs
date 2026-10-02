@@ -14,6 +14,9 @@ import {
   ownedDirectory,
   readRegular,
   retainCandidates,
+  rejectedInitialTuple,
+  retireRejectedPrivate,
+  validateExactRejected,
 } from './atoms-candidates.mjs';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url)),
@@ -229,7 +232,9 @@ try {
     'Missing env cannot allocate or leak a browser profile',
   );
   const mode = process.argv[2] ?? 'build';
-  if (mode === 'functional' || mode === 'visual' || mode === 'baseline') {
+  const superseding = mode === 'baseline-rejected-14f44',
+    captureMode = mode === 'baseline' || superseding;
+  if (mode === 'functional' || mode === 'visual' || captureMode) {
     const identityFile = process.argv[3],
       destination = process.argv[4];
     assert.ok(
@@ -262,7 +267,34 @@ try {
     fs.mkdirSync(results, { mode: 0o700 });
     fs.mkdirSync(records, { mode: 0o700 });
     const images = path.join(source, 'test/e2e/__screenshots__/atoms');
-    if (mode === 'baseline') {
+    if (superseding) {
+      const backup = path.join(root, 'exact-rejected-old');
+      const old = retireRejectedPrivate(source, images, backup),
+        evidence = path.join(path.dirname(identityFile), 'rejected-evidence');
+      ownedDirectory(path.dirname(evidence));
+      assert.equal(fs.existsSync(evidence), false);
+      fs.mkdirSync(evidence, { mode: 0o700 });
+      fs.cpSync(backup, path.join(evidence, 'old-set'), {
+        recursive: true,
+        dereference: false,
+        verbatimSymlinks: true,
+      });
+      validateExactRejected(path.join(evidence, 'old-set'));
+      fs.writeFileSync(
+        path.join(evidence, 'retirement.json'),
+        JSON.stringify(
+          {
+            tuple: rejectedInitialTuple,
+            oldIdentity: old.identity,
+            newSourceCommit: identity.sourceCommit,
+          },
+          null,
+          2,
+        ),
+        { flag: 'wx', mode: 0o600 },
+      );
+    }
+    if (captureMode) {
       assert.ok(destination && path.isAbsolute(destination));
       ownedDirectory(path.dirname(destination));
       assert.equal(fs.existsSync(destination), false);
@@ -288,7 +320,7 @@ try {
       GOLEM_ATOMS_BROWSER_VERSION: identity.chromiumVersion,
       GOLEM_ATOMS_IDENTITY_FILE: identityFile,
     };
-    if (mode === 'baseline') {
+    if (captureMode) {
       env.GOLEM_ATOMS_CAPTURE = 'initial';
       env.GOLEM_ATOMS_CAPTURE_RECORDS = records;
     }
@@ -299,7 +331,7 @@ try {
       '--project',
       mode === 'functional' ? 'atoms-functional' : 'atoms-visual',
     ];
-    if (mode === 'baseline') args.push('--update-snapshots');
+    if (captureMode) args.push('--update-snapshots');
     const browser = spawnSync(
       process.execPath,
       [path.join(source, 'node_modules/@playwright/test/cli.js'), ...args],
@@ -333,7 +365,7 @@ try {
         `Actual browser suite failed; private failure artifacts retained at ${retained}`,
       );
     }
-    if (mode === 'baseline') {
+    if (captureMode) {
       const inventory = path.join(
           repo,
           'dashboard/web/src/ui/fonts/inventory.json',
@@ -341,6 +373,7 @@ try {
         fonts = JSON.parse(readRegular(inventory).toString());
       const provenance = {
         ...identity,
+        ...(superseding ? { supersedes: rejectedInitialTuple } : {}),
         functionalGreen: true,
         generation: pinned.id,
         fontInventorySha256: createHash('sha256')

@@ -28,6 +28,13 @@ export function Text() {
     </StoryFrame>
   );
 }
+export function UnbrokenText() {
+  return (
+    <StoryFrame title="Badge unbroken text">
+      <Badge text={'Review_'.repeat(20)} />
+    </StoryFrame>
+  );
+}
 export function States() {
   return (
     <StoryFrame title="Badge states">
@@ -38,6 +45,7 @@ export function States() {
       <Badge count={8} max={5} label="Items" />
       <Badge text="Review required" />
       <Badge text="An extremely long descriptive text-only badge label" />
+      <Badge text={'Review_'.repeat(20)} />
     </StoryFrame>
   );
 }

@@ -4,6 +4,15 @@ import { describe, expect, test, vi } from 'vitest';
 import { Button } from '../../dashboard/web/src/ui/atoms/Button.tsx';
 
 describe('Button native behavior', () => {
+  test('decorative static cue slot is present before and during busy without changing name', () => {
+    const view = render(<Button label="Create" />),
+      button = screen.getByRole('button', { name: 'Create' }),
+      cue = button.querySelector('[data-busy-indicator]');
+    view.rerender(<Button label="Create" busy />);
+    expect(button.querySelector('[data-busy-indicator]')).toBe(cue);
+    expect(button).toHaveAccessibleName('Create');
+    expect(cue).toHaveAttribute('aria-hidden', 'true');
+  });
   test('default primary native button avoids implicit form submission', async () => {
     const submit = vi.fn(),
       click = vi.fn();
@@ -44,6 +53,11 @@ describe('Button native behavior', () => {
     );
     expect(button).toHaveFocus();
     expect(button).toHaveTextContent('Create');
+    expect(button).toHaveAccessibleName('Create');
+    expect(button.querySelector('[data-busy-indicator]')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
     expect(button).not.toBeDisabled();
     expect(button).toHaveAttribute('aria-busy', 'true');
     expect(button).toHaveAttribute('aria-disabled', 'true');
