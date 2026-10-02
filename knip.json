@@ -185,7 +185,10 @@
         "test/fixtures/w3-route-baseline.mjs",
         "test/fixtures/w3-openapi-export.mjs",
         "test/fixtures/w3-client-probe.mjs",
-        "dashboard/web/src/api/types.d.ts"
+        "dashboard/web/src/api/types.d.ts",
+        "tools/tokens-build.ts",
+        "tools/lint-tokens.ts",
+        "test/integration/token-tools-probe.mjs"
       ],
       "project": [
         "**/*.{js,mjs,ts,jsx,tsx}",
@@ -196,7 +199,9 @@
         "!plugin/**",
         "!dashboard/dist/**",
         "!dist/**",
-        "!mcp/channel/**"
+        "!mcp/channel/**",
+        "!dashboard/web/src/ui/tokens/.generations/**",
+        "!dashboard/web/src/ui/tokens/generated/**"
       ]
     },
     "mcp/channel": {
