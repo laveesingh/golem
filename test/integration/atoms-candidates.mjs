@@ -26,6 +26,8 @@ export function pngCrc32(bytes) {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
+export const completeDockerCid = (value) =>
+  typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export function assertProductionLineage(
   captured,
   productionSources,

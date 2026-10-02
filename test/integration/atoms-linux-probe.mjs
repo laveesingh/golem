@@ -9,6 +9,7 @@ import {
   assertObservedIdentity,
   assertProductionLineage,
   atomImageDigest,
+  completeDockerCid,
   copyValidatedCandidates,
   ownedDirectory,
   readRegular,
@@ -253,6 +254,11 @@ if (mode === 'copy-candidates') {
         cidfile = path.join(root, `cid-${stage}`),
         gate = path.join(owned, `gate-${nonce}`);
       cidfiles.push({ file: cidfile, nonce });
+      fs.writeFileSync(
+        path.join(root, `allocation-${stage}.json`),
+        JSON.stringify({ nonce, imageId: observed.Id, cidfile }, null, 2),
+        { flag: 'wx', mode: 0o600 },
+      );
       const run = spawn(
         docker,
         [
@@ -328,13 +334,29 @@ if (mode === 'copy-candidates') {
         });
         run.once('exit', (code) => resolve(code));
       });
-      for (let tries = 0; tries < 150 && !fs.existsSync(cidfile); tries++) {
-        if (interrupted || startupError || run.exitCode !== null)
-          throw Error(`Container failed before CID: ${startupError ?? output}`);
+      let cid = '';
+      for (let tries = 0; tries < 150; tries++) {
+        if (fs.existsSync(cidfile)) {
+          const current = readRegular(cidfile).toString().trim();
+          if (completeDockerCid(current)) {
+            cid = current;
+            break;
+          }
+        }
+        if (interrupted || startupError || run.exitCode !== null) {
+          fs.writeFileSync(path.join(root, `${stage}.log`), output);
+          throw Error(
+            `Container failed before authoritative CID: ${startupError ?? output}`,
+          );
+        }
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      const cid = readRegular(cidfile).toString().trim();
-      assert.match(cid, /^[a-f0-9]{64}$/);
+      fs.writeFileSync(path.join(root, `${stage}.log`), output);
+      assert.match(
+        cid,
+        /^[a-f0-9]{64}$/,
+        'Docker CID contents must be complete, not an empty placeholder',
+      );
       const binding = JSON.parse(control('inspect', cid))[0];
       assert.equal(binding.Image, observed.Id);
       assert.equal(binding.Config.Labels['golem.atoms.nonce'], nonce);

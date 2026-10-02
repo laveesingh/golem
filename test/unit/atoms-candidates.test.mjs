@@ -9,6 +9,7 @@ import {
   assertObservedIdentity,
   assertProductionLineage,
   atomImageDigest,
+  completeDockerCid,
   copyValidatedCandidates,
   expectedCandidates,
   pngCrc32,
@@ -16,6 +17,18 @@ import {
   validateCandidates,
 } from '../integration/atoms-candidates.mjs';
 
+test('Docker CID readiness refuses empty placeholder and accepts only complete identity', () => {
+  for (const value of [
+    '',
+    '\n',
+    'a'.repeat(63),
+    'a'.repeat(65),
+    'g'.repeat(64),
+    undefined,
+  ])
+    assert.equal(completeDockerCid(value), false);
+  assert.equal(completeDockerCid('a'.repeat(64)), true);
+});
 function png(width, height) {
   const chunk = (type, payload) => {
     const size = Buffer.alloc(4),
