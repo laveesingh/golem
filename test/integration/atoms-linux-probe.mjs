@@ -1,14 +1,16 @@
 // Explicit owned browser-stage launcher; no defaults for daemon, source pin or output facility.
 import assert from 'node:assert/strict';
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash, randomUUID } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
 import {
+  assertObservedIdentity,
+  assertProductionLineage,
   atomImageDigest,
-  ownedDirectory,
   copyValidatedCandidates,
+  ownedDirectory,
   readRegular,
 } from './atoms-candidates.mjs';
 
@@ -162,7 +164,65 @@ if (mode === 'copy-candidates') {
       fs.mkdirSync(path.join(owned, dir), { mode: 0o700 });
     for (const file of ['user.npmrc', 'global.npmrc'])
       fs.writeFileSync(path.join(owned, file), '', { mode: 0o600 });
+    const productionSources = Object.fromEntries(
+      git('ls-files')
+        .split('\n')
+        .filter(
+          (file) =>
+            (file.startsWith('dashboard/web/src/ui/') &&
+              /\.(?:tsx?|css|json|woff2|txt)$/.test(file)) ||
+            file === 'dashboard/web/src/ui/tokens/generated' ||
+            [
+              'package.json',
+              'package-lock.json',
+              '.ladle/config.mjs',
+              '.ladle/vite.config.mjs',
+              'test/e2e/atoms.fixture.ts',
+              'test/e2e/atoms.spec.ts',
+              'test/e2e/playwright.atoms.config.ts',
+              'test/integration/atoms-candidates.mjs',
+              'test/integration/atoms-linux-entry.mjs',
+              'test/integration/atoms-linux-probe.mjs',
+              'test/integration/atoms-workshop-probe.mjs',
+            ].includes(file),
+        )
+        .sort()
+        .map((file) => {
+          const absolute = path.join(repo, file),
+            bytes = fs.lstatSync(absolute).isSymbolicLink()
+              ? Buffer.from('symlink:' + fs.readlinkSync(absolute))
+              : fs.readFileSync(absolute);
+          return [file, createHash('sha256').update(bytes).digest('hex')];
+        }),
+    );
+    if (mode === 'compare') {
+      const captured = JSON.parse(
+        readRegular(
+          path.join(source, 'test/e2e/__screenshots__/atoms/manifest.json'),
+        ).toString(),
+      );
+      const ancestor = spawnSync(
+        'git',
+        ['merge-base', '--is-ancestor', captured.provenance.sourceCommit, pin],
+        { cwd: repo, timeout: 10000 },
+      );
+      const delta = git(
+        'diff',
+        '--name-only',
+        captured.provenance.sourceCommit,
+        pin,
+      )
+        .split('\n')
+        .filter(Boolean);
+      assertProductionLineage(
+        captured.provenance,
+        productionSources,
+        delta,
+        ancestor.status === 0,
+      );
+    }
     const sourceIdentity = {
+      productionSources,
       sourceCommit: pin,
       sourceTree: git('rev-parse', `${pin}^{tree}`),
       archiveSha256: createHash('sha256').update(archive.stdout).digest('hex'),
@@ -297,6 +357,17 @@ if (mode === 'copy-candidates') {
       assert.equal(code, 0, output);
     }
     await phase('prepare', 'bridge');
+    if (mode === 'compare') {
+      const captured = JSON.parse(
+        readRegular(
+          path.join(source, 'test/e2e/__screenshots__/atoms/manifest.json'),
+        ).toString(),
+      );
+      const actual = JSON.parse(
+        readRegular(path.join(owned, 'identity.json')).toString(),
+      );
+      assertObservedIdentity(captured.provenance, actual);
+    }
     await phase('functional', 'none');
     if (mode === 'capture') await phase('capture', 'none');
     if (mode === 'compare') await phase('compare', 'none');

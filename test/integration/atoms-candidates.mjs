@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 
 export const atomImageDigest =
@@ -25,6 +25,49 @@ export function pngCrc32(bytes) {
       crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
   }
   return (crc ^ 0xffffffff) >>> 0;
+}
+export function assertProductionLineage(
+  captured,
+  productionSources,
+  changedPaths,
+  ancestor,
+) {
+  assert.equal(
+    ancestor,
+    true,
+    'Candidate must descend from original captured source',
+  );
+  assert.deepEqual(
+    productionSources,
+    captured.productionSources,
+    'All production and renderer/test inputs must retain original bytes',
+  );
+  assert.ok(
+    changedPaths.every((file) =>
+      file.startsWith('test/e2e/__screenshots__/atoms/'),
+    ),
+    'Only validated candidate artifact paths may differ',
+  );
+}
+export function assertObservedIdentity(captured, observed) {
+  for (const field of [
+    'imageDigest',
+    'imageId',
+    'platform',
+    'playwright',
+    'chromiumVersion',
+    'chromiumRevision',
+    'executableSha256',
+    'registrySha256',
+    'nodeVersion',
+  ])
+    assert.equal(
+      observed[field],
+      captured[field],
+      `Original captured ${field} must match observed comparison identity`,
+    );
+  assert.equal(observed.imageObserved, true);
+  assert.equal(observed.executableObserved, true);
 }
 export function ownedDirectory(directory) {
   const stat = fs.lstatSync(directory);
@@ -98,6 +141,13 @@ export function validateCandidates(images, records, provenance) {
   assert.match(provenance.imageId, /^sha256:[a-f0-9]{64}$/);
   assert.match(provenance.sourceCommit, /^[a-f0-9]{40}$/);
   assert.match(provenance.sourceTree, /^[a-f0-9]{40}$/);
+  assert.ok(
+    provenance.productionSources &&
+      Object.keys(provenance.productionSources).length > 0,
+    'Original render-input hashes required',
+  );
+  for (const value of Object.values(provenance.productionSources))
+    assert.match(value, /^[a-f0-9]{64}$/);
   assert.equal(provenance.fonts.length, 7);
   assert.equal(provenance.clock, '2026-10-01T00:00:00Z');
   assert.equal(provenance.locale, 'en-US');

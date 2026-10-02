@@ -80,6 +80,12 @@ node test/integration/atoms-linux-probe.mjs \
   --source-commit "$REVIEWED_CANDIDATE_COMMIT" --mode compare --output "$WORK/comparison"
 ```
 
+Original capture commit/tree/archive/image/browser/font provenance is never rewritten when candidate
+artifacts are committed. Normal comparison proves descendant lineage with only the named artifact
+folder changed, byte-identical atoms/stories/workshop/CSS/tokens/fonts/config/dependency lock and
+renderer/test/clock/id inputs, and newly observed image/executable/registry/Node identity matching the
+original capture. A mixed source or tampered identity fails before comparison.
+
 Normal comparison sets `updateSnapshots: none`; it never fills missing files or updates old images.
 It re-proves functional behavior and compares the candidate set with no update flag. Full source
 checks, independent verification and coordinator rerun remain separate requirements.

@@ -1,18 +1,21 @@
 // Synthetic tiny PNGs exercise validator controls only; never screenshot/baseline evidence.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { test } from 'vitest';
 import {
+  assertObservedIdentity,
+  assertProductionLineage,
   atomImageDigest,
-  expectedCandidates,
-  validateCandidates,
-  retainCandidates,
   copyValidatedCandidates,
+  expectedCandidates,
   pngCrc32,
+  retainCandidates,
+  validateCandidates,
 } from '../integration/atoms-candidates.mjs';
+
 function png(width, height) {
   const chunk = (type, payload) => {
     const size = Buffer.alloc(4),
@@ -51,6 +54,10 @@ function fixture(callback) {
     playwright: '1.63.0',
     chromiumVersion: '153.0.8010.12',
     chromiumRevision: '1243',
+    productionSources: {
+      'dashboard/web/src/ui/atoms/Button.tsx': 'a'.repeat(64),
+      'test/e2e/atoms.fixture.ts': 'b'.repeat(64),
+    },
     sourceCommit: 'a'.repeat(40),
     sourceTree: 'b'.repeat(40),
     archiveSha256: 'c'.repeat(64),
@@ -153,6 +160,70 @@ for (const defect of [
       );
       assert.equal(fs.existsSync(path.join(root, 'candidate')), false);
     }));
+test('normal comparison preserves original captured source and browser provenance', () => {
+  const captured = {
+    productionSources: {
+      'atom.tsx': 'a'.repeat(64),
+      'clock-fixture.ts': 'b'.repeat(64),
+    },
+    imageDigest: atomImageDigest,
+    imageId: 'sha256:' + 'c'.repeat(64),
+    platform: 'linux/amd64',
+    playwright: '1.63.0',
+    chromiumVersion: '153.0.8010.12',
+    chromiumRevision: '1243',
+    executableSha256: 'd'.repeat(64),
+    registrySha256: 'e'.repeat(64),
+    nodeVersion: 'observed-node',
+  };
+  assertProductionLineage(
+    captured,
+    { ...captured.productionSources },
+    ['test/e2e/__screenshots__/atoms/button-light-cozy-320.png'],
+    true,
+  );
+  assertObservedIdentity(captured, {
+    ...captured,
+    imageObserved: true,
+    executableObserved: true,
+  });
+  assert.throws(() =>
+    assertProductionLineage(
+      captured,
+      { ...captured.productionSources, 'clock-fixture.ts': '0'.repeat(64) },
+      [],
+      true,
+    ),
+  );
+  assert.throws(() =>
+    assertProductionLineage(
+      captured,
+      captured.productionSources,
+      ['dashboard/web/src/ui/atoms/Button.tsx'],
+      true,
+    ),
+  );
+  assert.throws(() =>
+    assertProductionLineage(captured, captured.productionSources, [], false),
+  );
+  assert.throws(() =>
+    assertObservedIdentity(captured, {
+      ...captured,
+      imageId: 'wrong',
+      imageObserved: true,
+      executableObserved: true,
+    }),
+  );
+  assert.throws(() =>
+    assertObservedIdentity(captured, {
+      ...captured,
+      executableSha256: 'wrong',
+      imageObserved: true,
+      executableObserved: true,
+    }),
+  );
+  assert.equal(captured.productionSources['clock-fixture.ts'], 'b'.repeat(64));
+});
 test('retained PNG tamper prevents any source copy', () =>
   fixture(({ root, images, records, provenance }) => {
     const candidate = path.join(root, 'candidate');

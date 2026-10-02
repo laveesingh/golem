@@ -1,11 +1,11 @@
 // Container-side payload. Host releases a per-container gate only after inspecting immutable identity.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
-import { atomImageDigest, readRegular } from './atoms-candidates.mjs';
 import { runScript } from '../support/run-script.mjs';
+import { atomImageDigest, readRegular } from './atoms-candidates.mjs';
 
 const mode = process.argv[2],
   gate = process.argv[3],
