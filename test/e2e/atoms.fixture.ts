@@ -83,6 +83,25 @@ export default async function atomEnvironment(config?: FullConfig) {
     throw new Error(
       'Atom browser executable facility is missing; no implicit download',
     );
+  // Playwright cleans its outputDir before globalSetup. Recreate only the declared owned facility.
+  const parent = path.dirname(output),
+    parentStat = fs.lstatSync(parent),
+    parentRelative = path.relative(
+      fs.realpathSync(temp),
+      fs.realpathSync(parent),
+    );
+  if (
+    !parentStat.isDirectory() ||
+    parentStat.isSymbolicLink() ||
+    parentStat.uid !== process.getuid?.() ||
+    parentStat.mode & 0o022 ||
+    parentRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(parentRelative)
+  )
+    throw Error(
+      'Atom result parent must be owned and confined before recreation',
+    );
+  if (!fs.existsSync(output)) fs.mkdirSync(output, { mode: 0o700 });
   const stat = fs.lstatSync(output),
     relative = path.relative(fs.realpathSync(temp), fs.realpathSync(output));
   if (
@@ -96,6 +115,27 @@ export default async function atomEnvironment(config?: FullConfig) {
     throw new Error(
       'Atom results must be an owned directory under the private TMPDIR',
     );
+  if (process.env.GOLEM_ATOMS_CAPTURE === 'initial') {
+    const records = process.env.GOLEM_ATOMS_CAPTURE_RECORDS;
+    if (
+      !records ||
+      !path.isAbsolute(records) ||
+      path.resolve(records) !==
+        path.join(path.resolve(output), 'capture-records')
+    )
+      throw Error(
+        'Capture record facility must be confined under declared results',
+      );
+    fs.mkdirSync(records, { mode: 0o700, recursive: true });
+    const recordStat = fs.lstatSync(records);
+    if (
+      !recordStat.isDirectory() ||
+      recordStat.isSymbolicLink() ||
+      recordStat.uid !== process.getuid?.() ||
+      recordStat.mode & 0o022
+    )
+      throw Error('Capture records must be owned regular directory');
+  }
 }
 async function closedWithin(
   child: import('node:child_process').ChildProcess,
