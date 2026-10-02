@@ -45,7 +45,7 @@ try {
   for (let i = 0; i < projected.length; i++) { assert.deepEqual(cliRows[i].capabilities, projected[i].capabilities); assert.deepEqual(cliRows[i].placement, projected[i].placement); assert.equal(cliRows[i].team_id, projected[i].team_id); }
   const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: temp, env: {}, native, resolveContext: () => null, manager: { listAgentRoster: async () => ({ roster: projected, ended: [] }) }, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
   const listed = await run(['list', '--scope', 'all']); assert.equal(listed.exit, 0); assert.equal(listed.value.schema_version, 2); assert.deepEqual(listed.value.items.map(r => r.capabilities), projected.map(r => r.capabilities));
-  const externalRead = await run(['read', ownerId]); assert.equal(externalRead.exit, 0); assert.equal(externalRead.value.text, 'exact terminal owner-pane');
+  const externalRead = await run(['read', ownerId, '--session', session]); assert.equal(externalRead.exit, 0); assert.equal(externalRead.value.text, 'exact terminal owner-pane');
   const externalAttach = await run(['attach', ownerId]); assert.equal(externalAttach.exit, 0); assert.equal(attaches, 1);
   const outsideRead = await run(['read', outsideId]); assert.equal(outsideRead.exit, 1); assert.equal(outsideRead.value.capabilities.read.state, 'unsupported'); assert.ok(!/not found/.test(outsideRead.value.error));
   const terminal = await peekSessionTerminal(ownerId, { projectId, native }); assert.equal(terminal.ok, true); assert.equal(terminal.attach_hint, `golem agent attach ${ownerId}`); assert.deepEqual(terminal.capabilities, projected[1].capabilities);
