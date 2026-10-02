@@ -4,6 +4,10 @@ let failed = false;
 for (const [label, args] of [
   ['Biome', ['node_modules/@biomejs/biome/bin/biome', 'check']],
   ['TypeScript strict', ['node_modules/typescript/bin/tsc', '--noEmit']],
+  [
+    'TypeScript UI strict',
+    ['node_modules/typescript/bin/tsc', '--noEmit', '-p', 'tsconfig.ui.json'],
+  ],
   ['Knip debt', ['tools/knip-check-child.mjs']],
   ['Native backend import', ['tools/native-import.mjs']],
   ['Contracts freshness', ['tools/contracts-build.ts', '--check']],
