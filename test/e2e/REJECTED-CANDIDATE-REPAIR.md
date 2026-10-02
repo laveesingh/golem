@@ -48,6 +48,12 @@ copy. Host source baseline is not removed by recapture. Failed/partial capture c
 New provenance has its own repair-source identity and `supersedes` references the exact old tuple;
 old provenance is preserved rather than rewritten.
 
+Failure aggregation includes the cleanup existence probe itself: EACCES/EIO while locating a stage
+must append to collected primary/journal/rollback causes, never escape raw and discard them. A named
+primary plus uncertain rollback-parent and stage-existence control preserves every cause and leaves
+unknown stage/original bytes untouched. This minor followup is transaction-only; the two-plane
+rendering/provenance boundary below is unchanged.
+
 ```bash
 node test/integration/atoms-linux-probe.mjs \
   --source-commit "$FROZEN_REPAIR_SOURCE" \

@@ -143,17 +143,17 @@ for (const defect of [
       assert.equal(fs.existsSync(target), true);
     }));
 
-async function oldHelper(root) {
+async function oldHelper(
+  root,
+  pin = '2ab9c6fa62f71b5de4d20bef579b49107abfabb4',
+) {
   const value = spawnSync(
     'git',
-    [
-      'show',
-      '2ab9c6fa62f71b5de4d20bef579b49107abfabb4:test/integration/atoms-candidates.mjs',
-    ],
+    ['show', pin + ':test/integration/atoms-candidates.mjs'],
     { cwd: repo, timeout: 10000, maxBuffer: 2 * 1024 * 1024 },
   );
   assert.equal(value.status, 0);
-  const file = path.join(root, 'original-helper.mjs');
+  const file = path.join(root, 'original-helper-' + pin + '.mjs');
   fs.writeFileSync(file, value.stdout);
   return import(pathToFileURL(file).href);
 }
@@ -385,4 +385,89 @@ test('replaced evidence parent fails without touching replacement or deleting or
       ),
     );
     validateExactRejected(journal.backup);
+  }));
+
+function aggregationFault(target, evidence) {
+  let armed = false,
+    stage;
+  const stat = fs.lstatSync;
+  vi.spyOn(fs, 'lstatSync').mockImplementation((file, ...args) => {
+    if (
+      armed &&
+      (String(file) === path.dirname(target) || String(file) === stage)
+    ) {
+      const error = new Error(
+        'indeterminate ' +
+          (String(file) === stage ? 'stage existence' : 'rollback parent'),
+      );
+      error.code = String(file) === stage ? 'EIO' : 'EACCES';
+      throw error;
+    }
+    return stat(file, ...args);
+  });
+  const checked = journalFault(evidence, 'old-backed-up', (journal) => {
+    stage = journal.stage;
+    armed = true;
+    throw Error('review primary journal callback failure');
+  });
+  return checked;
+}
+test('original1e3 aggregation defect reproduces raw stage error and lost named primary', async () =>
+  setup(async ({ root, target, candidate, evidence }) => {
+    const old = await oldHelper(
+        root,
+        '1e3e7809dfdeee03206d377bad5aef304a5e5147',
+      ),
+      checked = aggregationFault(target, evidence);
+    let observed;
+    try {
+      old.replaceExactRejected(candidate, target, evidence);
+    } catch (error) {
+      observed = error;
+    }
+    checked();
+    vi.restoreAllMocks();
+    assert.equal(observed instanceof AggregateError, false);
+    assert.equal(observed.code, 'EIO');
+    assert.equal(observed.errors, undefined);
+    assert.equal(
+      String(observed).includes('review primary journal callback failure'),
+      false,
+    );
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(evidence, 'transaction.json')),
+    );
+    validateExactRejected(journal.backup);
+    console.log(
+      'OLD_AGGREGATION_FAIL reproduced: raw EIO loses named primary and rollback causes',
+    );
+  }));
+test('named primary plus indeterminate stage existence preserves complete aggregate and original bytes', () =>
+  setup(({ target, candidate, evidence }) => {
+    const checked = aggregationFault(target, evidence);
+    let observed;
+    try {
+      replaceExactRejected(candidate, target, evidence);
+    } catch (error) {
+      observed = error;
+    }
+    checked();
+    vi.restoreAllMocks();
+    assert.ok(
+      observed instanceof AggregateError,
+      'Desired contract must aggregate stage-existence uncertainty',
+    );
+    assert.ok(
+      observed.errors.some((error) =>
+        String(error).includes('review primary journal callback failure'),
+      ),
+    );
+    assert.ok(observed.errors.some((error) => error.code === 'EACCES'));
+    assert.ok(observed.errors.some((error) => error.code === 'EIO'));
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(evidence, 'transaction.json')),
+    );
+    validateExactRejected(journal.backup);
+    assert.equal(fs.existsSync(journal.stage), true);
+    assert.notEqual(journal.state, 'complete');
   }));

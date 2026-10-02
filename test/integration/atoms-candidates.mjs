@@ -644,12 +644,14 @@ export function replaceExactRejected(candidate, target, evidence) {
         failures.push(error);
       }
     }
-    if (stageId && pathPresent(stage)) {
+    if (stageId) {
       try {
-        fence(parent, parentId);
-        stageFence(stage);
-        evidenceFence();
-        fs.rmSync(stage, { recursive: true });
+        if (pathPresent(stage)) {
+          fence(parent, parentId);
+          stageFence(stage);
+          evidenceFence();
+          fs.rmSync(stage, { recursive: true });
+        }
       } catch (error) {
         failures.push(error);
       }
