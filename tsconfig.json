@@ -32,6 +32,9 @@
     "tools/tokens-io.ts",
     "tools/tokens-build.ts",
     "tools/lint-tokens.ts",
-    "tools/token-lint-parser.ts"
+    "tools/token-lint-parser.ts",
+    "tools/token-package.ts",
+    "tools/token-defaults.ts",
+    "tools/package-stage.ts"
   ]
 }

@@ -67,6 +67,7 @@
     "check:contract-diff": "node tools/contracts-compatibility.mjs"
   },
   "dependencies": {
+    "@babel/parser": "7.29.9",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -94,7 +95,6 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@babel/parser": "^7.29.7",
     "@biomejs/biome": "2.5.15",
     "@playwright/test": "1.63.0",
     "@testing-library/jest-dom": "7.0.1",

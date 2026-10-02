@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { defaultTokenRoot } from './token-defaults.ts';
+import { packagedTokenRoot } from './token-package.ts';
 import { buildTokens, TokenError } from './tokens-core.ts';
 import {
   checkTokenFreshness,
@@ -12,13 +14,11 @@ import {
 export function runTokenBuild(args: string[]): number {
   if (args.length === 1 && args[0] === '--help') {
     console.log(
-      'tokens-build [--root ABSOLUTE_TOKEN_ROOT] --check|--write|--materialize ABSOLUTE_STAGING_DIR\nBounded DTCG subset; source atomic pointer is not npm-link preservation.',
+      'tokens-build [--root ABSOLUTE_TOKEN_ROOT] --check|--write|--materialize ABSOLUTE_STAGING_DIR\nNative default: source tokens. Emitted default: package dist/assets token tree. Packaged --write is read-only; explicit source roots retain owned publication.',
     );
     return 0;
   }
-  let root = fileURLToPath(
-    new URL('../dashboard/web/src/ui/tokens', import.meta.url),
-  );
+  let root = defaultTokenRoot(import.meta.url);
   if (args[0] === '--root') {
     if (!args[1] || !path.isAbsolute(args[1])) throw new TokenError('ARGUMENT');
     root = args[1];
@@ -30,6 +30,7 @@ export function runTokenBuild(args: string[]): number {
     return 0;
   }
   if (args.length === 1 && args[0] === '--write') {
+    if (packagedTokenRoot(root)) throw new TokenError('PACKAGED_READ_ONLY');
     const source = loadTokenSources(root);
     buildTokens(source);
     const snapshot = publishTokens(root, source);

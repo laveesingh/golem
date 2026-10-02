@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tokenStyleRoot } from './token-defaults.ts';
 import type { Declaration } from './token-lint-parser.ts';
 import {
   cssDeclarations,
@@ -10,9 +11,10 @@ import {
   inlineDeclarations,
   inlineEscapeLines,
 } from './token-lint-parser.ts';
+import { packagedTokenRoot } from './token-package.ts';
 import type { TokenType } from './tokens-core.ts';
 import { strictTokenJson, TokenError } from './tokens-core.ts';
-import { tokenSnapshot } from './tokens-io.ts';
+import { checkTokenFreshness, tokenSnapshot } from './tokens-io.ts';
 
 export interface LiteralIssue {
   file: string;
@@ -294,11 +296,11 @@ export function lintTokenSource(
 export function runTokenLint(args: string[]): number {
   if (args.length === 1 && args[0] === '--help') {
     console.log(
-      'lint-tokens [--root ABSOLUTE_REPO_ROOT]\nParsed UI + explicit converted styles; no instruction scan, broad ignores or legacy activation.',
+      'lint-tokens [--root ABSOLUTE_STYLE_TREE]\nNative default: source repository. Emitted default: package dist/assets logical style tree. Explicit roots are used exactly; no instruction scan or legacy activation.',
     );
     return 0;
   }
-  let root = fileURLToPath(new URL('../', import.meta.url));
+  let root = tokenStyleRoot(import.meta.url);
   if (args.length) {
     if (args.length !== 2 || args[0] !== '--root' || !path.isAbsolute(args[1]))
       throw new TokenError('ARGUMENT');
@@ -306,7 +308,9 @@ export function runTokenLint(args: string[]): number {
   }
   const ui = path.join(root, 'dashboard/web/src/ui'),
     tokenRoot = path.join(ui, 'tokens'),
-    snapshot = tokenSnapshot(tokenRoot),
+    snapshot = packagedTokenRoot(tokenRoot)
+      ? checkTokenFreshness(tokenRoot)
+      : tokenSnapshot(tokenRoot),
     registry = strictTokenJson(snapshot.files['registry.json']) as Record<
       string,
       TokenType
