@@ -135,6 +135,28 @@ try {
   assert.equal(invalid.status, 2, `${invalid.stdout}\n${invalid.stderr}`);
   assert.match(invalid.stderr, /invalid profile name/);
   assert.ok(!fs.existsSync(path.join(env.HOME, '.golem-profiles/INVALID')));
+  // No named profile: exercise the real server-child startup failure, rather
+  // than bootstrap's pre-spawn profile port guard. Both consumers must fail1.
+  for (const args of [
+    [path.join(installed, 'dist/dashboard/server/index.js')],
+    [npmCli, '--prefix', installed, 'run', 'dashboard'],
+  ]) {
+    const refused = spawnSync(process.execPath, args, {
+      cwd: empty,
+      env: { ...env, PORT: String(port) },
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    assert.equal(refused.error, undefined);
+    assert.equal(refused.status, 1, `${refused.stdout}\n${refused.stderr}`);
+    assert.match(refused.stderr, /refusing to start another dashboard/);
+  }
+  assert.equal(
+    (await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(3000) }))
+      .status,
+    200,
+  );
+  assert.equal(fs.readFileSync(profileFile, 'utf8'), profileBefore);
   process.env.GOLEM_SMOKE_API = base;
   tickets.push(
     (await createScratchTicket({ title: 'installed emitted contract' })).id,
@@ -201,7 +223,7 @@ try {
     `import assert from 'node:assert/strict'; import {createRequire} from 'node:module'; const require=createRequire(${JSON.stringify(pathToFileURL(path.join(installed, 'dist/mcp/channel/index.js')).href)}); assert.ok(require.resolve('@modelcontextprotocol/sdk/server/index.js').includes('/dist/mcp/channel/node_modules/')); assert.throws(() => require.resolve('typescript'), {code:'MODULE_NOT_FOUND'});`,
   ]);
   console.log(
-    'INSTALLED PACKAGE PASS: CLI/npm dashboard/profile/occupied-port refusal/invalid-profile refusal/body400/roles/templates/web/private CC generation/dist deps/render parent child; no dev compiler',
+    'INSTALLED PACKAGE PASS: CLI/npm dashboard/profile/occupied-port refusal/invalid-profile refusal/no-profile child failure1/body400/roles/templates/web/private CC generation/dist deps/render parent child; no dev compiler',
   );
   console.log(`Checkout source untouched by installed resolution: ${repo}`);
 } finally {

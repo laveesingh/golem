@@ -58,6 +58,34 @@ INSTALLED PACKAGE PASS: CLI/npm dashboard/profile/occupied-port refusal/invalid-
 
 The real npm script uses `--prefix <installed>` from empty cwd; its profile uses the persisted owned ephemeral port. A second same-profile npm start exits2 on occupied port, leaves profile bytes unchanged and the first health listener responding200. Invalid-profile npm start exits2 and creates no invalid profile directory. Probe scratch archival, fenced npm/dashboard process-group teardown and profile-alias/sandbox cleanup completed without error; ROOT archive/install is retained for inspection. `npm run check`0 (including strict/native/Knip/freshness; initial-bootstrap compatibility remains explicitly unverified). Fresh unfiltered `npm test`:16files/101tests/no skips0,209.74s; component coverage remains pending W4. Diffcheck0. Logs `/tmp/gol477-b4-dashboard-{biome,biome-fix,biome-final,launcher,pack,install,probe,check,full}.log`. The exclusive slot was released before evidence-doc reconciliation/commit. Final Linux NOT RUN (Docker socket absent), no restart; fresh clean-link/full W7/installed generators/persistence/materialization remain unaccepted. Untouched fix-delta review, separate verification and coordinator rerun still required.
 
+## Review repair — foreground child outcome
+
+GOL-491 found a second major at `23403b8`: on an occupied owned PORT without a named profile, direct emitted server exited1 but the npm wrapper exited0 with the same fatal refusal. The earlier named-profile test stopped at bootstrap before a server child was spawned.
+
+Coordinator-approved bounded semantics: foreground CLI/wrapper awaits child close; preserve exact numeric child exit, keep spawn error1 with the existing diagnostic, reflect child termination by the same signal after removing wrapper handlers. Wrapper-only SIGINT/SIGTERM forwards once to its owned child, ignores repeats while awaiting actual shutdown/outcome. No detached/native/group-control behavior is added. Source CLI and wrapper fixture uses an owned injected child to prove exit7, SIGKILL termination, real ENOENT spawn failure, and repeated parent-only SIGINT/SIGTERM with completed child cleanup/exit0. Physical installed probe compares direct emitted server1 against actual no-profile npm dashboard1 on the same occupied private port and verifies the original listener/profile survive. Existing package success and pre-spawn profile controls remain. Fresh second-repair evidence under the coordinator's exclusive slot (same Darwin/Node/npm/private environment):
+
+```sh
+node node_modules/@biomejs/biome/bin/biome check --write test/fixtures/w3-installed-probe.mjs test/integration/package-launcher.test.mjs
+node node_modules/vitest/vitest.mjs run --project integration test/integration/package-launcher.test.mjs
+ROOT=/private/tmp/gol477-b4-outcome.kYAygD # mktemp-owned, home/prefix created
+cp -Rc /private/tmp/gol477-b4-dashboard.ukQ18Q/home/.npm "$ROOT/npm-cache"
+NPM_CLI_PATH="$(dirname "$(command -v node)")/../lib/node_modules/npm/bin/npm-cli.js"
+npm pack --pack-destination "$ROOT"
+HOME="$ROOT/home" npm_config_cache="$ROOT/npm-cache" npm_config_fetch_retries=0 npm_config_fetch_timeout=20000 npm install --prefix "$ROOT/prefix" --omit=dev --prefer-offline --no-audit --no-fund "$ROOT/laveesingh-golem-5.26.0.tgz"
+node test/fixtures/w3-installed-probe.mjs "$ROOT/prefix/node_modules/@laveesingh/golem" "$NPM_CLI_PATH"
+npm run check
+npm test
+git diff --check
+```
+
+All commands exited0. Fixture formatting preceded the sequential runtime checks; no runtime source changes occurred through the green checkpoint. Targeted1file/2tests prove both actual source CLI and wrapper outcomes using owned spawn injection, including repeated signals during delayed child cleanup. Actual physical probe output:
+
+```text
+INSTALLED PACKAGE PASS: CLI/npm dashboard/profile/occupied-port refusal/invalid-profile refusal/no-profile child failure1/body400/roles/templates/web/private CC generation/dist deps/render parent child; no dev compiler
+```
+
+The no-profile direct/npm assertion now observes1/1, rather than the reviewed1/0; the existing listener/profile remains intact. Fenced scratch/group/alias/sandbox cleanup completed without error. Installation uses only a copied cache from this session's prior private installation (original untouched), no live user cache; archive/install/cache retained at ROOT for inspection. Check0; fresh full16files/102tests/no skips0,208.39s; diffcheck0. Logs `/tmp/gol477-b4-outcome-{biome,launcher,pack,install,probe,check,full}.log`. Slot released before evidence-doc reconciliation/commit. Final Linux NOT RUN/socket absent, no restart. No fresh clean-link/full W7/installed generators/persistence/materialization or independent acceptance is claimed. Untouched outcome-delta reviewer, separate complete verifier and coordinator rerun remain required.
+
 ## Predecessor macOS commands and results
 
 From `.worktrees/GOL-477-contracts-artefacts`:

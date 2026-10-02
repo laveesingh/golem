@@ -157,7 +157,35 @@ async function cmdDashboard(args) {
     stdio: 'inherit',
     env,
   });
-  proc.on('error', (e) => fatal(1, `failed to start dashboard: ${e.message}`));
+  // A foreground wrapper must report the server's real outcome, not success
+  // merely because spawning returned. Forward wrapper-only termination and
+  // keep waiting so the child's graceful shutdown/cleanup can finish.
+  await new Promise((resolve) => {
+    let spawnError = false;
+    let forwarded = false;
+    const forward = (signal) => {
+      if (forwarded || proc.exitCode !== null || proc.signalCode !== null) return;
+      forwarded = true;
+      proc.kill(signal);
+    };
+    const interrupt = () => forward('SIGINT');
+    const terminate = () => forward('SIGTERM');
+    process.on('SIGINT', interrupt);
+    process.on('SIGTERM', terminate);
+    proc.once('error', (error) => {
+      spawnError = true;
+      err(`failed to start dashboard: ${error.message}`);
+    });
+    proc.once('close', (code, signal) => {
+      process.off('SIGINT', interrupt);
+      process.off('SIGTERM', terminate);
+      if (spawnError) process.exitCode = 1;
+      else if (code !== null) process.exitCode = code;
+      else if (signal) process.kill(process.pid, signal);
+      else process.exitCode = 1;
+      resolve();
+    });
+  });
 }
 
 async function cmdDashboardRestart(args) {
