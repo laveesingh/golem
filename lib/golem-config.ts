@@ -67,6 +67,9 @@ interface CapturedFile {
   identity: fs.Stats;
   closed?: boolean;
   immutable?: boolean;
+  descriptorLost?: boolean;
+  expected?: Buffer;
+  seal?: fs.Stats;
 }
 function sameNode(a: fs.Stats, b: fs.Stats): boolean {
   return a.dev === b.dev && a.ino === b.ino && a.mode === b.mode;
@@ -90,11 +93,105 @@ function statOrMissing(file: string): fs.Stats | null {
 function changed(file: string): never {
   throw new VersionedFileError('VERSIONED_FILE_CHANGED', file);
 }
+function closeOwned(owned: CapturedFile): void {
+  if (owned.closed) return;
+  // Mark BEFORE both the ownership probe and close. Neither failure permits retry.
+  owned.closed = true;
+  try {
+    if (!sameNode(fs.fstatSync(owned.fd), owned.identity)) changed(owned.file);
+  } catch (error) {
+    owned.descriptorLost = true;
+    throw error;
+  }
+  fs.closeSync(owned.fd);
+}
+function readCaptured(owned: CapturedFile): Buffer {
+  if (!sameNode(fs.fstatSync(owned.fd), owned.identity)) changed(owned.file);
+  const expected = owned.expected;
+  if (!expected) changed(owned.file);
+  const bytes = Buffer.alloc(expected.length + 1);
+  let count = 0;
+  while (count < bytes.length) {
+    if (!sameNode(fs.fstatSync(owned.fd), owned.identity)) changed(owned.file);
+    const read = fs.readSync(
+      owned.fd,
+      bytes,
+      count,
+      bytes.length - count,
+      count,
+    );
+    if (read === 0) break;
+    count += read;
+  }
+  if (
+    !sameNode(fs.fstatSync(owned.fd), owned.identity) ||
+    !bytes.subarray(0, count).equals(expected)
+  )
+    changed(owned.file);
+  return bytes.subarray(0, count);
+}
+function sealSnapshot(owned: CapturedFile, parent: CapturedFile): void {
+  assertOwned(owned, parent);
+  const before = fs.fstatSync(owned.fd);
+  readCaptured(owned);
+  const after = fs.fstatSync(owned.fd);
+  if (!sameFile(before, after)) changed(owned.file);
+  // Content was checked against the ORIGINAL expectation, not recaptured data.
+  owned.seal = after;
+}
+function assertSnapshot(
+  owned: CapturedFile,
+  parent: CapturedFile,
+  file = owned.file,
+): void {
+  assertParent(parent);
+  if (!owned.seal || owned.descriptorLost) changed(file);
+  const moved = file !== owned.file;
+  const matches = (stat: fs.Stats): boolean =>
+    sameNode(stat, owned.identity) &&
+    stat.size === owned.seal?.size &&
+    stat.mtimeMs === owned.seal?.mtimeMs &&
+    (moved || stat.ctimeMs === owned.seal?.ctimeMs);
+  const current = fs.lstatSync(file);
+  if (!current.isFile() || !matches(current)) changed(file);
+  let handle = owned;
+  if (owned.closed) {
+    const fd = fs.openSync(
+      file,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+    );
+    // The reopened fd is compared to original authority, never adopted.
+    handle = { ...owned, file, fd, closed: false };
+  }
+  let failure: unknown;
+  try {
+    const before = fs.fstatSync(handle.fd);
+    if (!matches(before)) changed(file);
+    readCaptured(handle);
+    if (!sameFile(before, fs.fstatSync(handle.fd))) changed(file);
+    assertParent(parent);
+    if (!matches(fs.lstatSync(file))) changed(file);
+  } catch (error) {
+    failure = error;
+  }
+  if (handle !== owned) {
+    try {
+      closeOwned(handle);
+    } catch (error) {
+      if (handle.descriptorLost) owned.descriptorLost = true;
+      failure = failure
+        ? new AggregateError([failure, error], 'snapshot read and close failed')
+        : error;
+    }
+  }
+  if (failure) throw failure;
+}
 function assertOwned(owned: CapturedFile, parent: CapturedFile): void {
   assertParent(parent);
   const current = statOrMissing(owned.file);
   const same = owned.immutable ? sameFile : sameNode;
   if (
+    owned.descriptorLost ||
     !current?.isFile() ||
     !same(current, owned.identity) ||
     (!owned.closed && !same(fs.fstatSync(owned.fd), owned.identity))
@@ -104,6 +201,7 @@ function assertOwned(owned: CapturedFile, parent: CapturedFile): void {
 function assertParent(parent: CapturedFile): void {
   const current = fs.lstatSync(parent.file);
   if (
+    parent.descriptorLost ||
     !current.isDirectory() ||
     current.isSymbolicLink() ||
     !sameNode(current, parent.identity) ||
@@ -139,14 +237,14 @@ function originalBytes(
   let failure: unknown;
   try {
     if (!sameFile(fs.fstatSync(fd), original)) changed(file);
-    bytes = fs.readFileSync(fd);
+    bytes = Buffer.from(fs.readFileSync(fd));
     if (!sameFile(fs.fstatSync(fd), original)) changed(file);
     assertTarget(file, original, parent);
   } catch (error) {
     failure = error;
   }
   try {
-    fs.closeSync(fd);
+    closeOwned({ file, fd, identity: original });
   } catch (error) {
     failure = failure
       ? new AggregateError([failure, error], 'original read and close failed')
@@ -160,7 +258,7 @@ function originalBytes(
 function allocate(file: string): CapturedFile {
   const fd = fs.openSync(
     file,
-    fs.constants.O_WRONLY |
+    fs.constants.O_RDWR |
       fs.constants.O_CREAT |
       fs.constants.O_EXCL |
       fs.constants.O_NOFOLLOW,
@@ -169,17 +267,16 @@ function allocate(file: string): CapturedFile {
   // Capture the allocated descriptor, not a later path lookup. If capture fails,
   // retain the path as indeterminate evidence; no fresh stat grants unlink rights.
   try {
-    return { file, fd, identity: fs.fstatSync(fd) };
+    const identity = fs.fstatSync(fd);
+    const current = fs.lstatSync(file);
+    if (!current.isFile() || !sameFile(identity, current)) changed(file);
+    return { file, fd, identity };
   } catch (error) {
-    try {
-      fs.closeSync(fd);
-    } catch (close) {
-      throw new AggregateError(
-        [error, close],
-        'allocation capture and close failed',
-      );
-    }
-    throw error;
+    // Capture failed: neither the path nor numeric fd has destruction authority.
+    throw new AggregateError(
+      [error, new VersionedFileError('VERSIONED_FILE_CHANGED', file)],
+      'allocation identity unavailable; descriptor and path retained',
+    );
   }
 }
 /** Validate caller input before allocation. Stored refusals stay 409, IO 500. */
@@ -199,6 +296,9 @@ export function saveConfig(input: unknown): void {
     lock: CapturedFile | undefined,
     temp: CapturedFile | undefined;
   let backup: CapturedFile | undefined;
+  let recovery: CapturedFile | undefined;
+  let restoredSnapshot: CapturedFile | undefined;
+  let prior: Buffer | undefined;
   let original: fs.Stats | null = null;
   let published = false,
     restored = false;
@@ -206,6 +306,7 @@ export function saveConfig(input: unknown): void {
   try {
     const dir = path.dirname(file);
     fs.mkdirSync(dir, { recursive: true });
+    const parentIdentity = fs.lstatSync(dir);
     const fd = fs.openSync(
       dir,
       fs.constants.O_RDONLY |
@@ -213,10 +314,11 @@ export function saveConfig(input: unknown): void {
         fs.constants.O_NOFOLLOW,
     );
     try {
-      parent = { file: dir, fd, identity: fs.fstatSync(fd) };
+      parent = { file: dir, fd, identity: parentIdentity };
+      if (!sameNode(fs.fstatSync(fd), parentIdentity)) changed(dir);
     } catch (error) {
       try {
-        fs.closeSync(fd);
+        if (parent) closeOwned(parent);
       } catch (close) {
         throw new AggregateError(
           [error, close],
@@ -250,19 +352,21 @@ export function saveConfig(input: unknown): void {
     assertOwned(lock, parent);
     assertTarget(file, original, parent);
     if (original) {
-      const prior = originalBytes(file, original, parent);
+      prior = Buffer.from(originalBytes(file, original, parent));
       assertOwned(lock, parent);
       assertTarget(file, original, parent);
       backup = allocate(`${file}.prior-${randomUUID()}`);
       assertOwned(backup, parent);
       assertOwned(lock, parent);
       assertTarget(file, original, parent);
-      fs.writeFileSync(backup.fd, prior);
-      assertOwned(backup, parent);
+      backup.expected = Buffer.from(prior);
+      fs.writeFileSync(backup.fd, Buffer.from(prior));
+      sealSnapshot(backup, parent);
+      assertSnapshot(backup, parent);
       assertOwned(lock, parent);
       assertTarget(file, original, parent);
       fs.fsyncSync(backup.fd);
-      assertOwned(backup, parent);
+      assertSnapshot(backup, parent);
       assertOwned(lock, parent);
       assertTarget(file, original, parent);
     }
@@ -270,12 +374,15 @@ export function saveConfig(input: unknown): void {
     assertOwned(temp, parent);
     assertOwned(lock, parent);
     assertTarget(file, original, parent);
+    temp.expected = Buffer.from(bytes);
     fs.writeFileSync(temp.fd, bytes, 'utf8');
-    assertOwned(temp, parent);
+    sealSnapshot(temp, parent);
+    assertSnapshot(temp, parent);
     assertOwned(lock, parent);
     assertTarget(file, original, parent);
     fs.fsyncSync(temp.fd);
-    assertOwned(temp, parent);
+    assertSnapshot(temp, parent);
+    if (backup) assertSnapshot(backup, parent);
     assertOwned(lock, parent);
     assertTarget(file, original, parent);
     // Mark before the syscall: an injected/platform failure after publication
@@ -285,9 +392,10 @@ export function saveConfig(input: unknown): void {
     assertParent(parent);
     const committed = fs.lstatSync(file);
     if (!sameNode(committed, temp.identity)) changed(file);
+    assertSnapshot(temp, parent, file);
     fs.fsyncSync(parent.fd);
     assertParent(parent);
-    if (!sameNode(fs.lstatSync(file), temp.identity)) changed(file);
+    assertSnapshot(temp, parent, file);
     assertOwned(lock, parent);
   } catch (error) {
     failures.push(error);
@@ -296,9 +404,8 @@ export function saveConfig(input: unknown): void {
   // before close, so a throw after actual close cannot cause a reused-fd retry.
   for (const owned of [temp, backup, lock, parent]) {
     if (!owned) continue;
-    owned.closed = true;
     try {
-      fs.closeSync(owned.fd);
+      closeOwned(owned);
     } catch (error) {
       failures.push(error);
     }
@@ -306,7 +413,8 @@ export function saveConfig(input: unknown): void {
   if (!failures.length && published && parent && lock && temp) {
     try {
       assertOwned(lock, parent);
-      if (!sameNode(fs.lstatSync(file), temp.identity)) changed(file);
+      assertSnapshot(temp, parent, file);
+      if (backup) assertSnapshot(backup, parent);
     } catch (error) {
       failures.push(error);
     }
@@ -326,14 +434,42 @@ export function saveConfig(input: unknown): void {
         published = false;
       } else {
         if (!current || !sameNode(current, temp.identity)) changed(file);
+        assertSnapshot(temp, parent, file);
         if (backup) {
-          assertOwned(backup, parent);
+          let rollback = backup;
+          try {
+            assertSnapshot(backup, parent);
+          } catch (error) {
+            failures.push(error);
+            // Keep altered prior evidence. One exclusive recovery allocation may
+            // use ORIGINAL bytes only, under all still-original authority fences.
+            if (!prior) changed(backup.file);
+            assertParent(parent);
+            assertOwned(lock, parent);
+            assertSnapshot(temp, parent, file);
+            recovery = allocate(`${file}.recovery-${randomUUID()}`);
+            recovery.expected = Buffer.from(prior);
+            assertOwned(recovery, parent);
+            assertOwned(lock, parent);
+            assertSnapshot(temp, parent, file);
+            fs.writeFileSync(recovery.fd, Buffer.from(recovery.expected));
+            sealSnapshot(recovery, parent);
+            assertOwned(lock, parent);
+            assertSnapshot(temp, parent, file);
+            fs.fsyncSync(recovery.fd);
+            assertSnapshot(recovery, parent);
+            closeOwned(recovery);
+            rollback = recovery;
+          }
+          assertSnapshot(rollback, parent);
           assertOwned(lock, parent);
-          if (!sameNode(fs.lstatSync(file), temp.identity)) changed(file);
-          fs.renameSync(backup.file, file);
+          assertSnapshot(temp, parent, file);
+          fs.renameSync(rollback.file, file);
+          restoredSnapshot = rollback;
+          assertSnapshot(rollback, parent, file);
         } else {
           assertOwned(lock, parent);
-          if (!sameNode(fs.lstatSync(file), temp.identity)) changed(file);
+          assertSnapshot(temp, parent, file);
           fs.unlinkSync(file);
         }
         restored = true;
@@ -346,37 +482,66 @@ export function saveConfig(input: unknown): void {
             fs.constants.O_DIRECTORY |
             fs.constants.O_NOFOLLOW,
         );
+        let rollbackFailure: unknown;
+        const rollbackHandle: CapturedFile = {
+          file: parent.file,
+          fd: rollbackFd,
+          identity: parent.identity,
+        };
         try {
           if (!sameNode(fs.fstatSync(rollbackFd), parent.identity))
             changed(parent.file);
           assertParent(parent);
           fs.fsyncSync(rollbackFd);
           assertParent(parent);
-        } finally {
-          fs.closeSync(rollbackFd);
+          if (restoredSnapshot) assertSnapshot(restoredSnapshot, parent, file);
+          else assertTarget(file, null, parent);
+        } catch (error) {
+          rollbackFailure = error;
         }
+        try {
+          closeOwned(rollbackHandle);
+        } catch (error) {
+          rollbackFailure = rollbackFailure
+            ? new AggregateError(
+                [rollbackFailure, error],
+                'rollback fsync and close failed',
+              )
+            : error;
+        }
+        if (rollbackFailure) throw rollbackFailure;
       }
     } catch (error) {
       failures.push(error);
     }
   }
   // Every cleanup operation rechecks the originally captured parent/node.
-  for (const owned of [temp, lock, backup]) {
+  if (recovery && !recovery.closed) {
+    try {
+      closeOwned(recovery);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  for (const owned of [temp, lock, backup, recovery]) {
     if (!owned) continue;
     const moved =
-      (owned === temp && published) || (owned === backup && restored);
+      (owned === temp && published) ||
+      (restored && owned === (recovery ?? backup));
     const retainBackup =
       owned === backup && published && failures.length > 0 && !restored;
     if (!moved && !retainBackup && parent) {
       try {
         assertOwned(owned, parent);
-        if (
-          published &&
-          !restored &&
-          temp &&
-          !sameNode(fs.lstatSync(file), temp.identity)
-        )
-          changed(file);
+        if (owned.expected) {
+          // A write that failed before sealing is indeterminate evidence, not a
+          // completed snapshot that cleanup may destroy.
+          assertSnapshot(owned, parent);
+        }
+        if (published && !restored && temp) assertSnapshot(temp, parent, file);
+        else if (restoredSnapshot)
+          assertSnapshot(restoredSnapshot, parent, file);
+        else assertTarget(file, restored ? null : original, parent);
         fs.unlinkSync(owned.file);
       } catch (error) {
         failures.push(error);

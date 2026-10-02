@@ -18,6 +18,23 @@ test('same future-file regression fails on actual accepted old owner and passes 
     unchanged: true,
   });
 });
+for (const kind of ['snapshot', 'descriptor'])
+  test(`frozen f733 desired ${kind} guard FAILS; current native repair PASSES`, async () => {
+    for (const old of [true, false]) {
+      const result = await runScript('test/fixtures/w3-config-repair.mjs', {
+        args: [`--case=${kind}`, ...(old ? ['--before'] : [])],
+      });
+      assert.deepEqual(JSON.parse(result.stdout), {
+        old,
+        kind,
+        regressionPassed: !old,
+        refused: true,
+        originalPreserved: kind === 'snapshot' ? !old : true,
+        foreignFdOpen: kind === 'descriptor' ? !old : null,
+        foreignFdCode: kind === 'descriptor' && old ? 'EBADF' : null,
+      });
+    }
+  });
 test('actual concurrent processes cannot reclaim or overwrite another config writer', async () => {
   const result = await runScript('test/fixtures/w3-config-concurrency.mjs', {
     timeout: 25000,

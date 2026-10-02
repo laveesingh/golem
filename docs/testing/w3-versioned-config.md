@@ -52,7 +52,126 @@ CC/Pi helper inventories copy emitted owner/reader/bridge/validator plus existin
 home/package-root/role dependencies. Actual private probes load from empty temp
 outputs without node_modules, exercising reads, refusal and missing-file zero-write.
 
-## Actual macOS evidence
+## Snapshot/FD repair after independent review
+
+GOL-514 found two major failures on frozen `f7332713580c69c316f795f9017444a3d52c3ba0`:
+modified prior backup was published on parent-fsync failure; detected parent fd reuse
+was followed by cleanup closing the foreign fd. Original tarball SHA256 and the
+`5hl9Dg` builder receipts below remain historical evidence, not repair acceptance.
+The independent inert probes/logs remain at `/private/tmp/gol514-review-evidence.LxVp0S`.
+Approved before-code repair scope is GOL-509 comment `4fccf0f6`.
+
+Repair stays in owner/generic reader plus config unit/native fixtures, this doc and
+one exact Knip entry for the native fixture (no debt-baseline change).
+Original prior/output bytes are fixed expectations before write callbacks. Completed
+snapshots are checked against those expectations and captured node/metadata before
+fsync, publication, rollback and destruction. Changed snapshots remain evidence.
+A failed write before sealing also retains incomplete evidence: the fixture no longer
+expects cleanup to destroy an indeterminate partial temp. Valid/default/consumer
+semantics and error families are unchanged. A sole altered backup can be replaced
+for rollback by one exclusively allocated recovery snapshot from ORIGINAL prior
+bytes only, under still-original parent/lock/published-target fences. Modified prior
+evidence and all failure causes remain. Unknown replacements are never overwritten.
+
+Every close compares the original descriptor node identity first, including parent,
+allocation capture, original read, ordinary cleanup, snapshot read/reopen, recovery,
+rollback reopen and generic readVersioned. Existing parent/reader paths capture
+original identity BEFORE open; new exclusive allocations require matching captured
+fd/path nodes before adopting a handle. Capture loss leaves an unowned numeric fd
+untouched; a known original path can still authorize a compared close. Close is
+attempted once only, never retried after throw. Reopened handles compare original
+identity rather than adopting fresh fstat results.
+This is bounded failure safety, not general malicious same-UID atomicity.
+
+### Current repair evidence — exclusive slot granted after GOL-515 release
+
+Evidence root `/private/tmp/gol509-b6-runtime.tMd61W/evidence`. All execution used
+private source/dependencies/HOME/state/cache/ports, never live7420/7421. Runtime
+Node22.22.3 on macOS and linux/aarch64. The original READY6-file packet remains
+at `gol509-b6-ready.p0_pr0m8` (manifest SHA0107682...), not the final repaired tree.
+
+| Check | Current macOS | Current Linux |
+|---|---|---|
+| Actual f733 owner+reader+validator desired major guards | old false/new true for both | old false/new true for both |
+| Config unit + integration | 56+5 pass | 56+5 pass |
+| Strict/native/Biome/Knip/canonical/current `npm run check` | exit0 | exit0 |
+| UNFILTERED `npm test` | 26files/345tests, no skips,221.27s | 26files/345tests, no skips,200.40s |
+| Native/type negatives | expected failures and restored passes | expected failures and restored passes |
+| Fresh pack + physical offline omit=dev install | exit0 | exit0 |
+| Actual installed config/API/tracker/drainer/shell/privateCCPi/token/CLI/dashboard/profile/link | exit0 | exit0 |
+| Actual physical emitted owner snapshot recovery + foreign-fd guards | both pass | both pass in another fresh offline install |
+
+Both final physical tarballs SHA256:
+`1e18eea3c4014e7d83f9f1c0bab5fcb0dda2b61eb2c61ec6c619e38a0dc46ef1`.
+Initial repaired-draft tarball d83191... and superseded check/341-count receipts
+remain evidence, not current acceptance. Frozen bad f733/5aa37... is unchanged.
+
+The commands/proofs are:
+
+- `node test/fixtures/w3-config-repair.mjs --before --case=snapshot` and
+  `--before --case=descriptor`: actual frozen f733 owner+reader+validator closure;
+  desired guard must report `regressionPassed:false` in each owned sandbox.
+- Same native fixture without `--before`: both desired guards must report true.
+  Integration runner supplies owned sandbox/state and asserts exact old/new outputs.
+- `node node_modules/vitest/vitest.mjs run --project unit --project integration test/unit/versioned-config.test.mjs test/integration/versioned-config.test.mjs`:
+  major old/new, completed temp/prior mutation, partial evidence, FD reuse of
+  parent/temp/prior/lock/originalBytes/generic/rollback/recovery reads and capture
+  failure; unchanged defaults/validation/errors/zero-write/concurrency/real consumers.
+- Installed targeted Biome + strict `tsc --noEmit`, canonical config/full freshness,
+  native smoke and negative gates; `npm run check`, UNFILTERED `npm test`.
+  Current measured count345; historical314, intermediate341 and UI323 are not
+  the final repaired-source result.
+- Fresh emitted pack and separate actual physical offline install on macOS and
+  supported Node22 INIT/networkNONE/mounts0 writable-upper Linux, each with actual
+  source/full/check/package/helper/token/CLI/link consumers. Preserve accepted500
+  publisher/tools/lock/debt. Existing consumer/package/link fixture commands and
+  explicit npm/asset bindings stay required; helper extraction is not installation.
+- Current physical emitted guards adapt ONLY fixture import locations to the real
+  installed `.js` owner; code/probe/logs remain in evidence. No product JS facade.
+  `emitted-repair-runner.mjs` asserts node_modules/package identity and both guards.
+- Mac cleanup independently checked66 last receipts,198 all logged scratch roots
+  and owned process identities absent. Linux full checked65 receipts/identities;
+  exported stopped namespaces independently contain no actual six-character
+  scratch roots. The base image's preexisting empty `gol458-container-home` is
+  not an allocated test root. Expected safety-failure receipt causes are retained,
+  not reported as ordinary cleanup success.
+- Fresh different repair reviewer (not finder514), independent full verification
+  and coordinator/current-head CI remain REQUIRED. Builder checks do not accept
+  full W3, UI integration or the installed-plugin release.
+
+### Repair failures retained and corrected
+
+- First Biome call from root hit nested-config refusal; explicit worktree cwd and
+  `--config-path ./biome.json` pass. New native fixture was missing Knip entry;
+  adding ONLY that exact entry restores the immutable debt gate.
+- Related initial-open audit: the preceding draft adopted a foreign fd before
+  its first capture. Desired allocation/generic survival tests fail with actual
+  `fstat EBADF`; parent passes. Initial finally-close masked that assertion once;
+  corrected private fixture cleanup gives the exact meaningful failures. Final
+  allocation/reader original-identity comparison guards and all56unit tests pass.
+  Pre-guard source/hash and both negative logs remain, not a claimed f733 finding.
+- Linux transport, not product: Mac tar AppleDouble metadata polluted Git/gates;
+  broad `--exclude=dist` also omitted committed schemas and dashboard assets.
+  Preserved failures. No-xattrs transport and all785 tracked paths present were
+  verified before final4; incomplete final3 was explicitly aborted in its owned
+  namespace. No generated schema/token/debt changes hide these setup failures.
+- A provisioning-only Git diagnostic ran as root against uid501 history and
+  refused dubious ownership. Retried as the captured uid, not a global safe-dir
+  waiver. An overbroad scratch-root scan initially counted the base-image home;
+  exact allocated-root scan passes. Both failures are retained.
+
+Public-only provisioning is separate from offline proof: empty private npm/Docker
+configs and caches, frozen root/MCP public registry URL audit, scripts-disabled
+public dependency/metadata install. Linux SQLite compiled from public source with
+system headers; Mac SQLite build came from the authorized CoW source dependency
+facility. Fresh physical installs use `--omit=dev --ignore-scripts --offline`,
+transport only that owned platform-native build, then run actual package
+postinstall/SDK closure offline. Source dependencies are not installed-package
+module-resolution authority. No usercache/credentials/private registry or npx
+fetch. Containers use the captured supported image, INIT, networkNONE, mounts0,
+uid501/gid20 and fresh writable uppers; provisioning uses a separate online node.
+
+## Historical initial macOS evidence (bad f733; not repaired-source proof)
 
 Node22.22.3. Logs `/private/tmp/gol509-b5-*.log` and resource evidence root
 `/private/tmp/gol509-runtime.5hl9Dg`.
@@ -85,7 +204,7 @@ closures; partial write, pre/post rename, prior/temp/parent fsync, close, origin
 absence, replaced file/lock/temp/parent and failed-rollback backup/replacement
 preservation. Unit replacements use captured fixture paths, never live state.
 
-## Actual Linux and public-only provisioning
+## Historical initial Linux and public-only provisioning (bad f733)
 
 Retained exact image `sha256:bb1dbecf24a5efae08073158414fc3d98780ac0df44de059437bb4bb89a8680a`,
 Node22.22.3, linux/aarch64. Source comes from own accepted-history bundle + exact

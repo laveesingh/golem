@@ -40,6 +40,7 @@ export interface VersionPolicy<T> {
 interface FileIdentity {
   dev: number;
   ino: number;
+  mode: number;
   size: number;
   mtimeMs: number;
   ctimeMs: number;
@@ -48,6 +49,7 @@ function identity(stat: fs.Stats): FileIdentity {
   return {
     dev: stat.dev,
     ino: stat.ino,
+    mode: stat.mode,
     size: stat.size,
     mtimeMs: stat.mtimeMs,
     ctimeMs: stat.ctimeMs,
@@ -57,6 +59,7 @@ function unchanged(a: FileIdentity, b: FileIdentity): boolean {
   return (
     a.dev === b.dev &&
     a.ino === b.ino &&
+    a.mode === b.mode &&
     a.size === b.size &&
     a.mtimeMs === b.mtimeMs &&
     a.ctimeMs === b.ctimeMs
@@ -91,13 +94,21 @@ export function validateVersioned<T>(
 /** Pure file boundary: missing alone permits defaults; never mkdir/stamp/write. */
 export function readVersioned<T>(file: string, policy: VersionPolicy<T>): T {
   let fd: number;
+  let captured: fs.Stats | undefined;
   try {
+    try {
+      captured = fs.lstatSync(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
     fd = fs.openSync(
       file,
       fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
     );
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (captured)
+        throw new VersionedFileError('VERSIONED_FILE_CHANGED', file);
       const missing = policy.missing();
       if (!policy.validateCurrent(missing))
         throw new VersionedFileError('VERSIONED_DATA_INVALID', file);
@@ -115,6 +126,8 @@ export function readVersioned<T>(file: string, policy: VersionPolicy<T>): T {
   let failure: unknown;
   try {
     const before = fs.fstatSync(fd);
+    if (!captured || !unchanged(identity(captured), identity(before)))
+      throw new VersionedFileError('VERSIONED_FILE_CHANGED', file);
     if (!before.isFile())
       throw new VersionedFileError('VERSIONED_FILE_KIND', file, 500);
     let text: string;
@@ -146,6 +159,16 @@ export function readVersioned<T>(file: string, policy: VersionPolicy<T>): T {
         : new VersionedFileError('VERSIONED_FILE_IO', file, 500, error);
   }
   try {
+    // A numeric descriptor is not authority. Never adopt a replacement or close
+    // an uncaptured handle; a throwing close is attempted once only.
+    const current = fs.fstatSync(fd);
+    if (
+      !captured ||
+      current.dev !== captured.dev ||
+      current.ino !== captured.ino ||
+      current.mode !== captured.mode
+    )
+      throw new VersionedFileError('VERSIONED_FILE_CHANGED', file);
     fs.closeSync(fd);
   } catch (error) {
     failure = failure

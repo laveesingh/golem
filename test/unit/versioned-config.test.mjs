@@ -260,7 +260,7 @@ for (const kind of ['prior', 'temp', 'parent'])
     assert.equal(fs.readFileSync(file, 'utf8'), bytes);
     assert.deepEqual(fs.readdirSync(root), ['config.json']);
   });
-test('partial temp write failure never overwrites original bytes', () => {
+test('partial temp write failure preserves original and indeterminate incomplete evidence', () => {
   const bytes = stored('{"extension":"original"}');
   const descriptors = new Map();
   patch('openSync', (original) => (target, ...args) => {
@@ -280,7 +280,12 @@ test('partial temp write failure never overwrites original bytes', () => {
   });
   refusal(() => saveConfig({ extension: 'new' }), 500);
   assert.equal(fs.readFileSync(file, 'utf8'), bytes);
-  assert.deepEqual(fs.readdirSync(root), ['config.json']);
+  const partial = fs.readdirSync(root).find((name) => name.includes('.tmp-'));
+  assert.ok(
+    partial,
+    'incomplete snapshot retained, not granted cleanup authority',
+  );
+  assert.equal(fs.readFileSync(path.join(root, partial), 'utf8').length, 3);
 });
 test('failed rollback with replaced lock retains exact old-byte backup and replacement evidence', () => {
   const bytes = stored('{ "extension": "captured old bytes" }\n');
@@ -406,4 +411,454 @@ for (const kind of ['file', 'lock', 'parent', 'temp'])
     } else if (kind === 'file')
       assert.equal(fs.readFileSync(detached, 'utf8'), bytes);
     else assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+  });
+
+test('published temp corruption refuses rollback/destruction and retains exact original backup', () => {
+  const bytes = stored('{"extension":"original"}');
+  const paths = descriptors();
+  let fired = false;
+  patch('fsyncSync', (original) => (fd) => {
+    if (!fired && paths.get(fd) === root) {
+      fired = true;
+      fs.writeFileSync(file, 'modified-published-temp');
+      throw Error('parent sync with altered publication');
+    }
+    return original(fd);
+  });
+  refusal(() => saveConfig({ extension: 'new' }), 500);
+  assert.ok(fired);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'modified-published-temp');
+  const backup = fs.readdirSync(root).find((name) => name.includes('.prior-'));
+  assert.equal(fs.readFileSync(path.join(root, backup), 'utf8'), bytes);
+});
+for (const kind of [
+  'temp',
+  'prior',
+  'lock',
+  'parent',
+  'generic',
+  'originalBytes',
+])
+  test(`${kind} throwing close after actual close and reuse is never retried`, () => {
+    const bytes = stored('{"extension":"original"}');
+    const paths = descriptors();
+    const rawOpen = fs.openSync,
+      rawClose = fs.closeSync;
+    const foreignPath = path.join(root, 'foreign');
+    fs.writeFileSync(foreignPath, 'unrelated bytes');
+    let fired = false,
+      foreign,
+      attempts = 0;
+    patch('closeSync', (original) => (fd) => {
+      const target = paths.get(fd);
+      if (fired && fd === foreign) attempts++;
+      original(fd);
+      if (
+        !fired &&
+        (kind === 'parent'
+          ? target === root
+          : kind === 'generic' || kind === 'originalBytes'
+            ? target === file
+            : target?.includes(
+                kind === 'temp'
+                  ? '.tmp-'
+                  : kind === 'prior'
+                    ? '.prior-'
+                    : '.lock',
+              ))
+      ) {
+        // For originalBytes, skip the earlier owner validation read's close.
+        if (kind === 'originalBytes' && !paths.has('validationClosed')) {
+          paths.set('validationClosed', true);
+          return;
+        }
+        fired = true;
+        foreign = rawOpen(foreignPath, 'r');
+        assert.equal(foreign, fd);
+        throw Error('closed then reused fixture');
+      }
+    });
+    try {
+      assert.throws(
+        () =>
+          kind === 'generic'
+            ? readVersioned(file, finitePolicy)
+            : saveConfig({ extension: 'new' }),
+        VersionedFileError,
+      );
+      assert.ok(fired);
+      assert.equal(attempts, 0, 'owner must not retry a throwing close');
+      assert.ok(fs.fstatSync(foreign).isFile());
+      assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+    } finally {
+      if (foreign !== undefined) rawClose(foreign);
+    }
+  });
+test('primary, rollback and cleanup failures all survive with captured prior evidence', () => {
+  const bytes = stored('{"extension":"original"}');
+  const paths = descriptors();
+  let fired = false;
+  patch('fsyncSync', (original) => (fd) => {
+    if (!fired && paths.get(fd) === root) {
+      fired = true;
+      throw Error('PRIMARY_FSYNC');
+    }
+    return original(fd);
+  });
+  patch('renameSync', (original) => (source, destination) => {
+    if (String(source).includes('.prior-')) throw Error('ROLLBACK_RENAME');
+    return original(source, destination);
+  });
+  patch('unlinkSync', (original) => (target) => {
+    if (target === `${file}.lock`) throw Error('CLEANUP_UNLINK');
+    return original(target);
+  });
+  let failure;
+  try {
+    saveConfig({ extension: 'new' });
+  } catch (error) {
+    failure = error;
+  }
+  assert.ok(fired && failure instanceof VersionedFileError);
+  function causes(error) {
+    return [
+      error,
+      ...(error?.cause ? causes(error.cause) : []),
+      ...(error instanceof AggregateError ? error.errors.flatMap(causes) : []),
+    ];
+  }
+  for (const message of ['PRIMARY_FSYNC', 'ROLLBACK_RENAME', 'CLEANUP_UNLINK'])
+    assert.ok(
+      causes(failure).some((error) => error.message === message),
+      message,
+    );
+  const prior = fs.readdirSync(root).find((name) => name.includes('.prior-'));
+  assert.equal(fs.readFileSync(path.join(root, prior), 'utf8'), bytes);
+  assert.equal(JSON.parse(fs.readFileSync(file)).extension, 'new');
+});
+for (const kind of ['allocation', 'generic', 'parent'])
+  test(`${kind} initial-open fd replacement is never adopted as close authority`, () => {
+    const bytes = stored('{"extension":"original"}');
+    let fired = false,
+      foreign;
+    patch('openSync', (original) => (target, ...args) => {
+      const fd = original(target, ...args);
+      if (
+        !fired &&
+        (kind === 'allocation'
+          ? String(target).includes('.lock')
+          : kind === 'parent'
+            ? target === root
+            : target === file)
+      ) {
+        fired = true;
+        foreign = foreignReuse(fd);
+      }
+      return fd;
+    });
+    try {
+      assert.throws(
+        () =>
+          kind === 'generic'
+            ? readVersioned(file, finitePolicy)
+            : saveConfig({ extension: 'new' }),
+        VersionedFileError,
+      );
+      assert.ok(fired);
+      survives(foreign);
+      foreign = undefined;
+      assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+    } finally {
+      if (foreign !== undefined) {
+        let present = false;
+        try {
+          present = fs.fstatSync(foreign).isFile();
+        } catch (error) {
+          assert.equal(error.code, 'EBADF');
+        }
+        if (present) fs.closeSync(foreign);
+      }
+    }
+  });
+function descriptors() {
+  const paths = new Map();
+  patch('openSync', (original) => (target, ...args) => {
+    const fd = original(target, ...args);
+    paths.set(fd, String(target));
+    return fd;
+  });
+  return paths;
+}
+function foreignReuse(fd) {
+  const foreign = path.join(root, 'foreign');
+  fs.writeFileSync(foreign, 'unrelated bytes');
+  fs.closeSync(fd);
+  const replacement = fs.openSync(foreign, 'r');
+  assert.equal(replacement, fd, 'must reuse the original numeric descriptor');
+  return replacement;
+}
+function survives(fd) {
+  assert.ok(
+    fs.fstatSync(fd).isFile(),
+    'foreign descriptor must survive cleanup',
+  );
+  fs.closeSync(fd); // fixture owner, not the config owner
+}
+for (const kind of ['prior', 'temp'])
+  test(`completed ${kind} in-place corruption is retained, never published or destroyed`, () => {
+    const bytes = stored('{ "extension": "original" }\n');
+    const paths = descriptors();
+    let fired = false,
+      evidence;
+    patch('fsyncSync', (original) => (fd) => {
+      if (
+        !fired &&
+        paths.get(fd)?.includes(kind === 'prior' ? '.prior-' : '.tmp-')
+      ) {
+        fired = true;
+        evidence = paths.get(fd);
+        fs.writeFileSync(evidence, 'modified-completed-snapshot');
+      }
+      return original(fd);
+    });
+    assert.throws(() => saveConfig({ extension: 'new' }), VersionedFileError);
+    assert.ok(fired);
+    assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+    assert.equal(
+      fs.readFileSync(evidence, 'utf8'),
+      'modified-completed-snapshot',
+    );
+  });
+test('modified sole prior backup after publication recovers ORIGINAL bytes and retains changed evidence', () => {
+  const bytes = stored('{ "extension": "original" }\n');
+  const paths = descriptors();
+  let fired = false,
+    evidence;
+  patch('fsyncSync', (original) => (fd) => {
+    if (!fired && paths.get(fd) === root) {
+      fired = true;
+      evidence = path.join(
+        root,
+        fs.readdirSync(root).find((name) => name.includes('.prior-')),
+      );
+      fs.writeFileSync(evidence, 'modified-prior');
+      throw Error('parent sync fixture');
+    }
+    return original(fd);
+  });
+  refusal(() => saveConfig({ extension: 'new' }), 500);
+  assert.ok(fired);
+  assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+  assert.equal(fs.readFileSync(evidence, 'utf8'), 'modified-prior');
+});
+for (const kind of ['lock', 'recovery-content'])
+  test(`modified prior plus ${kind} uncertainty retains evidence and bounds recovery`, () => {
+    stored('{"extension":"original"}');
+    const paths = descriptors();
+    let fired = false;
+    patch('fsyncSync', (original) => (fd) => {
+      if (!fired && paths.get(fd) === root) {
+        fired = true;
+        const backup = fs
+          .readdirSync(root)
+          .find((name) => name.includes('.prior-'));
+        fs.writeFileSync(path.join(root, backup), 'modified-prior');
+        if (kind === 'lock') {
+          fs.renameSync(`${file}.lock`, `${file}.lock-detached`);
+          fs.writeFileSync(`${file}.lock`, 'foreign-lock');
+        }
+        throw Error('parent sync fixture');
+      }
+      if (kind === 'recovery-content' && paths.get(fd)?.includes('.recovery-'))
+        fs.writeFileSync(paths.get(fd), 'modified-recovery');
+      return original(fd);
+    });
+    refusal(() => saveConfig({ extension: 'new' }), 500);
+    assert.ok(fired);
+    assert.equal(JSON.parse(fs.readFileSync(file)).extension, 'new');
+    const evidence = fs.readdirSync(root);
+    assert.equal(
+      fs.readFileSync(
+        path.join(
+          root,
+          evidence.find((name) => name.includes('.prior-')),
+        ),
+        'utf8',
+      ),
+      'modified-prior',
+    );
+    assert.equal(
+      evidence.filter((name) => name.includes('.recovery-')).length,
+      kind === 'lock' ? 0 : 1,
+    );
+    if (kind === 'lock')
+      assert.equal(fs.readFileSync(`${file}.lock`, 'utf8'), 'foreign-lock');
+  });
+for (const kind of ['prior', 'temp'])
+  test(`${kind} snapshot read fd reuse is fenced before close`, () => {
+    const bytes = stored('{"extension":"original"}');
+    const paths = descriptors();
+    let fired = false,
+      foreign;
+    patch('readSync', (original) => (fd, ...args) => {
+      if (
+        !fired &&
+        paths.get(fd)?.includes(kind === 'prior' ? '.prior-' : '.tmp-')
+      ) {
+        fired = true;
+        foreign = foreignReuse(fd);
+      }
+      return original(fd, ...args);
+    });
+    try {
+      assert.throws(() => saveConfig({ extension: 'new' }), VersionedFileError);
+      assert.ok(fired);
+      survives(foreign);
+      foreign = undefined;
+      assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+    } finally {
+      if (foreign !== undefined) fs.closeSync(foreign);
+    }
+  });
+for (const kind of ['parent', 'temp', 'prior', 'lock'])
+  test(`detected ${kind} fd reuse before cleanup never closes the foreign descriptor`, () => {
+    const bytes = stored('{"extension":"original"}');
+    const paths = descriptors();
+    let fired = false,
+      foreign;
+    patch('fsyncSync', (original) => (fd) => {
+      if (!fired && paths.get(fd)?.includes('.tmp-')) {
+        fired = true;
+        const selected = [...paths].find(([, target]) =>
+          kind === 'parent'
+            ? target === root
+            : target.includes(
+                kind === 'temp'
+                  ? '.tmp-'
+                  : kind === 'prior'
+                    ? '.prior-'
+                    : '.lock',
+              ),
+        );
+        assert.ok(selected);
+        foreign = foreignReuse(selected[0]);
+      }
+      return original(fd);
+    });
+    try {
+      assert.throws(() => saveConfig({ extension: 'new' }), VersionedFileError);
+      assert.ok(fired);
+      survives(foreign);
+      foreign = undefined;
+      assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+    } finally {
+      if (foreign !== undefined) fs.closeSync(foreign);
+    }
+  });
+for (const kind of ['originalBytes', 'generic'])
+  test(`${kind} read fd reuse remains unclosed with all refusal causes`, () => {
+    const bytes = stored('{"extension":"original"}');
+    const paths = descriptors();
+    let fired = false,
+      foreign;
+    patch('readFileSync', (original) => (fd, ...args) => {
+      if (
+        !fired &&
+        typeof fd === 'number' &&
+        paths.get(fd) === file &&
+        (kind === 'generic' ? args[0] === 'utf8' : args.length === 0)
+      ) {
+        fired = true;
+        foreign = foreignReuse(fd);
+      }
+      return original(fd, ...args);
+    });
+    try {
+      assert.throws(
+        () =>
+          kind === 'generic'
+            ? readVersioned(file, finitePolicy)
+            : saveConfig({ extension: 'new' }),
+        VersionedFileError,
+      );
+      assert.ok(fired);
+      survives(foreign);
+      foreign = undefined;
+      assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+    } finally {
+      if (foreign !== undefined) fs.closeSync(foreign);
+    }
+  });
+for (const kind of ['rollback', 'recovery-read'])
+  test(`${kind} reopened fd compares original identity and preserves foreign fd`, () => {
+    const bytes = stored('{"extension":"original"}');
+    const paths = descriptors();
+    let syncFired = false,
+      reuseFired = false,
+      foreign;
+    patch('fsyncSync', (original) => (fd) => {
+      if (!syncFired && paths.get(fd) === root) {
+        syncFired = true;
+        throw Error('post-publication parent fsync');
+      }
+      return original(fd);
+    });
+    patch('openSync', (original) => (target, ...args) => {
+      const fd = original(target, ...args);
+      if (
+        syncFired &&
+        !reuseFired &&
+        (kind === 'rollback'
+          ? target === root
+          : String(target).includes('.prior-'))
+      ) {
+        reuseFired = true;
+        foreign = foreignReuse(fd);
+      }
+      return fd;
+    });
+    try {
+      refusal(() => saveConfig({ extension: 'new' }), 500);
+      assert.ok(syncFired && reuseFired);
+      survives(foreign);
+      foreign = undefined;
+      assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+    } finally {
+      if (foreign !== undefined) fs.closeSync(foreign);
+    }
+  });
+for (const kind of ['allocation', 'generic-capture', 'parent-capture'])
+  test(`${kind} identity capture failure does not invent numeric-fd authority`, () => {
+    stored('{"extension":"original"}');
+    const paths = descriptors();
+    let fired = false,
+      capturedFd;
+    patch('fstatSync', (original) => (fd, ...args) => {
+      const target = paths.get(fd);
+      if (
+        !fired &&
+        (kind === 'allocation'
+          ? target?.includes('.lock')
+          : kind === 'parent-capture'
+            ? target === root
+            : target === file)
+      ) {
+        fired = true;
+        capturedFd = fd;
+        throw Error('capture fixture');
+      }
+      return original(fd, ...args);
+    });
+    assert.throws(
+      () =>
+        kind === 'generic-capture'
+          ? readVersioned(file, finitePolicy)
+          : saveConfig({ extension: 'new' }),
+      VersionedFileError,
+    );
+    assert.ok(fired);
+    if (kind === 'parent-capture' || kind === 'generic-capture') {
+      // Existing parent/reader had original path identity before open; close is compared.
+      assert.throws(() => fs.fstatSync(capturedFd), { code: 'EBADF' });
+    } else survives(capturedFd);
   });

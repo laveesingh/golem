@@ -10,6 +10,7 @@
         "test/fixtures/w3-token-pack-negative.mjs",
         "test/fixtures/w3-config-consumers.mjs",
         "test/fixtures/w3-config-regression.mjs",
+        "test/fixtures/w3-config-repair.mjs",
         "test/fixtures/w3-config-concurrency.mjs",
         "cli/golem.js",
         "docs/design/w4/prototype.mjs",
