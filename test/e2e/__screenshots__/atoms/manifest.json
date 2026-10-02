@@ -5,18 +5,18 @@
     "productionSources": {
       ".ladle/config.mjs": "21f1162b992d1b68ce6fe231efa8a859fa817b90ab8f20462b92dc2e7ee0535b",
       ".ladle/vite.config.mjs": "106417dc6ecaf14110babf4c8cb037c823951709df7e463d6d10dc58c44e685e",
-      "dashboard/web/src/ui/atoms/Badge.stories.tsx": "2d49f04cd8216ff75df895832e56dab9a79288a022a841236344079960ba59c6",
+      "dashboard/web/src/ui/atoms/Badge.stories.tsx": "26e0748489d0dcfa2f24cea4007f40831e4b6da5e30b3d59e3d2f640e248934c",
       "dashboard/web/src/ui/atoms/Badge.tsx": "9a4e82bfb8278a48a8ee112cde48640c23acf4c6e6ca40a66a83477e30aac1f1",
       "dashboard/web/src/ui/atoms/Button.stories.tsx": "e1d741f8093eef163b43ad9a4c23c96cb3c1d64c62f118c8d7395f061f215f0e",
-      "dashboard/web/src/ui/atoms/Button.tsx": "df493e40fa336cbcbc2142496785fa0ad205df909fb8c5a0f630ff821d9649ce",
-      "dashboard/web/src/ui/atoms/IconButton.stories.tsx": "a621ff1290a3c20b43305f688d8836ec5e52e988da8fc81169ecc8d81c44dae4",
-      "dashboard/web/src/ui/atoms/IconButton.tsx": "068d80b4c93f1e8464037d41cd2484c39a2df0574396bce0663ce295bea3f62e",
-      "dashboard/web/src/ui/atoms/Input.stories.tsx": "166bed24e2a099ac2404f7715c5ef979c2eb32ce3908b3f8804c50f02bb72e8a",
+      "dashboard/web/src/ui/atoms/Button.tsx": "2fb8d2b17964365b06ba4032c2b3cdb7d2cc6cd6f4424420b1563c46520b767a",
+      "dashboard/web/src/ui/atoms/IconButton.stories.tsx": "d48f3343d99b2995f542fc16ee7c5fd48514b37a9561afd05f80b2f7d869391b",
+      "dashboard/web/src/ui/atoms/IconButton.tsx": "da88441e2315edc1789dd89dc57904c8d326c5b78094592cc237713387629409",
+      "dashboard/web/src/ui/atoms/Input.stories.tsx": "39fbd26a475027db6196f5d5c1325d3c5c69ee7c133709a7e665c91b0eeb5e8f",
       "dashboard/web/src/ui/atoms/Input.tsx": "cb6b2e3e1f1c7822ee61784a49b163ffb04e8680771665b7b856f87e3780ec3d",
       "dashboard/web/src/ui/atoms/Pill.stories.tsx": "a1e116e6f7914049f79236cc4939bc2e1bc61a3c1c2019102114fa429e504084",
       "dashboard/web/src/ui/atoms/Pill.tsx": "0d506132e2fb95e01554bb54845c39c3236e06184be8f5b2ff354936ffb92663",
       "dashboard/web/src/ui/atoms/action.ts": "2325df57aa0e8da5642025b87ad2f6b1473b6cff00086f57bd258568da23fcea",
-      "dashboard/web/src/ui/atoms/atoms.css": "5a0b73c122b142e09c1df8f662ba3ae4fba41e7a436b41f372ea68ba51f73aa2",
+      "dashboard/web/src/ui/atoms/atoms.css": "d700d8af2ce54b1ede00148e46f267e8141bc8e3cbc92cb8148272ac1510ac54",
       "dashboard/web/src/ui/fonts/fonts.css": "9b18b5fbae8ef82e08f0fd92b47c7fc8971031c43e3b2a422089b5b349d2a855",
       "dashboard/web/src/ui/fonts/geist-LICENSE.txt": "71609cbb5c78b5870d712eab73a31d76622635c6ed034ab5cee3b9ecbda8685f",
       "dashboard/web/src/ui/fonts/geist-latin-400-normal.woff2": "ead637fd0b6b887d829b3ce3f25fdc242b1de0cfb69c0d97987933675d1315ba",
@@ -48,16 +48,16 @@
       "package-lock.json": "e2916614fa9d8c758b2052af5f6bf6970b756499f8481989cbf348dda4f63d0d",
       "package.json": "a9ea5c8775878d763750af3b63a078235f0ecf53e87b8c71bb73a2eeee2d9298",
       "test/e2e/atoms.fixture.ts": "a2b47bbe1d82503ec058f249c6077ac2c60cd95bc561bfd8cc0ae9aa972c8acf",
-      "test/e2e/atoms.spec.ts": "5cffd33ea0d3e56a1b208a8f4446650b9faa3bc9f5ff731f1e9f4ec1a36bb806",
+      "test/e2e/atoms.spec.ts": "c876df1b56dd423b6514523fb7fc81c297dfd064f77753f189d6fa71d0a1d826",
       "test/e2e/playwright.atoms.config.ts": "cda63d39969b69ee542bb9679a86b8954ebed5fb0cf89fff6b63c6a358bb0f9a",
-      "test/integration/atoms-candidates.mjs": "5b1e1421d3050b5468899a8d0ebf201d4e80e77313a4e12285e354f75861a282",
-      "test/integration/atoms-linux-entry.mjs": "d55a2068259b945a2b5a01394f472bc41ea880380794d3c27d99acecec9ed63d",
-      "test/integration/atoms-linux-probe.mjs": "93ff99dae675fee1f1fcb0d1fc499aad4ab32b56a5094b250576143c0dd8ee1a",
-      "test/integration/atoms-workshop-probe.mjs": "80350f643773bf0067171303773d802ba3f1384f81b575d73e267d31dc677d1a"
+      "test/integration/atoms-candidates.mjs": "e58d9d68fe07789128d854aab6e657f47bc0aba977138bfc95bdfb72801dd854",
+      "test/integration/atoms-linux-entry.mjs": "d5d18f5159198fc0f85ac0fca062688ea1f137a2e4a3eb7ad99da858f8f5b2cf",
+      "test/integration/atoms-linux-probe.mjs": "e9ee4f4be5fa5918f66be457497113185ebae3bdc4806896586851282978d18f",
+      "test/integration/atoms-workshop-probe.mjs": "ed8212062622c77c00f076fe663eddfd6978e1af82c924ba276cf0f60fc2e151"
     },
-    "sourceCommit": "fb13de1e2f66e0e931224c82251d4aa4f25795f6",
-    "sourceTree": "3635852d7d36bd4a898ba4fb4c4757964e7ea5cd",
-    "archiveSha256": "175d47326e548a76b165b00172c811d7a4d71b88bd75eaa7c1bf6a9b16508286",
+    "sourceCommit": "9c719ffb53b8635879caf85bc81d2aff0675fac1",
+    "sourceTree": "33ba3e9e2b4381829e089b45ede8940500a19a41",
+    "archiveSha256": "94d77f1b280af79786d6d21570b2b73975dc8cf73a92f2d3a39b06c94e468f0f",
     "platform": "linux/amd64",
     "imageDigest": "sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7",
     "imageId": "sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7",
@@ -71,6 +71,12 @@
     "registrySha256": "545d52f8382c391e605562c330e9c1c534a16045898203037a49bb8bd769a946",
     "nodeVersion": "v24.20.0",
     "browsersPath": "/ms-playwright",
+    "supersedes": {
+      "candidateCommit": "14f44e418f4297d6e67ff82c506329b723f635d8",
+      "sourceCommit": "fb13de1e2f66e0e931224c82251d4aa4f25795f6",
+      "manifestSha256": "3e3917bacf4b044e50fee66141e4d0245209238560e2dd8508a633e9b30100f5",
+      "kind": "initial-atom-baseline-candidates-NOT-ACCEPTED"
+    },
     "functionalGreen": true,
     "generation": "g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a",
     "fontInventorySha256": "c30bcf2adce8e7cce07f01eb3e45483e3d19869adfc66254adb298a12f805dc3",
@@ -120,8 +126,8 @@
     {
       "name": "badge-dark-compact-320.png",
       "width": 320,
-      "height": 426,
-      "sha256": "878b07b38c9964bf87819467b7307e35e1cf5bb6b2510a2ac2caf61afd73fd6e",
+      "height": 530,
+      "sha256": "5945d036e8ad93fa19f876cbf98d3b7ae52a2f3f18da9fca2d03afb36140d285",
       "record": {
         "name": "badge-dark-compact-320.png",
         "atom": "badge",
@@ -135,7 +141,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 426
+          "height": 530
         },
         "scale": 1,
         "axeViolations": 0,
@@ -147,8 +153,8 @@
     {
       "name": "badge-dark-compact-640.png",
       "width": 640,
-      "height": 383,
-      "sha256": "0844f26724e39d2225f573655df5ed8328fdf504d060be599510599baa23b2ad",
+      "height": 445,
+      "sha256": "3a0d61fb342abcda2af1df16c5538548b15787d5a3eb0d20021c1c60fe36e200",
       "record": {
         "name": "badge-dark-compact-640.png",
         "atom": "badge",
@@ -162,7 +168,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 383
+          "height": 445
         },
         "scale": 1,
         "axeViolations": 0,
@@ -174,8 +180,8 @@
     {
       "name": "badge-dark-cozy-320.png",
       "width": 320,
-      "height": 526,
-      "sha256": "4cd5a3563e70b67d5524c73d29bb57cb9554ade382fed59851b431aee1d50492",
+      "height": 663,
+      "sha256": "0db60a025661dc9d394d3787103f9d1c79d1a4b5b9f16916197023a369b1e2ab",
       "record": {
         "name": "badge-dark-cozy-320.png",
         "atom": "badge",
@@ -189,7 +195,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 526
+          "height": 663
         },
         "scale": 1,
         "axeViolations": 0,
@@ -201,8 +207,8 @@
     {
       "name": "badge-dark-cozy-640.png",
       "width": 640,
-      "height": 479,
-      "sha256": "b3513150c68ef5d9570a21489f4d3a324954ee163992153caaf041d71a4b2568",
+      "height": 553,
+      "sha256": "603729f92bb1b2b49b8dbbade7279f9f5d57c4bcc345500ff66a0031ce0f5562",
       "record": {
         "name": "badge-dark-cozy-640.png",
         "atom": "badge",
@@ -216,7 +222,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 479
+          "height": 553
         },
         "scale": 1,
         "axeViolations": 0,
@@ -228,8 +234,8 @@
     {
       "name": "badge-light-compact-320.png",
       "width": 320,
-      "height": 426,
-      "sha256": "90df56e87e1f6838c654322c9d16366524c7db4242606ba71287ac7fce821fe0",
+      "height": 530,
+      "sha256": "91a41034e6ea3512e0537fd74ff110c97f6674e0df0c8b90a678560d448c87f9",
       "record": {
         "name": "badge-light-compact-320.png",
         "atom": "badge",
@@ -243,7 +249,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 426
+          "height": 530
         },
         "scale": 1,
         "axeViolations": 0,
@@ -255,8 +261,8 @@
     {
       "name": "badge-light-compact-640.png",
       "width": 640,
-      "height": 383,
-      "sha256": "320cceb56ebfd1e0d3d7df49373bf72372d2d0b936413edfec284db40b23eb38",
+      "height": 445,
+      "sha256": "3bafcbeb65af34d95f9983af5ff58f440bac89cf901dc5d4c0ec132cb8cf7024",
       "record": {
         "name": "badge-light-compact-640.png",
         "atom": "badge",
@@ -270,7 +276,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 383
+          "height": 445
         },
         "scale": 1,
         "axeViolations": 0,
@@ -282,8 +288,8 @@
     {
       "name": "badge-light-cozy-320.png",
       "width": 320,
-      "height": 526,
-      "sha256": "98d339345d3550c8c4c0fe0b8a53f8857eb61de6413b341a144b5878a598ec1f",
+      "height": 663,
+      "sha256": "7556aac38363ebd31c56696ef805d2bdf64f14ba0299ccecc16d74eb19c06d75",
       "record": {
         "name": "badge-light-cozy-320.png",
         "atom": "badge",
@@ -297,7 +303,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 526
+          "height": 663
         },
         "scale": 1,
         "axeViolations": 0,
@@ -309,8 +315,8 @@
     {
       "name": "badge-light-cozy-640.png",
       "width": 640,
-      "height": 479,
-      "sha256": "7813ef2f158f796e2fb4c3cecd8dfad763f8e6698207210e53f42f331a71ec4c",
+      "height": 553,
+      "sha256": "94af08ec807a150a8abcdb3e00e65e21506124b0393078f4665005fe79c83a37",
       "record": {
         "name": "badge-light-cozy-640.png",
         "atom": "badge",
@@ -324,7 +330,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 479
+          "height": 553
         },
         "scale": 1,
         "axeViolations": 0,
@@ -337,7 +343,7 @@
       "name": "button-dark-compact-320.png",
       "width": 320,
       "height": 634,
-      "sha256": "9f517a6a12f9c47ffd89da01102cc92bd79d5bcd3adc337c9cffd60418a85188",
+      "sha256": "913b068cbd2b531fd18d46ad84fc7cc144bebb1509626f4256cf429302d751d9",
       "record": {
         "name": "button-dark-compact-320.png",
         "atom": "button",
@@ -364,7 +370,7 @@
       "name": "button-dark-compact-640.png",
       "width": 640,
       "height": 571,
-      "sha256": "2ba55a6e28d3b720574d74d7d9e4406fa306323821fcd4308d3d5a3e810fa185",
+      "sha256": "a0ebb1a1e70d5437c5dd7c2e3d5f9e84239888c51e20f80de4fca31aee7fd57b",
       "record": {
         "name": "button-dark-compact-640.png",
         "atom": "button",
@@ -391,7 +397,7 @@
       "name": "button-dark-cozy-320.png",
       "width": 320,
       "height": 786,
-      "sha256": "ab3f73b58d3e4d07e15f23210d40faf6afaa4324498e7f087dc8c696f68adfad",
+      "sha256": "d2728c91a6a17b68ddeb13573742c12ce911e5708e1cbdcfd87802a9a13ab769",
       "record": {
         "name": "button-dark-cozy-320.png",
         "atom": "button",
@@ -418,7 +424,7 @@
       "name": "button-dark-cozy-640.png",
       "width": 640,
       "height": 723,
-      "sha256": "3017113b0838914f9d904880441ee56b28d7da2f14a779fb16efa71a8af1bfb4",
+      "sha256": "dff3ec2aed16f51b8405f2706d2794869e1c0bdd9f2fd5889e0251fcbd8d6fe5",
       "record": {
         "name": "button-dark-cozy-640.png",
         "atom": "button",
@@ -445,7 +451,7 @@
       "name": "button-light-compact-320.png",
       "width": 320,
       "height": 634,
-      "sha256": "0519c6893236e1d5ea0621c8c15a41e8d9c3aee42102a27b1439c6f0645785ad",
+      "sha256": "b9dd9f81a3868290a0b86ef094563b57d5a0abdaedb9c90c7c1152d5108cbc02",
       "record": {
         "name": "button-light-compact-320.png",
         "atom": "button",
@@ -472,7 +478,7 @@
       "name": "button-light-compact-640.png",
       "width": 640,
       "height": 571,
-      "sha256": "46def806b70ada735e53679f807bb6c45cef82546f0341fb07d655ce4e0e34bd",
+      "sha256": "12698fb5d678466e62f5641ec9ddd9cf757ecc0fcfae92fdc35c1bf40f45fa82",
       "record": {
         "name": "button-light-compact-640.png",
         "atom": "button",
@@ -499,7 +505,7 @@
       "name": "button-light-cozy-320.png",
       "width": 320,
       "height": 786,
-      "sha256": "403fe4dab4be855648dd1027deac01ec830f04fa829b095c9df623cd36245a3c",
+      "sha256": "f1138c594f5f81dc469b70325dcbf07da2b3885014c1250950facf5d88b52629",
       "record": {
         "name": "button-light-cozy-320.png",
         "atom": "button",
@@ -526,7 +532,7 @@
       "name": "button-light-cozy-640.png",
       "width": 640,
       "height": 723,
-      "sha256": "26c8b3c118f944be14c3941f9694ebfbdbfbf8a2a1a44bf345123eea3f84ea3f",
+      "sha256": "0bb35046a03baada0dbf673cbfa0de7d2f84d686e0610fe4594e176db1db23ec",
       "record": {
         "name": "button-light-cozy-640.png",
         "atom": "button",
@@ -552,8 +558,8 @@
     {
       "name": "iconbutton-dark-compact-320.png",
       "width": 320,
-      "height": 364,
-      "sha256": "24af76a4389df404430ce8928c4b3618d0ac64b7494a6665ce6c768d7d4666f6",
+      "height": 433,
+      "sha256": "8d441e77e1126c5416ce18c06bff53f1919258c6052c4a15f7fb1ac5b8759b30",
       "record": {
         "name": "iconbutton-dark-compact-320.png",
         "atom": "iconbutton",
@@ -567,7 +573,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 364
+          "height": 433
         },
         "scale": 1,
         "axeViolations": 0,
@@ -579,8 +585,8 @@
     {
       "name": "iconbutton-dark-compact-640.png",
       "width": 640,
-      "height": 342,
-      "sha256": "afa58a7487de55d326b0f265f537da075e4a9e3ebaaa06e86a55ac9ea3de48b4",
+      "height": 411,
+      "sha256": "3a52fcf4c9b0a1cd49e078c4bda9979dcb9a9f1215f03aedd10198f4bb1a5d14",
       "record": {
         "name": "iconbutton-dark-compact-640.png",
         "atom": "iconbutton",
@@ -594,7 +600,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 342
+          "height": 411
         },
         "scale": 1,
         "axeViolations": 0,
@@ -606,8 +612,8 @@
     {
       "name": "iconbutton-dark-cozy-320.png",
       "width": 320,
-      "height": 468,
-      "sha256": "00d9546f1e35eb49b5a339411c8ee62fb07e394b4d812d4c6b40f3d94006acf3",
+      "height": 557,
+      "sha256": "f6d996acb8657a6b351169b2dd44771ecf605f8ed5319977564edbd7207b9c5e",
       "record": {
         "name": "iconbutton-dark-cozy-320.png",
         "atom": "iconbutton",
@@ -621,7 +627,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 468
+          "height": 557
         },
         "scale": 1,
         "axeViolations": 0,
@@ -633,8 +639,8 @@
     {
       "name": "iconbutton-dark-cozy-640.png",
       "width": 640,
-      "height": 442,
-      "sha256": "6e97f2d41b86dc4bbc21a4de89465856580aabbdbce157c0ddfc2300d03ff803",
+      "height": 531,
+      "sha256": "a269bde91b8cec8256a805c63adfab191f5382d5c0da1ea5a1eff92c2c9ed2ee",
       "record": {
         "name": "iconbutton-dark-cozy-640.png",
         "atom": "iconbutton",
@@ -648,7 +654,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 442
+          "height": 531
         },
         "scale": 1,
         "axeViolations": 0,
@@ -660,8 +666,8 @@
     {
       "name": "iconbutton-light-compact-320.png",
       "width": 320,
-      "height": 364,
-      "sha256": "eca8e8ef38663264de8b51f0494cfb6b603446264ad7743095b4e6a13e3c2574",
+      "height": 433,
+      "sha256": "9198977f7882cb21d2e7a8e4c876113590a6a8e19e091e5d647c3fca45bf353b",
       "record": {
         "name": "iconbutton-light-compact-320.png",
         "atom": "iconbutton",
@@ -675,7 +681,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 364
+          "height": 433
         },
         "scale": 1,
         "axeViolations": 0,
@@ -687,8 +693,8 @@
     {
       "name": "iconbutton-light-compact-640.png",
       "width": 640,
-      "height": 342,
-      "sha256": "4b169d59198e7088347e087e503368b342dd4aa529e1ceaacba25014de8ccde7",
+      "height": 411,
+      "sha256": "933069c455c4206d9ea8733272f0e0ac73a8c6568370080bdee1c806fe59f332",
       "record": {
         "name": "iconbutton-light-compact-640.png",
         "atom": "iconbutton",
@@ -702,7 +708,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 342
+          "height": 411
         },
         "scale": 1,
         "axeViolations": 0,
@@ -714,8 +720,8 @@
     {
       "name": "iconbutton-light-cozy-320.png",
       "width": 320,
-      "height": 468,
-      "sha256": "0755a2d49daa671e09f04449df749da3af39aa50de8bd0adbc7a0f0d46556188",
+      "height": 557,
+      "sha256": "61c1fb817fa40644ef9b88a1852e3d3158072c0464c375fbe956ef69e0bcceab",
       "record": {
         "name": "iconbutton-light-cozy-320.png",
         "atom": "iconbutton",
@@ -729,7 +735,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 468
+          "height": 557
         },
         "scale": 1,
         "axeViolations": 0,
@@ -741,8 +747,8 @@
     {
       "name": "iconbutton-light-cozy-640.png",
       "width": 640,
-      "height": 442,
-      "sha256": "723ba234fb8a02bf3f0871ad2e48f6755bd528e5149aa84fc1350b041e5e89c8",
+      "height": 531,
+      "sha256": "772522c192ccfc2529195742b5cb83df2ccf9b4a157cb321a9428ad25ba7424c",
       "record": {
         "name": "iconbutton-light-cozy-640.png",
         "atom": "iconbutton",
@@ -756,7 +762,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 442
+          "height": 531
         },
         "scale": 1,
         "axeViolations": 0,
@@ -768,8 +774,8 @@
     {
       "name": "input-dark-compact-320.png",
       "width": 320,
-      "height": 647,
-      "sha256": "294ae70e3d1f936bd0493828da2d9e14c46ac2fa91e8159b7a19e71d1acf5428",
+      "height": 846,
+      "sha256": "8275bc1097d3298243c9cb2ab704a8e941167c2b7c21e262777d19b6cb82ba92",
       "record": {
         "name": "input-dark-compact-320.png",
         "atom": "input",
@@ -783,7 +789,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 647
+          "height": 846
         },
         "scale": 1,
         "axeViolations": 0,
@@ -795,8 +801,8 @@
     {
       "name": "input-dark-compact-640.png",
       "width": 640,
-      "height": 604,
-      "sha256": "9da641866212810cdcef413420928e7cced3b8aaff27847eaa6021ec8a77ce44",
+      "height": 740,
+      "sha256": "5aa07390068b884f17ea06f0910b3c499f08a6c9c36d3a4808ec833d809e6e13",
       "record": {
         "name": "input-dark-compact-640.png",
         "atom": "input",
@@ -810,7 +816,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 604
+          "height": 740
         },
         "scale": 1,
         "axeViolations": 0,
@@ -822,8 +828,8 @@
     {
       "name": "input-dark-cozy-320.png",
       "width": 320,
-      "height": 807,
-      "sha256": "7895d2a0843ad4a4fc8560bf605ad102b50ade97db537546c2ef28646970941a",
+      "height": 1030,
+      "sha256": "4862098bfa6a2b77b17607607f7d0a098ab20ff05b7604d0a476ea79cbac665d",
       "record": {
         "name": "input-dark-cozy-320.png",
         "atom": "input",
@@ -837,7 +843,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 807
+          "height": 1030
         },
         "scale": 1,
         "axeViolations": 0,
@@ -849,8 +855,8 @@
     {
       "name": "input-dark-cozy-640.png",
       "width": 640,
-      "height": 760,
-      "sha256": "7930b058ee9650055e94b16187fa80c0f932d122002d6c864a7dfd4bfe65fe6a",
+      "height": 920,
+      "sha256": "c16dcf7a9e16a5482a67a730bc75fbb85d92d6b7dae4df42d17b89c545836c1c",
       "record": {
         "name": "input-dark-cozy-640.png",
         "atom": "input",
@@ -864,7 +870,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 760
+          "height": 920
         },
         "scale": 1,
         "axeViolations": 0,
@@ -876,8 +882,8 @@
     {
       "name": "input-light-compact-320.png",
       "width": 320,
-      "height": 647,
-      "sha256": "d32c8da56b0087c4e257a0a3e81745cea0a8166cc207dcc9a07e712e74225c78",
+      "height": 846,
+      "sha256": "053515228893654845c2f52b08bdff3353a1c0faf3f1bcb637acfeff0f0a0434",
       "record": {
         "name": "input-light-compact-320.png",
         "atom": "input",
@@ -891,7 +897,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 647
+          "height": 846
         },
         "scale": 1,
         "axeViolations": 0,
@@ -903,8 +909,8 @@
     {
       "name": "input-light-compact-640.png",
       "width": 640,
-      "height": 604,
-      "sha256": "4b99faa68e420ebc60c930b6c3bed855d1b4e2ac0acd21b5b3048a19b32e57c5",
+      "height": 740,
+      "sha256": "d4075117def24a735e4ddebff4012b736495dcc9513c9d4615817a7cec3e53df",
       "record": {
         "name": "input-light-compact-640.png",
         "atom": "input",
@@ -918,7 +924,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 604
+          "height": 740
         },
         "scale": 1,
         "axeViolations": 0,
@@ -930,8 +936,8 @@
     {
       "name": "input-light-cozy-320.png",
       "width": 320,
-      "height": 807,
-      "sha256": "2f7a80f46e97b757aaf7f73e8068a332d29241f1d506bd30fdf3367474495d5c",
+      "height": 1030,
+      "sha256": "642cfc942342b50dd3e236b2598fadb9e8c4b9e5774f9f93794e181fed46e27a",
       "record": {
         "name": "input-light-cozy-320.png",
         "atom": "input",
@@ -945,7 +951,7 @@
           "x": 0,
           "y": 0,
           "width": 320,
-          "height": 807
+          "height": 1030
         },
         "scale": 1,
         "axeViolations": 0,
@@ -957,8 +963,8 @@
     {
       "name": "input-light-cozy-640.png",
       "width": 640,
-      "height": 760,
-      "sha256": "e649f88d75998ff3c940f06bcad1489581b29315165fb84c355ddf41e57785fe",
+      "height": 920,
+      "sha256": "6ea110535d81d63ecefaf672ce17fcf8243d5219ee951898761d9e74efcd1cd0",
       "record": {
         "name": "input-light-cozy-640.png",
         "atom": "input",
@@ -972,7 +978,7 @@
           "x": 0,
           "y": 0,
           "width": 640,
-          "height": 760
+          "height": 920
         },
         "scale": 1,
         "axeViolations": 0,
