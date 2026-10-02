@@ -395,21 +395,60 @@ export function validateExactRejected(folder) {
     manifestSha256: hash(bytes),
   };
 }
-function copySet(source, destination) {
-  const manifest = validateRetainedCandidates(source);
+// Transaction-only: freeze the original byte set before any copying/journal callback.
+function transactionHashes(folder) {
+  assert.deepEqual(
+    fs.readdirSync(folder).sort(),
+    [...expectedCandidates(), 'manifest.json'].sort(),
+  );
+  return Object.fromEntries(
+    [...expectedCandidates(), 'manifest.json'].map((name) => [
+      name,
+      hash(readRegular(path.join(folder, name))),
+    ]),
+  );
+}
+function originalSetFence(folder, identity, hashes) {
+  fence(folder, identity);
+  assert.deepEqual(
+    transactionHashes(folder),
+    hashes,
+    'Original transaction contents changed; unknown bytes remain untouched',
+  );
+}
+function copySet(
+  source,
+  destination,
+  expectedHashes = transactionHashes(source),
+) {
+  const manifest = validateRetainedCandidates(source),
+    sourceId = directoryIdentity(source);
+  originalSetFence(source, sourceId, expectedHashes);
+  const buffers = Object.fromEntries(
+    [...expectedCandidates(), 'manifest.json'].map((name) => [
+      name,
+      readRegular(path.join(source, name)),
+    ]),
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(buffers).map(([name, bytes]) => [name, hash(bytes)]),
+    ),
+    expectedHashes,
+  );
   assert.equal(pathPresent(destination), false);
   fs.mkdirSync(destination, { mode: 0o700 });
   const identity = directoryIdentity(destination);
-  for (const name of [...expectedCandidates(), 'manifest.json']) {
+  for (const [name, bytes] of Object.entries(buffers)) {
     fence(destination, identity);
-    fs.writeFileSync(
-      path.join(destination, name),
-      readRegular(path.join(source, name)),
-      { flag: 'wx', mode: 0o644 },
-    );
+    fs.writeFileSync(path.join(destination, name), bytes, {
+      flag: 'wx',
+      mode: 0o644,
+    });
   }
+  originalSetFence(destination, identity, expectedHashes);
   validateRetainedCandidates(destination);
-  return { manifest, identity };
+  return { manifest, identity, hashes: expectedHashes };
 }
 export function retireRejectedPrivate(privateCopy, folder, backup) {
   const sandbox = process.env.GOLEM_W2_SANDBOX;
@@ -447,118 +486,185 @@ export function replaceExactRejected(candidate, target, evidence) {
     path.isAbsolute(target) &&
       target.endsWith(path.join('test', 'e2e', '__screenshots__', 'atoms')),
   );
-  const fresh = validateRetainedCandidates(candidate);
-  assert.deepEqual(
-    fresh.provenance.supersedes,
-    rejectedInitialTuple,
-    'New provenance must explicitly name rejected tuple',
-  );
+  const fresh = validateRetainedCandidates(candidate),
+    newHashes = transactionHashes(candidate);
+  assert.deepEqual(fresh.provenance.supersedes, rejectedInitialTuple);
   const parent = path.dirname(target),
     parentId = directoryIdentity(parent),
-    old = validateExactRejected(target);
+    old = validateExactRejected(target),
+    oldHashes = transactionHashes(target);
   assert.ok(path.isAbsolute(evidence));
-  ownedDirectory(path.dirname(evidence));
+  const evidenceParent = path.dirname(evidence),
+    evidenceParentId = directoryIdentity(evidenceParent);
   assert.equal(pathPresent(evidence), false);
   fs.mkdirSync(evidence, { mode: 0o700 });
-  const evidenceId = directoryIdentity(evidence),
-    nonce = String(Date.now()) + '-' + process.pid,
+  const evidenceId = directoryIdentity(evidence);
+  const nonce = String(Date.now()) + '-' + process.pid,
     stage = target + '.stage-' + nonce,
-    backup = target + '.rejected-' + nonce;
+    backup = target + '.rejected-' + nonce,
+    oldEvidence = path.join(evidence, 'old-rejected'),
+    originalBackup = path.join(evidence, 'original-backup');
   let stageId,
+    oldEvidenceId,
     oldMoved = false,
-    newMoved = false;
+    newMoved = false,
+    backupRetained = false;
   const journal = {
-    schema: 1,
+    schema: 2,
     operation: 'EXACT_REJECTED_INITIAL_SUPERSESSION',
     oldTuple: rejectedInitialTuple,
     parentIdentity: parentId,
     oldIdentity: old.identity,
-    newManifestSha256: hash(readRegular(path.join(candidate, 'manifest.json'))),
+    evidenceParentIdentity: evidenceParentId,
+    evidenceIdentity: evidenceId,
+    oldHashes,
+    newHashes,
+    newManifestSha256: newHashes['manifest.json'],
     state: 'intent',
     stage,
     backup,
     target,
   };
-  const record = (state) => {
+  const evidenceFence = () => {
+    fence(evidenceParent, evidenceParentId);
     fence(evidence, evidenceId);
+  };
+  const oldFence = (folder) => {
+    originalSetFence(folder, old.identity, oldHashes);
+    validateExactRejected(folder);
+  };
+  const stageFence = (folder) => {
+    originalSetFence(folder, stageId, newHashes);
+    validateRetainedCandidates(folder);
+  };
+  const oldEvidenceFence = () => {
+    evidenceFence();
+    assert.ok(oldEvidenceId);
+    originalSetFence(oldEvidence, oldEvidenceId, oldHashes);
+    validateExactRejected(oldEvidence);
+  };
+  const record = (state) => {
+    evidenceFence();
     journal.state = state;
     fs.writeFileSync(
       path.join(evidence, 'transaction.json'),
       JSON.stringify(journal, null, 2) + '\n',
     );
+    evidenceFence();
   };
   record('intent');
   try {
     fence(parent, parentId);
-    fence(target, old.identity);
-    validateExactRejected(target);
-    const staged = copySet(candidate, stage);
+    oldFence(target);
+    evidenceFence();
+    const staged = copySet(candidate, stage, newHashes);
     stageId = staged.identity;
     journal.stageIdentity = stageId;
     record('stage-verified-before-moves');
     fence(parent, parentId);
-    fence(target, old.identity);
-    validateExactRejected(target);
-    fence(stage, stageId);
-    validateRetainedCandidates(stage);
+    oldFence(target);
+    stageFence(stage);
+    evidenceFence();
     assert.equal(pathPresent(backup), false);
     fs.renameSync(target, backup);
     oldMoved = true;
     fence(parent, parentId);
-    fence(backup, old.identity);
-    validateExactRejected(backup);
+    oldFence(backup);
     record('old-backed-up');
     fence(parent, parentId);
-    fence(backup, old.identity);
-    fence(stage, stageId);
+    oldFence(backup);
+    stageFence(stage);
+    evidenceFence();
     assert.equal(pathPresent(target), false);
     fs.renameSync(stage, target);
     newMoved = true;
     fence(parent, parentId);
-    fence(target, stageId);
-    assert.equal(
-      hash(readRegular(path.join(target, 'manifest.json'))),
-      journal.newManifestSha256,
-    );
-    validateRetainedCandidates(target);
+    stageFence(target);
     record('new-target-verified');
     fence(parent, parentId);
-    fence(backup, old.identity);
-    validateExactRejected(backup);
-    copySet(backup, path.join(evidence, 'old-rejected'));
+    oldFence(backup);
+    stageFence(target);
+    evidenceFence();
+    const retained = copySet(backup, oldEvidence, oldHashes);
+    oldEvidenceId = retained.identity;
+    journal.oldEvidenceIdentity = oldEvidenceId;
+    journal.oldEvidenceHashes = oldHashes;
+    oldEvidenceFence();
     record('old-evidence-verified');
+    // Preserve the ORIGINAL backup inode as evidence rather than deleting the last original.
     fence(parent, parentId);
-    fence(backup, old.identity);
-    validateExactRejected(backup);
-    fs.rmSync(backup, { recursive: true });
+    oldFence(backup);
+    stageFence(target);
+    oldEvidenceFence();
+    assert.equal(pathPresent(originalBackup), false);
+    record('original-backup-retention-ready');
+    fence(parent, parentId);
+    oldFence(backup);
+    stageFence(target);
+    oldEvidenceFence();
+    assert.equal(pathPresent(originalBackup), false);
+    fs.renameSync(backup, originalBackup);
+    backupRetained = true;
+    evidenceFence();
+    oldFence(originalBackup);
+    oldEvidenceFence();
+    journal.originalBackupIdentity = old.identity;
+    record('original-backup-retained');
+    fence(parent, parentId);
+    stageFence(target);
+    oldEvidenceFence();
+    oldFence(originalBackup);
     record('complete');
+    fence(parent, parentId);
+    stageFence(target);
+    oldEvidenceFence();
+    oldFence(originalBackup);
     return { manifest: fresh, journal, evidence };
-  } catch (error) {
-    record('failure-evidence-retained');
+  } catch (primary) {
+    const failures = [primary];
+    try {
+      record('failure-evidence-retained');
+    } catch (error) {
+      failures.push(error);
+    }
     if (oldMoved && !newMoved) {
-      fence(parent, parentId);
-      fence(backup, old.identity);
-      validateExactRejected(backup);
-      assert.equal(
-        pathPresent(target),
-        false,
-        'Unknown replacement target untouched',
-      );
-      fs.renameSync(backup, target);
-      fence(target, old.identity);
-      validateExactRejected(target);
-      record('known-old-restored');
+      try {
+        fence(parent, parentId);
+        oldFence(backup);
+        evidenceFence();
+        assert.equal(
+          pathPresent(target),
+          false,
+          'Unknown replacement target untouched',
+        );
+        fs.renameSync(backup, target);
+        oldFence(target);
+        record('known-old-restored');
+      } catch (error) {
+        failures.push(error);
+      }
     }
     if (stageId && pathPresent(stage)) {
-      fence(parent, parentId);
-      fence(stage, stageId);
-      validateRetainedCandidates(stage);
-      assert.equal(
-        hash(readRegular(path.join(stage, 'manifest.json'))),
-        journal.newManifestSha256,
-      );
-      fs.rmSync(stage, { recursive: true });
+      try {
+        fence(parent, parentId);
+        stageFence(stage);
+        evidenceFence();
+        fs.rmSync(stage, { recursive: true });
+      } catch (error) {
+        failures.push(error);
+      }
     }
-    throw error;
+    // A published target is never guessed-removed. Original backup stays in its known location.
+    if (oldMoved && newMoved) {
+      try {
+        oldFence(backupRetained ? originalBackup : backup);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    throw new AggregateError(
+      failures,
+      'Rejected candidate transaction failed; original backup/evidence retained',
+    );
   }
 }

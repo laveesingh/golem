@@ -59,7 +59,33 @@ After validator0 only: reverify old hashes/parent+old inode/device, stage valida
 as same-parent sibling, and journal parent/old/stage identities/hashes BEFORE moves. Fence every
 rename, rollback and cleanup. Rename old to guarded backup, stage to target; restore old only
 from verified backup with absent target. Unknown replacement paths stay untouched. On success,
-retain complete old bytes/manifest and journal as evidence before removing verified siblings.
+retain complete old bytes/manifest and journal as evidence; the ORIGINAL old backup inode is also
+retained by a fenced rename into evidence/original-backup, never deleted as the last original.
+Original evidence-parent/root/old-set identities and original stage/old hash sets are frozen before
+callbacks and rechecked after callbacks and before publication/retention/cleanup/completion.
+Same-inode content changes are not authorized by identity alone. Unknown paths fail untouched with
+original backup/evidence retained; primary, rollback and cleanup-fence failures are aggregated.
 No code or PNG changes are mixed: commit new41 candidate artifacts ONLY after successful guarded
 replacement. New images remain NOT_ACCEPTED pending untouched delta+visual review, separate normal
 no-update comparison/full coherent checks and coordinator rerun. No shell/model/legacy activation.
+
+## Approved transaction-only maintenance bridge
+
+The current40 candidate pixels/visual repair are sound. A nonrender transaction-only fix does NOT
+recapture images or rewrite manifest1cd2ce93956b58b660d666a2e68149f109e3e48e9362dfe6fbb5a740c53625ba.
+Approved a5261982/50e1b1fd verification uses TWO explicit planes:
+
+1. NEW maintenance commit: exact transaction/helper tests/docs delta, real old-fail/new-pass boundary
+   faults, complete guard/unit/integration/unfiltered checks. Helper prefix (all provenance/input/
+   render/capture/compare code) and private-retirement section must remain byte-identical to2ab.
+2. ORIGINAL frozen rendering candidate2ab9c6fa62f71b5de4d20bef579b49107abfabb4 / render source9c719:
+   owned exact copy, same pinned observed image/browser, functional20 and normal40 comparison,
+   no update/capture/copy. This old render probe is NOT proof of the new transaction implementation.
+
+A maintenance receipt OUTSIDE baseline directory binds both commit pins, old candidate/render pin,
+original manifest hash, exact changed paths and old/new helper hashes plus unchanged section/input
+hashes. It is written after the maintenance commit, never embeds a self-referential source hash.
+Default new-code comparison still refuses raw old helper-input mismatch; there is no module-wide
+ignore or generic exception. Any actual render/input-enumeration/capture/compare change invalidates
+this bridge and requires a new explicit proof/candidate flow. Fresh untouched guard review and full
+independent two-plane/coordinator acceptance remain mandatory.
