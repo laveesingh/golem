@@ -55,9 +55,9 @@ TypeScript/Vitest remain test/build tools, not installed token CLI dependencies.
 - Actual Golem prepack negatives preserve prior runtime/web/tarball on tampered,
   missing or escaping inputs. An owned pointer-change injection confirms one
   source capture; the private source fixture is restored afterwards.
-- Working source check and full24files/274tests pass; static23negative/24state/
-  seven-font checks pass. Final frozen-commit macOS/Linux artefact evidence and
-  independent review/verification/coordinator acceptance are still pending.
+- Frozen source c27f8a9 check/full24files/274tests/no skips pass on macOS and
+  supported offline-init Linux. Static23negative/24state/seven-font checks pass.
+  Independent review/verification/coordinator acceptance remains pending.
 
 Early fixture failures were incorrect COLOR_LITERAL expectation (actual code
 COLOR) and Darwin /tmp versus /private/tmp Vite root spelling. Corrected fixture
@@ -65,6 +65,58 @@ expectation/canonical root, not product error behavior. Initial Knip rejected
 an unconsumed output-name export; IO now uses that same canonical list, not a
 fake entry/baseline waiver. Formatting failure on unsafe finally was repaired
 by preserving original/rollback/cleanup errors rather than throwing over them.
+
+## Frozen artefact evidence
+
+Runtime/source commit `c27f8a9d09446ce3c94474cd5a7dc97f5a221739` was tested;
+subsequent evidence-document changes do not alter shipped runtime/assets.
+
+MacOS Darwin arm64 / Node22.22.3 / npm10.9.8: source check0, strict/native21,
+Knip baseline137/current134/no additions (not zero debt), 10 Biome infos.
+Unfiltered24files/274tests0,216.20s; static0. Actual git-archived Golem source
+with exact CoW dependencies, env-i private HOME/TMPDIR/state/cache/prefix:
+`npm pack`, `npm install --omit=dev --prefer-offline`, installed token probe,
+existing installed package probe, actual prepack negatives all0. Actual archive
+has27 regular asset files, four ordinary generated outputs and no source
+pointer/generation links in the staged asset view. Logs:
+`/tmp/gol500-frozen-mac-{pack,install,token,existing,negative}.log` and
+`/tmp/gol500-working-{check2,full,static}.log`.
+
+Supported Linux uses fresh source copied into a NEW writable upper-layer
+owned directory for BOTH image provisioning and runtime. Source is unchanged;
+provisioned install/prefix is removed before runtime. Runtime uses
+`docker run --rm --init --network none`, Node22.22.3/npm10.9.8/aarch64;
+PID1/docker-init asserted. Fresh offline npm-ci/check/full24files274tests0
+194.53s/native21/type-error controls/static0, NEW offline actual pack/install,
+token/existing probes/actual failing-pack preservation/pointer race0, private
+clean-no-dist npm-link/help0.61 saved receipt roots/main PIDs absent; tracked
+source bytes/pointer unchanged. Actual Vite CSS and seven HTTP font hashes
+match source versus installed regular assets on both platforms.
+
+Both final tarballs SHA256:
+`be775c833c279f3e28046d0cb38d7c78a528aeafc20352ce2b92ac840a82829d`.
+Linux image `sha256:8837b57bc452c29fbee50af6c91529ef3a4a9d3c445f1432394304fe38710983`
+was owned/task/session/source-labelled and removed after checks; --rm containers
+absent. Inert provisioning scripts `/tmp/gol500-Dockerfile.upper` and
+`/tmp/gol500-linux-runtime.sh`, logs `/tmp/gol500-linux-upper-{build,final}.log`
+are retained. All owned source/install/link/context/HOME roots were removed
+only after an empty survivor scan. Exact image inspect then fails/absence.
+Only a copied public npm package cache is retained for a fresh verifier at
+`/private/tmp/gol500-owned-cache.s3rrkA/npm-cache`, not a reusable installed prefix.
+Exclusive runtime slot was released before this documentation reconciliation.
+
+Retained failure limits: immutable Docker COPY lower-layer directory publication
+failed EXDEV during provisioning; coordinator chose fresh writable archive
+sources, not a portable-copy product fallback. Publisher supports this writable
+topology and still fails closed on unsupported rename topology. First supported
+full run failed the unchanged wall-clock typed retry at newer-comment wait;
+selected Vitest adapter diagnostic passed1/49filtered skips, then a fresh
+unfiltered274 passed. Cause remains unknown; no source fix or timeout weakening.
+Logs `/tmp/gol500-linux-build.log`, `...-upper-full.log`,
+`...-retry-diagnostic.log` retain all failures; diagnostic skips are not full
+acceptance. Safety-test fault receipts intentionally contain indeterminate
+cleanup errors; their exact recovery/root absence is asserted, not hidden as
+ordinary successful cleanup.
 
 Other installed generators/developer-only manifest scripts, persistence,
 JSONL headers, nouns/client/released compatibility and full W7 remain pending.
