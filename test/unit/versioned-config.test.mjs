@@ -580,6 +580,214 @@ for (const kind of ['allocation', 'generic', 'parent'])
       }
     }
   });
+for (const kind of [
+  'write-after',
+  'fsync',
+  'close-before',
+  'close-after',
+  'rename-before',
+  'rename-after',
+  'rollback-fsync',
+  'rollback-close',
+])
+  test(`incomplete recovery ${kind} retains last ORIGINAL bytes, altered prior and causes`, () => {
+    const bytes = stored('{ "extension": "ORIGINAL EXPECTED BYTES" }\n');
+    const paths = descriptors();
+    let primaryFired = false,
+      faultFired = false,
+      renamed = false;
+    let prior, recovery;
+    const fault = `RECOVERY_${kind}`;
+    patch('writeFileSync', (original) => (target, ...args) => {
+      const result = original(target, ...args);
+      if (
+        kind === 'write-after' &&
+        !faultFired &&
+        paths.get(target)?.includes('.recovery-')
+      ) {
+        recovery = paths.get(target);
+        faultFired = true;
+        assert.equal(fs.readFileSync(recovery, 'utf8'), bytes);
+        throw Error(fault);
+      }
+      return result;
+    });
+    patch('fsyncSync', (original) => (fd) => {
+      if (!primaryFired && paths.get(fd) === root) {
+        primaryFired = true;
+        prior = path.join(
+          root,
+          fs.readdirSync(root).find((name) => name.includes('.prior-')),
+        );
+        fs.writeFileSync(prior, 'ALTERED PRIOR');
+        throw Error('PRIMARY_PARENT_FSYNC');
+      }
+      if (
+        !faultFired &&
+        (kind === 'fsync'
+          ? paths.get(fd)?.includes('.recovery-')
+          : kind === 'rollback-fsync' && renamed && paths.get(fd) === root)
+      ) {
+        faultFired = true;
+        if (kind === 'fsync') recovery = paths.get(fd);
+        throw Error(fault);
+      }
+      return original(fd);
+    });
+    patch('closeSync', (original) => (fd) => {
+      const selected = kind.startsWith('close-')
+        ? paths.get(fd)?.includes('.recovery-')
+        : kind === 'rollback-close' && renamed && paths.get(fd) === root;
+      if (!faultFired && selected) {
+        faultFired = true;
+        if (kind.startsWith('close-')) recovery = paths.get(fd);
+        if (kind !== 'close-before') original(fd);
+        else {
+          // Deliberately retain a possibly unclosed original handle. The fixture,
+          // not owner cleanup, closes it after patches are restored.
+          restorers.push(() => original(fd));
+        }
+        throw Error(fault);
+      }
+      return original(fd);
+    });
+    patch('renameSync', (original) => (source, destination) => {
+      if (String(source).includes('.recovery-')) {
+        recovery = String(source);
+        assert.equal(fs.readFileSync(source, 'utf8'), bytes);
+        if (kind.startsWith('rename-')) {
+          faultFired = true;
+          if (kind === 'rename-after') {
+            original(source, destination);
+            renamed = true;
+          }
+          throw Error(fault);
+        }
+        original(source, destination);
+        renamed = true;
+        return;
+      }
+      return original(source, destination);
+    });
+    let failure;
+    try {
+      saveConfig({ extension: 'new published bytes' });
+    } catch (error) {
+      failure = error;
+    }
+    assert.ok(
+      primaryFired && faultFired && failure instanceof VersionedFileError,
+    );
+    recovery ??= [...paths.values()].find((target) =>
+      target.includes('.recovery-'),
+    );
+    assert.ok(recovery);
+    assert.equal(fs.readFileSync(prior, 'utf8'), 'ALTERED PRIOR');
+    assert.ok(
+      fs
+        .readdirSync(root)
+        .some(
+          (name) => fs.readFileSync(path.join(root, name), 'utf8') === bytes,
+        ),
+      'at least one on-disk snapshot must retain ORIGINAL expected bytes',
+    );
+    if (!renamed) assert.equal(fs.readFileSync(recovery, 'utf8'), bytes);
+    function tree(error) {
+      return [
+        error,
+        ...(error?.cause ? tree(error.cause) : []),
+        ...(error instanceof AggregateError ? error.errors.flatMap(tree) : []),
+      ];
+    }
+    for (const message of ['PRIMARY_PARENT_FSYNC', fault])
+      assert.ok(
+        tree(failure).some((error) => error.message === message),
+        message,
+      );
+    assert.ok(
+      tree(failure).some((error) => error.code === 'VERSIONED_FILE_CHANGED'),
+    );
+  });
+for (const kind of ['target', 'lock'])
+  test(`original recovery stays retained when ${kind} authority is lost`, () => {
+    const bytes = stored('{ "extension": "ORIGINAL EXPECTED BYTES" }\n');
+    const paths = descriptors();
+    let primaryFired = false,
+      replacementFired = false;
+    let recovery, prior;
+    patch('fsyncSync', (original) => (fd) => {
+      if (!primaryFired && paths.get(fd) === root) {
+        primaryFired = true;
+        prior = path.join(
+          root,
+          fs.readdirSync(root).find((name) => name.includes('.prior-')),
+        );
+        fs.writeFileSync(prior, 'ALTERED PRIOR');
+        throw Error('PRIMARY_PARENT_FSYNC');
+      }
+      if (!replacementFired && paths.get(fd)?.includes('.recovery-')) {
+        replacementFired = true;
+        recovery = paths.get(fd);
+        const selected = kind === 'target' ? file : `${file}.lock`;
+        fs.renameSync(selected, `${selected}.detached`);
+        fs.writeFileSync(selected, 'UNKNOWN REPLACEMENT');
+      }
+      return original(fd);
+    });
+    refusal(() => saveConfig({ extension: 'new published bytes' }), 500);
+    assert.ok(primaryFired && replacementFired);
+    assert.equal(
+      fs.readFileSync(kind === 'target' ? file : `${file}.lock`, 'utf8'),
+      'UNKNOWN REPLACEMENT',
+    );
+    assert.equal(fs.readFileSync(prior, 'utf8'), 'ALTERED PRIOR');
+    assert.equal(fs.readFileSync(recovery, 'utf8'), bytes);
+  });
+test('failed recovery close after actual close and foreign reuse retains bytes without retry', () => {
+  const bytes = stored('{ "extension": "ORIGINAL EXPECTED BYTES" }\n');
+  const paths = descriptors();
+  const rawOpen = fs.openSync,
+    rawClose = fs.closeSync;
+  const foreignPath = path.join(root, 'foreign');
+  fs.writeFileSync(foreignPath, 'foreign bytes');
+  let primaryFired = false,
+    closeFired = false,
+    foreign,
+    recovery,
+    retries = 0;
+  patch('fsyncSync', (original) => (fd) => {
+    if (!primaryFired && paths.get(fd) === root) {
+      primaryFired = true;
+      const prior = fs
+        .readdirSync(root)
+        .find((name) => name.includes('.prior-'));
+      fs.writeFileSync(path.join(root, prior), 'ALTERED PRIOR');
+      throw Error('PRIMARY_PARENT_FSYNC');
+    }
+    return original(fd);
+  });
+  patch('closeSync', (original) => (fd) => {
+    if (closeFired && fd === foreign) retries++;
+    const target = paths.get(fd);
+    original(fd);
+    if (!closeFired && target?.includes('.recovery-')) {
+      closeFired = true;
+      recovery = target;
+      foreign = rawOpen(foreignPath, 'r');
+      assert.equal(foreign, fd);
+      throw Error('RECOVERY_CLOSE_AFTER_REUSE');
+    }
+  });
+  try {
+    refusal(() => saveConfig({ extension: 'new published bytes' }), 500);
+    assert.ok(primaryFired && closeFired);
+    assert.equal(retries, 0);
+    assert.ok(fs.fstatSync(foreign).isFile());
+    assert.equal(fs.readFileSync(recovery, 'utf8'), bytes);
+  } finally {
+    if (foreign !== undefined) rawClose(foreign);
+  }
+});
 function descriptors() {
   const paths = new Map();
   patch('openSync', (original) => (target, ...args) => {

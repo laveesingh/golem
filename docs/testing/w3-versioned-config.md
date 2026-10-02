@@ -52,7 +52,109 @@ CC/Pi helper inventories copy emitted owner/reader/bridge/validator plus existin
 home/package-root/role dependencies. Actual private probes load from empty temp
 outputs without node_modules, exercising reads, refusal and missing-file zero-write.
 
-## Snapshot/FD repair after independent review
+## Failed-recovery retention repair — B7 builder checkpoint
+
+GOL-516 comment4e16604f reproduced a further failure on frozen fca585c: after
+changed prior plus failed publication fsync, recovery contains ORIGINAL bytes but
+recovery fsync/throw-after-actual-close failure aborts rollback and cleanup deletes
+that sole original-byte snapshot. Source and emitted probes/receipts at
+`/tmp/gol516-{recovery-probe.mjs,recovery.log,emitted-recovery.log}` stay unchanged.
+The original B6 tMd61W bundle/1e18 tar and historical f733 artifacts are preserved.
+
+The repair touches ONLY existing owner, config unit/integration/native fixture
+and this doc. It separates completed restoration (rollback publication validation,
+parent fsync/validation and one compared close) from a rename/restored flag. Before
+restoration completes, failure cleanup retains the known-original recovery AND
+prior evidence, regardless of a valid seal. A seal verifies content; it does not
+authorize destroying the last original-byte snapshot. Unknown replacements and
+all primary/recovery/rollback/cleanup causes remain; allocation/descriptor guards
+and valid save behavior stay unchanged.
+
+### Allocation trust boundary — Option A LOCKED7d4b2d93
+
+The matching-pair substitution probe replaces fd AND path INSIDE patched openSync
+AFTER real O_EXCL creation but BEFORE return. Current first fstat/lstat can agree
+on the foreign pair. Portable Node returns fd, not atomically captured original
+inode identity. Before a new absent path is created there is no inode expectation;
+an empty mode0600 replacement does not solve this information loss. Neither a
+fresh matched stat, nonce/time/content heuristic nor unpatched operation binding
+proves original provenance. Planner chose Option A inside ES-03: trust exclusive
+O_EXCL allocation through initial identity capture, freeze it, then fence EVERY
+later callback/write/read/fsync/publication/rollback/close/cleanup. Capture failure
+or later mismatch refuses without unknown descriptor close. Crash/power-loss/
+fsync/close safety and concurrency between Golem processes are in scope; malicious
+same-UID actors and pre-return primitive interception are out of scope. Option B
+native allocator/isolation is rejected as disproportionate. No allocation
+workaround, empty-file rejection, unpatched binding dodge or repaired matching-
+substitution PASS is claimed. Allocation implementation is unchanged.
+
+The native `--case=allocation-limit` test preserves the actual matching-pair
+observation for both lock/temp and EMPTY/NONEMPTY mode0600 foreign files. It is
+explicitly classified `LIMIT_OUT_OF_SCOPE_PRE_CAPTURE_PRIMITIVE_INTERCEPTION`,
+not a fixed failure or new safety guard. Existing descriptor/capture-failure/
+refusal/fault tests remain; real Golem-process concurrency tests still run.
+
+### B7 executed retention matrix — builder proof, not acceptance
+
+Evidence: `/private/tmp/gol509-b7.cbK2ki/evidence`. Initial hs7bdknp/o4kHQl
+five-file manifests were independently re-hashed and matched before execution.
+Original fca/f733 bundles, tarballs, probes and failed logs remain unchanged.
+
+- Native `--before-recovery --case=recovery-fsync`, `recovery-close`,
+  `recovery-rename` load complete actual frozen fca owner/reader/validator closure.
+  OLD desired behavior FAILS: recoveryExists/originalAnywhere=false, despite
+  exact ORIGINAL bytes immediately before each fault. CURRENT same controls
+  PASS: both=true; ALTERED prior and primary/recovery/cleanup/fence causes remain.
+  `mac-old-new-native.log` and `linux-third/old-new-native.log` record actual
+  outputs, not import/scaffold negatives. Prior f733 snapshot/FD negatives and
+  current guards also run; unchanged 5bb future-file negative remains in integration.
+- `--case=allocation-limit` records four actual accepted/foreign-closed observations
+  for empty/nonempty mode0600 lock/temp matching substitution before open returns.
+  This remains an out-of-scope LIMIT, not a repaired security guard.
+- Current config suite: **67 unit + 9 integration**, no skips, both platforms.
+  Command: `node node_modules/vitest/vitest.mjs run --project unit --project integration
+  test/unit/versioned-config.test.mjs test/integration/versioned-config.test.mjs`.
+  Includes write-after-complete-write uncertainty, fsync, close before/after/reuse,
+  rename before/after, rollback fsync/close, lost target/lock authority, ORIGINAL
+  retention/changed prior/unknown replacements/all causes; actual process
+  concurrency, source consumer/error/default/extension/zero-write guards remain.
+- Installed targeted Biome, `tsc --noEmit`, config/full canonical freshness,
+  native26/type negatives and `npm run check` pass on both platforms. No added
+  Knip debt or schema/default/error-family/API/helper/package/lock changes.
+- UNFILTERED `npm test`: **26 files / 360 tests**, no skips, Mac223.69s and
+  Linux202.87s. Frozen fca345 is historical, not this checkpoint's count.
+- Fresh packs on both platforms are byte-identical SHA256
+  `756e8d0e4c14b5bba32e5aeb82cafdb97fc9c2156685342e4ef3f451289fa5a4`.
+  Actual fresh physical `npm install --omit=dev --ignore-scripts --offline`,
+  owned platform SQLite transport, offline actual package postinstall/SDK closure,
+  installed config/API/tracker/drainer/shell/privateCCPi/token/CLI/dashboard/
+  profile/root/dependency/link and emitted retention/FD/snapshot guards pass.
+  Emitted allocation observations remain LIMIT. Extracted tarballs are not counted
+  as physical installation. Linux22.22.3/aarch64 uses UID501, INIT, networkNONE,
+  mounts0 and fresh writable uppers; Mac uses Node22.22.3/owned CoW dependencies.
+
+All initial setup failures remain in evidence: five config failures (native scan
+read a frozen-source directory; two unit paths were looked up after numeric fd
+reuse), corrected only with regular-file scan/capture-at-fault and no weakened
+assertions; offline ENOTCACHED Babel then fastdom metadata gaps; an exact-cache
+provision alias used string-width-cjs rather than its lock's actual package name;
+Linux package-negative setup lacked source dist in its fresh physical-only copy.
+Public-only root/MCP exact-lock URL audit/dependency/cache provisioning and actual
+same-tar metadata provisioning are separate from offline proof, using empty owned
+configs/caches, scripts disabled and no credentials/private registry/npx fetch.
+Final physical installs use fresh prefixes/uppers after metadata correction.
+Linux source suite already passed; its physical-only continuation cold-prepacks
+source dist for the negative fixture, verifies identical tar bytes, then resumes
+negatives/emitted guards/link/cleanup. No source or test weakening hides failures.
+
+Final manifests, exact stopped-container/private-root/process absence and slot
+release are recorded on GOL-509. Different reviewer (not516 finderfb59), full
+independent verification/coordinator/current integrated CI still REQUIRED.
+No other-store/UI/Stage0/fullW3/W4/W7/plugin acceptance is claimed. No allocation
+implementation/generic/schema/default/API/debt/accepted500/A/spec/global/model/
+instruction-content changes. Option A remains the locked technical boundary.
+
+## Frozen fca585c snapshot/FD repair evidence (not retention-draft proof)
 
 GOL-514 found two major failures on frozen `f7332713580c69c316f795f9017444a3d52c3ba0`:
 modified prior backup was published on parent-fsync failure; detected parent fd reuse
@@ -83,7 +185,7 @@ attempted once only, never retried after throw. Reopened handles compare origina
 identity rather than adopting fresh fstat results.
 This is bounded failure safety, not general malicious same-UID atomicity.
 
-### Current repair evidence — exclusive slot granted after GOL-515 release
+### Historical fca585c repair evidence — slot released before GOL-516 review
 
 Evidence root `/private/tmp/gol509-b6-runtime.tMd61W/evidence`. All execution used
 private source/dependencies/HOME/state/cache/ports, never live7420/7421. Runtime

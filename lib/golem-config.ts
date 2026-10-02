@@ -264,8 +264,10 @@ function allocate(file: string): CapturedFile {
       fs.constants.O_NOFOLLOW,
     0o600,
   );
-  // Capture the allocated descriptor, not a later path lookup. If capture fails,
-  // retain the path as indeterminate evidence; no fresh stat grants unlink rights.
+  // Locked trust boundary: exclusive O_EXCL allocation through initial capture
+  // is trusted. A matching fd/path swap inside open before return is a LIMIT,
+  // not a portable provenance guarantee. Freeze this identity for every later
+  // fence; failed/mismatched capture grants no close/unlink authority.
   try {
     const identity = fs.fstatSync(fd);
     const current = fs.lstatSync(file);
@@ -301,7 +303,8 @@ export function saveConfig(input: unknown): void {
   let prior: Buffer | undefined;
   let original: fs.Stats | null = null;
   let published = false,
-    restored = false;
+    restored = false,
+    restorationComplete = false;
   const failures: unknown[] = [];
   try {
     const dir = path.dirname(file);
@@ -510,6 +513,7 @@ export function saveConfig(input: unknown): void {
             : error;
         }
         if (rollbackFailure) throw rollbackFailure;
+        restorationComplete = true;
       }
     } catch (error) {
       failures.push(error);
@@ -528,9 +532,16 @@ export function saveConfig(input: unknown): void {
     const moved =
       (owned === temp && published) ||
       (restored && owned === (recovery ?? backup));
+    // A valid seal proves content, not permission to destroy the last known
+    // original snapshot. Rename alone also does not prove completed restoration.
     const retainBackup =
-      owned === backup && published && failures.length > 0 && !restored;
-    if (!moved && !retainBackup && parent) {
+      owned === backup &&
+      published &&
+      failures.length > 0 &&
+      !restorationComplete;
+    const retainRecovery =
+      owned === recovery && failures.length > 0 && !restorationComplete;
+    if (!moved && !retainBackup && !retainRecovery && parent) {
       try {
         assertOwned(owned, parent);
         if (owned.expected) {

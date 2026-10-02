@@ -35,6 +35,40 @@ for (const kind of ['snapshot', 'descriptor'])
       });
     }
   });
+for (const kind of ['recovery-fsync', 'recovery-close', 'recovery-rename'])
+  test(`frozen fca desired ${kind} retention FAILS; current native repair PASSES`, async () => {
+    for (const old of [true, false]) {
+      const result = await runScript('test/fixtures/w3-config-repair.mjs', {
+        args: [`--case=${kind}`, ...(old ? ['--before-recovery'] : [])],
+      });
+      assert.deepEqual(JSON.parse(result.stdout), {
+        old,
+        kind,
+        regressionPassed: !old,
+        recoveryExists: !old,
+        originalAnywhere: !old,
+        alteredPriorRetained: true,
+        completeCauses: true,
+      });
+    }
+  });
+test('LIMIT: matching fd/path substitution inside open before return is outside locked capture trust', async () => {
+  const result = await runScript('test/fixtures/w3-config-repair.mjs', {
+    args: ['--case=allocation-limit'],
+  });
+  const proof = JSON.parse(result.stdout);
+  assert.equal(
+    proof.classification,
+    'LIMIT_OUT_OF_SCOPE_PRE_CAPTURE_PRIMITIVE_INTERCEPTION',
+  );
+  assert.equal(proof.observations.length, 4);
+  for (const observation of proof.observations) {
+    assert.equal(observation.actualAccepted, true);
+    assert.equal(observation.foreignFdClosed, true);
+    assert.equal(observation.foreignMode, '0600');
+  }
+  assert.ok(proof.observations.some((observation) => observation.foreignEmpty));
+});
 test('actual concurrent processes cannot reclaim or overwrite another config writer', async () => {
   const result = await runScript('test/fixtures/w3-config-concurrency.mjs', {
     timeout: 25000,
