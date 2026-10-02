@@ -13,8 +13,8 @@ import {
   atomImageDigest,
   ownedDirectory,
   readRegular,
-  retainCandidates,
   rejectedInitialTuple,
+  retainCandidates,
   retireRejectedPrivate,
   validateExactRejected,
 } from './atoms-candidates.mjs';

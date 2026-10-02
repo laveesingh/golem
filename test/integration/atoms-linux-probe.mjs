@@ -10,12 +10,12 @@ import {
   assertProductionLineage,
   atomImageDigest,
   completeDockerCid,
-  validateExactRejected,
-  rejectedInitialTuple,
-  replaceExactRejected,
   copyValidatedCandidates,
   ownedDirectory,
   readRegular,
+  rejectedInitialTuple,
+  replaceExactRejected,
+  validateExactRejected,
 } from './atoms-candidates.mjs';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));

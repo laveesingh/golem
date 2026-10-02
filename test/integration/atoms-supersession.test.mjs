@@ -1,17 +1,18 @@
 // Real rejected artifact bytes are read from immutable git history into owned temp facilities.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 import { test, vi } from 'vitest';
 import {
-  validateExactRejected,
+  copyValidatedCandidates,
   rejectedInitialTuple,
   replaceExactRejected,
   retireRejectedPrivate,
-  copyValidatedCandidates,
+  validateExactRejected,
 } from './atoms-candidates.mjs';
+
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 function setup(callback) {
   const root = fs.mkdtempSync(
