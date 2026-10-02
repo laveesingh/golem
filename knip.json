@@ -4,6 +4,8 @@
     ".": {
       "entry": [
         "test/fixtures/w3-installed-probe.mjs",
+        "test/fixtures/w3-token-package-probe.mjs",
+        "test/fixtures/w3-token-pack-negative.mjs",
         "cli/golem.js",
         "docs/design/w4/prototype.mjs",
         "docs/design/w4/static-check.mjs",

@@ -2,6 +2,8 @@
 journal/
 .test-results/
 /dist/
+/.golem-package-stage-*/
+/.golem-package.lock
 *.tgz
 node_modules/
 

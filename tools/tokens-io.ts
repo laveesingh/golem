@@ -1,20 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Generation } from './token-package.ts';
+import {
+  packagedTokenRoot,
+  readPackagedTokenSnapshot,
+  regularTokenBytes,
+  regularTokenDirectory,
+  tokenGenerationId,
+  tokenOutputNames,
+} from './token-package.ts';
 import type { Output, Sources } from './tokens-core.ts';
 import { buildTokens, strictTokenJson, TokenError } from './tokens-core.ts';
 
-const files = [
-  'tokens.css',
-  'tokens.ts',
-  'contrast.json',
-  'registry.json',
-] as const;
-export interface Generation {
-  id: string;
-  directory: string;
-  files: Record<string, string>;
-}
+export type { Generation } from './token-package.ts';
+
+const files = tokenOutputNames;
 function ownedDirectory(dir: string): void {
   if (!process.getuid) throw new TokenError('SYMLINK_PLATFORM');
   const stat = fs.lstatSync(dir);
@@ -66,8 +67,16 @@ function readRegular(file: string): string {
   return readBytes(file).toString('utf8');
 }
 function verifyTokenFonts(root: string): number {
-  const dir = path.join(path.dirname(root), 'fonts'),
-    inventory = strictTokenJson(readRegular(path.join(dir, 'inventory.json')));
+  const dir = path.join(path.dirname(root), 'fonts');
+  const packaged = packagedTokenRoot(root);
+  if (packaged) {
+    regularTokenDirectory(path.dirname(root));
+    regularTokenDirectory(dir);
+  }
+  const bytesFor = packaged ? regularTokenBytes : readBytes;
+  const inventory = strictTokenJson(
+    bytesFor(path.join(dir, 'inventory.json')).toString('utf8'),
+  );
   if (!Array.isArray(inventory) || inventory.length !== 7)
     throw new TokenError('FONT_INVENTORY');
   const names = new Set<string>();
@@ -87,7 +96,7 @@ function verifyTokenFonts(root: string): number {
     )
       throw new TokenError('FONT_PATH');
     names.add(font.file);
-    const bytes = readBytes(path.join(dir, font.file));
+    const bytes = bytesFor(path.join(dir, font.file));
     if (
       bytes.subarray(0, 4).toString() !== 'wOF2' ||
       bytes.length !== font.bytes ||
@@ -95,15 +104,18 @@ function verifyTokenFonts(root: string): number {
     )
       throw new TokenError('FONT_HASH', font.file);
     if (
-      !readRegular(path.join(dir, font.licenseFile)).includes(
-        'SIL OPEN FONT LICENSE',
-      )
+      !bytesFor(path.join(dir, font.licenseFile))
+        .toString('utf8')
+        .includes('SIL OPEN FONT LICENSE')
     )
       throw new TokenError('FONT_LICENSE', font.file);
   }
   return inventory.length;
 }
 export function loadTokenSources(root: string): Sources {
+  const read = packagedTokenRoot(root)
+    ? (file: string) => regularTokenBytes(file).toString('utf8')
+    : readRegular;
   const result: Record<string, unknown> = {};
   for (const name of [
     'primitive',
@@ -115,11 +127,9 @@ export function loadTokenSources(root: string): Sources {
     'compact',
   ])
     result[name] = strictTokenJson(
-      readRegular(path.join(root, 'source', `${name}.tokens.json`)),
+      read(path.join(root, 'source', `${name}.tokens.json`)),
     );
-  result.pairs = strictTokenJson(
-    readRegular(path.join(root, 'contrast-pairs.json')),
-  );
+  result.pairs = strictTokenJson(read(path.join(root, 'contrast-pairs.json')));
   return result as unknown as Sources;
 }
 function outputFiles(output: Output): Record<string, string> {
@@ -130,11 +140,7 @@ function outputFiles(output: Output): Record<string, string> {
     'registry.json': JSON.stringify(output.registry, null, 2) + '\n',
   };
 }
-function generationId(data: Record<string, string>): string {
-  const hash = createHash('sha256');
-  for (const file of files) hash.update(file + '\0' + data[file] + '\0');
-  return `g-${hash.digest('hex')}`;
-}
+const generationId = tokenGenerationId;
 function readGeneration(root: string, id: string): Generation {
   if (!/^g-[a-f0-9]{64}$/.test(id)) throw new TokenError('GENERATION_TARGET');
   const parent = path.join(root, '.generations'),
@@ -157,6 +163,7 @@ function readGeneration(root: string, id: string): Generation {
 }
 /** Capture pointer exactly once, then read all files from the immutable target. */
 export function tokenSnapshot(root: string): Generation {
+  if (packagedTokenRoot(root)) return readPackagedTokenSnapshot(root);
   ownedDirectory(root);
   const pointer = path.join(root, 'generated'),
     stat = fs.lstatSync(pointer);
@@ -167,24 +174,19 @@ export function tokenSnapshot(root: string): Generation {
     throw new TokenError('POINTER_TARGET');
   return readGeneration(root, target.slice('.generations/'.length));
 }
-export function checkTokenFreshness(
-  root: string,
-  output = buildTokens(loadTokenSources(root)),
-): Generation {
+export function checkTokenFreshness(root: string, output?: Output): Generation {
+  const snapshot = tokenSnapshot(root);
   verifyTokenFonts(root);
-  const snapshot = tokenSnapshot(root),
-    expected = outputFiles(output);
+  const expected = outputFiles(output ?? buildTokens(loadTokenSources(root)));
   for (const file of files)
     if (snapshot.files[file] !== expected[file])
       throw new TokenError('STALE', file);
   return snapshot;
 }
-export function publishTokens(
-  root: string,
-  source = loadTokenSources(root),
-): Generation {
+export function publishTokens(root: string, source?: Sources): Generation {
+  if (packagedTokenRoot(root)) throw new TokenError('PACKAGED_READ_ONLY');
   // All source/alias/type/contrast validation completes before any writes.
-  const output = buildTokens(source);
+  const output = buildTokens(source ?? loadTokenSources(root));
   verifyTokenFonts(root);
   const data = outputFiles(output),
     id = generationId(data);
