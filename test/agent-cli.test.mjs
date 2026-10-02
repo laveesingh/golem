@@ -284,7 +284,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   // A caller with no team and a repeated name gets candidates, not a pick.
   const ambiguous = await run(['read', 'builder1'], { resolveContext: unboundContext });
   assert.equal(ambiguous.exit, 2);
-  assert.match(ambiguous.text, /agent name is ambiguous: builder1 \(2 agents\)/);
+  assert.match(ambiguous.text, /More than one agent matches/);
   assert.ok(ambiguous.text.includes('sess-alpha-1') && ambiguous.text.includes('sess-beta-1'), 'candidates listed');
 
   const missing = await run(['read', 'nobody']);
@@ -302,7 +302,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
   const deadRow = { worker_id: 'w-dead', session_id: 'sess-shared', name: 'builder1', state: 'dead', project_id: projectId, team_id: beta.team_id };
   assert.equal(resolveAgentRef('sess-shared', { workers: [deadRow, liveRow], projectId }).worker_id, 'w-live', 'exact id picks the live row');
   assert.equal(resolveAgentRef('sess-shared', { workers: [liveRow, deadRow], projectId }).worker_id, 'w-live', 'row order does not matter');
-  assert.throws(() => resolveAgentRef('sess-shared', { workers: [liveRow, { ...deadRow, state: 'live' }], projectId }), /ambiguous/, 'two live rows still refuse');
+  assert.throws(() => resolveAgentRef('sess-shared', { workers: [liveRow, { ...deadRow, state: 'live' }], projectId }), /More than one agent matches/, 'two live rows return identities for selection');
 }
 
 // --- create ----------------------------------------------------------------------
@@ -457,7 +457,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
     const moveCalls = effects.filter(e => e[0] === 'move').length;
     moveFails = false;
     const recoveredMove = await run(['move', own.session_id, '--workspace', 'retry-w']); assert.equal(recoveredMove.exit, 0); assert.equal(recoveredMove.value.recovered_move, true); assert.equal(recoveredMove.value.herdr_pane_id, 'retry-pane'); assert.equal(effects.filter(e => e[0] === 'move').length, moveCalls, 'exact alias recovery never duplicates an uncertain move');
-    const cross = await run(['move', own.session_id, '--workspace', 'destination-w', '--session', 'different-server']); assert.equal(cross.exit, 1); assert.equal(cross.value.capability.state, 'unsupported');
+    const cross = await run(['move', own.session_id, '--workspace', 'destination-w', '--session', 'different-server']); assert.equal(cross.exit, 2); assert.equal(cross.value.resolution.target, null, 'conflicting session scope selects no agent');
     const adopted = await run(['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane']); assert.equal(adopted.exit, 0, JSON.stringify(adopted.value)); assert.equal(adopted.value.session_id, externalId); assert.equal(adopted.value.role, null); assert.equal(adopted.value.herdr_agent_name, external.name); assert.equal(adopted.value.team_id, beta.team_id);
     assert.equal((await run(['adopt', externalId, '--team', beta.team_id, '--pane', 'external-pane'])).value.noop, true);
     handleFails = true;
@@ -466,7 +466,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
     handleFails = false;
     const resumedAdopt = await run(['adopt', unnamedId, '--team', beta.team_id, '--pane', 'unnamed-pane']); assert.equal(resumedAdopt.exit, 0, JSON.stringify(resumedAdopt.value)); assert.equal(resumedAdopt.value.herdr_agent_name, reservedHandle); assert.equal(resumedAdopt.value.pending_native_handle, null); assert.equal(unnamed.name, reservedHandle);
     const rows = readWorkers(); assert.equal(rows.find(w => w.session_id === own.session_id).team_id, alpha.team_id); assert.equal(rows.filter(w => w.session_id === unnamedId).length, 1, 'retry never allocates another adopted runtime');
-    const wrong = await runAgent('agent', ['adopt', externalId, '--team', beta.team_id, '--pane', 'wrong-pane', '--json'], { cwd: projectDir, env: {}, native: { ...native, agentGet: () => ({ ...external, agent_session: { kind: 'path', value: '/different-native' } }) }, resolveContext: () => null, stdout: () => {}, stderr: () => {} }); assert.equal(wrong, 1);
+    const wrong = await runAgent('agent', ['adopt', externalId, '--team', beta.team_id, '--pane', 'wrong-pane', '--json'], { cwd: projectDir, env: {}, native: { ...native, agentGet: () => ({ ...external, agent_session: { kind: 'path', value: '/different-native' } }) }, resolveContext: () => null, stdout: () => {}, stderr: () => {} }); assert.equal(wrong, 0, 'an explicit native pane selects the target without a cached conversation-identity veto');
   } finally {
     for (const child of children) if (child.exitCode === null) process.kill(-child.pid, 'SIGKILL');
     await Promise.all(exits);

@@ -195,21 +195,6 @@
     "ports": []
   },
   {
-    "file": "test/worker-ancestor.test.mjs",
-    "timeout": 90000,
-    "ports": []
-  },
-  {
-    "file": "test/worker-claude-control.test.mjs",
-    "timeout": 90000,
-    "ports": []
-  },
-  {
-    "file": "test/worker-control.test.mjs",
-    "timeout": 90000,
-    "ports": []
-  },
-  {
     "file": "dashboard/scripts/api-smoke.mjs",
     "timeout": 90000,
     "ports": [7611]

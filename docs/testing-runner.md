@@ -24,7 +24,7 @@ W0 source inventory is `docs/testing-inventory.md` (baseline 20a5cf5). W1/W2 ext
 
 ## Adapter inventory and retirement
 
-Source of runner truth: `test/support/adapter-inventory.json`, **53 distinct cases**: 42 W0 test scripts, nine dashboard scripts, W1 profile-isolation, one additional MCP test outside W0's 67-file census. W0's other four eligible suites are direct Vitest registrations.
+Source of runner truth: `test/support/adapter-inventory.json`, **50 distinct cases**: 39 retained W0 test scripts, nine dashboard scripts, W1 profile-isolation, one additional MCP test outside W0's original 67-file census. Upstream `39a80536` removed worker-ancestor, worker-claude-control and worker-control tests; only their three adapter/Knip entries were retired. Every other admitted adapter remains. W0's historical census is retained; its other four eligible suites are direct Vitest registrations.
 
 Each case captures complete stdout/stderr/exit/signal/timeout. Latest receipts persist under gitignored `.test-results/<path>.json`, even when Vitest's reporter suppresses successful console logs. A failing script is a failing case, not a skip. A selector run may skip cases; only the unfiltered command counts as full acceptance.
 
@@ -69,9 +69,6 @@ Each case captures complete stdout/stderr/exit/signal/timeout. Latest receipts p
 | `test/ticket-cli.test.mjs` | 90000 | ephemeral / none |
 | `test/typed-immediate-retry.test.mjs` | 90000 | ephemeral / none |
 | `test/typed-worker-endpoint.test.mjs` | 90000 | ephemeral / none |
-| `test/worker-ancestor.test.mjs` | 90000 | ephemeral / none |
-| `test/worker-claude-control.test.mjs` | 90000 | ephemeral / none |
-| `test/worker-control.test.mjs` | 90000 | ephemeral / none |
 | `dashboard/scripts/api-smoke.mjs` | 90000 | 7611 |
 | `dashboard/scripts/dispatch-smoke.mjs` | 90000 | 7612 |
 | `dashboard/scripts/queue-when-idle-smoke.mjs` | 90000 | 7612 |
@@ -103,7 +100,7 @@ Scaffolding retires per touched suite: split its assertions into direct Vitest c
 - api/dispatch smoke creates via `_scratch`, records IDs, archives in finally before reaping children/DB removal; api restores XDG-backed self-registration rather than inheriting GOLEM_HOME.
 - api-smoke now tests current task/spec kinds instead of retired fix kind, and the CC-only command-cell producer (`substrate.js:globalCells`) rather than expecting a removed second harness.
 - dispatch-smoke asserts queued admission `ok:true`, `accepted:false`, and failed `delivery.ok:false` separately (`notification-service.js` + receipt producer); it never labels admission as work success.
-- agent-cli synthetic owned native DTO carries current application PID/program evidence required by `worker-control.js:workerProcessEvidence`; no actor fencing was relaxed.
+- Imported upstream agent-cli assertions preserve scoped native selection through owned fixture DTOs. Removed worker-process authority tests are not revived; scoped-stop's real native journey remains unrun, not replaced by a fake pass.
 - Drainer uses the approved explicit private-DB `_scratch` entry: exact owned path must match the live handle, enforced quarantine fields after caller fields, finally archive and drainer.close before tracker.close/removal.
 - tracker-smoke is a wholly private DB **behavior fixture**, not control-plane smoke tickets. Default-human creator and cascade semantics require explicit synthetic fixture entities; no real project namespace/live DB read.
 - queue wrapper has bounded execution; Gol4 child is reaped before endpoint/state removal. Detached process evidence and cleanup errors are preserved.
@@ -117,6 +114,7 @@ Scaffolding retires per touched suite: split its assertions into direct Vitest c
 | dashboard-lifecycle | touches shared7420 and restart/sweep; rebuild owned-process lifecycle fixture |
 | model-profiles, worker-journey, team-journey, session-native | real native facilities; W5 herdr/argv/lifecycle simulator scenarios |
 | management-real-journey | explicit real-harness acceptance/recording candidates only, operator facilities/authorization |
+| scoped-stop | REAL-NATIVE / NOT RUN: upstream source starts actual Herdr sessions/panes and sleep processes. Preserved byte-for-byte; excluded from default/Vitest/CI. Human opt-in-only manual acceptance requires explicit authority; no new public npm script added. |
 | cross-harness-matrix, pi-journey, pi-tools-journey | installed Pi/pi-tui dependency; simulator-backed native-loader boundary or retain pinned opt-in reason |
 | gol346-acceptance | copies live Pi auth/models; replace with synthetic offline scenario |
 | management-dashboard | Chrome journey; W4/W5 private Playwright/axe lane |
@@ -124,7 +122,7 @@ Scaffolding retires per touched suite: split its assertions into direct Vitest c
 | substrate-api | writes checkout substrate; owned synthetic source/profile fixture required |
 | instruction-workflow | reads/lints actual instruction text; never part of the engineering gate |
 
-W0's 14 exclusions and seven helpers remain recorded, not silently discarded. Other dashboard scripts remain excluded per W0 until rebuilt on owned fixtures/E2E infrastructure.
+W0's historical 14 exclusions and seven helpers remain recorded, not silently discarded. The imported scoped-stop suite adds one explicit real-native exclusion; it is not a skipped admitted adapter. Other dashboard scripts remain excluded per W0 until rebuilt on owned fixtures/E2E infrastructure.
 
 ## Knip schema, raw evidence and debt policy
 

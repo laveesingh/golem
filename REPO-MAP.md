@@ -1,9 +1,9 @@
 # REPO-MAP.md
-> Last verified: 2026-10-01 @ a4cf7f0 — maintained via golem:docs-maintenance.
+> Last verified: 2026-10-02 @ 39a80536 + 8de1891 — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
-- `cli/` — bin → native `bootstrap.ts` → commands.
+- `cli/` — JS bins → native/emitted bootstrap → commands.
 - `lib/` — runtime/compiler plus leaf TypeBox `contracts/`.
 - `substrate/` — instruction, role, skill, hook, and plugin sources.
 - `plugin/` — generated CC rollback copy; never hand-edit.
@@ -18,7 +18,7 @@
 ### CLI and collaboration
 
 Management: `lib/management-{context,resolve,registry,session,team,agent,capabilities}.js`.
-Processes: `lib/worker-control.js` + `lib/process-group.js`.
+Controls target native panes, not process ownership.
 `cli/collaboration.js` schedules/messages; `cli/ticket.js` tracker authoring.
 `lib/session-role.js` defines roles; retired names only migrate.
 
@@ -29,7 +29,7 @@ Processes: `lib/worker-control.js` + `lib/process-group.js`.
 ### Dashboard
 
 `index.js` owns REST/WS; `contract-pilot.ts` owns health/create; `tracker-db.js` owns SQLite.
-`share-tunnel.js` owns one Golem-owned cloudflared quick tunnel to the dashboard via
+`share-tunnel.js` owns one cloudflared quick tunnel to the dashboard via
 `~/.golem/share-tunnel.json`: Share hands out `/read/<id>` links, Stop kills the tunnel.
 `html-body.js`/`md-body.js` patch strict anchors via `body-anchor.js`; `mermaid-check.js`
 validates diagrams. `notification-schedule*.js` schedules; `comment-dispatch.js` routes feedback.

@@ -37,7 +37,7 @@ try {
   const beforeReads = registryBytes();
   const projected = enrichDispatchableRows(inputs, { projectId, native, facts });
   assert.equal(projected[0].capabilities.read.state, 'available'); assert.equal(projected[0].delivery_ready, false, 'control does not imply delivery');
-  assert.equal(projected[1].host, 'external'); assert.equal(projected[1].team_id, team.team_id, 'external owner uses canonical relation'); assert.equal(projected[1].capabilities.read.state, 'available'); assert.equal(projected[1].capabilities.stop.state, 'unavailable'); assert.equal(projected[1].capabilities.adopt.state, 'available');
+  assert.equal(projected[1].host, 'external'); assert.equal(projected[1].team_id, team.team_id, 'external owner uses canonical relation'); assert.equal(projected[1].capabilities.read.state, 'available'); assert.equal(projected[1].capabilities.stop.state, 'available'); assert.equal(projected[1].capabilities.adopt.state, 'available');
   assert.equal(projected[2].capabilities.read.state, 'unsupported'); assert.equal(projected[2].delivery_ready, true, 'delivery does not imply native control');
   const duplicate = structuredClone(projectManagementSnapshot()); duplicate.workers.workers.push({ ...duplicate.workers.workers[0], worker_id: 'different-live-runtime' });
   const ambiguous = managementRosterSnapshot([inputs[0]], { snapshot: duplicate, facts, native })[0]; assert.equal(ambiguous.capabilities.stop.state, 'unavailable'); assert.equal(ambiguous.control_candidates.length, 2);
@@ -45,7 +45,7 @@ try {
   for (let i = 0; i < projected.length; i++) { assert.deepEqual(cliRows[i].capabilities, projected[i].capabilities); assert.deepEqual(cliRows[i].placement, projected[i].placement); assert.equal(cliRows[i].team_id, projected[i].team_id); }
   const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: temp, env: {}, native, resolveContext: () => null, manager: { listAgentRoster: async () => ({ roster: projected, ended: [] }) }, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
   const listed = await run(['list', '--scope', 'all']); assert.equal(listed.exit, 0); assert.equal(listed.value.schema_version, 2); assert.deepEqual(listed.value.items.map(r => r.capabilities), projected.map(r => r.capabilities));
-  const externalRead = await run(['read', ownerId]); assert.equal(externalRead.exit, 0); assert.equal(externalRead.value.text, 'exact terminal owner-pane');
+  const externalRead = await run(['read', ownerId, '--session', session]); assert.equal(externalRead.exit, 0); assert.equal(externalRead.value.text, 'exact terminal owner-pane');
   const externalAttach = await run(['attach', ownerId]); assert.equal(externalAttach.exit, 0); assert.equal(attaches, 1);
   const outsideRead = await run(['read', outsideId]); assert.equal(outsideRead.exit, 1); assert.equal(outsideRead.value.capabilities.read.state, 'unsupported'); assert.ok(!/not found/.test(outsideRead.value.error));
   const terminal = await peekSessionTerminal(ownerId, { projectId, native }); assert.equal(terminal.ok, true); assert.equal(terminal.attach_hint, `golem agent attach ${ownerId}`); assert.deepEqual(terminal.capabilities, projected[1].capabilities);
@@ -63,10 +63,22 @@ try {
   const bytes = fs.readFileSync(path.join(process.env.GOLEM_HOME, 'workers.json'), 'utf8');
   managementRosterSnapshot(inputs, { snapshot: projectManagementSnapshot(), facts, native }); assert.equal(fs.readFileSync(path.join(process.env.GOLEM_HOME, 'workers.json'), 'utf8'), bytes);
   assert.equal(registryBytes(), beforeReads, 'all canonical registry/fact bytes remain unchanged');
+  // Mapped external controls do not require adoption or process/lease evidence.
+  native.paneProcessInfo = () => { throw new Error('process identity must not gate controls'); };
+  native.paneLabel = () => true;
+  native.paneMove = ({ workspaceId }) => ({ pane_id: 'owner-moved', tab_id: 'owner-moved-tab', workspace_id: workspaceId });
+  const externalRename = await run(['rename', ownerId, 'external-renamed']); assert.equal(externalRename.exit, 0);
+  const externalMove = await run(['move', ownerId, '--workspace', 'other-workspace']); assert.equal(externalMove.exit, 0);
+  let nativeStops = 0;
+  native.paneClose = ({ paneId }) => { assert.equal(paneId, 'owner-pane'); nativeStops++; process.kill(-children[1].pid, 'SIGTERM'); return true; };
+  native.paneList = () => [];
+  const externalStop = await run(['stop', ownerId]); assert.equal(externalStop.exit, 0, JSON.stringify(externalStop.value)); assert.equal(nativeStops, 1);
+  assert.equal(readSessionFacts().find(f => f.canonical_id === ownerId).status, 'stopped');
+  await exits[1];
   console.log('management consumers passed: shared managed/external owner/member projection, CLI v2 and HTTP/MCP arrays, readiness separation, external read/attach, unavailable terminal guard, zero-write snapshot');
 } finally {
   if (server) await new Promise(resolve => server.close(resolve));
-  for (const child of children) if (child.exitCode === null) process.kill(-child.pid, 'SIGKILL');
+  for (const child of children) if (child.exitCode === null && child.signalCode === null) process.kill(-child.pid, 'SIGKILL');
   await Promise.all(exits); fs.rmSync(temp, { recursive: true, force: true });
   console.log('management consumers cleanup passed: owned children/HTTP server ended before state removal');
 }

@@ -105,15 +105,24 @@ steals another team's workspace. Team close continues independent agent stops,
 reports each failure, and retains foreign/transferred/unmanaged native activity.
 All new mutations and UI controls accept read-only `--dry-run` plans.
 
-## Agent stop ownership
+## Scoped controls
 
-Stop verifies captured process incarnations or demonstrably matching native
-conversation identity, not logical `--name` arguments. Rename and provider labels
-do not retarget ownership. Missing/failed probes and replacement incarnations are
-explicit failures, never empty-group success. Native cached session metadata alone
-does not prove a live runtime. Unverified replacement/shell panes are retained;
-a newly created root shell closes only with exact unchanged incarnation and no
-children. Teardown confirms process survivors before retiring the runtime record.
+Stop closes the uniquely selected agent's native terminal. There is no caller
+permission, process-incarnation, lease-expiry or adoption requirement. Native
+hosting ends the terminal processes; Golem records the agent as stopped after
+native close succeeds. The contents of that selected terminal are stopped even
+if the application restarted. Unrelated panes are not part of the target.
+
+A name plus `--team` selects within that team. A name plus `--session` searches
+all teams in that native session, without borrowing the caller's team. Multiple
+matches return `TARGET_AMBIGUOUS`, matching IDs, teams and sessions (exit2), not
+an internal error. Retry with an exact ID or narrower scope. Native connection
+and execution errors remain real errors, in plain language.
+
+Read, attach, rename and move use the selected terminal too; stale process
+metadata does not deny them. Team close stops its selected members and leaves
+unrelated panes untouched. A missing native terminal is a runtime/mapping issue,
+not an authority refusal.
 
 ## Agent identity and placement controls
 
