@@ -176,10 +176,9 @@ GET /api/health                              → { ok, projects_root, project_co
 GET /api/meta                                → { roles, columns, config }
 GET /api/snapshot                            → { projects, agents, tickets } (everything)
 GET /api/projects                            → ProjectSummary[]
-GET /api/projects/:id                        → ProjectSummary
-GET /api/projects/:id/agents                 → Agent[]
-GET /api/projects/:id/agents/:agentId        → AgentDetail (journal + hooks)
-GET /api/projects/:id/tickets                → Ticket[]
+GET /api/workspaces                          → Workspace summaries (operator check)
+GET /api/chat                                → Chat snapshot
+GET /api/tickets                             → Tracker tickets
 ```
 
 ## WebSocket protocol

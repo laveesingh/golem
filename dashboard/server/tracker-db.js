@@ -2093,7 +2093,7 @@ WHERE state_changed_at IS NULL`).run();
       }
 
       const ts = now();
-      // TKT-0266: lifecycle stamps on state transitions (mirrors moveTicket).
+      // TKT-0266: lifecycle stamps on state transitions.
       // The board PATCHes state directly (not via /move), so without these the
       // Done column's done_at-based reverse-chron sort has nothing to key off
       // and state_changed_at never advances past the v4 backfill. Only set on
@@ -2434,84 +2434,6 @@ WHERE state_changed_at IS NULL`).run();
         };
       });
       return txn();
-    },
-
-    // TKT-0105: state + rank move in a single transaction. Used by the
-    // /api/tickets/:id/move endpoint (drag-and-drop, archive drop, etc.).
-    //   { state, before_id?, after_id?, actor? }
-    //   - state      — new state (required).
-    //   - before_id  — drop position: the moved ticket is placed after this
-    //                  ticket within the target state (NULL = top).
-    //   - after_id   — drop position: the moved ticket is placed before this
-    //                  ticket within the target state (NULL = bottom).
-    //   - actor      — recorded on the audit event.
-    // Rank is computed as the midpoint of the neighbour ranks; if both
-    // before_id and after_id are NULL, the moved ticket gets max(rank)+1000
-    // (appended to end of target state).
-    moveTicket(id, { state, before_id = null, after_id = null, actor = 'human' } = {}) {
-      const existing = stmts.getTicket.get(id);
-      if (!existing) throw new Error(`moveTicket: ticket '${id}' not found`);
-      if (!STATES.has(state)) throw new Error(`moveTicket: invalid state '${state}'`);
-      const nextState = state;
-      const ts = now();
-      const txn = db.transaction(() => {
-        // Compute new rank based on neighbours within the target state.
-        const beforeRank = before_id
-          ? (db.prepare('SELECT rank FROM tickets WHERE id = ?').get(before_id)?.rank ?? null)
-          : null;
-        const afterRank = after_id
-          ? (db.prepare('SELECT rank FROM tickets WHERE id = ?').get(after_id)?.rank ?? null)
-          : null;
-        let newRank;
-        if (before_id && after_id && beforeRank !== null && afterRank !== null) {
-          newRank = (beforeRank + afterRank) / 2;
-        } else if (beforeRank !== null && afterRank !== null) {
-          newRank = (beforeRank + afterRank) / 2;
-        } else if (beforeRank !== null) {
-          newRank = beforeRank + 500;
-        } else if (afterRank !== null) {
-          newRank = afterRank - 500;
-        } else {
-          // Append to end of target state.
-          const maxRow = db.prepare(
-            "SELECT MAX(rank) AS m FROM tickets WHERE state = ? AND id != ?"
-          ).get(nextState, id);
-          newRank = (maxRow?.m ?? 0) + 1000;
-        }
-        // Build the SET clause: state + rank + lifecycle stamps.
-        const setDoneAt = state === 'done' ? ', done_at = @ts' : '';
-        const setArchivedAt = state === 'archived' ? ', archived_at = @ts' : '';
-        db.prepare(`UPDATE tickets SET
-          state = @state,
-          rank = @rank,
-          state_changed_at = @ts,
-          updated_at = @ts
-          ${setDoneAt}
-          ${setArchivedAt}
-        WHERE id = @id`).run({ state: nextState, rank: newRank, ts, id });
-        // Audit event for the state change. Rank-only moves within the
-        // same state still record an event for traceability.
-        if (nextState !== existing.state) {
-          recordEvent({
-            ticket_id: id,
-            project_id: existing.project_id,
-            type: 'state_change',
-            actor,
-            data: { from: existing.state, to: nextState, before_id, after_id, new_rank: newRank },
-          });
-          commentDispatch.markAddressedForTicketActivity(id, actor);
-        } else {
-          recordEvent({
-            ticket_id: id,
-            project_id: existing.project_id,
-            type: 'rank_change',
-            actor,
-            data: { before_id, after_id, new_rank: newRank },
-          });
-        }
-        return stmts.getTicket.get(id);
-      });
-      return hydrateTicket(txn());
     },
 
     // TKT-0105: 14-day done → archived sweep. Returns the list of ids

@@ -198,7 +198,6 @@ import { createPilotTicket, pilotHealth } from './api/pilot-client.ts';
     listMessageEnvelopes: (params) => getJSON(`/api/message-envelopes${qs(params)}`),
     getMessageEnvelope: (id) => getJSON(`/api/message-envelopes/${encodeURIComponent(id)}`),
     projects: () => getJSON('/api/projects'),
-    workspaces: () => getJSON('/api/workspaces'),
     // v4 (fix round 2): peek payload for one native session — recent central-
     // journal events + milestones + best-effort transcript path.
     nativeSessionPeek: (sessionId) =>
@@ -210,9 +209,6 @@ import { createPilotTicket, pilotHealth } from './api/pilot-client.ts';
       postJSON('/api/interrupt', { text, session_id: sessionId ?? null }),
     pushHalt: (reason, sessionId) =>
       postJSON('/api/halt', { reason: reason ?? '', session_id: sessionId ?? null }),
-    channels: () => getJSON('/api/channels'),
-    channelHealth: (sessionId) =>
-      getJSON(`/api/channel/health${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`),
     setSessionRole: (sessionId, role) =>
       postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/role`, { role }),
     listRoles: () => getJSON('/api/roles'),
@@ -339,11 +335,6 @@ import { createPilotTicket, pilotHealth } from './api/pilot-client.ts';
     updateSubstrateInstructions: (body) => putJSON('/api/substrate/instructions', body),
     listSubstrateRoles: () => getJSON('/api/substrate/roles'),
     updateSubstrateRole: (role, body) => putJSON(`/api/substrate/roles/${encodeURIComponent(role)}`, body),
-    // Ticket links (WS5b). `from` is the ticket id the link hangs off of.
-    addLink: (id, { to_ticket, type }) =>
-      postJSON(`/api/tickets/${encodeURIComponent(id)}/links`, { to_ticket, type }),
-    removeLink: (id, { to_ticket, type }) =>
-      delJSON(`/api/tickets/${encodeURIComponent(id)}/links`, { to_ticket, type }),
     // TKT-0106: image asset upload. Posts the file as base64 alongside
     // filename + mime. Server validates, stores content-addressed under
     // ~/.config/golem/ticket-assets/<hash>.<ext>, returns {url, ...}.

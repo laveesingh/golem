@@ -86,6 +86,7 @@
         "dashboard/scripts/gol383-comment-dispatch.browser.mjs",
         "dashboard/scripts/import-trackers.mjs",
         "dashboard/scripts/jsx-check.mjs",
+        "test/fixtures/w3-scrub-probe.mjs",
         "dashboard/scripts/nested-composer-overlay.browser.mjs",
         "dashboard/scripts/queue-when-idle-smoke.mjs",
         "dashboard/scripts/screenshot-home.mjs",
