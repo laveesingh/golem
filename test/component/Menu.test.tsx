@@ -58,6 +58,21 @@ test('ArrowUp starts last, typeahead wraps and disabled actions do not activate'
   await user.click(screen.getByRole('menuitem', { name: 'Disabled' }));
   expect(fn).not.toHaveBeenCalled();
 });
+test('Space selects the focused item while letter typeahead still roves', async () => {
+  const fn = vi.fn(),
+    user = userEvent.setup();
+  render(<Menu label="Actions" items={items(fn)} />);
+  const trigger = screen.getByRole('button', { name: 'Actions' });
+  await user.click(trigger);
+  expect(screen.getByRole('menuitem', { name: 'First' })).toHaveFocus();
+  await user.keyboard('l');
+  expect(screen.getByRole('menuitem', { name: 'Last' })).toHaveFocus();
+  expect(fn).not.toHaveBeenCalled();
+  await user.keyboard(' ');
+  expect(fn).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(trigger).toHaveFocus();
+});
 test('disabled trigger and all-disabled panel have explicit behavior', async () => {
   const user = userEvent.setup(),
     fn = vi.fn();

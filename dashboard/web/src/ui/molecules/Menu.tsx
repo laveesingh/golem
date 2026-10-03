@@ -85,6 +85,9 @@ export function Menu({
     else if (event.key === 'End') target = enabled.at(-1);
     else if (
       event.key.length === 1 &&
+      // Space must reach the focused native menuitem button; typeahead
+      // never claims it, and modified keys stay with the browser/harness.
+      event.key !== ' ' &&
       !event.ctrlKey &&
       !event.metaKey &&
       !event.altKey
