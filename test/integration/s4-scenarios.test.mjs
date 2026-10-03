@@ -9,20 +9,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Ajv from 'ajv';
 import { test } from 'vitest';
 import { createTestClock } from '../../lib/clock.ts';
+import {
+  ScenarioEvent,
+  ScenarioFixture,
+  ScenarioSource,
+} from '../../lib/contracts/scenario.ts';
 import {
   acceptTypedDelivery,
   claimTypedDelivery,
   normalizeTypedWorkerInbox,
   settleTypedDelivery,
 } from '../../lib/typed-worker-endpoint.js';
-import Ajv from 'ajv';
-import {
-  ScenarioEvent,
-  ScenarioFixture,
-  ScenarioSource,
-} from '../../lib/contracts/scenario.ts';
 import { readScenarioFile } from '../../tools/scenario-io.ts';
 import { validateScenario } from '../../tools/scenario-scrub-core.ts';
 
