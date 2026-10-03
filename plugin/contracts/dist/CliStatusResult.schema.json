@@ -1,0 +1,102 @@
+{
+  "$id": "CliStatusResult",
+  "anyOf": [
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "help": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "help"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "dashboard_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dashboard_healthy": {
+          "type": "boolean"
+        },
+        "dashboard": {
+          "$ref": "JsonValue"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "dashboard_url",
+        "dashboard_healthy",
+        "dashboard"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "details": {
+              "$ref": "JsonValue"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "error"
+      ]
+    }
+  ]
+}

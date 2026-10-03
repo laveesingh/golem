@@ -1,44 +1,34 @@
 ---
 name: staying-awake
-description: Load this at times when expecting a return response from a human or an agent.
+description: Load this at times when expecting a return response from a human or an agent; used by lead and orchestrator roles.
 ---
 <!-- GENERATED: skills/staying-awake/SKILL.md — rendered by `golem sync` from substrate/ — edit the source, not this file. -->
 
-# Context
+# Staying awake
 
-By default you go idle after your turn finishes, but there are scenarios where you need to stay awake
-a big longer, and the way you can achieve that is by setting a reminder for yourself that wakes you
-up after a few minutes.
+Context: By default you go idle after your turn finishes, but there are scenarios where you need to
+stay awake a bit longer, and the way you can achieve that is by setting a reminder for yourself that
+wakes you up after a few minutes.
 
-# Situations
+## Setting a reminder
 
-## After delegating to an agent
+* `golem agent notify --to self --message "check return" --after 25m --json`
 
-After you delegate some work to an agent, the agent is supposed to get back to you, and that's what
-wakes you up. But sometimes, the agent might run into a technical error, or might simply forget to
-get back to you directly. Then both of you stay idle and workstream dies. A better approach is for
-you to set a check-up reminder for yourself after delegation after ~30 minutes to make sure you can
-wake up and ask for status manually. And if the return had arrived prior to that, you can reset
-that previous reminder from this turn onwards.
+## Waiting for an agent
 
-This goes on, for as long as you're waiting for an agent to return to you.
-After which, if you are waiting for a human to respond to you, you can set up a similar reminder,
-as also mentioned below.
+* Set reminder after delegating to an agent and when expecting agent to get back to you
+* If agent returns before reminder wake, cancel the reminder/schedule, and decide afresh on next delegation, if any
+* If agent does not return before reminder wake, ping agent for status update
+* If status nothing arrives still until next reminder wake, you can read agent terminal output and infer and decide from there.
+* Reminder interval: 25 minutes
 
-## While discussing with a human
+## Waiting for me/human
 
-While waiting for me during a brainstorm or after a pause/terminal event with agents team, if I go
-away for a bit, your session's KV-cache can go cold, and that is very expensive. A cache-cold turn
-requires way more compute to re-prefill costs almost 10 times more than a cache-warm turn.
-To avoid this to a reasonable extent, I need you to set a recurring reminder for yourself, and 
-reset that at every human turn.
+* While waiting for me during/after brainstorm/spec-review or after a pause/terminal event with agents
+* When I return and get back to you, you can reset the reminder frequency and count
+* When I don't return: at wake, just say "staying awake" and that's it. Don't do anything that turn.
+* Reminder interval: 55 minutes if you are in claude code, 25 minutes otherwise (e.g., pi)
+* Reminder max count: 6 if you are in claude, 10 otherwise
 
-# What and How
-
-Setting a reminder: `golem agent notify --to self --message "check return" --after 25m --json`
-Reminder duration for agent return: 25 minutes
-Reminder interval for human return: 55 minutes in claude, 25 minutes in pi
-
-Apply the human wake cap from Global Rules or the authorized workstream. Reset it
-only when I return. When the cap is reached, cancel further idle reminders; direct
-agent returns still wake you. On an earlier return, cancel the pending check.
+## Context dump
+* In case, human does not return until last wake, do a context handoff dump before going idle. Create a handoff file under ~/.golem/handoffs/ with name like `<date>_<session_name>_<workstream_title>.md` with the purpose so that your successor receives it in case your session is not continued. And in chat write a short prompt that I can simply copy paste to your successor that will read the handoff with file location and can continue from there.

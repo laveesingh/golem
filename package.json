@@ -1,7 +1,7 @@
 {
   "name": "@laveesingh/golem",
-  "version": "5.26.1",
-  "description": "Golem \u2014 substrate compiler, dashboard/tracker, and CLI for the agentic harness.",
+  "version": "6.0.0",
+  "description": "Golem — substrate compiler, dashboard/tracker, and CLI for the agentic harness.",
   "license": "MIT",
   "repository": {
     "type": "git",

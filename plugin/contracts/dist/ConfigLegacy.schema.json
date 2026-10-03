@@ -1,0 +1,114 @@
+{
+  "$id": "ConfigLegacy",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "type": "object",
+  "properties": {
+    "dispatch": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "JsonValue"
+          },
+          "type": "object",
+          "properties": {
+            "unackedWindowMinutes": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "harnesses": {
+      "anyOf": [
+        {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "$ref": "JsonValue"
+                  },
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "modelMap": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "$ref": "JsonValue"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "testedVersion": {
+                      "$ref": "JsonValue"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "roles": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "JsonValue"
+          },
+          "type": "object",
+          "properties": {
+            "default": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

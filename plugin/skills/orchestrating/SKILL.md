@@ -39,3 +39,7 @@ Discover recipients and reuse/spawn per `golem:team-ops` § Tools.
 A new decision, a conflict with a locked call, or a scope change stops and goes to the planner,
 with the evidence. Do not add tasks or work beyond the spec. When blocked, name the blocker on
 the ticket and tell the planner.
+
+## Misc
+
+* Follow staying awake protocol when appropriate

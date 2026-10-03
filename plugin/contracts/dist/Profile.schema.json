@@ -1,0 +1,45 @@
+{
+  "$id": "Profile",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "description": "Execution profile, not the instance-home profile.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "harness": {
+      "type": "string"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "model": {
+      "type": "string"
+    },
+    "thinking": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "provider",
+    "model",
+    "thinking"
+  ]
+}

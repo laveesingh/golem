@@ -1,0 +1,37 @@
+{
+  "$id": "Role",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "color": {
+      "type": "string"
+    },
+    "glyph": {
+      "type": "string"
+    },
+    "builtin": {
+      "type": "boolean"
+    },
+    "card": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "color",
+    "glyph",
+    "builtin"
+  ]
+}

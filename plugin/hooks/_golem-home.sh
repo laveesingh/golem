@@ -17,6 +17,9 @@
 #
 # Sets GOLEM_HOME_DIR. Safe under `set -u`.
 
+# Native Claude path mirror of lib/claude-paths.js.
+CLAUDE_CONFIG_DIR_RESOLVED="${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}"
+
 if [ -n "${GOLEM_HOME:-}" ]; then
   GOLEM_HOME_DIR="$GOLEM_HOME"
 elif [ -n "${XDG_CONFIG_HOME:-}" ]; then

@@ -1,0 +1,29 @@
+{
+  "$id": "Workspace",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "description": "One registered root; storage retains project_id.",
+  "type": "object",
+  "properties": {
+    "project_id": {
+      "type": "string"
+    },
+    "root": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "prefix": {
+      "type": "string"
+    },
+    "registered_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "root"
+  ]
+}
