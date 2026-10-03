@@ -143,7 +143,7 @@ function renderAuthenticatedContext(body, metadata = null) {
 // (Pi) receive it through their durable /brief adapter; Claude channels
 // receive it through the ordinary brief transport with the authenticated
 // sender context rendered.
-export async function pushControlEnvelope({ envelope, content, metadata: suppliedMetadata = null } = {}, sessionId) {
+export async function pushControlEnvelope({ envelope, content, legacy = null, metadata: suppliedMetadata = null } = {}, sessionId) {
   if (!envelope?.id || !envelope?.sender_session_id || !envelope?.target_session_id) {
     return { ok: false, status: 400, body: '', error: 'durable control envelope is missing canonical sender, target, or id', failure_stage: 'before_native', retryable: false };
   }
