@@ -16,9 +16,9 @@
   },
   "include": [
     "cli/bootstrap.ts",
-    "tools/scenario-format.ts",
-    "tools/scenario-scrub-core.ts",
-    "tools/scenario-io.ts",
+    "lib/scenario-format.ts",
+    "lib/scenario-scrub-core.ts",
+    "lib/scenario-io.ts",
     "tools/scenario-scrub.ts",
     "test/sim/support.ts",
     "lib/clock.ts",

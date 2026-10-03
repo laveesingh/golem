@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { SCENARIOS } from '../../tools/scenario-format.ts';
+import { SCENARIOS } from '../../lib/scenario-format.ts';
 import {
   argvSlots,
   scrubScenario,
   validateScenario,
-} from '../../tools/scenario-scrub-core.ts';
+} from '../../lib/scenario-scrub-core.ts';
 import {
   processTransaction,
   scenario,

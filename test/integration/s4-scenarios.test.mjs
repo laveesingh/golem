@@ -17,14 +17,14 @@ import {
   ScenarioFixture,
   ScenarioSource,
 } from '../../lib/contracts/scenario.ts';
+import { readScenarioFile } from '../../lib/scenario-io.ts';
+import { validateScenario } from '../../lib/scenario-scrub-core.ts';
 import {
   acceptTypedDelivery,
   claimTypedDelivery,
   normalizeTypedWorkerInbox,
   settleTypedDelivery,
 } from '../../lib/typed-worker-endpoint.js';
-import { readScenarioFile } from '../../tools/scenario-io.ts';
-import { validateScenario } from '../../tools/scenario-scrub-core.ts';
 
 const repo = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

@@ -4,9 +4,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Clock } from './clock.ts';
 import { systemClock } from './clock.ts';
-import type { Scenario, ScenarioEvent } from '../tools/scenario-format.ts';
-import { scrubScenario } from '../tools/scenario-scrub-core.ts';
-import { privateTempDirectory, writeCandidate } from '../tools/scenario-io.ts';
+import type { Scenario, ScenarioEvent } from './scenario-format.ts';
+import { scrubScenario } from './scenario-scrub-core.ts';
+import { privateTempDirectory, writeCandidate } from './scenario-io.ts';
 
 export type Projection = Pick<ScenarioEvent, 'boundary' | 'direction' | 'operation' | 'fields'>;
 const MAX_FRAME = 16 * 1024;

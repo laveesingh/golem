@@ -10,7 +10,7 @@ import type {
   Scenario,
   ScenarioEvent,
   Value,
-} from '../../tools/scenario-format.ts';
+} from '../../lib/scenario-format.ts';
 import {
   exactKeys,
   HARNESSES,
@@ -18,18 +18,18 @@ import {
   member,
   record,
   ScenarioError,
-} from '../../tools/scenario-format.ts';
+} from '../../lib/scenario-format.ts';
 import {
   privateTempDirectory,
   readScenarioFile,
   writeCandidate,
-} from '../../tools/scenario-io.ts';
-import type { ArgSlot } from '../../tools/scenario-scrub-core.ts';
+} from '../../lib/scenario-io.ts';
+import type { ArgSlot } from '../../lib/scenario-scrub-core.ts';
 import {
   argvSlots,
   SYMBOL,
   validateScenario,
-} from '../../tools/scenario-scrub-core.ts';
+} from '../../lib/scenario-scrub-core.ts';
 
 interface Cursor {
   schema: 1;
