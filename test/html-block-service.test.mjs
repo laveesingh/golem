@@ -390,7 +390,6 @@ try {
 
   // ---- REST boundary -------------------------------------------------------
   {
-    const { WebSocket } = await import('ws');
     fs.mkdirSync(path.join(tmp, 'projects', 'gol343'), { recursive: true });
     fs.writeFileSync(path.join(tmp, 'projects', 'gol343', 'CLAUDE.md'), '# gol343 rest probe');
     const reservation = net.createServer();
@@ -518,9 +517,12 @@ try {
 
     // WebSocket updates only after commit.
     ws = new WebSocket(`${base.replace('http', 'ws')}/ws`);
-    await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+    await new Promise((resolve, reject) => {
+      ws.addEventListener('open', resolve, { once: true });
+      ws.addEventListener('error', reject, { once: true });
+    });
     const wsMessages = [];
-    ws.on('message', (data) => wsMessages.push(JSON.parse(String(data))));
+    ws.addEventListener('message', ({ data }) => wsMessages.push(JSON.parse(String(data))));
     await sleep(200);
     await api(`/api/tickets/${restHtmlId}/block-patches`, {
       expected_revision: 4, actor: 'smoke',

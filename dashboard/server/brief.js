@@ -177,12 +177,7 @@ export async function pushGateVerdict(gateId, verdict, body, sessionId) {
   return forward('POST', `/gates/${encodeURIComponent(gateId)}/${verdict}`, body, sessionId);
 }
 
-export async function channelHealth(sessionId) {
-  return forward('GET', '/healthz', null, sessionId);
-}
-
-// Used by /api/channel/list — exposes the live channels so the frontend can
-// label tabs / pickers with their target endpoints.
+// Shared delivery discovery; snapshot consumers use state.channels().
 export async function listChannels() {
   return readChannels();
 }

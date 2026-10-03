@@ -129,10 +129,6 @@ export function createState() {
     };
   }
 
-  function projectPlan(projectId) {
-    return plans.get(projectId) ?? null;
-  }
-
   // Resolve the FULL internal project record (with `path`) by either the
   // registry `id` (dir name, e.g. "trialroom-ai") OR the contract `project_id`
   // (<slug>-<6hex>, e.g. "trialroomai-74ac11"). The web UI sends the contract
@@ -342,7 +338,6 @@ export function createState() {
     projects: () => projects.filter((p) => (p.kind === 'project' || p.kind === 'external')).map(projectSummary),
     workspaces: () => projects.map(projectSummary),
     project,
-    projectPlan,
     nativeSessions: () => nativeSessions,
     refreshNativeSessions,
     channels: () => channels,

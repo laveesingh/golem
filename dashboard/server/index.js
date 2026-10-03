@@ -13,7 +13,7 @@ import { packageRoot } from '../../lib/package-root.ts';
 import { CONFIG } from './config.js';
 import { createState } from './state.js';
 import { roleMetaMap } from './roles.js';
-import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, channelHealth, listChannels } from './brief.js';
+import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, listChannels } from './brief.js';
 import { createChat } from './chat.js';
 import { readNativeSessionPeek } from './native-session-peek.js';
 import { openTrackerDb } from './tracker-db.js';
@@ -895,29 +895,6 @@ async function main() {
       ok, queued: result.retry_queued, envelope_id: result.envelope.id, delivery: result.delivery,
     });
   });
-  // v4: brief / interrupt / halt are delivered over per-session channels.
-  // Gate verdicts (v3 docs/agent-notes/gates/ flow) were removed in TKT-0009.
-  fastify.get('/api/channel/health', async (req) => channelHealth(typeof req.query?.session === 'string' ? req.query.session : null));
-  fastify.get('/api/channels', async () => listChannels());
-
-  fastify.get('/api/projects/:id', async (req, reply) => {
-    const p = state.project(req.params.id);
-    if (!p) return reply.code(404).send({ error: 'not_found' });
-    return state
-      .projects()
-      .find((x) => x.id === req.params.id);
-  });
-
-  // v4: PLAN.md progress for a single project. Returns {total, done, items}
-  // (+ title). 404 if the project is unknown; {total:0,...} if it has no plan.
-  fastify.get('/api/projects/:id/plan', async (req, reply) => {
-    const p = state.project(req.params.id);
-    if (!p) return reply.code(404).send({ error: 'not_found' });
-    const plan = state.projectPlan(req.params.id);
-    if (!plan) return { title: null, total: 0, done: 0, items: [] };
-    return plan;
-  });
-
   // TKT-0194: apply a human verdict to a gate (approve | deny | cancel).
   // Writes the new status to the gate file and returns the new state. The
   // dashboard refreshes the projects list (which re-reads gates on the
@@ -1281,30 +1258,6 @@ async function main() {
 
   // GOL-150: POST /api/tickets/:id/transition is gone with the phase machine.
   // PATCH /api/tickets/:id with {state} is the lifecycle path.
-
-  // TKT-0105: POST /api/tickets/:id/move — atomic state + rank change used by
-  // drag-and-drop. Body: { state, before_id?, after_id?, actor? }. The endpoint
-  // computes the new rank from the neighbour tickets (midpoint if both given,
-  // otherwise appends to the target state). Replaces the old "PATCH with
-  // {state}" path for drag operations (Phase B tracker-board.jsx still calls
-  // PATCH; follow-up ticket will switch it to /move).
-  fastify.post('/api/tickets/:id/move', async (req, reply) => {
-    const existing = resolveTicketRef(req.params.id);
-    if (!existing) return reply.code(404).send({ error: 'not_found' });
-    try {
-      const patch = { ...(req.body ?? {}) };
-      const attribution = enforceAttribution(reply, patch, 'actor', 'moveTicket');
-      if (attribution) return attribution;
-      if (Object.prototype.hasOwnProperty.call(patch, 'before_id')) patch.before_id = resolveTicketIdField(patch.before_id);
-      if (Object.prototype.hasOwnProperty.call(patch, 'after_id')) patch.after_id = resolveTicketIdField(patch.after_id);
-      const ticket = tracker.moveTicket(existing.id, patch);
-      recordSpecClosedMilestone(existing, ticket, patch.actor || 'human');
-      broadcastWS({ type: 'ticket-updated', ticket });
-      return ticket;
-    } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
-    }
-  });
 
   // TKT-0105: POST /api/tickets/auto-archive/sweep — manual trigger for the
   // 14-day done → archived sweep. Returns the list of archived ticket ids.

@@ -1,5 +1,5 @@
 # REPO-MAP.md
-> Last verified: 2026-10-02 @ 39a80536 + 8de1891 — maintained via golem:docs-maintenance.
+> Last verified: 2026-10-03 @ 5bb4fe5 — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
@@ -37,7 +37,7 @@ Agents never write SQLite directly.
 
 ### Compiler and delivery
 
-`lib/compiler/` renders substrate with drift/tamper checks; instruction lint is outside gates.
+`lib/compiler/` renders substrate with drift/tamper checks; instruction-size lint is retired.
 `lib/typed-worker-endpoint.js` owns Pi envelopes; `lib/herdr-driver.js` native hosting.
 `lib/team-registry.js` never treats worker cache as membership authority.
 `lib/runtime-compatibility.js` keeps policy warnings separate from native outcomes.
