@@ -1,0 +1,96 @@
+{
+  "$id": "CliMessageResult",
+  "anyOf": [
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "help": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "help"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "message",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "kind",
+        "id",
+        "state"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "details": {
+              "$ref": "JsonValue"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "error"
+      ]
+    }
+  ]
+}

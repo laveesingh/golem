@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
+import { cliSchemas } from '../lib/contracts/cli.ts';
 import { JsonValue, pilotSchemas } from '../lib/contracts/pilot.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -12,8 +13,12 @@ export async function contractOutputs(): Promise<Record<string, string>> {
   const result = await runScript('test/fixtures/w3-openapi-export.mjs');
   const openapi = JSON.parse(result.stdout);
   const outputs: Record<string, string> = {};
-  for (const [name, schema] of Object.entries({ ...pilotSchemas, JsonValue }))
-    outputs[`contracts/dist/${name}.schema.json`] =
+  for (const [name, schema] of Object.entries({
+    ...pilotSchemas,
+    ...cliSchemas,
+    JsonValue,
+  }))
+    outputs[`contracts/dist/${schema.$id ?? name}.schema.json`] =
       `${JSON.stringify(schema, null, 2)}\n`;
   outputs['contracts/dist/openapi.json'] =
     `${JSON.stringify(openapi, null, 2)}\n`;

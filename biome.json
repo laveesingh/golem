@@ -16,6 +16,8 @@
       "dashboard/scripts/_scratch.mjs",
       "test/sim/**",
       "lib/contracts/**",
+      "lib/cli-envelope.ts",
+      "test/fixtures/cli-envelope-probe.mjs",
       "dashboard/server/contract-*.ts",
       "dashboard/web/src/api/pilot-client.ts",
       "test/fixtures/w3-*.mjs",
