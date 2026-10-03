@@ -13,6 +13,7 @@
         "test/fixtures/w3-config-repair.mjs",
         "test/fixtures/w3-config-concurrency.mjs",
         "test/fixtures/w3-versioned-stores.mjs",
+        "test/fixtures/w3-jsonl-seams.mjs",
         "cli/golem.js",
         "docs/design/w4/prototype.mjs",
         "docs/design/w4/static-check.mjs",
