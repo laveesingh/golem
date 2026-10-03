@@ -1,6 +1,12 @@
 import Ajv from 'ajv';
 import { expect, test } from 'vitest';
-import { emitJson, envelope, fail, ok } from '../../lib/cli-envelope.ts';
+import {
+  emitJson,
+  envelope,
+  fail,
+  ok,
+  wantsJson,
+} from '../../lib/cli-envelope.ts';
 import { cliSchemas } from '../../lib/contracts/cli.ts';
 import { JsonValue } from '../../lib/contracts/pilot.ts';
 
@@ -24,6 +30,14 @@ for (const schema of Object.values(cliSchemas)) {
     expect(validate([])).toBe(false);
   });
 }
+test('wantsJson detects intent anywhere in argv before validation', () => {
+  expect(wantsJson(['--bad', '--json'])).toBe(true);
+  expect(wantsJson(['--json', '--bad'])).toBe(true);
+  expect(wantsJson(['--project', '--json'])).toBe(true);
+  expect(wantsJson(['list'])).toBe(false);
+  expect(wantsJson([])).toBe(false);
+  expect(wantsJson(undefined)).toBe(false);
+});
 test('flat fields, versions, immutable discriminant and newline-free output', () => {
   const fields = {
     schema_version: 77,

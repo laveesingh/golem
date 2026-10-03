@@ -1,4 +1,4 @@
-import { formatJson } from '../lib/cli-envelope.ts';
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 import { createGolemClient, resolveGolemDashboardBaseUrl } from '../lib/golem-client.js';
 import { dashboardJsonPath } from '../lib/golem-home.js';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
@@ -91,7 +91,7 @@ export async function runCollaboration(family, args, {
   stdin = process.stdin, cwd = process.cwd(), resolveContext = resolveCliSessionContext, client: injectedClient,
 } = {}) {
   let operationId = null, mutationStarted = false;
-  let json = args.includes('--json');
+  let json = wantsJson(args);
   try {
     const parsed = parse(family, args);
     if (parsed.options) json = Boolean(parsed.options['--json']);

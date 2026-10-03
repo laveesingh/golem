@@ -16,7 +16,7 @@
 //   status       Dashboard health + canonical URL.
 //   help         Show this message.
 
-import { formatJson } from '../lib/cli-envelope.ts';
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -99,7 +99,7 @@ function hasCommand(name) {
 }
 
 async function cmdStatus(args) {
-  const wantJson = args.includes('--json');
+  const wantJson = wantsJson(args);
   const probe = await probeDashboard();
 
   if (wantJson) {
@@ -1251,7 +1251,7 @@ async function main() {
     rest.some((arg) => arg === '--help' || arg === '-h')
   ) {
     const help = IN_FILE_VERB_HELP[cmd]();
-    log(cmd === 'status' && rest.includes('--json') ? formatJson({ help }) : help);
+    log(cmd === 'status' && wantsJson(rest) ? formatJson({ help }) : help);
     return;
   }
 

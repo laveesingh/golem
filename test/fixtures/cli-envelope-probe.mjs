@@ -97,6 +97,111 @@ for (const [schema, run, success, error] of families) {
     assert.equal(result.code, expected ? 0 : 2);
   }
 }
+// Parse and validation errors emit the C3 error envelope whenever --json
+// appears anywhere in argv, in either flag ordering. All cases below throw
+// during parsing, before any mutation or transport, and keep their exits.
+const parseErrors = [
+  [
+    'CliAgentResult',
+    runAgent,
+    'agent',
+    2,
+    ['list', '--bad', '--json'],
+    ['list', '--json', '--bad'],
+    ['list', '--scope', '--json'],
+    ['list', '--json', '--scope'],
+  ],
+  [
+    'CliTeamResult',
+    runTeam,
+    'team',
+    2,
+    ['list', '--bad', '--json'],
+    ['list', '--json', '--bad'],
+    ['list', '--project', '--json'],
+    ['list', '--json', '--project'],
+  ],
+  [
+    'CliSessionResult',
+    runSession,
+    'session',
+    2,
+    ['list', '--bad', '--json'],
+    ['list', '--json', '--bad'],
+    ['list', '--project', '--json'],
+    ['list', '--json', '--project'],
+  ],
+  [
+    'CliContextResult',
+    runContext,
+    null,
+    2,
+    ['--bad', '--json'],
+    ['--json', '--bad'],
+    ['--project', '--json'],
+    ['--json', '--project'],
+  ],
+  [
+    'CliScheduleResult',
+    runCollaboration,
+    'schedule',
+    2,
+    ['list', '--bad', '--json'],
+    ['list', '--json', '--bad'],
+  ],
+  [
+    'CliMessageResult',
+    runCollaboration,
+    'message',
+    2,
+    ['bad', '--json'],
+    ['inspect', '--json'],
+  ],
+];
+for (const [schema, run, family, exit, ...variants] of parseErrors) {
+  for (const argv of variants) {
+    const args = family === null ? [argv] : [family, argv];
+    const result = await invoke(run, args);
+    assert.equal(result.value.ok, false, `${schema}: ${JSON.stringify(argv)}`);
+    assert.equal(
+      validate[schema](result.value),
+      true,
+      JSON.stringify(validate[schema].errors),
+    );
+    assert.equal(result.code, exit, `${schema}: ${JSON.stringify(argv)}`);
+  }
+}
+// Notify missing values throw before any mutation, in either ordering.
+for (const argv of [
+  ['notify', '--to', '--json'],
+  ['notify', '--json', '--to'],
+]) {
+  const result = await invoke(runCollaboration, ['agent', argv]);
+  assert.equal(result.value.ok, false);
+  assert.equal(
+    validate.CliAgentResult(result.value),
+    true,
+    JSON.stringify(validate.CliAgentResult.errors),
+  );
+  assert.equal(result.code, 2);
+}
+// Ticket errors always emit the envelope: unknown flag (exit 1, both
+// orders), missing value (exit 1), missing positional (exit 2).
+for (const [argv, exit] of [
+  [['get', '--bad', '--json'], 1],
+  [['get', '--json', '--bad'], 1],
+  [['get', 'GOL-1', '--project'], 1],
+  [['get', '--json'], 2],
+]) {
+  const result = await invoke(runTicket, [argv]);
+  assert.equal(result.value.ok, false, JSON.stringify(argv));
+  assert.equal(
+    validate.CliTicketResult(result.value),
+    true,
+    JSON.stringify(validate.CliTicketResult.errors),
+  );
+  assert.equal(result.code, exit, JSON.stringify(argv));
+}
 // An actual message receipt, not only the help variant.
 const message = {
   kind: 'message',
@@ -132,10 +237,10 @@ for (const [, run, success] of families) {
   assert.equal(result.value.ok, true);
   assert.equal(typeof result.value.help, 'string');
 }
-async function status(url) {
+async function status(url, argv = ['--json']) {
   let stdout = '',
     stderr = '';
-  const child = spawn(process.execPath, ['cli/golem.js', 'status', '--json'], {
+  const child = spawn(process.execPath, ['cli/golem.js', 'status', ...argv], {
     env: { ...process.env, GOLEM_DASHBOARD_URL: url },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -166,6 +271,15 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}`;
 try {
   assert.equal((await status(url)).ok, true);
+  // status ignores unknown flags; the envelope holds in either ordering.
+  for (const argv of [
+    ['--bad', '--json'],
+    ['--json', '--bad'],
+  ]) {
+    const value = await status(url, argv);
+    assert.equal(value.ok, true);
+    assert.equal(value.dashboard_healthy, true);
+  }
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

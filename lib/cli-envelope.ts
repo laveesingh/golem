@@ -27,6 +27,12 @@ export function emitJson(
   stdout(JSON.stringify(envelope));
 }
 
+// Detect JSON-output intent from raw argv before any parsing or validation,
+// so every parse or validation error still emits the C3 error envelope.
+export function wantsJson(argv: unknown): boolean {
+  return Array.isArray(argv) && argv.includes('--json');
+}
+
 // Adapt domain outcomes, not stdout text. Preserve management recovery fields.
 export function envelope(value: CliFields | unknown[]): CliEnvelope {
   const fields = Array.isArray(value) ? { items: value } : value;

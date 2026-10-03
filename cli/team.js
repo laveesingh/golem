@@ -1,4 +1,4 @@
-import { formatJson } from '../lib/cli-envelope.ts';
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 // golem team — teams with an owner and members (GOL-363 R2, R3; GOL-371; GOL-382 R4).
 //
 // Flag parser and help style follow cli/collaboration.js. Herdr workspace
@@ -189,7 +189,7 @@ export async function runTeam(family, args, {
   ...collector
 } = {}) {
   let resolution = null;
-  let json = args.includes('--json');
+  let json = wantsJson(args);
   try {
     const parsed = parse(family, args);
     if (parsed.options) json = Boolean(parsed.options['--json']);

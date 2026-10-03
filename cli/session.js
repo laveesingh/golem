@@ -1,4 +1,4 @@
-import { formatJson } from '../lib/cli-envelope.ts';
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 // Physical herdr containers; logical membership is retained by stop.
 import { NotificationError } from '../lib/notification-contract.js';
 import { formatTable } from '../lib/cli-table.js';
@@ -58,7 +58,7 @@ export async function runSession(family, args, { stdout = text => process.stdout
   cwd = process.cwd(), env = process.env, resolveContext = resolveCliSessionContext,
   herdr = { sessionList, sessionAttach, sessionStop, sessionDelete, ensureSession, paneList },
   workers = { listWorkers, killWorker }, sleep = ms => new Promise(r => setTimeout(r, ms)), timeoutMs = 30000, ...collector } = {}) {
-  let resolution = null; const json = args.includes('--json');
+  let resolution = null; const json = wantsJson(args);
   try {
     const parsed = parse(args);
     if (parsed.help) { stdout(json ? formatJson({ help: parsed.help }) : parsed.help); return 0; }

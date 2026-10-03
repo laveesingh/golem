@@ -10,7 +10,9 @@ all other families start at 1. Exit codes are unchanged
 (0 ok, 1 operational, 2 input, plus 3 uncertain for notify flows).
 
 Rule: check `ok` before reading fields. Never parse a raw array
-or assume `ok` is present without reading it.
+or assume `ok` is present without reading it. JSON intent is detected
+from raw argv before any parsing or validation (`wantsJson`), so parse
+and validation errors also emit the error envelope with unchanged exits.
 
 ## Readers
 

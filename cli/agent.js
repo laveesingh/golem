@@ -1,4 +1,4 @@
-import { formatJson } from '../lib/cli-envelope.ts';
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 // golem agent — the one agent toolkit (GOL-363 G9, G10, T1–T8, R5, R8, R13).
 //
 // This family replaces the previous per-verb top-level commands and the old
@@ -667,7 +667,7 @@ export async function runAgent(family, args, {
   let resolution = null;
   let operationId = null;
   let mutationStarted = false;
-  let json = args.includes('--json');
+  let json = wantsJson(args);
   const fail = (error) => {
     const refused = ['ECONNREFUSED', 'ENOTFOUND'].includes(error?.cause?.cause?.code ?? error?.cause?.code);
     const invalid = error.exitCode === 2 || error instanceof NotificationError || (error.status >= 400 && error.status < 500)

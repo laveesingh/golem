@@ -13,7 +13,7 @@
 // Output contract: stdout carries only result JSON (compact); diagnostics go
 // to stderr; failures exit non-zero with the server's machine-readable error
 // payload (code plus current revision/outline when relevant) on stdout.
-import { formatJson } from '../lib/cli-envelope.ts';
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createGolemClient, resolveGolemDashboardBaseUrl } from '../lib/golem-client.js';
@@ -306,7 +306,7 @@ export async function runTicket(args, {
   try {
     if (!args.length || ['--help', '-h', 'help'].includes(args[0])) {
       const help = [...Object.entries(OPS).map(([name, op]) => op.help)].join('\n\n');
-      stdout(args.includes('--json') ? formatJson({ help }) : help);
+      stdout(wantsJson(args) ? formatJson({ help }) : help);
       return 0;
     }
     const operation = args[0];
