@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 console.error(
-  'component project PENDING W4: zero suites; no component coverage claimed',
+  'component project: atoms and molecules admitted; browser acceptance is separate',
 );
 
 export default defineConfig({
@@ -29,11 +29,15 @@ export default defineConfig({
         },
       },
       {
+        esbuild: { jsx: 'automatic' },
         test: {
           name: 'component',
           environment: 'jsdom',
           include: ['test/component/**/*.test.{mjs,tsx}'],
-          passWithNoTests: true,
+          setupFiles: ['test/support/component-setup.ts'],
+          fileParallelism: false,
+          maxWorkers: 1,
+          passWithNoTests: false,
         },
       },
       {

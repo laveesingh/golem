@@ -1,0 +1,70 @@
+.g-workshop {
+  box-sizing: border-box; /* token-lint-disable-line: border box sizing */
+  padding: var(--g-semantic-density-card);
+  background: var(--g-semantic-surface-page);
+  color: var(--g-semantic-text-primary);
+  font: var(--g-semantic-type-body);
+  letter-spacing: var(--g-semantic-type-body-letterSpacing);
+}
+.g-workshop h1 {
+  margin: 0;
+  font: var(--g-semantic-type-heading);
+  letter-spacing: var(--g-semantic-type-heading-letterSpacing);
+}
+.g-story-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--g-semantic-density-card);
+  padding-block: var(--g-semantic-density-card);
+  padding-inline: 0;
+}
+.g-story-row {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--g-semantic-density-gap);
+}
+.g-story-row h2 {
+  margin: 0;
+  font: var(--g-semantic-type-strong);
+  letter-spacing: var(--g-semantic-type-strong-letterSpacing);
+}
+.g-story-row p {
+  margin: 0;
+}
+.g-workshop-input {
+  width: 100%;
+}
+.g-font-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--g-semantic-density-gap);
+}
+.g-font-body {
+  font: var(--g-semantic-type-body);
+  letter-spacing: var(--g-semantic-type-body-letterSpacing);
+}
+.g-font-label {
+  font: var(--g-semantic-type-label);
+  letter-spacing: var(--g-semantic-type-label-letterSpacing);
+}
+.g-font-strong {
+  font: var(--g-semantic-type-strong);
+  letter-spacing: var(--g-semantic-type-strong-letterSpacing);
+}
+.g-font-heading {
+  font: var(--g-semantic-type-heading);
+  letter-spacing: var(--g-semantic-type-heading-letterSpacing);
+}
+.g-font-code {
+  font: var(--g-semantic-type-code);
+  letter-spacing: var(--g-semantic-type-code-letterSpacing);
+}
+.g-font-code-label {
+  font: var(--g-semantic-type-codeLabel);
+  letter-spacing: var(--g-semantic-type-codeLabel-letterSpacing);
+}
+.g-font-code-strong {
+  font: var(--g-semantic-type-codeStrong);
+  letter-spacing: var(--g-semantic-type-codeStrong-letterSpacing);
+}

@@ -1,0 +1,151 @@
+.g-card,
+.g-list-row,
+.g-menu-panel,
+.g-empty-state {
+  box-sizing: border-box; /* token-lint-disable-line: border box sizing */
+  max-width: 100%; /* token-lint-disable-line: confine content to its parent width */
+  min-width: 0;
+  overflow-wrap: anywhere; /* token-lint-disable-line: unbroken text reflow */
+}
+.g-card {
+  background: var(--g-component-card-background);
+  color: var(--g-component-card-foreground);
+  border: var(--g-component-card-borderWidth) solid
+    var(--g-component-card-borderColor);
+  border-radius: var(--g-component-card-radius);
+  padding: var(--g-component-card-padding);
+}
+.g-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between; /* token-lint-disable-line: separate content and action slots */
+  gap: var(--g-component-card-gap);
+}
+.g-card-header > div {
+  min-width: 0;
+}
+.g-card h2,
+.g-card h3,
+.g-card h4,
+.g-empty-state h2 {
+  margin: 0;
+  font: var(--g-semantic-type-heading);
+}
+.g-card p,
+.g-empty-state p {
+  color: var(--g-semantic-text-muted);
+  margin-block: var(--g-component-card-gap);
+  font: var(--g-semantic-type-body);
+}
+.g-card-body {
+  margin-block-start: var(--g-component-card-gap);
+}
+.g-card-actions,
+.g-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--g-component-card-gap);
+}
+.g-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between; /* token-lint-disable-line: separate content and action slots */
+  gap: var(--g-component-listRow-gap);
+  width: 100%;
+  min-height: var(--g-component-listRow-height);
+  padding: var(--g-component-listRow-paddingY)
+    var(--g-component-listRow-paddingX);
+  background: var(--g-component-listRow-background);
+  color: var(--g-component-listRow-foreground);
+  border: var(--g-component-listRow-borderWidth) solid
+    var(--g-component-listRow-borderColor);
+  border-radius: var(--g-component-listRow-radius);
+  text-align: start;
+  font: var(--g-component-listRow-type);
+}
+.g-row-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--g-component-listRow-gap);
+}
+.g-row-description,
+.g-row-meta {
+  color: var(--g-semantic-text-muted);
+}
+.g-row-meta {
+  flex-shrink: 1;
+  max-width: 100%; /* token-lint-disable-line: confine content to its parent width */
+}
+button.g-list-row {
+  cursor: pointer; /* token-lint-disable-line: native enabled and disabled action cursor */
+}
+button.g-list-row:hover:not(:disabled) {
+  background: var(--g-component-listRow-hover);
+}
+.g-list-row[data-selected] {
+  background: var(--g-component-listRow-active);
+}
+button.g-list-row:disabled {
+  background: var(--g-component-listRow-disabledBackground);
+  color: var(--g-component-listRow-disabledForeground);
+  cursor: default; /* token-lint-disable-line: native enabled and disabled action cursor */
+}
+button.g-list-row:disabled span {
+  color: inherit;
+}
+.g-menu {
+  max-width: 100%; /* token-lint-disable-line: confine content to its parent width */
+  min-width: 0;
+}
+.g-menu-trigger,
+.g-menu-panel button {
+  font: var(--g-component-menu-type);
+  padding: var(--g-component-menu-paddingY) var(--g-component-menu-paddingX);
+  min-height: var(--g-component-menu-target);
+  color: var(--g-component-menu-foreground);
+  background: var(--g-component-menu-background);
+  border: var(--g-component-menu-borderWidth) solid
+    var(--g-component-menu-borderColor);
+  border-radius: var(--g-component-menu-radius);
+  cursor: pointer; /* token-lint-disable-line: native enabled and disabled action cursor */
+  max-width: 100%; /* token-lint-disable-line: confine content to its parent width */
+  overflow-wrap: anywhere; /* token-lint-disable-line: unbroken text reflow */
+}
+.g-menu-panel {
+  display: flex;
+  flex-direction: column;
+  padding: var(--g-component-menu-paddingY);
+  gap: var(--g-component-menu-gap);
+  margin-block-start: var(--g-component-menu-gap);
+  background: var(--g-component-menu-background);
+  border: var(--g-component-menu-borderWidth) solid
+    var(--g-component-menu-borderColor);
+  border-radius: var(--g-component-menu-radius);
+}
+.g-menu-panel button {
+  text-align: start;
+}
+.g-menu-panel button:hover:not(:disabled),
+.g-menu-panel button:focus {
+  background: var(--g-component-menu-hover);
+}
+.g-menu-trigger:disabled,
+.g-menu-panel button:disabled {
+  color: var(--g-component-menu-disabledForeground);
+  background: var(--g-component-menu-disabledBackground);
+  cursor: default; /* token-lint-disable-line: native enabled and disabled action cursor */
+}
+.g-menu-trigger:focus-visible,
+.g-menu-panel button:focus-visible,
+button.g-list-row:focus-visible {
+  outline: var(--g-semantic-focus-width) solid var(--g-semantic-focus-color);
+  outline-offset: var(--g-semantic-focus-offset);
+}
+.g-empty-state {
+  color: var(--g-semantic-text-primary);
+  background: var(--g-semantic-surface-panel);
+  padding: var(--g-component-card-padding);
+  border-radius: var(--g-component-card-radius);
+}
