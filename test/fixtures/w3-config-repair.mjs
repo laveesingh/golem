@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -28,9 +27,9 @@ assert.ok(!beforeRecovery || kind.startsWith('recovery-'));
 assert.ok(!kind.startsWith('recovery-') || !process.argv.includes('--before'));
 let owner;
 if (old) {
-  const baseline = beforeRecovery
-    ? 'fca585c2750c2b8c26ed30e3a8b88b9d86bb2051'
-    : 'f7332713580c69c316f795f9017444a3d52c3ba0';
+  // Committed copies of the actual frozen sources (fca585c2 / f7332713),
+  // never read from git history at runtime.
+  const frozen = beforeRecovery ? 'fca' : 'f733';
   const target = path.join(
     sandbox,
     beforeRecovery ? 'fca-config' : 'f733-config',
@@ -44,10 +43,10 @@ if (old) {
     'read-versioned.ts',
     'contracts/config-validator.js',
   ]) {
-    let source = execFileSync('git', ['show', `${baseline}:lib/${name}`], {
-      cwd: repo,
-      encoding: 'utf8',
-    });
+    let source = fs.readFileSync(
+      new URL(`./w3-config-repair/${frozen}/${name}.txt`, import.meta.url),
+      'utf8',
+    );
     if (name === 'golem-config.ts')
       source = source.replace(
         "'./golem-home.js'",
