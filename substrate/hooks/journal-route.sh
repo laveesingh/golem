@@ -247,6 +247,10 @@ else
   ENTRY="{\"ts\":\"$(esc "$TS")\",\"event\":\"$(esc "$EVENT_TYPE")\",\"session_id\":\"$(esc "$SESSION_ID")\",\"cwd\":\"$(esc "$CWD")\",\"project_id\":\"$(esc "$PROJECT_ID")\",\"project_path\":\"$(esc "$ROOT")\",\"payload\":\"$(esc "$PAYLOAD")\"}"
 fi
 
+# S1: new journals start with a v1 header line; legacy files stay untouched.
+if [ ! -f "$JOURNAL_FILE" ]; then
+  printf '%s\n' '{"schema_version":1,"kind":"journal"}' > "$JOURNAL_FILE" 2>/dev/null || true
+fi
 printf '%s\n' "$ENTRY" >> "$JOURNAL_FILE" 2>/dev/null || {
   echo "journal-route: could not write to $JOURNAL_FILE" >&2
 }
@@ -285,6 +289,10 @@ forward_bus_spool() {
   cls="$(bus_event_class)"
   local event_uuid
   event_uuid="$(sha256 "$PROJECT_ID|$SESSION_ID|$TS|$EVENT_TYPE|$ENTRY")"
+  # S1: new spool files start with a v1 header line; legacy files stay untouched.
+  if [ ! -f "$spool_file" ]; then
+    printf '%s\n' '{"schema_version":1,"kind":"spool"}' > "$spool_file" 2>/dev/null || true
+  fi
   jq -cn --arg uuid "$event_uuid" --arg cls "$cls" --argjson entry "$ENTRY" '$entry + {uuid: $uuid, class: $cls}' >> "$spool_file" 2>/dev/null || return 0
 
   lines="$(wc -l < "$spool_file" 2>/dev/null | tr -d ' ' || echo 0)"
@@ -297,7 +305,8 @@ forward_bus_spool() {
   fi
   tmp="$spool_file.sending.$$"
   cp "$spool_file" "$tmp" 2>/dev/null || { rmdir "$lock" 2>/dev/null || true; return 0; }
-  body="$(jq -cs '{events: .}' "$tmp" 2>/dev/null || true)"
+  # The v1 header line is metadata, never a bus event; legacy files need no filtering.
+  body="$(jq -cs '{events: [.[] | select(.schema_version == null)]}' "$tmp" 2>/dev/null || true)"
   url="${GOLEM_DASHBOARD_URL:-http://127.0.0.1:7420}/api/bus/ingest"
   if [ -n "$body" ] && curl -fsS --max-time 1 -H 'content-type: application/json' -d "$body" "$url" >/dev/null 2>&1; then
     : > "$spool_file" 2>/dev/null || true

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { claudeConfigDir } from './claude-paths.js';
 import { loadConfig } from './golem-config.ts';
+import { appendJsonl } from './jsonl-header.ts';
 import { packageRoot, roleAssetsRoot } from './package-root.ts';
 import { readEndpointLeases, readSessionFacts } from './session-facts.js';
 
@@ -1041,18 +1042,17 @@ function appendRoleJournal(
     (row.project_path ? projectIdFor(row.project_path) : null);
   if (!projectId) return;
   try {
-    const dir = path.join(golemHome(), 'journals', projectId);
-    fs.mkdirSync(dir, { recursive: true });
     const text = `session role ${role ?? 'cleared'} for ${row.name || row.session_id} by ${by}`;
-    fs.appendFileSync(
-      path.join(dir, 'hook.jsonl'),
-      JSON.stringify({
+    appendJsonl(
+      path.join(golemHome(), 'journals', projectId, 'hook.jsonl'),
+      'journal',
+      {
         ts,
         event: 'milestone',
         session_id: row.session_id,
         project_id: projectId,
         text,
-      }) + '\n',
+      },
     );
   } catch {
     /* audit is best-effort; role write already succeeded */

@@ -10,8 +10,13 @@ import path from 'node:path';
 import net from 'node:net';
 import { spawn as nodeSpawn } from 'node:child_process';
 import { spawnSync as nodeSpawnSync } from 'node:child_process';
+import {
+  SHARE_REGISTRY_NAME as STORE_REGISTRY_NAME,
+  loadShareTunnelStore,
+  saveShareTunnelStore,
+} from '../../lib/share-tunnel-store.ts';
 
-export const SHARE_REGISTRY_NAME = 'share-tunnel.json';
+export const SHARE_REGISTRY_NAME = STORE_REGISTRY_NAME;
 export const SHARE_TUNNEL_BUDGET_MS = 30_000;
 export const SHARE_HOSTNAME_PATTERN = /^[a-z0-9-]+\.trycloudflare\.com$/;
 // GOL-390: every synchronous subprocess call in the Share path carries a
@@ -59,25 +64,15 @@ export function registryPath(homeDir) {
   return path.join(homeDir, SHARE_REGISTRY_NAME);
 }
 
+// Store reads/writes delegate to the versioned S1 owner: missing files read
+// as the versioned default, legacy registries migrate in memory, and a higher
+// stored version refuses instead of being mistaken for an absent tunnel.
 export function readShareRegistry(homeDir) {
-  try {
-    const raw = fs.readFileSync(registryPath(homeDir), 'utf8');
-    const doc = JSON.parse(raw);
-    if (!doc || typeof doc !== 'object') return null;
-    return doc;
-  } catch {
-    return null;
-  }
+  return loadShareTunnelStore(registryPath(homeDir)).value;
 }
 
 export function writeShareRegistry(homeDir, doc) {
-  fs.mkdirSync(homeDir, { recursive: true });
-  const target = registryPath(homeDir);
-  const tmp = `${target}.tmp.${process.pid}.${Date.now()}`;
-  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n', { mode: 0o600 });
-  try { fs.chmodSync(tmp, 0o600); } catch { /* best effort */ }
-  fs.renameSync(tmp, target);
-  try { fs.chmodSync(target, 0o600); } catch { /* best effort */ }
+  saveShareTunnelStore(registryPath(homeDir), doc);
   return doc;
 }
 

@@ -34,6 +34,8 @@ import { initDispatchDrainer } from './dispatch-queue.js';
 import { registerSubstrateRoutes } from './substrate.js';
 import { teamAssists } from './team-assist.js';
 import { golemHome, dashboardJsonPath, journalDirFor, projectsJsonPath, sessionsJsonPath } from '../../lib/golem-home.js';
+import { saveDashboardStore } from '../../lib/dashboard-store.ts';
+import { appendJsonl } from '../../lib/jsonl-header.ts';
 import { projectIdFor } from '../../lib/project-id.js';
 import { buildDispatchBrief } from './dispatch-brief.js';
 import { createRole, defaultSessionRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.ts';
@@ -251,15 +253,13 @@ function firstClosingBriefLine(comment) {
 function recordSpecClosedMilestone(existing, ticket, actor = 'system') {
   if (!existing || !ticket || existing.kind !== 'spec' || ticket.kind !== 'spec' || existing.state === 'done' || ticket.state !== 'done') return;
   try {
-    const journalDir = journalDirFor(ticket.project_id);
-    fs.mkdirSync(journalDir, { recursive: true });
-    fs.appendFileSync(path.join(journalDir, 'hook.jsonl'), `${JSON.stringify({
+    appendJsonl(path.join(journalDirFor(ticket.project_id), 'hook.jsonl'), 'journal', {
       ts: new Date().toISOString(),
       event: 'milestone',
       session_id: actor,
       project_id: ticket.project_id,
       text: `Spec ${ticket.display_id || ticket.id} closed: ${ticket.title}`,
-    })}\n`, 'utf8');
+    });
   } catch { /* the journal is best-effort */ }
 }
 
@@ -2615,14 +2615,11 @@ async function main() {
   }
 
   // WS2: self-register so WS3's MCP discovery can find the live dashboard.
-  // Atomic write (tmp + rename) into ~/.golem/dashboard.json. Best-effort
+  // Versioned atomic write into ~/.golem/dashboard.json. Best-effort
   // — a write failure logs a warning and must NOT crash the server. We LEAVE the
   // file on shutdown (a stale entry is harmless: consumers health-check the URL).
   try {
-    const dir = golemHome();
-    fs.mkdirSync(dir, { recursive: true });
     const target = dashboardJsonPath();
-    const tmp = path.join(dir, `.dashboard.json.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
     const doc = {
       url:
         CONFIG.host === '127.0.0.1' && boundPort === 7420
@@ -2633,8 +2630,7 @@ async function main() {
       pid: process.pid,
       started_at: new Date().toISOString(),
     };
-    fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
-    fs.renameSync(tmp, target);
+    saveDashboardStore(doc, target);
     fastify.log.info(`self-registered at ${target}`);
   } catch (err) {
     fastify.log.warn({ err }, 'dashboard self-registration failed (non-fatal)');
