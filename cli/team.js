@@ -1,3 +1,4 @@
+import { formatJson } from '../lib/cli-envelope.ts';
 // golem team — teams with an owner and members (GOL-363 R2, R3; GOL-371; GOL-382 R4).
 //
 // Flag parser and help style follow cli/collaboration.js. Herdr workspace
@@ -192,7 +193,7 @@ export async function runTeam(family, args, {
   try {
     const parsed = parse(family, args);
     if (parsed.options) json = Boolean(parsed.options['--json']);
-    if (parsed.help) { stdout(json ? JSON.stringify({ help: parsed.help }) : parsed.help); return 0; }
+    if (parsed.help) { stdout(json ? formatJson({ help: parsed.help }) : parsed.help); return 0; }
     const { key, options: o, positional } = parsed;
     if (o['--scope'] && !['team', 'project', 'all'].includes(o['--scope'])) throw new NotificationError(`invalid scope: ${o['--scope']}`);
     const query = await managementQuery({ operation: key, kind: 'team', options: key === 'team list' ? { '--scope': 'project', ...o } : o,
@@ -223,7 +224,7 @@ export async function runTeam(family, args, {
         && (!resolution.team_id || t.team_id === resolution.team_id) && (!o['--session'] || t.herdr_session === resolution.session));
       const views = teams.map((team) => teamView(team, agentCountFor(team.team_id, projectId)));
       if (json) {
-        stdout(JSON.stringify(listReceipt(views, resolution)));
+        stdout(formatJson(listReceipt(views, resolution)));
         return 0;
       }
       stdout(views.length ? formatTable(TEAM_TABLE_COLUMNS, views.map(teamTableRow)) : 'No teams.');
@@ -232,7 +233,7 @@ export async function runTeam(family, args, {
 
     const controlOutput = result => {
       const { team, ...outcome } = result;
-      stdout(json ? JSON.stringify({ ...(team ? teamView(team, agentCountFor(team.team_id, projectId)) : {}), ...outcome, resolution }) : result.error ?? `team ${team?.slug ?? ''} ${key.split(' ')[1]}${result.noop ? ' (no-op)' : ''}`);
+      stdout(json ? formatJson({ ...(team ? teamView(team, agentCountFor(team.team_id, projectId)) : {}), ...outcome, resolution }) : result.error ?? `team ${team?.slug ?? ''} ${key.split(' ')[1]}${result.noop ? ' (no-op)' : ''}`);
       return result.ok === false ? 1 : 0;
     };
     if (key === 'team inspect') {
@@ -278,7 +279,7 @@ export async function runTeam(family, args, {
         commitAdmission(intent.operation_id);
         const updated = findTeam(team.team_id);
         if (json) {
-          stdout(JSON.stringify({ ...teamView(updated, 0), resolution }));
+          stdout(formatJson({ ...teamView(updated, 0), resolution }));
         } else {
           stdout(`team ${updated.team_id} (slug ${updated.slug}) workspace ${updated.herdr_workspace_id}`);
         }
@@ -297,7 +298,7 @@ export async function runTeam(family, args, {
       const owner = Boolean(o['--owner']);
       const updated = joinTeam(team.team_id, caller, { owner });
       const view = teamView(updated, agentCountFor(updated.team_id, projectId));
-      stdout(json ? JSON.stringify({ ...view, resolution }) : `team ${view.slug} ${owner ? 'owner' : 'member'} ${caller}`);
+      stdout(json ? formatJson({ ...view, resolution }) : `team ${view.slug} ${owner ? 'owner' : 'member'} ${caller}`);
       return 0;
     }
 
@@ -334,14 +335,14 @@ export async function runTeam(family, args, {
       const keptPanes = keptFor.map((pane) => pane.pane_id);
       const result = { ...teamView(closed, 0), stopped, targets, operation_id: closing.close_operation_id, workspace_closed: workspaceClosed, workspace_kept_for: keptPanes };
       const keptNote = keptPanes.length ? `; workspace kept open for ${keptPanes.join(', ')}` : '';
-      stdout(json ? JSON.stringify({ ...result, resolution }) : `team ${closed.slug} closed (${stopped.length} agents stopped${keptNote})`);
+      stdout(json ? formatJson({ ...result, resolution }) : `team ${closed.slug} closed (${stopped.length} agents stopped${keptNote})`);
       return 0;
     }
 
     throw new NotificationError(`unknown command: ${key}`);
   } catch (error) {
     const invalid = error.exitCode === 2 || error instanceof NotificationError || /unknown team|team slug|team label|workspace already owned|team adoption requires|team is closed|bound session|requires a value|unknown command|unknown option|duplicate option/.test(error.message);
-    if (json) stdout(JSON.stringify({ ok: false, code: error.code ?? 'NATIVE_ERROR', error: error.message, resolution: error.resolution ?? resolution, ...(error.resolution?.candidates?.length ? { candidates: error.resolution.candidates } : {}) }));
+    if (json) stdout(formatJson({ ok: false, code: error.code ?? 'NATIVE_ERROR', error: error.message, resolution: error.resolution ?? resolution, ...(error.resolution?.candidates?.length ? { candidates: error.resolution.candidates } : {}) }));
     else if (error.code === 'TARGET_AMBIGUOUS') stdout(error.message);
     else stderr(`golem team: ${error.message}`);
     return invalid ? 2 : 1;

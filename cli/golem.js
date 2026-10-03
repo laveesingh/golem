@@ -16,6 +16,7 @@
 //   status       Dashboard health + canonical URL.
 //   help         Show this message.
 
+import { formatJson } from '../lib/cli-envelope.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -102,12 +103,12 @@ async function cmdStatus(args) {
   const probe = await probeDashboard();
 
   if (wantJson) {
-    log(JSON.stringify({
+    log(formatJson({
       dashboard_url: probe.ok ? dashboardUrl() : null,
       dashboard_healthy: probe.ok,
       dashboard: probe.data ?? null,
       error: probe.ok ? null : probe.error,
-    }, null, 2));
+    }));
     return;
   }
 
@@ -1249,7 +1250,8 @@ async function main() {
     Object.hasOwn(IN_FILE_VERB_HELP, cmd) &&
     rest.some((arg) => arg === '--help' || arg === '-h')
   ) {
-    log(IN_FILE_VERB_HELP[cmd]());
+    const help = IN_FILE_VERB_HELP[cmd]();
+    log(cmd === 'status' && rest.includes('--json') ? formatJson({ help }) : help);
     return;
   }
 
