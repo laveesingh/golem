@@ -5,6 +5,7 @@
 // by reads. A higher header version is refused; malformed data lines are
 // skipped by readers, preserving the existing best-effort feed behavior.
 
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -40,13 +41,20 @@ export function isJsonlHeaderLine(line: string): boolean {
   );
 }
 
-/** Create parent dirs and a header-only file; legacy nonempty files untouched. */
+/**
+ * Publish the header for a new file without ever truncating another writer.
+ * The header is written to a unique temp file in the same directory, synced,
+ * then hard-linked to the target name: the link wins exactly once and fails
+ * with EEXIST when another process published first. The temp is unlinked in
+ * every case. Legacy files stay untouched; no path is ever truncated here.
+ */
 export function ensureJsonlHeader(file: string, kind: JsonlKind): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.header-${process.pid}-${randomUUID()}.tmp`;
   let fd: number;
   try {
     fd = fs.openSync(
-      file,
+      tmp,
       fs.constants.O_WRONLY |
         fs.constants.O_CREAT |
         fs.constants.O_EXCL |
@@ -54,29 +62,35 @@ export function ensureJsonlHeader(file: string, kind: JsonlKind): void {
       0o600,
     );
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    let stat: fs.Stats;
-    try {
-      stat = fs.lstatSync(file);
-    } catch {
-      return;
-    }
-    if (!stat.isFile() || stat.size > 0) return;
-    try {
-      fs.writeFileSync(file, `${jsonlHeaderLine(kind)}\n`, { mode: 0o600 });
-    } catch {
-      /* best-effort seeding of a raced empty file */
-    }
-    return;
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return;
+    throw error;
   }
   try {
     fs.writeSync(fd, `${jsonlHeaderLine(kind)}\n`);
+    fs.fsyncSync(fd);
   } finally {
     try {
       fs.closeSync(fd);
     } catch {
-      /* creation already succeeded */
+      /* a failed close still leaves the synced temp for linking */
     }
+  }
+  try {
+    fs.linkSync(tmp, file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        /* temp cleanup is best-effort; the publish itself failed */
+      }
+      throw error;
+    }
+  }
+  try {
+    fs.unlinkSync(tmp);
+  } catch {
+    /* temp cleanup is best-effort; the header is already published */
   }
 }
 
@@ -201,4 +215,29 @@ export function appendJsonl(
 ): void {
   ensureJsonlHeader(file, kind);
   fs.appendFileSync(file, `${JSON.stringify(entry)}\n`, 'utf8');
+}
+
+/**
+ * Lenient feed read for best-effort consumers: missing or unreadable files
+ * read as no values (the feed predates the file), while version and data
+ * errors refuse. Callers stay mechanical: no catch, no classification.
+ */
+export function readJournalValues(
+  file: string,
+  kind: JsonlKind,
+): unknown[] | null {
+  let read: JsonlRead;
+  try {
+    read = readJsonl(file, kind);
+  } catch (error) {
+    if (
+      error instanceof VersionedFileError &&
+      (error.code === 'VERSIONED_VERSION_UNSUPPORTED' ||
+        error.code === 'VERSIONED_VERSION_INVALID' ||
+        error.code === 'VERSIONED_DATA_INVALID')
+    )
+      throw error;
+    return null;
+  }
+  return read.values;
 }

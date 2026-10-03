@@ -6,7 +6,7 @@
 // Unlike journal.js, this module does NOT synthesize agents or tool hooks — it
 // only surfaces the v4 milestone feed that the command-center home renders.
 
-import { readJsonl } from '../../lib/jsonl-header.ts';
+import { readJournalValues } from '../../lib/jsonl-header.ts';
 import { tsMs } from './util.js';
 
 const EVENT_CAP = 200;
@@ -27,22 +27,12 @@ function milestoneFromValue(raw) {
   return { t, text, session_id: raw.session_id ?? null };
 }
 
-// Journal files may start with a v1 header line; summary files stay legacy.
-// A higher header version refuses instead of reading as an empty feed.
+// Feed policy lives in the typed owner: missing/unreadable files read empty,
+// version and data errors refuse.
 async function readMilestoneFile(filePath, out) {
-  let parsed;
-  try {
-    parsed = readJsonl(filePath, 'journal');
-  } catch (error) {
-    if (
-      error?.code === 'VERSIONED_VERSION_UNSUPPORTED' ||
-      error?.code === 'VERSIONED_VERSION_INVALID' ||
-      error?.code === 'VERSIONED_DATA_INVALID'
-    )
-      throw error;
-    return;
-  }
-  for (const raw of parsed.values) {
+  const values = readJournalValues(filePath, 'journal');
+  if (!values) return;
+  for (const raw of values) {
     const m = milestoneFromValue(raw);
     if (m) out.push(m);
   }
