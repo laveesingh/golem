@@ -36,6 +36,7 @@ export interface VersionPolicy<T> {
   validateLegacy: (value: unknown) => boolean;
   migrateLegacy: (value: unknown) => T;
   missing: () => T;
+  migrateVersion?: (value: unknown, version: number) => T;
 }
 interface FileIdentity {
   dev: number;
@@ -84,8 +85,16 @@ export function validateVersioned<T>(
   const version = object.schema_version;
   if (typeof version !== 'number' || !Number.isInteger(version))
     throw new VersionedFileError('VERSIONED_VERSION_INVALID', file);
-  if (version !== policy.currentVersion)
+  if (version <= 0 || version > policy.currentVersion)
     throw new VersionedFileError('VERSIONED_VERSION_UNSUPPORTED', file);
+  if (version !== policy.currentVersion) {
+    if (!policy.migrateVersion)
+      throw new VersionedFileError('VERSIONED_VERSION_UNSUPPORTED', file);
+    const migrated = policy.migrateVersion(value, version);
+    if (!policy.validateCurrent(migrated))
+      throw new VersionedFileError('VERSIONED_DATA_INVALID', file);
+    return migrated;
+  }
   if (!policy.validateCurrent(value))
     throw new VersionedFileError('VERSIONED_DATA_INVALID', file);
   return value;
