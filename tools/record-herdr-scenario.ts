@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveProfile } from '../cli/bootstrap.ts';
+import { herdrBinary } from '../lib/herdr-driver.js';
 import { createScenarioRecorder } from '../lib/scenario-recorder.ts';
 
 assert.equal(process.env.GOLEM_RECORD_REAL, '1');
@@ -19,7 +20,7 @@ assert.equal(env.GOLEM_PROFILE_ROOT, rec);
 env.HOME = path.join(rec, 'home');
 const session = `s4-herdr-${Date.now().toString(36)}`;
 env.GOLEM_HERDR_SESSION = session;
-const version = spawnSync('herdr', ['--version'], {
+const version = spawnSync(herdrBinary(), ['--version'], {
   env,
   encoding: 'utf8',
   timeout: 10000,
@@ -52,7 +53,7 @@ function call(args: string[]): unknown {
     operation: 'process-spawn',
     fields: { harness: 'herdr', argv },
   });
-  const result = spawnSync('herdr', argv, {
+  const result = spawnSync(herdrBinary(), argv, {
     env,
     encoding: 'utf8',
     timeout: 20000,

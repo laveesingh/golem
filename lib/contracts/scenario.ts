@@ -1,4 +1,3 @@
-import type { Static } from '@sinclair/typebox';
 import { Type } from '@sinclair/typebox';
 
 export const ScenarioSource = Type.Object(
@@ -59,9 +58,6 @@ export const ScenarioFixture = Type.Object(
   },
   { $id: 'ScenarioFixture', additionalProperties: false },
 );
-export type ScenarioSourceInput = Static<typeof ScenarioSource>;
-export type ScenarioEventInput = Static<typeof ScenarioEvent>;
-export type ScenarioFixtureInput = Static<typeof ScenarioFixture>;
 export const scenarioSchemas = {
   ScenarioSource,
   ScenarioEvent,

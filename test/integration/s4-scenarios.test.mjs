@@ -17,6 +17,12 @@ import {
   normalizeTypedWorkerInbox,
   settleTypedDelivery,
 } from '../../lib/typed-worker-endpoint.js';
+import Ajv from 'ajv';
+import {
+  ScenarioEvent,
+  ScenarioFixture,
+  ScenarioSource,
+} from '../../lib/contracts/scenario.ts';
 import { readScenarioFile } from '../../tools/scenario-io.ts';
 import { validateScenario } from '../../tools/scenario-scrub-core.ts';
 
@@ -28,6 +34,24 @@ const repo = path.resolve(
 const fixture = (name) =>
   path.join(repo, 'test', 'fixtures', 'scenarios', name);
 const load = (name) => validateScenario(readScenarioFile(fixture(name)));
+const ajv = new Ajv();
+const matchFixture = ajv.compile(ScenarioFixture);
+for (const name of [
+  'typed-brief-accepted-settled.json',
+  'claude-dispatch-ack-return.json',
+  'herdr-worker-lifecycle.json',
+  'dashboard-restart-stranded-envelope.json',
+]) {
+  test(`scenario fixture ${name} validates against the C1 contract`, () => {
+    const raw = JSON.parse(fs.readFileSync(fixture(name), 'utf8'));
+    assert.equal(matchFixture(raw), true);
+    assert.ok(
+      [ScenarioEvent, ScenarioSource].every(
+        (schema) => typeof schema.$id === 'string',
+      ),
+    );
+  });
+}
 const simDir = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-s4-sim-'));
   fs.chmodSync(dir, 0o700);

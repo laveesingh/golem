@@ -259,7 +259,7 @@ try {
   );
   const sendText = (text: string): void => {
     const result = spawnSync(
-      'herdr',
+      driver.herdrBinary(),
       ['--session', herdrSession, 'pane', 'send-text', String(paneId), text],
       { env: process.env, encoding: 'utf8', timeout: 20000 },
     );
