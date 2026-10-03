@@ -17,7 +17,10 @@ import {
   ownedDirectory,
   readRegular,
 } from './atoms-candidates.mjs';
-import { retainMolecules } from './molecules-candidates.mjs';
+import {
+  retainMolecules,
+  validateRetainedMolecules,
+} from './molecules-candidates.mjs';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url)),
   root = fs.realpathSync(
@@ -231,7 +234,7 @@ try {
     'Missing env cannot allocate or leak a molecule browser profile',
   );
   const mode = process.argv[2] ?? 'build';
-  const captureMode = mode === 'baseline';
+  const captureMode = mode === 'baseline' || mode === 'rebaseline';
   if (mode === 'functional' || mode === 'visual' || captureMode) {
     const identityFile = process.argv[3],
       destination = process.argv[4];
@@ -265,6 +268,11 @@ try {
     fs.mkdirSync(results, { mode: 0o700 });
     fs.mkdirSync(records, { mode: 0o700 });
     const images = path.join(source, 'test/e2e/__screenshots__/molecules');
+    let previous = null;
+    if (mode === 'rebaseline') {
+      previous = validateRetainedMolecules(images);
+      fs.renameSync(images, path.join(root, 'previous-molecules'));
+    }
     if (captureMode) {
       assert.ok(destination && path.isAbsolute(destination));
       ownedDirectory(path.dirname(destination));
@@ -361,7 +369,22 @@ try {
         timezone: 'UTC',
         scale: 1,
       };
-      retainMolecules(images, records, destination, provenance);
+      const fresh = retainMolecules(images, records, destination, provenance);
+      if (previous) {
+        const old = new Map(
+          previous.files.map((file) => [file.name, file.sha256]),
+        );
+        assert.equal(fresh.files.length, previous.files.length);
+        for (const file of fresh.files)
+          assert.equal(
+            file.sha256,
+            old.get(file.name),
+            `Rebased re-capture must stay pixel-identical: ${file.name}`,
+          );
+        console.log(
+          'GOL525 molecule rebaseline PASS: 32 PNGs byte-identical across rebase; provenance rebound',
+        );
+      }
     }
   } else assert.equal(mode, 'build');
   await stop(server);

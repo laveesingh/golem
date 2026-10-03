@@ -36,7 +36,7 @@ const mode = options['--mode'],
   root = options['--output'],
   docker = options['--docker-bin'],
   host = options['--docker-host'];
-assert.ok(['functional', 'baseline', 'visual'].includes(mode));
+assert.ok(['functional', 'baseline', 'visual', 'rebaseline'].includes(mode));
 assert.match(pin, /^[a-f0-9]{40}$/);
 assert.ok(path.isAbsolute(root));
 const git = (...values) => {
@@ -363,6 +363,7 @@ try {
   await phase('prepare', 'bridge');
   await phase('functional', 'none');
   if (mode === 'baseline') await phase('baseline', 'none');
+  if (mode === 'rebaseline') await phase('rebaseline', 'none');
   if (mode === 'visual') await phase('visual', 'none');
   fs.copyFileSync(
     path.join(owned, 'identity.json'),
@@ -372,7 +373,7 @@ try {
     path.join(owned, 'functional-green.json'),
     path.join(root, 'functional-green.json'),
   );
-  if (mode === 'baseline') {
+  if (mode === 'baseline' || mode === 'rebaseline') {
     const retained = path.join(root, 'candidates');
     fs.renameSync(path.join(owned, 'candidates'), retained);
     assert.equal(fs.existsSync(path.join(retained, 'manifest.json')), true);

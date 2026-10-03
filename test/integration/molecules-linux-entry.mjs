@@ -119,18 +119,20 @@ if (mode === 'prepare') {
   assert.equal(identity.imageObserved, true);
   assert.equal(identity.executableObserved, true);
   const green = path.join(owned, 'functional-green.json');
-  if (mode === 'baseline' || mode === 'visual')
+  if (['baseline', 'visual', 'rebaseline'].includes(mode))
     assert.equal(
       readRegular(green).toString().trim(),
       digest(identityFile),
       'Functional green must bind to exact observed identity',
     );
   const args = [
-    mode === 'baseline'
-      ? 'baseline'
-      : mode === 'visual'
-        ? 'visual'
-        : 'functional',
+    mode === 'visual'
+      ? 'visual'
+      : mode === 'functional'
+        ? 'functional'
+        : mode === 'rebaseline'
+          ? 'rebaseline'
+          : 'baseline',
     identityFile,
   ];
   if (candidate) args.push(candidate);
@@ -152,7 +154,7 @@ if (mode === 'prepare') {
     });
   else
     assert.ok(
-      ['baseline', 'visual'].includes(mode),
+      ['baseline', 'visual', 'rebaseline'].includes(mode),
       'Unknown molecule browser stage',
     );
   console.log(`GOL525 actual pinned molecule ${mode} PASS with owned cleanup`);
