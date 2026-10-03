@@ -52,8 +52,11 @@ const SYMBOL_FIELDS: Record<string, string> = {
   team_id: 'team',
   worker_id: 'worker',
   workspace_id: 'workspace',
+  active_tab_id: 'tab',
   tab_id: 'tab',
   pane_id: 'pane',
+  terminal_id: 'terminal',
+  foreground_cwd: 'path',
   pid: 'pid',
   port: 'port',
   path: 'path',
@@ -61,7 +64,7 @@ const SYMBOL_FIELDS: Record<string, string> = {
   model: 'model',
 };
 export const SYMBOL =
-  /^\$(id|session|envelope|attempt|project|team|worker|workspace|tab|pane|pid|port|path|model):([1-9]\d{0,3})$/;
+  /^\$(id|session|envelope|attempt|project|team|worker|workspace|tab|pane|terminal|pid|port|path|model):([1-9]\d{0,3})$/;
 const BOOL = new Set([
   'ok',
   'accepted',
@@ -69,12 +72,20 @@ const BOOL = new Set([
   'running',
   'default',
   'delivery_ready',
+  'focused',
 ]);
 const NUM = new Set([
   'schema_version',
   'exit_code',
   'http_status',
   'duration_ms',
+  'number',
+  'pane_count',
+  'tab_count',
+  'revision',
+  'viewport_rows',
+  'max_offset_from_bottom',
+  'offset_from_bottom',
 ]);
 const CONTAINERS = new Set([
   'result',
@@ -84,10 +95,19 @@ const CONTAINERS = new Set([
   'sessions',
   'panes',
   'pane',
+  'root_pane',
+  'tab',
+  'scroll',
   'agents',
   'agent',
   'items',
 ]);
+const HERDR_TYPES = [
+  'workspace_list',
+  'workspace_created',
+  'tab_created',
+  'agent_list',
+] as const;
 const STATES = [
   'queued',
   'claimed',
@@ -122,6 +142,7 @@ const ARGV_LITERAL = new Set([
   '--cwd',
   '--label',
   '--name',
+  '--allowedTools',
   '--model',
   '--provider',
   '--extension',
@@ -129,6 +150,23 @@ const ARGV_LITERAL = new Set([
   '--new-tab',
   '--workspace',
   '--no-session',
+  '--mode',
+  'rpc',
+  '--mcp-config',
+  '--settings',
+  '--strict-mcp-config',
+  '--input-format',
+  '--output-format',
+  'stream-json',
+  '--verbose',
+  '--dangerously-load-development-channels',
+  'server:golem',
+  '--dangerously-skip-permissions',
+  '--no-tools',
+  '--no-extensions',
+  '--no-skills',
+  '--no-prompt-templates',
+  '--no-context-files',
   '-p',
   '--print',
   'agents',
@@ -158,6 +196,8 @@ const VALUE_FLAGS: Record<string, string> = {
   '--workspace': 'workspace',
   '--cwd': 'path',
   '--extension': 'path',
+  '--mcp-config': 'path',
+  '--settings': 'path',
   '--model': 'model',
 };
 export type ArgSlot =
@@ -181,6 +221,16 @@ export function argvSlots(value: unknown): ArgSlot[] {
     throw new ScenarioError('invalid bounded argv');
   const args = value as string[],
     slots: ArgSlot[] = [];
+  const choices: Record<string, readonly string[]> = {
+    '--mode': ['rpc'],
+    '--input-format': ['stream-json'],
+    '--output-format': ['stream-json'],
+    '--dangerously-load-development-channels': ['server:golem'],
+  };
+  for (const [i, arg] of args.entries()) {
+    if (choices[arg] && !choices[arg].includes(args[i + 1]))
+      throw new ScenarioError('invalid argv option choice');
+  }
   let pending: ArgSlot | null = null,
     optional = false,
     context: string | undefined,
@@ -227,6 +277,10 @@ export function argvSlots(value: unknown): ArgSlot[] {
         tag: item === '--provider' ? 'provider' : 'label',
         allowFlag: false,
       };
+      continue;
+    }
+    if (item === '--allowedTools') {
+      pending = { kind: 'redacted', tag: 'argv', allowFlag: true };
       continue;
     }
     if (item === '--print' || item === '-p') {
@@ -371,6 +425,8 @@ class Scrubber {
       }
       if (key === 'argv') out[key] = this.argv(value);
       else if (key === 'harness') out[key] = member(value, HARNESSES);
+      else if (key === 'type') out[key] = member(value, HERDR_TYPES);
+      else if (key === 'agent_status') out[key] = member(value, STATES);
       else if (key === 'state' || key === 'status' || key === 'outcome')
         out[key] = member(value, STATES);
       else if (key === 'signal')

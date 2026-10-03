@@ -6,7 +6,7 @@ import { once } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateScenario } from '../../tools/scenario-scrub-core.ts';
+import { validateScenario } from '../../lib/scenario-scrub-core.ts';
 import {
   processTransaction,
   scenario,

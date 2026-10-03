@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ScenarioError } from './scenario-format.ts';
-import { readScenarioFile, writeCandidate } from './scenario-io.ts';
-import { scrubScenario, validateScenario } from './scenario-scrub-core.ts';
+import { ScenarioError } from '../lib/scenario-format.ts';
+import { readScenarioFile, writeCandidate } from '../lib/scenario-io.ts';
+import { scrubScenario, validateScenario } from '../lib/scenario-scrub-core.ts';
 
 export function runScenarioCli(args: string[]): number {
   if (args.length === 1 && args[0] === '--help') {

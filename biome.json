@@ -49,7 +49,12 @@
       "lib/read-versioned.ts",
       "lib/golem-config.ts",
       "lib/session-role.ts",
-      "lib/config-role-default.ts"
+      "lib/config-role-default.ts",
+      "lib/clock.ts",
+      "lib/scenario-recorder.ts",
+      "lib/scenario-format.ts",
+      "lib/scenario-scrub-core.ts",
+      "lib/scenario-io.ts"
     ]
   },
   "formatter": {

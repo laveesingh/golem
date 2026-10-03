@@ -35,6 +35,7 @@ import { hasTypedWorkerCapability, readSessionFacts } from '../../lib/session-fa
 import { isLegacyReplayFence } from './typed-delivery.js';
 import { publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
 import { createNotificationScheduleRuntime } from './notification-schedule-runtime.js';
+import { systemClock } from '../../lib/clock.ts';
 
 const TICK_MS = 5_000;
 const COOLDOWN_MS = 60_000;
@@ -57,7 +58,8 @@ export function initDispatchDrainer({
   buildDispatchBrief,
   broadcastWS,
   listChannels,
-  nowMs = () => Date.now(),
+  clock = systemClock,
+  nowMs = () => clock.now(),
 }) {
   const deliverControl = pushControlEnvelope ?? (({ content }, sessionId) => pushBrief(content, sessionId));
   // session_id → ts(ms) of the most recent successful delivery. Used by the
@@ -679,10 +681,15 @@ export function initDispatchDrainer({
     return runningTick;
   }
 
-  timer = setInterval(() => {
+  // C4: the drainer tick runs on the injected clock. Recurring scheduling is
+  // built from clock.setTimeout so a test clock fires it deterministically.
+  const fire = () => {
+    if (stopped) return;
+    timer = clock.setTimeout(fire, TICK_MS);
     tick().catch((err) => console.error('[dispatch-drainer] tick threw:', err));
-  }, TICK_MS);
-  timer.unref();
+  };
+  timer = clock.setTimeout(fire, TICK_MS);
+  if (timer && typeof timer.unref === 'function') timer.unref();
 
   return {
     // Exposed for deterministic journey coverage; production still runs it on
@@ -691,7 +698,7 @@ export function initDispatchDrainer({
     close() {
       stopped = true;
       if (timer) {
-        clearInterval(timer);
+        clock.clearTimeout(timer);
         timer = null;
       }
     },

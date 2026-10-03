@@ -1,0 +1,330 @@
+{
+  "schema": 1,
+  "scenario": "herdr-worker-lifecycle",
+  "source": {
+    "harness": "herdr",
+    "harness_version": "0.9.1",
+    "golem_version": "5.26.1"
+  },
+  "seed": 524,
+  "events": [
+    {
+      "seq": 1,
+      "at_ms": 516,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "herdr",
+        "argv": [
+          "--session",
+          "$session:1",
+          "workspace",
+          "create",
+          "--label",
+          "<redacted:label>"
+        ]
+      }
+    },
+    {
+      "seq": 2,
+      "at_ms": 523,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-stdout",
+      "fields": {
+        "harness": "herdr",
+        "stdout_recipe": "json",
+        "result": {
+          "root_pane": {
+            "agent_status": "unknown",
+            "cwd": "$path:1",
+            "focused": true,
+            "foreground_cwd": "$path:1",
+            "pane_id": "$pane:1",
+            "revision": 0,
+            "scroll": {
+              "max_offset_from_bottom": 0,
+              "offset_from_bottom": 0,
+              "viewport_rows": 40
+            },
+            "tab_id": "$tab:1",
+            "terminal_id": "$terminal:1",
+            "workspace_id": "$workspace:1"
+          },
+          "tab": {
+            "agent_status": "unknown",
+            "focused": true,
+            "label": "<redacted:label>",
+            "number": 1,
+            "pane_count": 1,
+            "tab_id": "$tab:1",
+            "workspace_id": "$workspace:1"
+          },
+          "type": "workspace_created",
+          "workspace": {
+            "active_tab_id": "$tab:1",
+            "agent_status": "unknown",
+            "focused": true,
+            "label": "<redacted:label>",
+            "number": 1,
+            "pane_count": 1,
+            "tab_count": 1,
+            "workspace_id": "$workspace:1"
+          }
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "at_ms": 523,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "herdr",
+        "exit_code": 0
+      }
+    },
+    {
+      "seq": 4,
+      "at_ms": 523,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "herdr",
+        "argv": [
+          "--session",
+          "$session:1",
+          "tab",
+          "create",
+          "--workspace",
+          "$workspace:1",
+          "--label",
+          "<redacted:label>"
+        ]
+      }
+    },
+    {
+      "seq": 5,
+      "at_ms": 530,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-stdout",
+      "fields": {
+        "harness": "herdr",
+        "stdout_recipe": "json",
+        "result": {
+          "root_pane": {
+            "agent_status": "unknown",
+            "cwd": "$path:1",
+            "focused": false,
+            "foreground_cwd": "$path:1",
+            "pane_id": "$pane:2",
+            "revision": 0,
+            "scroll": {
+              "max_offset_from_bottom": 0,
+              "offset_from_bottom": 0,
+              "viewport_rows": 40
+            },
+            "tab_id": "$tab:2",
+            "terminal_id": "$terminal:2",
+            "workspace_id": "$workspace:1"
+          },
+          "tab": {
+            "agent_status": "unknown",
+            "focused": false,
+            "label": "<redacted:label>",
+            "number": 2,
+            "pane_count": 1,
+            "tab_id": "$tab:2",
+            "workspace_id": "$workspace:1"
+          },
+          "type": "tab_created"
+        }
+      }
+    },
+    {
+      "seq": 6,
+      "at_ms": 530,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "herdr",
+        "exit_code": 0
+      }
+    },
+    {
+      "seq": 7,
+      "at_ms": 530,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "herdr",
+        "argv": [
+          "--session",
+          "$session:1",
+          "agent",
+          "list"
+        ]
+      }
+    },
+    {
+      "seq": 8,
+      "at_ms": 534,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-stdout",
+      "fields": {
+        "harness": "herdr",
+        "stdout_recipe": "json",
+        "result": {
+          "agents": [],
+          "type": "agent_list"
+        }
+      }
+    },
+    {
+      "seq": 9,
+      "at_ms": 534,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "herdr",
+        "exit_code": 0
+      }
+    },
+    {
+      "seq": 10,
+      "at_ms": 535,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "herdr",
+        "argv": [
+          "--session",
+          "$session:1",
+          "pane",
+          "run",
+          "$pane:2",
+          "<redacted:argv>",
+          "<redacted:argv>"
+        ]
+      }
+    },
+    {
+      "seq": 11,
+      "at_ms": 539,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "herdr",
+        "exit_code": 0
+      }
+    },
+    {
+      "seq": 12,
+      "at_ms": 539,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "herdr",
+        "argv": [
+          "--session",
+          "$session:1",
+          "agent",
+          "list"
+        ]
+      }
+    },
+    {
+      "seq": 13,
+      "at_ms": 543,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-stdout",
+      "fields": {
+        "harness": "herdr",
+        "stdout_recipe": "json",
+        "result": {
+          "agents": [],
+          "type": "agent_list"
+        }
+      }
+    },
+    {
+      "seq": 14,
+      "at_ms": 543,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "herdr",
+        "exit_code": 0
+      }
+    },
+    {
+      "seq": 15,
+      "at_ms": 543,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "herdr",
+        "argv": [
+          "--session",
+          "$session:1",
+          "pane",
+          "close",
+          "$pane:2"
+        ]
+      }
+    },
+    {
+      "seq": 16,
+      "at_ms": 570,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "herdr",
+        "exit_code": 0
+      }
+    },
+    {
+      "seq": 17,
+      "at_ms": 571,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "herdr",
+        "argv": [
+          "--session",
+          "$session:1",
+          "session",
+          "stop",
+          "$session:1"
+        ]
+      }
+    },
+    {
+      "seq": 18,
+      "at_ms": 920,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "herdr",
+        "exit_code": 0
+      }
+    }
+  ]
+}

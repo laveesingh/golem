@@ -41,7 +41,7 @@ Sequence starts at 1 and is contiguous; relative milliseconds are nonnegative an
 monotonic. `in` means input to that boundary owner; `out` means its consequence.
 Operations constrain boundary and direction; unknown/malformed variants fail.
 
-`tools/scenario-format.ts` owns the provisional DTO/enums. The scrub module is a
+`lib/scenario-format.ts` owns the provisional DTO/enums. The scrub module (`lib/scenario-scrub-core.ts`, I/O in `lib/scenario-io.ts`) is a
 pure transform; CLI I/O is separate. JSON input is bounded to 1 MiB, a regular
 non-symlink file, with no directory discovery. At most 10,000 events, 64 fields per
 record, 256 list items, depth 8 and 100,000 structural nodes/fields are accepted.

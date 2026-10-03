@@ -7,7 +7,7 @@ import {
   privateTempDirectory,
   readScenarioFile,
   writeCandidate,
-} from '../../tools/scenario-io.ts';
+} from '../../lib/scenario-io.ts';
 
 let root;
 beforeEach(() => {

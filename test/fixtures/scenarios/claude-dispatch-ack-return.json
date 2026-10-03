@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "scenario": "claude-dispatch-ack-return",
+  "source": {
+    "harness": "claudecode",
+    "harness_version": "2.1.288",
+    "golem_version": "5.26.1"
+  },
+  "seed": 524,
+  "events": [
+    {
+      "seq": 1,
+      "at_ms": 4013,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "claudecode",
+        "argv": [
+          "--model",
+          "$model:1",
+          "--mcp-config",
+          "$path:1",
+          "--strict-mcp-config",
+          "--settings",
+          "$path:2",
+          "--dangerously-load-development-channels",
+          "server:golem",
+          "--allowedTools",
+          "<redacted:argv>"
+        ]
+      }
+    },
+    {
+      "seq": 2,
+      "at_ms": 32205,
+      "boundary": "mcp",
+      "direction": "out",
+      "operation": "mcp-return",
+      "fields": {
+        "tool_name": "ack",
+        "ok": true,
+        "state": "acknowledged"
+      }
+    },
+    {
+      "seq": 3,
+      "at_ms": 32576,
+      "boundary": "mcp",
+      "direction": "out",
+      "operation": "mcp-return",
+      "fields": {
+        "tool_name": "ticket_comment",
+        "id": "$id:1",
+        "ok": true,
+        "state": "returned"
+      }
+    },
+    {
+      "seq": 4,
+      "at_ms": 33287,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "claudecode",
+        "exit_code": 0
+      }
+    }
+  ]
+}
