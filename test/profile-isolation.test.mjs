@@ -1,4 +1,5 @@
 // W1: native bootstrap + real dashboard/Vite proxies; no real harness calls.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -311,7 +312,7 @@ try {
     else assert.equal(other[0].title, 'SMOKE-profile 0');
     const config = await json(bases[i], '/api/health'); assert.ok(config);
     const status = run(['--profile', i ? 'beta' : 'alpha', 'status', '--json']);
-    assert.equal(status.status, 0, status.stderr); assert.equal(JSON.parse(status.stdout).dashboard_url, `http://127.0.0.1:${ports[i]}`);
+    assert.equal(status.status, 0, status.stderr); assert.equal(parseCliEnvelope(status.stdout).dashboard_url, `http://127.0.0.1:${ports[i]}`);
     assert.ok(fs.existsSync(envs[i].GOLEM_TRACKER_DB));
     assert.ok(envs[i].GOLEM_VITE_CACHE_DIR.startsWith(envs[i].GOLEM_HOME + path.sep));
     assert.ok(fs.existsSync(path.join(envs[i].GOLEM_HOME, 'dashboard.json')));

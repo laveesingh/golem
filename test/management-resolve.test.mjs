@@ -1,4 +1,5 @@
 // GOL-409: pure precedence plus real worktree CLI/consumer/zero-write checks.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -133,40 +134,40 @@ try {
     peekWorker: async (_name, options) => { assert.equal(options.workerId, 'worker-cross'); return 'explicit native read'; },
     listAgentRoster: async () => ({ roster: enrichDispatchableRows(evidence.agents.filter(a => a.session_id)), ended: [] }) };
   const explicitRead = await invoke(runAgent, 'agent', ['read', 'sid-cross', '--json'], { manager, resolveContext: () => { throw new Error('caller failed'); } });
-  assert.equal(explicitRead.status, 0); assert.equal(JSON.parse(explicitRead.text).resolution.project_id, pB);
+  assert.equal(explicitRead.status, 0); assert.equal(parseCliEnvelope(explicitRead.text).resolution.project_id, pB);
   for (const args of [['create', 'builder', '--team', ta.team_id], ['stop', 'sid-cross'], ['attach', 'sid-cross'], ['role', 'clear', 'sid-cross']]) {
-    const out = await invoke(runAgent, 'agent', [...args, '--dry-run', '--json'], { manager }); assert.equal(out.status, 0, out.text); assert.equal(JSON.parse(out.text).dry_run, true);
+    const out = await invoke(runAgent, 'agent', [...args, '--dry-run', '--json'], { manager }); assert.equal(out.status, 0, out.text); assert.equal(parseCliEnvelope(out.text).dry_run, true);
   }
   check('actual agent dry-runs and explicit-target read survive failed caller discovery', () => { assert.equal(calls, 0); assert.deepEqual(bytes(), baseBytes); });
-  const unknownDry = await invoke(runAgent, 'agent', ['stop', 'missing', '--dry-run', '--json'], { manager }); assert.equal(unknownDry.status, 2); assert.equal(JSON.parse(unknownDry.text).dry_run, true);
+  const unknownDry = await invoke(runAgent, 'agent', ['stop', 'missing', '--dry-run', '--json'], { manager }); assert.equal(unknownDry.status, 2); assert.equal(parseCliEnvelope(unknownDry.text).dry_run, true);
 
   for (const [family, run, extra] of [['agent', runAgent, { manager }], ['team', runTeam, {}], ['session', runSession, { herdr: { sessionList: () => nativeSessions } }]]) {
     const result = await invoke(run, family, ['list', '--scope', 'all', '--json'], extra);
-    assert.equal(result.status, 0, result.text); const receipt = JSON.parse(result.text); parseManagementList(result.text); assert.equal(receipt.resolution.scope, 'global');
+    assert.equal(result.status, 0, result.text); const receipt = parseCliEnvelope(result.text); parseManagementList(result.text); assert.equal(receipt.resolution.scope, 'global');
   }
   check('all three populated/global list receipts use one query-level schema-v2 shape', () => assert.deepEqual(bytes(), baseBytes));
   for (const args of [['context', '--json'], ['agent', 'list', '--scope', 'all', '--json'], ['team', 'list', '--scope', 'all', '--json'], ['session', 'list', '--json'],
     ['agent', 'create', 'builder', '--team', ta.team_id, '--dry-run', '--json'], ['team', 'create', 'New label', '--project', pNew, '--dry-run', '--json'],
     ['team', 'join', tb.team_id, '--agent', 'sid-a', '--dry-run', '--json'], ['team', 'close', ta.team_id, '--dry-run', '--json'], ['session', 'close', 'runtime-a', '--dry-run', '--json'], ['agent', 'read', 'sid-cross', '--json']]) {
-    const result = cli(args); assert.equal(result.status, 0, result.stderr || result.stdout); const receipt = JSON.parse(result.stdout);
+    const result = cli(args); assert.equal(result.status, 0, result.stderr || result.stdout); const receipt = parseCliEnvelope(result.stdout);
     assert.ok(receipt.resolution); if (args[1] === 'list') parseManagementList(result.stdout);
   }
   check('absolute worktree CLI context/read/list/dry-run leaves all registry bytes and native mutation counters unchanged', () => { assert.deepEqual(bytes(), baseBytes); assert.equal(mutations(), 0); });
-  const attached = cli(['agent', 'attach', 'sid-a', '--json']); assert.equal(attached.status, 0, attached.stderr); assert.equal(JSON.parse(attached.stdout).attached, true); assert.match(attached.stderr, /native attach UI text/);
-  const sessionAttached = cli(['session', 'attach', 'runtime-a', '--json']); assert.equal(sessionAttached.status, 0); assert.equal(JSON.parse(sessionAttached.stdout).attached, true); assert.match(sessionAttached.stderr, /native attach UI text/);
+  const attached = cli(['agent', 'attach', 'sid-a', '--json']); assert.equal(attached.status, 0, attached.stderr); assert.equal(parseCliEnvelope(attached.stdout).attached, true); assert.match(attached.stderr, /native attach UI text/);
+  const sessionAttached = cli(['session', 'attach', 'runtime-a', '--json']); assert.equal(sessionAttached.status, 0); assert.equal(parseCliEnvelope(sessionAttached.stdout).attached, true); assert.match(sessionAttached.stderr, /native attach UI text/);
   check('normal attach receipts have resolution and keep native UI off JSON stdout', () => assert.deepEqual(bytes(), baseBytes));
   seed({ empty: true }); const emptyBytes = bytes();
   for (const family of ['agent', 'team', 'session']) {
     const result = cli([family, 'list', '--scope', 'all', '--json'], { GOLEM_FIXTURE_EMPTY_NATIVE: '1' }); assert.equal(result.status, 0, result.stderr);
     const items = parseManagementList(result.stdout); assert.deepEqual(items, []);
-    assert.equal(JSON.parse(result.stdout).resolution.scope, 'global');
+    assert.equal(parseCliEnvelope(result.stdout).resolution.scope, 'global');
   }
   // Session inventory can be empty independently of metadata.
   const emptySession = await invoke(runSession, 'session', ['list', '--json'], { herdr: { sessionList: () => [] } }); assert.deepEqual(parseManagementList(emptySession.text), []);
   check('empty receipts retain query provenance and do not allocate metadata', () => assert.deepEqual(bytes(), emptyBytes));
   seed({ version: 1, conflict: true }); const oldBytes = bytes();
-  const oldContext = cli(['context', '--project', pA, '--json']); assert.equal(oldContext.status, 0); assert.equal(JSON.parse(oldContext.stdout).resolution.relations.association, 'conflicted');
-  const oldDry = cli(['agent', 'create', 'builder', '--team', ta.team_id, '--dry-run', '--json']); assert.equal(oldDry.status, 2); assert.equal(JSON.parse(oldDry.stdout).dry_run, true);
+  const oldContext = cli(['context', '--project', pA, '--json']); assert.equal(oldContext.status, 0); assert.equal(parseCliEnvelope(oldContext.stdout).resolution.relations.association, 'conflicted');
+  const oldDry = cli(['agent', 'create', 'builder', '--team', ta.team_id, '--dry-run', '--json']); assert.equal(oldDry.status, 2); assert.equal(parseCliEnvelope(oldDry.stdout).dry_run, true);
   check('v1 conflict plans/dry-runs preserve expired tombstones and byte identity without importing', () => assert.deepEqual(bytes(), oldBytes));
 
   seed();
@@ -183,7 +184,7 @@ try {
   });
   assert.equal(changedDuringRead.status, 2); assert.match(changedDuringRead.text, /explicit teamId.*conflicts with current agent/);
   const currentExact = await invoke(runAgent, 'agent', ['read', 'sid-a', '--json'], { manager: { peekWorker } });
-  assert.equal(currentExact.status, 0); assert.equal(JSON.parse(currentExact.text).resolution.team_id, tb.team_id);
+  assert.equal(currentExact.status, 0); assert.equal(parseCliEnvelope(currentExact.text).resolution.team_id, tb.team_id);
   check('backend revalidates explicit constraints after transfer while an unconstrained exact ID remains usable', () => assert.ok(true));
 
   // Regression sensitivity uses a disposable source mirror, never checkout edits.

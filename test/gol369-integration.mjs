@@ -9,6 +9,7 @@
 // single-op heredoc form, and fixes one broken-diagram write through the
 // returned anchor. Prints every command and its result; exits 0 only when
 // every check passes.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -91,7 +92,7 @@ try {
       input: stdinText ?? undefined,
     });
     let json = null;
-    try { json = JSON.parse(res.stdout); } catch { /* non-JSON */ }
+    try { json = parseCliEnvelope(res.stdout); } catch { /* non-JSON */ }
     console.log(`$ ${cmd}${stdinText != null ? ' <<\'EOF\' ...' : ''} → exit ${res.status}`);
     return { exit: res.status, json, out: res.stdout, err: res.stderr };
   };

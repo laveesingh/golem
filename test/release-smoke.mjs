@@ -1,3 +1,4 @@
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -99,7 +100,7 @@ fs.writeFileSync(process.env.GOLEM_PI_RELEASE_CAPTURE, JSON.stringify({ args: pr
   assert.match(advisory.stderr, /WARN: Golem tested on Pi 0\.99\.1; you have 0\.80\.9 — continuing/);
   assert.equal(readFileSync(path.join(sourcePiProfile, 'models.json'), 'utf8'), sourceModels, 'nonbaseline installed Pi leaves canonical profile untouched');
   assert.equal(runResult(process.execPath,[cli,'pi'],installDir,{GOLEM_FAKE_PI_FAIL:'1'}).status,12,'actual installed execution failure is not advisory');
-  for(const family of ['agent','team','session']) { const receipt=JSON.parse(run(process.execPath,[cli,family,'list','--scope','all','--json'],installDir)); assert.equal(receipt.schema_version,2); assert.ok(Array.isArray(receipt.items)); assert.ok(receipt.resolution); }
+  for(const family of ['agent','team','session']) { const receipt=parseCliEnvelope(run(process.execPath,[cli,family,'list','--scope','all','--json'],installDir)); assert.equal(receipt.schema_version,2); assert.ok(Array.isArray(receipt.items)); assert.ok(receipt.resolution); }
   assert.ok(existsSync(path.join(piRoot,'lib','management-lock.js')),'Pi runtime closure includes application birth helper dependency');
   console.log(`release smoke passed: ${tarballName}`);
   console.log(`installed root: ${packageRoot}`);

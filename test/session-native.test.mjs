@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Session phase integration: real herdr, no harness launches, disposable state.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,7 +18,7 @@ for (const key of ['GOLEM_HERDR_SESSION', 'HERDR_SESSION', 'HERDR_SOCKET_PATH', 
 const cli = (args, family = 'session') => {
   const result = spawnSync(process.execPath, [path.join(repo, 'cli/golem.js'), family, ...args, '--json'], { cwd: project, env, encoding: 'utf8', timeout: 45000 });
   assert.equal(result.status, 0, `${args.join(' ')}: ${result.error?.message ?? result.stderr} ${result.stdout}`);
-  return JSON.parse(result.stdout);
+  return parseCliEnvelope(result.stdout);
 };
 const native = args => spawnSync('herdr', args, { env, encoding: 'utf8', timeout: 10000 });
 let session;
