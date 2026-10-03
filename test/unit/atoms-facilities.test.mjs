@@ -60,7 +60,7 @@ for (const defect of [
       if (defect !== 'symlink-leaf') assert.equal(fs.existsSync(leaf), false);
     }));
 test('declared leaf cannot escape TMP even with owned parent', () =>
-  facility(({ parent, leaf, expected }) => {
+  facility(({ leaf, expected }) => {
     const other = fs.mkdtempSync('/tmp/gol501-other-');
     try {
       assert.throws(() => recreateDeclaredResults(other, leaf, expected));
