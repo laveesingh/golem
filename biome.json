@@ -20,7 +20,10 @@
       "dashboard/web/src/api/pilot-client.ts",
       "test/fixtures/w3-*.mjs",
       "lib/package-root.ts",
-      "lib/compiler/runtime-source.ts"
+      "lib/compiler/runtime-source.ts",
+      "lib/compiler/render-runtime.ts",
+      "lib/compiler/render-types.ts",
+      "test/artefact/**"
     ]
   },
   "formatter": {

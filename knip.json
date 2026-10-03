@@ -171,6 +171,7 @@
         "vitest.config.mjs",
         "test/unit/**/*.test.mjs",
         "test/integration/**/*.test.mjs",
+        "test/artefact/**/*.test.mjs",
         "test/support/*.mjs",
         "test/fixtures/w2-safety-probe.mjs",
         "test/fixtures/w2-html-mutation-probe.mjs",
