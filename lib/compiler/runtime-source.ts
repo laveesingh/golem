@@ -5,6 +5,7 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 export function runtimeSource(root: string, relative: string): string {
   const candidates = [
+    path.join(root, relative.replace(/\.js$/, '.ts')),
     path.join(root, relative),
     path.join(root, 'dist', relative.replace(/\.ts$/, '.js')),
   ];
