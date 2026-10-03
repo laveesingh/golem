@@ -161,9 +161,21 @@ test('real CC and Pi sync outputs run without repository dependencies and repeat
         import path from 'node:path';
         import {pathToFileURL} from 'node:url';
         const root = ${JSON.stringify(out)};
-        for (const name of fs.readdirSync(path.join(root, 'lib'))) {
+        // Every emitted helper is imported, including nested trees such as
+        // lib/contracts validators: a directory entry is a traversal bug.
+        const helpers = [];
+        const walk = (dir) => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const abs = path.join(dir, entry.name);
+            if (entry.isDirectory()) walk(abs);
+            else if (entry.name.endsWith('.js')) helpers.push(abs);
+          }
+        };
+        walk(path.join(root, 'lib'));
+        for (const abs of helpers) {
           // CC's hook writer is a CLI entry, not an importable helper.
-          if (name !== 'session-facts-write.js') await import(pathToFileURL(path.join(root, 'lib', name)));
+          if (path.basename(abs) === 'session-facts-write.js') continue;
+          await import(pathToFileURL(abs));
         }
         const roles = await import(pathToFileURL(path.join(root, 'lib/session-role.js')));
         const location = await import(pathToFileURL(path.join(root, 'lib/package-root.js')));
