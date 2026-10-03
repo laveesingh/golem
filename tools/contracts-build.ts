@@ -8,6 +8,7 @@ import { cliSchemas } from '../lib/contracts/cli.ts';
 import { ConfigLegacy, ConfigV1 } from '../lib/contracts/config.ts';
 import { entitySchemas } from '../lib/contracts/entities.ts';
 import { JsonValue, pilotSchemas } from '../lib/contracts/pilot.ts';
+import { scenarioSchemas } from '../lib/contracts/scenario.ts';
 import { storeSchemas } from '../lib/contracts/stores.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -109,6 +110,9 @@ export async function contractOutputs(): Promise<Record<string, string>> {
     outputs[`contracts/dist/${schema.$id ?? name}.schema.json`] =
       `${JSON.stringify(schema, null, 2)}\n`;
   for (const schema of Object.values(entitySchemas))
+    outputs[`contracts/dist/${schema.$id}.schema.json`] =
+      `${JSON.stringify(schema, null, 2)}\n`;
+  for (const schema of Object.values(scenarioSchemas))
     outputs[`contracts/dist/${schema.$id}.schema.json`] =
       `${JSON.stringify(schema, null, 2)}\n`;
   outputs['contracts/dist/openapi.json'] =

@@ -1,0 +1,36 @@
+{
+  "$id": "ScenarioSource",
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "harness": {
+      "anyOf": [
+        {
+          "const": "claudecode",
+          "type": "string"
+        },
+        {
+          "const": "pi",
+          "type": "string"
+        },
+        {
+          "const": "herdr",
+          "type": "string"
+        }
+      ]
+    },
+    "harness_version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "golem_version": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "harness",
+    "harness_version",
+    "golem_version"
+  ]
+}

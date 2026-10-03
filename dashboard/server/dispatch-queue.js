@@ -35,6 +35,7 @@ import { hasTypedWorkerCapability, readSessionFacts } from '../../lib/session-fa
 import { isLegacyReplayFence } from './typed-delivery.js';
 import { publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
 import { createNotificationScheduleRuntime } from './notification-schedule-runtime.js';
+import { systemClock } from '../../lib/clock.ts';
 
 const TICK_MS = 5_000;
 const COOLDOWN_MS = 60_000;
@@ -57,7 +58,8 @@ export function initDispatchDrainer({
   buildDispatchBrief,
   broadcastWS,
   listChannels,
-  nowMs = () => Date.now(),
+  clock = systemClock,
+  nowMs = () => clock.now(),
 }) {
   const deliverControl = pushControlEnvelope ?? (({ content }, sessionId) => pushBrief(content, sessionId));
   // session_id → ts(ms) of the most recent successful delivery. Used by the

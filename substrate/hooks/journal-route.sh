@@ -253,6 +253,41 @@ fi
 _journal_tmp="$JOURNAL_FILE.header.$$"
 printf '%s\n' '{"schema_version":1,"kind":"journal"}' > "$_journal_tmp" 2>/dev/null && ln "$_journal_tmp" "$JOURNAL_FILE" 2>/dev/null || true
 rm -f "$_journal_tmp" 2>/dev/null || true
+# --- scenario recorder projection (opt-in observation only) ------------------
+# Hands only the normalized event kind to the run-owned broker. Never the raw
+# payload, transcript paths, or model/auth content. Recorder off unless
+# GOLEM_RECORD_SCENARIO points at an explicit candidate file.
+record_hook_projection() {
+  [ -n "${GOLEM_RECORD_SOCKET:-}" ] || return 0
+  [ -n "${GOLEM_RECORD_CAPABILITY:-}" ] || return 0
+  [ -S "${GOLEM_RECORD_SOCKET:-/nonexistent}" ] || return 0
+  local kind=""
+  case "$EVENT_TYPE" in
+    session-start) kind="SessionStart" ;;
+    stop) kind="Stop" ;;
+    user-prompt) kind="UserPromptSubmit" ;;
+    tool-post) kind="PostToolUse" ;;
+    *) return 0 ;;
+  esac
+  command -v node >/dev/null 2>&1 || return 0
+  GOLEM_RECORD_KIND="$kind" GOLEM_RECORD_SOCKET="$GOLEM_RECORD_SOCKET" \
+    GOLEM_RECORD_CAPABILITY="$GOLEM_RECORD_CAPABILITY" node -e '
+    try {
+      const net = require("node:net");
+      const frame = JSON.stringify({ capability: process.env.GOLEM_RECORD_CAPABILITY,
+        projection: { boundary: "hook", direction: "in", operation: "hook-input",
+          fields: { event_type: process.env.GOLEM_RECORD_KIND } } }) + "\n";
+      const peer = net.createConnection(process.env.GOLEM_RECORD_SOCKET);
+      const done = () => { try { peer.destroy(); } catch {} };
+      peer.once("connect", () => peer.end(frame, done));
+      peer.once("error", done);
+      setTimeout(done, 1000).unref?.();
+    } catch { /* observation never blocks delivery */ }
+  ' 2>/dev/null || true
+  return 0
+}
+record_hook_projection || true
+
 printf '%s\n' "$ENTRY" >> "$JOURNAL_FILE" 2>/dev/null || {
   echo "journal-route: could not write to $JOURNAL_FILE" >&2
 }

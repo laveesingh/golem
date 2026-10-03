@@ -129,6 +129,23 @@ const ARGV_LITERAL = new Set([
   '--new-tab',
   '--workspace',
   '--no-session',
+  '--mode',
+  'rpc',
+  '--mcp-config',
+  '--settings',
+  '--strict-mcp-config',
+  '--input-format',
+  '--output-format',
+  'stream-json',
+  '--verbose',
+  '--dangerously-load-development-channels',
+  'server:golem',
+  '--dangerously-skip-permissions',
+  '--no-tools',
+  '--no-extensions',
+  '--no-skills',
+  '--no-prompt-templates',
+  '--no-context-files',
   '-p',
   '--print',
   'agents',
@@ -158,6 +175,8 @@ const VALUE_FLAGS: Record<string, string> = {
   '--workspace': 'workspace',
   '--cwd': 'path',
   '--extension': 'path',
+  '--mcp-config': 'path',
+  '--settings': 'path',
   '--model': 'model',
 };
 export type ArgSlot =
@@ -181,6 +200,16 @@ export function argvSlots(value: unknown): ArgSlot[] {
     throw new ScenarioError('invalid bounded argv');
   const args = value as string[],
     slots: ArgSlot[] = [];
+  const choices: Record<string, readonly string[]> = {
+    '--mode': ['rpc'],
+    '--input-format': ['stream-json'],
+    '--output-format': ['stream-json'],
+    '--dangerously-load-development-channels': ['server:golem'],
+  };
+  for (const [i, arg] of args.entries()) {
+    if (choices[arg] && !choices[arg].includes(args[i + 1]))
+      throw new ScenarioError('invalid argv option choice');
+  }
   let pending: ArgSlot | null = null,
     optional = false,
     context: string | undefined,

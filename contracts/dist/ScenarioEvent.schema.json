@@ -1,0 +1,121 @@
+{
+  "$id": "ScenarioEvent",
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "seq": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "at_ms": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "boundary": {
+      "anyOf": [
+        {
+          "const": "hook",
+          "type": "string"
+        },
+        {
+          "const": "mcp",
+          "type": "string"
+        },
+        {
+          "const": "typed-http",
+          "type": "string"
+        },
+        {
+          "const": "process",
+          "type": "string"
+        },
+        {
+          "const": "herdr",
+          "type": "string"
+        }
+      ]
+    },
+    "direction": {
+      "anyOf": [
+        {
+          "const": "in",
+          "type": "string"
+        },
+        {
+          "const": "out",
+          "type": "string"
+        }
+      ]
+    },
+    "operation": {
+      "anyOf": [
+        {
+          "const": "hook-input",
+          "type": "string"
+        },
+        {
+          "const": "mcp-call",
+          "type": "string"
+        },
+        {
+          "const": "mcp-return",
+          "type": "string"
+        },
+        {
+          "const": "typed-submit",
+          "type": "string"
+        },
+        {
+          "const": "typed-accepted",
+          "type": "string"
+        },
+        {
+          "const": "typed-settled",
+          "type": "string"
+        },
+        {
+          "const": "process-spawn",
+          "type": "string"
+        },
+        {
+          "const": "process-stdin",
+          "type": "string"
+        },
+        {
+          "const": "process-stdout",
+          "type": "string"
+        },
+        {
+          "const": "process-stderr",
+          "type": "string"
+        },
+        {
+          "const": "process-exit",
+          "type": "string"
+        },
+        {
+          "const": "herdr-command",
+          "type": "string"
+        },
+        {
+          "const": "herdr-result",
+          "type": "string"
+        }
+      ]
+    },
+    "fields": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {}
+      }
+    }
+  },
+  "required": [
+    "seq",
+    "at_ms",
+    "boundary",
+    "direction",
+    "operation",
+    "fields"
+  ]
+}
