@@ -1,0 +1,968 @@
+{
+  "schema": 1,
+  "kind": "s5-molecule-baseline-candidates",
+  "provenance": {
+    "productionSources": {
+      ".ladle/config.mjs": "64f6838b0e88fc879cc407fa570871e5e29a0df4df129f8a925a3e6efe0574be",
+      ".ladle/vite.config.mjs": "106417dc6ecaf14110babf4c8cb037c823951709df7e463d6d10dc58c44e685e",
+      "dashboard/web/src/ui/atoms/Badge.stories.tsx": "26e0748489d0dcfa2f24cea4007f40831e4b6da5e30b3d59e3d2f640e248934c",
+      "dashboard/web/src/ui/atoms/Badge.tsx": "9a4e82bfb8278a48a8ee112cde48640c23acf4c6e6ca40a66a83477e30aac1f1",
+      "dashboard/web/src/ui/atoms/Button.stories.tsx": "e1d741f8093eef163b43ad9a4c23c96cb3c1d64c62f118c8d7395f061f215f0e",
+      "dashboard/web/src/ui/atoms/Button.tsx": "2fb8d2b17964365b06ba4032c2b3cdb7d2cc6cd6f4424420b1563c46520b767a",
+      "dashboard/web/src/ui/atoms/IconButton.stories.tsx": "d48f3343d99b2995f542fc16ee7c5fd48514b37a9561afd05f80b2f7d869391b",
+      "dashboard/web/src/ui/atoms/IconButton.tsx": "da88441e2315edc1789dd89dc57904c8d326c5b78094592cc237713387629409",
+      "dashboard/web/src/ui/atoms/Input.stories.tsx": "39fbd26a475027db6196f5d5c1325d3c5c69ee7c133709a7e665c91b0eeb5e8f",
+      "dashboard/web/src/ui/atoms/Input.tsx": "cb6b2e3e1f1c7822ee61784a49b163ffb04e8680771665b7b856f87e3780ec3d",
+      "dashboard/web/src/ui/atoms/Pill.stories.tsx": "a1e116e6f7914049f79236cc4939bc2e1bc61a3c1c2019102114fa429e504084",
+      "dashboard/web/src/ui/atoms/Pill.tsx": "0d506132e2fb95e01554bb54845c39c3236e06184be8f5b2ff354936ffb92663",
+      "dashboard/web/src/ui/atoms/action.ts": "2325df57aa0e8da5642025b87ad2f6b1473b6cff00086f57bd258568da23fcea",
+      "dashboard/web/src/ui/atoms/atoms.css": "d700d8af2ce54b1ede00148e46f267e8141bc8e3cbc92cb8148272ac1510ac54",
+      "dashboard/web/src/ui/fonts/fonts.css": "9b18b5fbae8ef82e08f0fd92b47c7fc8971031c43e3b2a422089b5b349d2a855",
+      "dashboard/web/src/ui/fonts/geist-LICENSE.txt": "71609cbb5c78b5870d712eab73a31d76622635c6ed034ab5cee3b9ecbda8685f",
+      "dashboard/web/src/ui/fonts/geist-latin-400-normal.woff2": "ead637fd0b6b887d829b3ce3f25fdc242b1de0cfb69c0d97987933675d1315ba",
+      "dashboard/web/src/ui/fonts/geist-latin-500-normal.woff2": "6145bf6706dbc1b6686f04f871489cf724951f00b752745896ccdcac07639a53",
+      "dashboard/web/src/ui/fonts/geist-latin-600-normal.woff2": "edde7cc4e2719898f981a6d970a756030fff75a8ed36dd6a457a60181b889ebf",
+      "dashboard/web/src/ui/fonts/geist-latin-700-normal.woff2": "728e76ff0b76212419e83011f5202c2fd1144da9d7915a4fa787561f5a3f334d",
+      "dashboard/web/src/ui/fonts/inventory.json": "c30bcf2adce8e7cce07f01eb3e45483e3d19869adfc66254adb298a12f805dc3",
+      "dashboard/web/src/ui/fonts/jetbrains-mono-LICENSE.txt": "403581b69dac5cff4079205e01c6b467e56af449ecbd7247693ddb1baafa005b",
+      "dashboard/web/src/ui/fonts/jetbrains-mono-latin-400-normal.woff2": "14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb",
+      "dashboard/web/src/ui/fonts/jetbrains-mono-latin-500-normal.woff2": "cb182feeed4d798ff6961d3c79f7026279448fca0676438aaecb21f3fc39553a",
+      "dashboard/web/src/ui/fonts/jetbrains-mono-latin-600-normal.woff2": "400c6bfda18d5d14acad1c15d6dcb9f8e13c015e7286317e0b9a482539bef147",
+      "dashboard/web/src/ui/molecules/Card.stories.tsx": "7a60d84ec16869e1426a1f26ac52af02f6a47e5559de028c8ead2046f16c6277",
+      "dashboard/web/src/ui/molecules/Card.tsx": "8c0d9ae806f2effa867e263649b549a35dc83ee2a570788c88350ae5836b3b33",
+      "dashboard/web/src/ui/molecules/EmptyState.stories.tsx": "e1cca20bff372231a4763ea485d0ea5fdbe350ca726c1547d0de45143f689687",
+      "dashboard/web/src/ui/molecules/EmptyState.tsx": "f0f0ec35f135f01ebd43f02dac140a24449582b5797ac522e9e8111d904a94a8",
+      "dashboard/web/src/ui/molecules/ListRow.stories.tsx": "3640d45c9083d1718b5fb7ff978a1c2ef6de3acfbeea42788e0afa4846ec37ef",
+      "dashboard/web/src/ui/molecules/ListRow.tsx": "5b08fc8c2371083d3328061b874f348b75a46e08ba88b451fd720f6633876005",
+      "dashboard/web/src/ui/molecules/Menu.stories.tsx": "f27629eb57e63b997dd172ef9fcf66f937b1ecab16fe69a924cb8b823a8296c3",
+      "dashboard/web/src/ui/molecules/Menu.tsx": "7960eb299ee7394af2e4aec66647546210bcea32bdab0bd0659ad21334f89534",
+      "dashboard/web/src/ui/molecules/molecules.css": "9a1f0b8bf3f732377a595769d2641ffd7d47e1cc8c21a43c7525b3052bf29194",
+      "dashboard/web/src/ui/tokens/.generations/g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a/contrast.json": "0e5b5914c7425de399ff8ada79fb2273ec1c579b6396b0ed08678e0bce51e438",
+      "dashboard/web/src/ui/tokens/.generations/g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a/registry.json": "156b89d12bfe0c12cc95ffba06d8b8f7c08a6ddca717d0e6647c9a12284be581",
+      "dashboard/web/src/ui/tokens/.generations/g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a/tokens.css": "068e64a327435c3543fdfaa044e49c22a25e202c79d69d0f2c592bd5957d1233",
+      "dashboard/web/src/ui/tokens/.generations/g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a/tokens.ts": "c0cb26ba1266a126451bf121f10279f394c308d517ce30a077dade6663d7341f",
+      "dashboard/web/src/ui/tokens/contrast-pairs.json": "837083015cbe36258f5bc607ac2c04a865e6513d870168b547aec43c391d9409",
+      "dashboard/web/src/ui/tokens/entry.css": "1e3148d954f1463b6511b979478cb7e013a8ce8f67d79c757dba2ab13be84ee1",
+      "dashboard/web/src/ui/tokens/generated": "b8c7535707a6b9c577fce6672554b8c6538702f0d2a952e526ea0832e1a18cf7",
+      "dashboard/web/src/ui/tokens/provenance.json": "1eda48df268731838e872fef5a47d85293a4b56c50db4ee29479ac63be794d8d",
+      "dashboard/web/src/ui/tokens/source/compact.tokens.json": "d4a464754c0500eafc0f4bcfe8e627f1ee67e7968772d2960af50ec26d99289f",
+      "dashboard/web/src/ui/tokens/source/component.tokens.json": "1e1caa262eedf92c8746828e6d3cd1d2f154e289236c723086f2d0f1299223c3",
+      "dashboard/web/src/ui/tokens/source/cozy.tokens.json": "51aa8876a1d4bac18df78c96c8ea995f607e9204f05dca0a90ba4488a151b191",
+      "dashboard/web/src/ui/tokens/source/dark.tokens.json": "e53ff1487c927bdda575c5c459c5cfdab1e33ad4c7c60868e3151417a3cf7645",
+      "dashboard/web/src/ui/tokens/source/light.tokens.json": "ec948e0b4bb562b418fa85dd0815ab5c0ee59201b682ed645f6e0ab31c457ff0",
+      "dashboard/web/src/ui/tokens/source/primitive.tokens.json": "20ffd16f177b45b811dccf90269fd3922356c7011eb5ef5e2365bf8c4f30da2c",
+      "dashboard/web/src/ui/tokens/source/semantic.tokens.json": "f558ce9293f2569e9865e099e7dce17447f80148ae82b211fa4083f969218b69",
+      "dashboard/web/src/ui/workshop/StoryFrame.tsx": "97ba5c1831bcd12a762421ea5389a1b79e6d807743e3c8fc2fc0830462817042",
+      "dashboard/web/src/ui/workshop/workshop.css": "cf9a4868518239171dc8dcead2b29828615f3d312862507d5c0dfa11f54d1ea2",
+      "package-lock.json": "9728de045eca6c4987594b1bad3937867a9a1445b43a8f2b892566531d3bf768",
+      "package.json": "92309938c33a5bec895bd0256956be74b4ea5ac3707ac29135bddc3a7ac6805b",
+      "test/e2e/atoms.fixture.ts": "a2b47bbe1d82503ec058f249c6077ac2c60cd95bc561bfd8cc0ae9aa972c8acf",
+      "test/e2e/atoms.spec.ts": "c876df1b56dd423b6514523fb7fc81c297dfd064f77753f189d6fa71d0a1d826",
+      "test/e2e/molecules.fixture.ts": "d2ed7f6a1bf96fd33cc31ddc131d82032b1fe66e2fdb3bdffff25b7c3fa87468",
+      "test/e2e/molecules.spec.ts": "d76c4fe6c1f1b88c14878f1bce8cdde702207d078632bf92f12566ec8091bd7b",
+      "test/e2e/playwright.atoms.config.ts": "cda63d39969b69ee542bb9679a86b8954ebed5fb0cf89fff6b63c6a358bb0f9a",
+      "test/e2e/playwright.molecules.config.ts": "21838bc4f5b32b0be8503c764b3a37fcf6a418367fa3786bfb87c2a94c3dbb0e",
+      "test/integration/atoms-candidates.mjs": "f1e711e5d9c9c96f16aa2bdd16b34b01aab3ca43ebe945d40642730a83560866",
+      "test/integration/atoms-linux-probe.mjs": "e9ee4f4be5fa5918f66be457497113185ebae3bdc4806896586851282978d18f",
+      "test/integration/atoms-workshop-probe.mjs": "ed8212062622c77c00f076fe663eddfd6978e1af82c924ba276cf0f60fc2e151",
+      "test/integration/molecules-candidates.mjs": "81c9ede1135be2a3765abfccdc579412d444b996e6841d03c2f241019f053431",
+      "test/integration/molecules-linux-entry.mjs": "55be8f8f8fb57d0d76ca2bd4a94af468021e70fdbb4a55e06c584dfb15391d99",
+      "test/integration/molecules-linux-probe.mjs": "3beb055468d28aa2f8d9c89f1731afd004864a1851166fcd82351e5a8765010d",
+      "test/integration/molecules-workshop-probe.mjs": "f2de22ef5e569e2ee06b9eda5c83bdbc7e17d85291006b535bef34edb2d701ee"
+    },
+    "sourceCommit": "9a07c07e7a80838b3164f32563e1b5432504f9c4",
+    "sourceTree": "3fe2b017a719cab8ad7092da6b1729a636f419ad",
+    "archiveSha256": "7443949858f1e30ac9b0f6ccb6d9460daa7963a24c1ee57a7c6a41ac0da85f55",
+    "platform": "linux/amd64",
+    "imageDigest": "sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7",
+    "imageId": "sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7",
+    "imageObserved": true,
+    "playwright": "1.63.0",
+    "chromiumRevision": "1243",
+    "chromiumVersion": "153.0.8010.12",
+    "executable": "/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "executableSha256": "8c599d43aec53f2460a31ae2f4af6bd863f8258b34ff519564bc5d4726bfaa1e",
+    "executableObserved": true,
+    "registrySha256": "545d52f8382c391e605562c330e9c1c534a16045898203037a49bb8bd769a946",
+    "nodeVersion": "v24.20.0",
+    "browsersPath": "/ms-playwright",
+    "functionalGreen": true,
+    "generation": "g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a",
+    "fontInventorySha256": "c30bcf2adce8e7cce07f01eb3e45483e3d19869adfc66254adb298a12f805dc3",
+    "fonts": [
+      {
+        "file": "geist-latin-400-normal.woff2",
+        "sha256": "ead637fd0b6b887d829b3ce3f25fdc242b1de0cfb69c0d97987933675d1315ba",
+        "bytes": 12956
+      },
+      {
+        "file": "geist-latin-500-normal.woff2",
+        "sha256": "6145bf6706dbc1b6686f04f871489cf724951f00b752745896ccdcac07639a53",
+        "bytes": 13296
+      },
+      {
+        "file": "geist-latin-600-normal.woff2",
+        "sha256": "edde7cc4e2719898f981a6d970a756030fff75a8ed36dd6a457a60181b889ebf",
+        "bytes": 13372
+      },
+      {
+        "file": "geist-latin-700-normal.woff2",
+        "sha256": "728e76ff0b76212419e83011f5202c2fd1144da9d7915a4fa787561f5a3f334d",
+        "bytes": 13364
+      },
+      {
+        "file": "jetbrains-mono-latin-400-normal.woff2",
+        "sha256": "14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb",
+        "bytes": 21168
+      },
+      {
+        "file": "jetbrains-mono-latin-500-normal.woff2",
+        "sha256": "cb182feeed4d798ff6961d3c79f7026279448fca0676438aaecb21f3fc39553a",
+        "bytes": 21832
+      },
+      {
+        "file": "jetbrains-mono-latin-600-normal.woff2",
+        "sha256": "400c6bfda18d5d14acad1c15d6dcb9f8e13c015e7286317e0b9a482539bef147",
+        "bytes": 21860
+      }
+    ],
+    "clock": "2026-10-01T00:00:00Z",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "scale": 1
+  },
+  "files": [
+    {
+      "name": "card-dark-compact-320.png",
+      "width": 320,
+      "height": 808,
+      "sha256": "b154fa57679a48342e02e409325ee948d94f56c40153645a9bf7b6672a06eba8",
+      "record": {
+        "name": "card-dark-compact-320.png",
+        "molecule": "card",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 808
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "card-dark-compact-640.png",
+      "width": 640,
+      "height": 504,
+      "sha256": "b590f9becbc5c0f4bcf0f96917c0ef1513ba801315c53e81834f1cc5dffcc566",
+      "record": {
+        "name": "card-dark-compact-640.png",
+        "molecule": "card",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 504
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "card-dark-cozy-320.png",
+      "width": 320,
+      "height": 900,
+      "sha256": "b31e18c1b777396b6fd99b797d6c7dc7b2643fd7249fd1fc4248dd68e2d757d7",
+      "record": {
+        "name": "card-dark-cozy-320.png",
+        "molecule": "card",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 900
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "card-dark-cozy-640.png",
+      "width": 640,
+      "height": 576,
+      "sha256": "30fac0225277846ac5dd5ce6fd25a789231e4ec7c9924996e54f3e483f298dec",
+      "record": {
+        "name": "card-dark-cozy-640.png",
+        "molecule": "card",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 576
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "card-light-compact-320.png",
+      "width": 320,
+      "height": 808,
+      "sha256": "4b7a6c6a7c96db1561586f2479b96717df01ab81cf73d6ea5eace7eba26ebc5c",
+      "record": {
+        "name": "card-light-compact-320.png",
+        "molecule": "card",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 808
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "card-light-compact-640.png",
+      "width": 640,
+      "height": 504,
+      "sha256": "d4f20c5e60acf3468f0fbcb39565dd5fa9a3ca033ce625dad70e18f597491a8e",
+      "record": {
+        "name": "card-light-compact-640.png",
+        "molecule": "card",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 504
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "card-light-cozy-320.png",
+      "width": 320,
+      "height": 900,
+      "sha256": "62fb697b4a40756f8c67c38cfee68ebed5f1bb5ae8e6ef54a47850bbdc2e1ca3",
+      "record": {
+        "name": "card-light-cozy-320.png",
+        "molecule": "card",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 900
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "card-light-cozy-640.png",
+      "width": 640,
+      "height": 576,
+      "sha256": "bbe9221c7e09be0e122e3f427a9ec66a63a2d0888a9089b7aae855b6065f0088",
+      "record": {
+        "name": "card-light-cozy-640.png",
+        "molecule": "card",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 576
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "emptystate-dark-compact-320.png",
+      "width": 320,
+      "height": 795,
+      "sha256": "08fd9d328822bdb62f6109f6be62f279b18dacb5f2a10573936c6d7fc8554462",
+      "record": {
+        "name": "emptystate-dark-compact-320.png",
+        "molecule": "emptystate",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 795
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "emptystate-dark-compact-640.png",
+      "width": 640,
+      "height": 569,
+      "sha256": "45eda10d922e794cf8f385461f69b1d8c98ff2459b586deb26ad7187682843e0",
+      "record": {
+        "name": "emptystate-dark-compact-640.png",
+        "molecule": "emptystate",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 569
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "emptystate-dark-cozy-320.png",
+      "width": 320,
+      "height": 908,
+      "sha256": "da1f829cdc730d2303affff297b0f35e345b49e3e257e8c9143f4b79c44957d6",
+      "record": {
+        "name": "emptystate-dark-cozy-320.png",
+        "molecule": "emptystate",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 908
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "emptystate-dark-cozy-640.png",
+      "width": 640,
+      "height": 657,
+      "sha256": "cc6fbd511f8ed10c9b703c74a137e3d6da17f80a39fab26e48c5610d6a275580",
+      "record": {
+        "name": "emptystate-dark-cozy-640.png",
+        "molecule": "emptystate",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 657
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "emptystate-light-compact-320.png",
+      "width": 320,
+      "height": 795,
+      "sha256": "e6385d475a765cc4f44e0de8c926393cb9d209b7588062ea558de024064c44aa",
+      "record": {
+        "name": "emptystate-light-compact-320.png",
+        "molecule": "emptystate",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 795
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "emptystate-light-compact-640.png",
+      "width": 640,
+      "height": 569,
+      "sha256": "ed7aba7cf182f379d9b51ef3ca0bad092560512296e62bce4a2ab540c7bbec3c",
+      "record": {
+        "name": "emptystate-light-compact-640.png",
+        "molecule": "emptystate",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 569
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "emptystate-light-cozy-320.png",
+      "width": 320,
+      "height": 908,
+      "sha256": "4f726dcafb34faa82bdd2eb1568dec1f1e1f2f9b60f1c5c5545bd20e64785205",
+      "record": {
+        "name": "emptystate-light-cozy-320.png",
+        "molecule": "emptystate",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 908
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "emptystate-light-cozy-640.png",
+      "width": 640,
+      "height": 657,
+      "sha256": "352979c2b204c2962cf6c08c31910ac1bd231052106a649a2e30410aef787cc2",
+      "record": {
+        "name": "emptystate-light-cozy-640.png",
+        "molecule": "emptystate",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 657
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "listrow-dark-compact-320.png",
+      "width": 320,
+      "height": 686,
+      "sha256": "06015ebd2a3e767ac21ab54bd5b5d3538672ef71aab1b2c579d9ad4a31ffe0b4",
+      "record": {
+        "name": "listrow-dark-compact-320.png",
+        "molecule": "listrow",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 686
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "listrow-dark-compact-640.png",
+      "width": 640,
+      "height": 559,
+      "sha256": "7043868e9021834887de23508227b9f7254e05a25e6af050429326bd2a508198",
+      "record": {
+        "name": "listrow-dark-compact-640.png",
+        "molecule": "listrow",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 559
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "listrow-dark-cozy-320.png",
+      "width": 320,
+      "height": 803,
+      "sha256": "5357effa363d34fd28172e1a40004b9f45f031162fbd395ec2e07ec5b89b6200",
+      "record": {
+        "name": "listrow-dark-cozy-320.png",
+        "molecule": "listrow",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 803
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "listrow-dark-cozy-640.png",
+      "width": 640,
+      "height": 651,
+      "sha256": "4292bc69b913c91c41226bcc2e0a36f750cb75beae22182560bcd72a36abc09c",
+      "record": {
+        "name": "listrow-dark-cozy-640.png",
+        "molecule": "listrow",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 651
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "listrow-light-compact-320.png",
+      "width": 320,
+      "height": 686,
+      "sha256": "d529b6fab237154da7b48946b198cc6e30cc8668029940390cb9d4d91c6c7e99",
+      "record": {
+        "name": "listrow-light-compact-320.png",
+        "molecule": "listrow",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 686
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "listrow-light-compact-640.png",
+      "width": 640,
+      "height": 559,
+      "sha256": "42d6a9535b057e866911e38c57b2ff99db0f64f0acdf2b43fbaf77d53af778d6",
+      "record": {
+        "name": "listrow-light-compact-640.png",
+        "molecule": "listrow",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 559
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "listrow-light-cozy-320.png",
+      "width": 320,
+      "height": 803,
+      "sha256": "ef97519ca4e4987352132192e78a87653e645253e77d65f2dfde258df238312c",
+      "record": {
+        "name": "listrow-light-cozy-320.png",
+        "molecule": "listrow",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 803
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "listrow-light-cozy-640.png",
+      "width": 640,
+      "height": 651,
+      "sha256": "338192e5a64b9ba2012aa375f954ed65a55a5023d1f5e493e873566be38a94b5",
+      "record": {
+        "name": "listrow-light-cozy-640.png",
+        "molecule": "listrow",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 651
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "menu-dark-compact-320.png",
+      "width": 320,
+      "height": 283,
+      "sha256": "d5c8b3e847e0c97348daba4cfec9073842b56470210ce0542b3da46902d96a7a",
+      "record": {
+        "name": "menu-dark-compact-320.png",
+        "molecule": "menu",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 283
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "menu-dark-compact-640.png",
+      "width": 640,
+      "height": 261,
+      "sha256": "fd48220c4249645598b5f644563c020974642b12826d1563e2dd7a827288e306",
+      "record": {
+        "name": "menu-dark-compact-640.png",
+        "molecule": "menu",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 261
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "menu-dark-cozy-320.png",
+      "width": 320,
+      "height": 351,
+      "sha256": "397d759763bbf1643c7426b6e9148a0fc4394442d1d1828dcff26616fc16bc36",
+      "record": {
+        "name": "menu-dark-cozy-320.png",
+        "molecule": "menu",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 351
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "menu-dark-cozy-640.png",
+      "width": 640,
+      "height": 325,
+      "sha256": "f0e75f1edc5b684b1a0d9321740a0e99ae02f6fffd98e6135bbf887c39e9837b",
+      "record": {
+        "name": "menu-dark-cozy-640.png",
+        "molecule": "menu",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 325
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "menu-light-compact-320.png",
+      "width": 320,
+      "height": 283,
+      "sha256": "195e39a493fc4a6fea5effced9e85dffeee66c5505070ebd56ab06da0092bc3d",
+      "record": {
+        "name": "menu-light-compact-320.png",
+        "molecule": "menu",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 283
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "menu-light-compact-640.png",
+      "width": 640,
+      "height": 261,
+      "sha256": "e91881aa3aeab35b6e359157c342a2b8dcef266681fa2c8fb6fcfe7c60c34585",
+      "record": {
+        "name": "menu-light-compact-640.png",
+        "molecule": "menu",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 261
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "menu-light-cozy-320.png",
+      "width": 320,
+      "height": 351,
+      "sha256": "05aeb23af3f997bac12c1bc66ed3ae2866dc31733b1ff15c42aee52aba2569a1",
+      "record": {
+        "name": "menu-light-cozy-320.png",
+        "molecule": "menu",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 351
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    },
+    {
+      "name": "menu-light-cozy-640.png",
+      "width": 640,
+      "height": 325,
+      "sha256": "28a11a4e31b264e771efe3e3e059d7c4e59bb6ace11bc7c781a2852a9929bc51",
+      "record": {
+        "name": "menu-light-cozy-640.png",
+        "molecule": "menu",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 325
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12"
+      }
+    }
+  ]
+}
