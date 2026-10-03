@@ -1,3 +1,4 @@
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 import { createGolemClient, resolveGolemDashboardBaseUrl } from '../lib/golem-client.js';
 import { dashboardJsonPath } from '../lib/golem-home.js';
 import { resolveCliSessionContext } from '../lib/cli-session-context.js';
@@ -90,11 +91,11 @@ export async function runCollaboration(family, args, {
   stdin = process.stdin, cwd = process.cwd(), resolveContext = resolveCliSessionContext, client: injectedClient,
 } = {}) {
   let operationId = null, mutationStarted = false;
-  let json = args.includes('--json');
+  let json = wantsJson(args);
   try {
     const parsed = parse(family, args);
     if (parsed.options) json = Boolean(parsed.options['--json']);
-    if (parsed.help) { stdout(json ? JSON.stringify({ help: parsed.help }) : parsed.help); return 0; }
+    if (parsed.help) { stdout(json ? formatJson({ help: parsed.help }) : parsed.help); return 0; }
     const { key, options: o, positional } = parsed;
     const context = resolveContext();
     const client = injectedClient ?? createGolemClient({ baseUrl: resolveGolemDashboardBaseUrl({ dashboardFile: dashboardJsonPath() }), callerSessionId: context?.sessionId });
@@ -105,7 +106,7 @@ export async function runCollaboration(family, args, {
         notificationExit(value);
         if (value.kind !== 'schedule' || value.id !== positional[0]) throw new Error('inspection returned a different schedule');
       } else if (!Array.isArray(value)) throw new Error('invalid schedule-list response');
-      stdout(JSON.stringify(value, null, json ? 0 : 2)); return 0;
+      stdout(json ? formatJson(value) : JSON.stringify(value, null, 2)); return 0;
     }
     if (key === 'schedule cancel') {
       operationId = validateOperationId(positional[0]);
@@ -115,13 +116,13 @@ export async function runCollaboration(family, args, {
       mutationStarted = true;
       const receipt = await client.request('POST', `/api/schedules/${operationId}/cancel`, { timeoutMs: 40000, body: { human: !!o['--human'] } });
       if (receipt?.kind !== 'schedule' || receipt.id !== operationId || receipt.state !== 'cancelled') throw new Error('cancellation outcome was not confirmed');
-      stdout(JSON.stringify(receipt, null, json ? 0 : 2)); return 0;
+      stdout(json ? formatJson(receipt) : JSON.stringify(receipt, null, 2)); return 0;
     }
     if (key === 'message inspect') {
       const receipt = await client.request('GET', `/api/message-envelopes/${encodeURIComponent(positional[0])}`, { params: { view: 'receipt', ...(o['--content'] ? { content: '1' } : {}) } });
       notificationExit(receipt);
       if (receipt.kind !== 'message' || receipt.id !== positional[0]) throw new Error('inspection returned a different message id');
-      stdout(JSON.stringify(receipt, null, json ? 0 : 2)); return 0;
+      stdout(json ? formatJson(receipt) : JSON.stringify(receipt, null, 2)); return 0;
     }
   } catch (error) {
     const refused = ['ECONNREFUSED', 'ENOTFOUND'].includes(error?.cause?.cause?.code ?? error?.cause?.code);
@@ -130,7 +131,7 @@ export async function runCollaboration(family, args, {
     const output = { ok: false, code: error.code || 'COLLABORATION_FAILED', error: error.message,
       ...(operationId ? { operation_id: operationId } : {}), state: uncertain ? 'uncertain' : 'rejected',
       ...(uncertain ? { next_action: family === 'schedule' ? 'inspect the schedule or repeat cancellation; do not assume an occurrence was recalled' : 'inspect or retry the same request id; do not create a fresh message' } : {}) };
-    if (json) stdout(JSON.stringify(output)); else stderr(`${output.error}${operationId ? ` (operation ${operationId})` : ''}`);
+    if (json) stdout(formatJson(output)); else stderr(`${output.error}${operationId ? ` (operation ${operationId})` : ''}`);
     return uncertain ? 3 : invalid ? 2 : 1;
   }
 }

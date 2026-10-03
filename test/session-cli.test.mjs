@@ -3,6 +3,7 @@
 // open-team counts, and the attach target rules. Temp GOLEM_HOME and a fake
 // herdr seam; no herdr server.
 
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import { parseManagementList } from './_management-list.mjs';
 import fs from 'node:fs';
@@ -105,7 +106,7 @@ async function run(args, extra = {}) {
 
   const closed = await run(['close', 'demo-proj', '--json'], extra);
   assert.equal(closed.exit, 0, closed.err);
-  const { resolution, ...receipt } = JSON.parse(closed.text);
+  const { resolution, schema_version, ...receipt } = parseCliEnvelope(closed.text);
   assert.equal(resolution.provenance.session, 'exact-target');
   assert.equal(receipt.ok, true); assert.equal(receipt.lifecycle, 'closed');
   assert.equal(receipt.session, 'demo-proj'); assert.deepEqual(receipt.stopped, ['builder1']); assert.deepEqual(receipt.teams_closed, ['open-one']);
@@ -138,42 +139,42 @@ async function run(args, extra = {}) {
   const extra = { herdr: native, workers: emptyWorkers, sleep: async () => {}, timeoutMs: 0 };
   const before = fs.readdirSync(process.env.GOLEM_HOME).sort().map(n => [n, fs.statSync(path.join(process.env.GOLEM_HOME, n)).isFile() ? fs.readFileSync(path.join(process.env.GOLEM_HOME, n), 'utf8') : '<directory>']);
   const planned = await run(['start', '--project', freshProject, '--dry-run', '--json'], extra);
-  assert.equal(planned.exit, 0); assert.equal(JSON.parse(planned.text).plan.association, 'allocation-required-on-real-mutation'); assert.equal(ensures, 0);
+  assert.equal(planned.exit, 0); assert.equal(parseCliEnvelope(planned.text).plan.association, 'allocation-required-on-real-mutation'); assert.equal(ensures, 0);
   const after = fs.readdirSync(process.env.GOLEM_HOME).sort().map(n => [n, fs.statSync(path.join(process.env.GOLEM_HOME, n)).isFile() ? fs.readFileSync(path.join(process.env.GOLEM_HOME, n), 'utf8') : '<directory>']);
   assert.deepEqual(after, before);
   const unowned = await run(['start', 'unowned-native', '--project', freshProject, '--json'], extra);
   assert.equal(unowned.exit, 2); assert.match(unowned.text, /unowned.*adopt/); assert.equal(ensures, 0);
   const adopted = await run(['adopt', 'unowned-native', '--project', freshProject, '--json'], extra);
-  assert.equal(adopted.exit, 0, adopted.text); assert.equal(JSON.parse(adopted.text).adopted, true);
+  assert.equal(adopted.exit, 0, adopted.text); assert.equal(parseCliEnvelope(adopted.text).adopted, true);
   const repeatedAdopt = await run(['adopt', 'unowned-native', '--project', freshProject, '--json'], extra);
-  assert.equal(JSON.parse(repeatedAdopt.text).noop, true);
+  assert.equal(parseCliEnvelope(repeatedAdopt.text).noop, true);
   const stolen = await run(['adopt', 'unowned-native', '--project', 'foreign-proj-222222', '--json'], extra);
   assert.equal(stolen.exit, 2); assert.match(stolen.text, /conflicts/);
   const started = await run(['start', '--project', freshProject, '--json'], extra);
-  assert.equal(started.exit, 0, started.text); assert.equal(JSON.parse(started.text).session, 'unowned-native'); assert.equal(JSON.parse(started.text).started, true);
+  assert.equal(started.exit, 0, started.text); assert.equal(parseCliEnvelope(started.text).session, 'unowned-native'); assert.equal(parseCliEnvelope(started.text).started, true);
   const running = await run(['start', '--project', freshProject, '--json'], extra);
-  assert.equal(running.exit, 0); assert.equal(JSON.parse(running.text).noop, true);
+  assert.equal(running.exit, 0); assert.equal(parseCliEnvelope(running.text).noop, true);
   const kept = createTeam({ label: 'Kept definitions', projectId: freshProject, ownerSessionId: 'owner-retained', herdrSession: 'unowned-native' });
   const inspected = await run(['inspect', 'unowned-native', '--json'], extra);
-  assert.equal(inspected.exit, 0); assert.equal(JSON.parse(inspected.text).native_running, true); assert.equal(JSON.parse(inspected.text).teams[0].team_id, kept.team_id);
+  assert.equal(inspected.exit, 0); assert.equal(parseCliEnvelope(inspected.text).native_running, true); assert.equal(parseCliEnvelope(inspected.text).teams[0].team_id, kept.team_id);
   failStop = true;
   const partial = await run(['stop', 'unowned-native', '--json'], extra);
-  assert.equal(partial.exit, 1); const partialValue = JSON.parse(partial.text); assert.equal(partialValue.lifecycle, 'closing'); assert.match(partialValue.error, /stop failed/);
+  assert.equal(partial.exit, 1); const partialValue = parseCliEnvelope(partial.text); assert.equal(partialValue.lifecycle, 'closing'); assert.match(partialValue.error.message, /stop failed/);
   failStop = false;
   const stopped = await run(['stop', 'unowned-native', '--json'], extra);
-  assert.equal(stopped.exit, 0, stopped.text); const stoppedValue = JSON.parse(stopped.text); assert.equal(stoppedValue.operation_id, partialValue.operation_id);
+  assert.equal(stopped.exit, 0, stopped.text); const stoppedValue = parseCliEnvelope(stopped.text); assert.equal(stoppedValue.operation_id, partialValue.operation_id);
   assert.equal(stoppedValue.lifecycle, 'stopped'); assert.equal(mutable.some(r => r.name === 'unowned-native'), true);
   assert.equal(listTeams().find(t => t.team_id === kept.team_id).owner_session_id, 'owner-retained'); assert.equal(listTeams().find(t => t.team_id === kept.team_id).closed_at, null);
   const restarted = await run(['start', '--project', freshProject, '--json'], extra);
-  assert.equal(restarted.exit, 0, restarted.text); assert.equal(JSON.parse(restarted.text).session, 'unowned-native');
+  assert.equal(restarted.exit, 0, restarted.text); assert.equal(parseCliEnvelope(restarted.text).session, 'unowned-native');
   const allocated = await run(['start', '--project', 'new-proj-333333', '--json'], extra);
-  assert.equal(allocated.exit, 0, allocated.text); assert.match(JSON.parse(allocated.text).session, /^g-[0-9a-f]{28}$/);
+  assert.equal(allocated.exit, 0, allocated.text); assert.match(parseCliEnvelope(allocated.text).session, /^g-[0-9a-f]{28}$/);
   const unknownRead = await run(['inspect', 'unowned-native', '--json'], { ...extra, herdr: { ...native, sessionList: () => { throw new Error('inventory probe unavailable'); } } });
-  assert.equal(unknownRead.exit, 0); assert.equal(JSON.parse(unknownRead.text).native_running, null); assert.equal(JSON.parse(unknownRead.text).capabilities.attach.state, 'unavailable');
+  assert.equal(unknownRead.exit, 0); assert.equal(parseCliEnvelope(unknownRead.text).native_running, null); assert.equal(parseCliEnvelope(unknownRead.text).capabilities.attach.state, 'unavailable');
   const finalClose = await run(['close', 'unowned-native', '--json'], extra);
-  assert.equal(finalClose.exit, 0, finalClose.text); assert.equal(JSON.parse(finalClose.text).native_deleted, true);
+  assert.equal(finalClose.exit, 0, finalClose.text); assert.equal(parseCliEnvelope(finalClose.text).native_deleted, true);
   const closedRetry = await run(['close', 'unowned-native', '--json'], extra);
-  assert.equal(closedRetry.exit, 0); assert.equal(JSON.parse(closedRetry.text).noop, true);
+  assert.equal(closedRetry.exit, 0); assert.equal(parseCliEnvelope(closedRetry.text).noop, true);
   assert.equal(listTeams().find(t => t.team_id === kept.team_id).closed_at != null, true);
   assert.ok(stops >= 2);
 }

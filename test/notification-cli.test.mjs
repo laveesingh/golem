@@ -1,3 +1,4 @@
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -81,7 +82,7 @@ try {
   const file = path.join(home, 'message.txt'); fs.writeFileSync(file, text);
   let result = await run('agent', ['notify', '--to', target, '--message-file', file, '--ticket', 'GOL-331', '--request-id', id, '--json']);
   assert.equal(result.exit, 0, result.out || result.err);
-  assert.equal(JSON.parse(result.out).id, id);
+  assert.equal(parseCliEnvelope(result.out).id, id);
   assert.equal(result.err, '');
   assert.ok(inputs.get(id).content.endsWith(`GOL-331: ${text}`));
   // GOL-335 D2: ordinary peer provenance is neutral — exact return recipient id
@@ -96,11 +97,11 @@ try {
   result = await run('agent', ['notify', '--to', target, '--message', text, '--ticket', 'GOL-331', '--request-id', id, '--json']);
   assert.equal(result.exit, 0); assert.equal(inputs.size, before);
   result = await run('agent', ['notify', '--to', target, '--message', 'changed', '--request-id', id, '--json']);
-  assert.equal(result.exit, 2); assert.equal(JSON.parse(result.out).code, 'OPERATION_CONFLICT'); assert.equal(inputs.size, before);
+  assert.equal(result.exit, 2); assert.equal(parseCliEnvelope(result.out).code, 'OPERATION_CONFLICT'); assert.equal(inputs.size, before);
   result = await run('message', ['inspect', id, '--json']);
-  assert.equal(result.exit, 0); assert.equal(Object.hasOwn(JSON.parse(result.out), 'content'), false);
+  assert.equal(result.exit, 0); assert.equal(Object.hasOwn(parseCliEnvelope(result.out), 'content'), false);
   result = await run('message', ['inspect', id, '--content', '--json']);
-  assert.ok(JSON.parse(result.out).content.endsWith(text));
+  assert.ok(parseCliEnvelope(result.out).content.endsWith(text));
   const raceId = crypto.randomUUID(), raceBefore = inputs.size;
   const racing = await Promise.all(Array.from({ length: 6 }, () => run('agent', ['notify', '--to', target, '--message', 'concurrent same key', '--request-id', raceId, '--json'])));
   assert.ok(racing.every((item) => item.exit === 0), JSON.stringify(racing));
@@ -115,7 +116,7 @@ try {
   } });
   const lostArgs = ['notify', '--to', target, '--message', 'lost response', '--request-id', lostId, '--json'];
   result = await run('agent', lostArgs, { client: losingClient });
-  assert.equal(result.exit, 3); assert.equal(JSON.parse(result.out).operation_id, lostId);
+  assert.equal(result.exit, 3); assert.equal(parseCliEnvelope(result.out).operation_id, lostId);
   const afterLoss = inputs.size;
   result = await run('agent', lostArgs);
   assert.equal(result.exit, 0); assert.equal(inputs.size, afterLoss);
@@ -124,7 +125,7 @@ try {
   result = await run('agent', ['notify', '--to', target, '--message-file', '-', '--human', '--json'],
     { resolveContext: () => null, client: humanClient, stdin: Readable.from(['human stdin\n']) });
   assert.equal(result.exit, 0, result.out);
-  const humanInput = inputs.get(JSON.parse(result.out).id).content;
+  const humanInput = inputs.get(parseCliEnvelope(result.out).id).content;
   assert.match(humanInput, /answer the human in this native chat/);
   assert.doesNotMatch(humanInput, /session_notify\(to: "human:cli"\)/);
   for (const args of [
@@ -200,30 +201,30 @@ const r=spawnSync(process.execPath,['-e',bridge],{encoding:'utf8'});process.stdo
   let nativeOut = '', nativeErr = ''; child.stdout.on('data', (b) => nativeOut += b); child.stderr.on('data', (b) => nativeErr += b);
   const nativeExit = await new Promise((r) => child.once('exit', r));
   assert.equal(nativeExit, 0, nativeErr || nativeOut);
-  assert.match(inputs.get(JSON.parse(nativeOut).id).content, /Authenticated sender session_id: resumed-native-caller/);
+  assert.match(inputs.get(parseCliEnvelope(nativeOut).id).content, /Authenticated sender session_id: resumed-native-caller/);
   console.log('actual CLI grandchild process uses canonical resumed Claude identity, not per-run environment id: passed');
 
   const scheduleId = crypto.randomUUID();
   const scheduleArgs = ['notify', '--to', target, '--message', 'scheduled context', '--after', '1h', '--every', '2h', '--request-id', scheduleId, '--json'];
   result = await run('agent', scheduleArgs);
-  assert.equal(result.exit, 0, result.out); const scheduled = JSON.parse(result.out);
+  assert.equal(result.exit, 0, result.out); const scheduled = parseCliEnvelope(result.out);
   assert.equal(scheduled.kind, 'schedule'); assert.equal(scheduled.state, 'active');
   assert.equal(scheduled.interval_ms, 7200000); assert.equal(scheduled.current_occurrence, null);
   result = await run('agent', scheduleArgs);
-  assert.equal(JSON.parse(result.out).next_due_at, scheduled.next_due_at, 'idempotent retry never shifts the due time');
+  assert.equal(parseCliEnvelope(result.out).next_due_at, scheduled.next_due_at, 'idempotent retry never shifts the due time');
   assert.equal((await run('agent', ['notify', '--to', target, '--message', 'scheduled context', '--request-id', scheduleId, '--json'])).exit, 2);
   assert.equal((await run('agent', ['notify', '--to', target, '--message', text, '--ticket', 'GOL-331', '--after', '1h', '--request-id', id, '--json'])).exit, 2);
   const stranger = { client: createGolemClient({ baseUrl: base, callerSessionId: 'stranger' }), resolveContext: () => ({ sessionId: 'stranger' }) };
-  assert.deepEqual(JSON.parse((await run('schedule', ['list', '--json'], stranger)).out), []);
-  assert.ok(JSON.parse((await run('schedule', ['list', '--all', '--json'], stranger)).out).some((s) => s.id === scheduleId));
+  assert.deepEqual(parseCliEnvelope((await run('schedule', ['list', '--json'], stranger)).out).items, []);
+  assert.ok(parseCliEnvelope((await run('schedule', ['list', '--all', '--json'], stranger)).out).items.some((s) => s.id === scheduleId));
   assert.equal((await run('schedule', ['cancel', scheduleId, '--json'], stranger)).exit, 2);
   result = await run('schedule', ['inspect', scheduleId, '--json']);
-  assert.equal(Object.hasOwn(JSON.parse(result.out), 'content'), false);
-  assert.equal(JSON.parse((await run('schedule', ['inspect', scheduleId, '--content', '--json'])).out).content, 'scheduled context');
+  assert.equal(Object.hasOwn(parseCliEnvelope(result.out), 'content'), false);
+  assert.equal(parseCliEnvelope((await run('schedule', ['inspect', scheduleId, '--content', '--json'])).out).content, 'scheduled context');
   const operator = { client: humanClient, resolveContext: () => null };
   result = await run('schedule', ['cancel', scheduleId, '--human', '--json'], operator);
-  assert.equal(result.exit, 0); const cancelledAt = JSON.parse(result.out).cancelled_at;
-  assert.equal(JSON.parse((await run('schedule', ['cancel', scheduleId, '--human', '--json'], operator)).out).cancelled_at, cancelledAt);
+  assert.equal(result.exit, 0); const cancelledAt = parseCliEnvelope(result.out).cancelled_at;
+  assert.equal(parseCliEnvelope((await run('schedule', ['cancel', scheduleId, '--human', '--json'], operator)).out).cancelled_at, cancelledAt);
   for (const flags of [['--after', '-1s'], ['--every', '0s'], ['--after', '10'], ['--every', '99999999999999999d']]) {
     assert.equal((await run('agent', ['notify', '--to', target, '--message', 'invalid time', ...flags, '--json'])).exit, 2);
   }

@@ -1,0 +1,204 @@
+{
+  "$id": "CliTicketResult",
+  "anyOf": [
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "help": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "help"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "JsonValue"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "items"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "id"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "body_revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "body_revision"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "ticket_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "ticket_id"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "block_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "block_id"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "kind",
+        "source"
+      ]
+    },
+    {
+      "additionalProperties": true,
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "details": {
+              "$ref": "JsonValue"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok",
+        "error"
+      ]
+    }
+  ]
+}

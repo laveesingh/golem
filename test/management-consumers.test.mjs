@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Shared projection + actual CLI/HTTP/MCP consumers; isolated state and children.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import http from 'node:http'; import { spawn } from 'node:child_process'; import { once } from 'node:events';
@@ -43,11 +44,11 @@ try {
   const ambiguous = managementRosterSnapshot([inputs[0]], { snapshot: duplicate, facts, native })[0]; assert.equal(ambiguous.capabilities.stop.state, 'unavailable'); assert.equal(ambiguous.control_candidates.length, 2);
   const cliRows = buildRosterRows(projected, { teams: [team] });
   for (let i = 0; i < projected.length; i++) { assert.deepEqual(cliRows[i].capabilities, projected[i].capabilities); assert.deepEqual(cliRows[i].placement, projected[i].placement); assert.equal(cliRows[i].team_id, projected[i].team_id); }
-  const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: temp, env: {}, native, resolveContext: () => null, manager: { listAgentRoster: async () => ({ roster: projected, ended: [] }) }, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
+  const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: temp, env: {}, native, resolveContext: () => null, manager: { listAgentRoster: async () => ({ roster: projected, ended: [] }) }, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: parseCliEnvelope(out.join('')) }; };
   const listed = await run(['list', '--scope', 'all']); assert.equal(listed.exit, 0); assert.equal(listed.value.schema_version, 2); assert.deepEqual(listed.value.items.map(r => r.capabilities), projected.map(r => r.capabilities));
   const externalRead = await run(['read', ownerId, '--session', session]); assert.equal(externalRead.exit, 0); assert.equal(externalRead.value.text, 'exact terminal owner-pane');
   const externalAttach = await run(['attach', ownerId]); assert.equal(externalAttach.exit, 0); assert.equal(attaches, 1);
-  const outsideRead = await run(['read', outsideId]); assert.equal(outsideRead.exit, 1); assert.equal(outsideRead.value.capabilities.read.state, 'unsupported'); assert.ok(!/not found/.test(outsideRead.value.error));
+  const outsideRead = await run(['read', outsideId]); assert.equal(outsideRead.exit, 1); assert.equal(outsideRead.value.capabilities.read.state, 'unsupported'); assert.ok(!/not found/.test(outsideRead.value.error.message));
   const terminal = await peekSessionTerminal(ownerId, { projectId, native }); assert.equal(terminal.ok, true); assert.equal(terminal.attach_hint, `golem agent attach ${ownerId}`); assert.deepEqual(terminal.capabilities, projected[1].capabilities);
   const beforeUnknown = reads; unavailable = true;
   const unknown = managementRosterSnapshot(inputs, { facts, native }); assert.equal(unknown[1].capabilities.read.state, 'unavailable'); assert.match(unknown[1].capabilities.read.reason, /native source failed/);

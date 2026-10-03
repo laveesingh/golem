@@ -6,6 +6,7 @@
 // resolution, create team refusal, role/dedup mechanics, and the removed
 // verbs answering unknown command through the real CLI entry.
 
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import { parseManagementList } from './_management-list.mjs';
 import { spawnSync } from 'node:child_process';
@@ -313,7 +314,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
 
   const created = await run(['create', 'explorer', '--team', 'beta-team', '--json']);
   assert.equal(created.exit, 0, created.text);
-  const record = JSON.parse(created.text);
+  const record = parseCliEnvelope(created.text);
   assert.equal(record.team, 'beta-team');
   assert.equal(calls.at(-1)[0], 'spawn');
   assert.equal(calls.at(-1)[1].teamId, beta.team_id);
@@ -331,7 +332,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
 
   const cleared = await run(['role', 'clear', 'sess-alpha-1', '--json']);
   assert.equal(cleared.exit, 0, cleared.text);
-  assert.equal(JSON.parse(cleared.text).role, null);
+  assert.equal(parseCliEnvelope(cleared.text).role, null);
 
   const listed = await run(['role', 'list']);
   assert.equal(listed.exit, 0);
@@ -438,7 +439,7 @@ async function run(args, { resolveContext = leadContext, manager = stubManager, 
       paneLabel: value => { effects.push(['label', value]); if (displayFails) throw new Error('display unavailable'); return true; },
       paneMove: value => { effects.push(['move', value]); position = { pane_id: value.workspaceId === 'retry-w' ? 'retry-pane' : 'moved-pane', tab_id: 'moved-tab', workspace_id: value.workspaceId }; if (moveFails) throw new Error('move response unavailable'); return position; },
     };
-    const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: projectDir, env: {}, native, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
+    const run = async args => { const out = []; const exit = await runAgent('agent', [...args, '--json'], { cwd: projectDir, env: {}, native, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: parseCliEnvelope(out.join('')) }; };
     const inspect = await run(['inspect', own.session_id]); assert.equal(inspect.exit, 0); assert.equal(inspect.value.native_handle, own.herdr_agent_name); assert.equal(inspect.value.capabilities.stop.state, 'available', JSON.stringify(inspect.value));
     const bytes = () => JSON.stringify(['workers.json', 'teams.json', 'herdr-mappings.json'].map(name => fs.readFileSync(path.join(process.env.GOLEM_HOME, name), 'utf8')));
     const before = bytes();

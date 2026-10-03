@@ -1,3 +1,4 @@
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 // golem agent — the one agent toolkit (GOL-363 G9, G10, T1–T8, R5, R8, R13).
 //
 // This family replaces the previous per-verb top-level commands and the old
@@ -504,7 +505,7 @@ async function cmdAgentList(o, { stdout, cwd, manager, query }) {
   };
   const physical = row => !o['--session'] || (row.worker?.herdr_session ?? query.evidence.agents.find(a => a.session_id === row.session_id)?.herdr_session) === resolution.session;
   const rows = buildRosterRows(roster.filter(inScope).concat(ended.filter(inScope)).filter(physical), { teams });
-  stdout(o['--json'] ? JSON.stringify(listReceipt(rows, resolution)) : formatAgentTable(rows));
+  stdout(o['--json'] ? formatJson(listReceipt(rows, resolution)) : formatAgentTable(rows));
 }
 
 async function cmdAgentCreate(role, o, positional, { stdout, cwd, manager, query }) {
@@ -531,7 +532,7 @@ async function cmdAgentCreate(role, o, positional, { stdout, cwd, manager, query
     ...(o['--session'] ? { nativeSession: query.resolution.session } : {}),
   });
   const rows = buildAgentRows([created], { teams });
-  stdout(o['--json'] ? JSON.stringify({ ...rows[0], resolution: query.resolution }) : formatAgentTable(rows));
+  stdout(o['--json'] ? formatJson({ ...rows[0], resolution: query.resolution }) : formatAgentTable(rows));
 }
 
 function managedTarget(query) {
@@ -559,23 +560,23 @@ async function cmdAgentRead(ref, o, { stdout, manager, query, native }) {
   if (!query.resolution.target?.worker_id) {
     const row = externalControl(query, 'read', native);
     const text = native.paneRead({ session: row.placement.session, paneId: row.placement.pane_id, lines });
-    stdout(o['--json'] ? JSON.stringify({ text, capabilities: row.capabilities, resolution: query.resolution }) : text); return;
+    stdout(o['--json'] ? formatJson({ text, capabilities: row.capabilities, resolution: query.resolution }) : text); return;
   }
   const row = managedTarget(query);
   const output = await manager.peekWorker(row.name, { ...managedControlOptions(query.resolution, o), lines });
-  stdout(o['--json'] ? JSON.stringify({ text: output, resolution: query.resolution }) : output);
+  stdout(o['--json'] ? formatJson({ text: output, resolution: query.resolution }) : output);
 }
 
 async function cmdAgentAttach(ref, o, { stdout, manager, query, native }) {
   if (!query.resolution.target?.worker_id) {
     const row = externalControl(query, 'attach', native);
     const status = native.agentAttach({ session: row.placement.session, agentTarget: row.placement.pane_id, outputToStderr: !!o['--json'] });
-    if (o['--json']) stdout(JSON.stringify({ attached: status === 0, status, session_id: row.session_id, capabilities: row.capabilities, resolution: query.resolution }));
+    if (o['--json']) stdout(formatJson({ ok: status === 0, attached: status === 0, status, session_id: row.session_id, capabilities: row.capabilities, resolution: query.resolution }));
     return status;
   }
   const row = managedTarget(query);
   const status = await manager.attachWorker(row.name, { ...managedControlOptions(query.resolution, o), ...(o['--json'] ? { outputToStderr: true } : {}) });
-  if (o['--json']) stdout(JSON.stringify({ attached: status === 0, status, session_id: row.session_id, resolution: query.resolution }));
+  if (o['--json']) stdout(formatJson({ ok: status === 0, attached: status === 0, status, session_id: row.session_id, resolution: query.resolution }));
   return status;
 }
 
@@ -587,19 +588,19 @@ async function cmdAgentStop(ref, o, { stdout, manager, query, native }) {
     await closeNativeAgentPane({ session: row.placement.session, paneId: row.placement.pane_id, name: row.name }, native);
     markSessionFactsEnded([row.session_id], { status: 'stopped' });
     markSessionsEnded([row.session_id], { status: 'stopped' });
-    stdout(o['--json'] ? JSON.stringify({ ok: true, session_id: row.session_id, state: 'dead', resolution: query.resolution }) : `Stopped ${row.name ?? row.session_id}.`);
+    stdout(o['--json'] ? formatJson({ ok: true, session_id: row.session_id, state: 'dead', resolution: query.resolution }) : `Stopped ${row.name ?? row.session_id}.`);
     return;
   }
   const row = managedTarget(query);
   const stopped = await manager.killWorker(row.name, managedControlOptions(query.resolution, o));
   const rows = buildAgentRows([stopped], { teams: listTeams({ projectId: row.project_id }) });
-  stdout(o['--json'] ? JSON.stringify({ ...rows[0], resolution: query.resolution }) : formatAgentTable(rows));
+  stdout(o['--json'] ? formatJson({ ...rows[0], resolution: query.resolution }) : formatAgentTable(rows));
 }
 
-async function cmdAgentRole(roleArg, positional, o, { stdout, resolveContext }) {
+async function cmdAgentRole(roleArg, positional, o, { stdout, resolveContext, resolution }) {
   let role = roleArg;
   if (roleArg === 'list' || roleArg === '--list') {
-    stdout(roleNamesSnapshot().join('\n'));
+    stdout(o['--json'] ? formatJson({ items: roleNamesSnapshot() }) : roleNamesSnapshot().join('\n'));
     return;
   }
   if (roleArg === 'clear') role = null;
@@ -623,7 +624,7 @@ async function cmdAgentRole(roleArg, positional, o, { stdout, resolveContext }) 
     role_updated_by: updated.role_updated_by,
     activation,
   };
-  stdout(o['--json'] ? JSON.stringify(receipt) : `agent ${receipt.session_id} role ${receipt.role ?? 'cleared'}`);
+  stdout(o['--json'] ? formatJson({ ...receipt, ...(resolution ? { resolution } : {}) }) : `agent ${receipt.session_id} role ${receipt.role ?? 'cleared'}`);
 }
 
 async function cmdAgentDedup(o, { stdout }) {
@@ -666,7 +667,7 @@ export async function runAgent(family, args, {
   let resolution = null;
   let operationId = null;
   let mutationStarted = false;
-  let json = args.includes('--json');
+  let json = wantsJson(args);
   const fail = (error) => {
     const refused = ['ECONNREFUSED', 'ENOTFOUND'].includes(error?.cause?.cause?.code ?? error?.cause?.code);
     const invalid = error.exitCode === 2 || error instanceof NotificationError || (error.status >= 400 && error.status < 500)
@@ -676,7 +677,7 @@ export async function runAgent(family, args, {
       ...(error.resolution?.candidates?.length ? { candidates: error.resolution.candidates } : {}),
       ...(operationId ? { operation_id: operationId } : {}), ...(error.capabilities ? { capabilities: error.capabilities } : {}), ...(resolution || error.resolution ? { resolution: error.resolution ?? resolution } : {}), state: error.code === 'TARGET_AMBIGUOUS' ? 'needs_selection' : uncertain ? 'uncertain' : 'rejected',
       ...(uncertain ? { next_action: 'inspect or retry the same request id; do not create a fresh message' } : {}) };
-    if (json) stdout(JSON.stringify(output));
+    if (json) stdout(formatJson(output));
     else if (error.code === 'TARGET_AMBIGUOUS') stdout(output.error);
     else stderr(`golem agent: ${output.error}${operationId ? ` (operation ${operationId})` : ''}`);
     return uncertain ? 3 : invalid ? 2 : 1;
@@ -684,7 +685,7 @@ export async function runAgent(family, args, {
   try {
     const parsed = parse(family, args);
     if (parsed.options) json = Boolean(parsed.options['--json']);
-    if (parsed.help) { stdout(json ? JSON.stringify({ help: parsed.help }) : parsed.help); return 0; }
+    if (parsed.help) { stdout(json ? formatJson({ help: parsed.help }) : parsed.help); return 0; }
     const { key, options: o, positional } = parsed;
     let query = null;
     if (key === 'agent rename') { try { normalizeName(positional[1]); } catch (error) { throw new NotificationError(error.message); } }
@@ -707,7 +708,7 @@ export async function runAgent(family, args, {
         : key === 'agent rename' ? renameManagedAgent(query, positional[1], { native })
         : key === 'agent move' ? moveManagedAgent(query, o['--workspace'], { native, session: o['--session'] ?? null })
         : adoptManagedAgent(query, { native, paneId: o['--pane'] ?? null });
-      stdout(json ? JSON.stringify({ ...result, resolution }) : result.error ?? `agent ${result.name ?? result.logical_name ?? resolution.target.id} ${key.split(' ')[1]}${result.noop ? ' (no-op)' : ''}`);
+      stdout(json ? formatJson({ ...result, resolution }) : result.error ?? `agent ${result.name ?? result.logical_name ?? resolution.target.id} ${key.split(' ')[1]}${result.noop ? ' (no-op)' : ''}`);
       return result.ok === false ? 1 : 0;
     }
     if (key === 'agent list') {
@@ -731,8 +732,7 @@ export async function runAgent(family, args, {
       return 0;
     }
     if (key === 'agent role') {
-      const roleOut = text => stdout(o['--json'] && resolution ? JSON.stringify({ ...JSON.parse(text), resolution }) : text);
-      await cmdAgentRole(positional[0], [resolution?.target?.session_id ?? resolution?.target?.id], o, { stdout: roleOut, resolveContext });
+      await cmdAgentRole(positional[0], [resolution?.target?.session_id ?? resolution?.target?.id], o, { stdout, resolveContext, resolution });
       return 0;
     }
     if (key === 'agent dedup') {
@@ -748,7 +748,7 @@ export async function runAgent(family, args, {
         onMutating: () => { mutationStarted = true; },
       });
       const exit = notificationExit(result.receipt);
-      stdout(json ? JSON.stringify(result.receipt) : `${result.receipt.kind} ${operationId}: ${result.receipt.state}${result.receipt.reason ? ` — ${result.receipt.reason}` : ''}`);
+      stdout(json ? formatJson({ ...result.receipt, ok: exit === 0 }) : `${result.receipt.kind} ${operationId}: ${result.receipt.state}${result.receipt.reason ? ` — ${result.receipt.reason}` : ''}`);
       return exit;
     }
     throw new NotificationError(`unknown command: ${key}`);
