@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "scenario": "typed-brief-accepted-settled",
+  "source": {
+    "harness": "pi",
+    "harness_version": "0.99.1",
+    "golem_version": "5.26.1"
+  },
+  "seed": 524,
+  "events": [
+    {
+      "seq": 1,
+      "at_ms": 1,
+      "boundary": "process",
+      "direction": "in",
+      "operation": "process-spawn",
+      "fields": {
+        "harness": "pi",
+        "argv": [
+          "--mode",
+          "rpc",
+          "--no-session",
+          "--no-tools",
+          "--no-extensions",
+          "--no-skills",
+          "--no-prompt-templates",
+          "--no-context-files",
+          "--extension",
+          "$path:1",
+          "--provider",
+          "<redacted:provider>",
+          "--model",
+          "$model:1"
+        ]
+      }
+    },
+    {
+      "seq": 2,
+      "at_ms": 344,
+      "boundary": "typed-http",
+      "direction": "in",
+      "operation": "typed-submit",
+      "fields": {
+        "envelope_id": "$envelope:1",
+        "session_id": "$session:1",
+        "attempt_id": "$attempt:1",
+        "kind": "brief"
+      }
+    },
+    {
+      "seq": 3,
+      "at_ms": 345,
+      "boundary": "typed-http",
+      "direction": "out",
+      "operation": "typed-accepted",
+      "fields": {
+        "envelope_id": "$envelope:1",
+        "session_id": "$session:1",
+        "attempt_id": "$attempt:1",
+        "state": "accepted"
+      }
+    },
+    {
+      "seq": 4,
+      "at_ms": 1904,
+      "boundary": "typed-http",
+      "direction": "out",
+      "operation": "typed-settled",
+      "fields": {
+        "envelope_id": "$envelope:1",
+        "session_id": "$session:1",
+        "attempt_id": "$attempt:1",
+        "state": "settled"
+      }
+    },
+    {
+      "seq": 5,
+      "at_ms": 1915,
+      "boundary": "process",
+      "direction": "out",
+      "operation": "process-exit",
+      "fields": {
+        "harness": "pi",
+        "exit_code": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "task": "GOL-466",
+  "base": "b0ab5796efb5494af15152b9b1293986f241a643",
+  "spec": "GOL-438 revision 6 ES-05/06",
+  "shell": "GOL-431 revision 2 D-12 open",
+  "packages": [
+    {
+      "name": "@fontsource/geist",
+      "version": "5.3.0",
+      "source": "https://registry.npmjs.org/@fontsource/geist/-/geist-5.3.0.tgz",
+      "integrity": "sha512-u03ftlfVwb05uijq2jGDJ03/HKGqMKaNFk7KOhkpBUex8+BhrAOfMs/XciJ2UUNUX9fEsZbZQld/RWMA2oFU7g==",
+      "tarballSha256": "62a48c4d780c68d8f8b1b7385ee508ea0e554afb921453537faa5b05e96e2663"
+    },
+    {
+      "name": "@fontsource/jetbrains-mono",
+      "version": "5.3.0",
+      "source": "https://registry.npmjs.org/@fontsource/jetbrains-mono/-/jetbrains-mono-5.3.0.tgz",
+      "integrity": "sha512-fqDfB5I9f1p1TV486aUgB9t8zP84P0O1FtQR5Ol9vjwPy+S+EIGlVYm1cvj2W5shcZMTg2nZFdVMoH5wFu8a1A==",
+      "tarballSha256": "1bbea47d1387406da5b6ccc4184cc61eae6851cc0db5c1d9bbd088ea9daa0b4a"
+    }
+  ],
+  "copiedLab": [
+    {
+      "file": "design-lab/index.html",
+      "sha256": "0c676f13464398d769e097578d43dff60c4831a5eeca0ffe9f4169f7853de9d4",
+      "mainSha256": "0c676f13464398d769e097578d43dff60c4831a5eeca0ffe9f4169f7853de9d4"
+    },
+    {
+      "file": "design-lab/README.md",
+      "sha256": "042bf2920d6b1fe678486c795fd8372c86ef8bf38bf82187d1b4a303b2ed0a5b",
+      "mainSha256": "042bf2920d6b1fe678486c795fd8372c86ef8bf38bf82187d1b4a303b2ed0a5b"
+    }
+  ],
+  "grounding": [
+    {
+      "file": "dashboard/web/styles.css",
+      "sha256": "c29fd5bc747be8bed19a3e2bd575ce2398444136e15129771508ac388a2b03fc"
+    },
+    {
+      "file": "dashboard/web/extra.css",
+      "sha256": "108b47a824766bc7432ff5f4da539cb974427d785e6410a395565c89c2f1613c"
+    },
+    {
+      "file": "dashboard/web/src/tweaks.jsx",
+      "sha256": "4535e86bb5ae08ae1d2a4baf225dae47f7086eabe69451117227140feb4dcfe1"
+    },
+    {
+      "file": "dashboard/web/src/atoms.jsx",
+      "sha256": "dc898f901fcde295bb449b46d940a7ed8588679539899c07badad8fbc471d195"
+    },
+    {
+      "file": "dashboard/web/src/field-controls.jsx",
+      "sha256": "d2a9568b23d838a38c3083bdfbd035c91120958d190d0857231adacd1e3611d1"
+    }
+  ],
+  "licenses": [
+    {
+      "file": "geist-LICENSE.txt",
+      "sha256": "71609cbb5c78b5870d712eab73a31d76622635c6ed034ab5cee3b9ecbda8685f"
+    },
+    {
+      "file": "jetbrains-mono-LICENSE.txt",
+      "sha256": "403581b69dac5cff4079205e01c6b467e56af449ecbd7247693ddb1baafa005b"
+    }
+  ]
+}

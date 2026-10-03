@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { openTrackerDb } from '../dashboard/server/tracker-db.js';
+import { createHtmlMutationFixture } from './support/html-mutation.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gol343-'));
@@ -389,7 +390,6 @@ try {
 
   // ---- REST boundary -------------------------------------------------------
   {
-    const { WebSocket } = await import('ws');
     fs.mkdirSync(path.join(tmp, 'projects', 'gol343'), { recursive: true });
     fs.writeFileSync(path.join(tmp, 'projects', 'gol343', 'CLAUDE.md'), '# gol343 rest probe');
     const reservation = net.createServer();
@@ -517,9 +517,12 @@ try {
 
     // WebSocket updates only after commit.
     ws = new WebSocket(`${base.replace('http', 'ws')}/ws`);
-    await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+    await new Promise((resolve, reject) => {
+      ws.addEventListener('open', resolve, { once: true });
+      ws.addEventListener('error', reject, { once: true });
+    });
     const wsMessages = [];
-    ws.on('message', (data) => wsMessages.push(JSON.parse(String(data))));
+    ws.addEventListener('message', ({ data }) => wsMessages.push(JSON.parse(String(data))));
     await sleep(200);
     await api(`/api/tickets/${restHtmlId}/block-patches`, {
       expected_revision: 4, actor: 'smoke',
@@ -534,22 +537,10 @@ try {
     ws = null;
 
     // ---- Negative controls -------------------------------------------------
-    // Sanitizer bypass on a disposable mutated copy (written beside the real
-    // module so package imports resolve; removed in finally): the production-
-    // path safety assertion must FAIL against the mutant. The on*/style skip
-    // alone is not enough (the attribute allowlist drops them anyway), so the
-    // mutation disables the executable-element drop (script/iframe/style…).
-    const mutantPath = path.join(repo, 'dashboard/server/.gol343-mutant.mjs');
-    const source = fs.readFileSync(path.join(repo, 'dashboard/server/html-body.js'), 'utf8');
-    assert.ok(source.includes('if (DROP_WITH_CONTENT.has(tag)) return null;'));
-    // Two-guard bypass: without both the executable-element drop AND the
-    // allowlist unwrap, a script element survives serialization — proving the
-    // production safety assertion is the guard for a real bypass.
-    const mutantSource = source
-      .replace('if (DROP_WITH_CONTENT.has(tag)) return null;', 'if (false) return null;')
-      .replace('if (UNWRAP.has(tag) || !ALLOWED_TAGS.has(tag)) {', "if (tag === 'script') { node.childNodes = node.childNodes ?? []; return node; }\n    if (UNWRAP.has(tag) || !ALLOWED_TAGS.has(tag)) {");
-    assert.ok(mutantSource !== source);
-    fs.writeFileSync(mutantPath, mutantSource);
+    // Same two-guard sanitizer negative, now in a fully owned module/dependency
+    // mirror. Parent adapter cleanup owns it even when SIGKILL skips finally.
+    const fixture = createHtmlMutationFixture();
+    const mutantPath = fixture.mutantPath;
     try {
       const mutant = await import(pathToFileURL(mutantPath).href);
       const mutantOut = mutant.normalizeHtmlBody('<p>kept<script>alert(1)</script></p>').html;
@@ -558,7 +549,7 @@ try {
         safeOutput(normalizeHtmlBody('<p>kept<script>alert(1)</script></p>').html) === true && safeOutput(mutantOut) === false,
         mutantOut.slice(0, 120));
     } finally {
-      fs.rmSync(mutantPath, { force: true });
+      fs.rmSync(fixture.root, { recursive: true, force: true });
     }
     // Revision-gate negative control: the gate checker must reject a
     // hypothetical success response for a revision-less write.

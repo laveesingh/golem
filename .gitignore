@@ -1,5 +1,10 @@
 # Runtime / generated state
 journal/
+.test-results/
+/dist/
+/.golem-package-stage-*/
+/.golem-package.lock
+*.tgz
 node_modules/
 
 # Local-only Claude Code overrides (always per-developer)

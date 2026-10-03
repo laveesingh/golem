@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Private DB behavior fixture, not control-plane scratch tickets: default-human
+// attribution and cascade deletion require explicit fixture entities. The W2
+// adapter owns the complete DB lifetime; no shared tracker is contacted.
 // WS1 verification — exercises every method of the tracker data layer against
 // a throwaway DB. Prints a PASS/FAIL line per check and exits non-zero on the
 // first failure (after running all checks so the full picture prints).

@@ -2,21 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { packageRoot } from '../../lib/package-root.ts';
 import * as compiler from '../../lib/compiler/engine.js';
 import * as ccAdapter from '../../lib/compiler/adapters/cc.js';
-import { loadConfig, saveConfig } from '../../lib/golem-config.js';
+import { loadConfig, saveConfig } from '../../lib/golem-config.ts';
 import { golemHome, projectsJsonPath, renderDirFor } from '../../lib/golem-home.js';
 import { projectIdFor } from '../../lib/project-id.js';
-import { listRoleCards, writeRoleCard } from '../../lib/session-role.js';
+import { listRoleCards, writeRoleCard } from '../../lib/session-role.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const REPO_ROOT = packageRoot(import.meta.url);
 const SUBSTRATE_ROOT = path.join(REPO_ROOT, 'substrate');
 const SKILLS_ROOT = path.join(SUBSTRATE_ROOT, 'skills');
 const INSTRUCTIONS_ROOT = path.join(SUBSTRATE_ROOT, 'instructions');
 const ROLES_ROOT = path.join(SUBSTRATE_ROOT, 'roles');
-const USER_SKILLS_ROOT = path.join(os.homedir(), '.agents', 'skills');
+const USER_SKILLS_ROOT = process.env.GOLEM_USER_SKILLS_ROOT || path.join(os.homedir(), '.agents', 'skills');
 const PACKAGE_JSON = path.join(REPO_ROOT, 'package.json');
 const SYNC_TIMEOUT_MS = 30_000;
 
@@ -535,7 +534,7 @@ function syncTarget({ harness, project = null, force = false }) {
       const outDir = renderDirFor('cc');
       const items = ccAdapter.buildPlan({ substrateRoot: root, repoRoot: REPO_ROOT, packageVersion: pkg });
       const res = compiler.render({ target: 'cc', outDir, items, packageVersion: pkg, force });
-      ccAdapter.syncMcpChannelDeps({ repoRoot: REPO_ROOT, outDir });
+      ccAdapter.pruneLegacyChannelDeps({ outDir, tampered: res.tampered });
       results.push({ artifact: 'global', out_dir: outDir, ...renderSummary(res) });
       const instructionItems = ccAdapter.buildInstructionPlan({ substrateRoot: root });
       const instructionOutDir = ccAdapter.instructionOutDir();

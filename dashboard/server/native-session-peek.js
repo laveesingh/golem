@@ -20,16 +20,19 @@
 // Sessions started before v4 / never registered have no central journal at all
 // → events:[] (+ a note), which the UI renders as a clear empty state.
 
-import os from 'node:os';
+import { claudeConfigDir } from '../../lib/claude-paths.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import readline from 'node:readline';
 import { CENTRAL_JOURNALS_DIR } from './project-id.js';
 import { safeJsonParse, tsMs } from './util.js';
+import {
+  assertJsonlReadable,
+  isJsonlHeaderLine,
+} from '../../lib/jsonl-header.ts';
 
-const HOME = os.homedir();
-const CLAUDE_PROJECTS_DIR = path.join(HOME, '.claude', 'projects');
+const CLAUDE_PROJECTS_DIR = path.join(claudeConfigDir(), 'projects');
 
 // How many recent matching events to surface in the drawer.
 const EVENT_CAP = 40;
@@ -94,6 +97,9 @@ function summariseEvent(ev, payload) {
 // Tail the last N lines of a file cheaply via a streamed line reader, keeping a
 // rolling window. Bounded memory regardless of file size.
 async function tailMatchingLines(filePath, sessionId, keep) {
+  // A higher journal header version refuses before streaming; the v1 header
+  // line itself never matches a session and is skipped below.
+  assertJsonlReadable(filePath, 'journal');
   const window = [];
   await new Promise((resolve) => {
     let stream;
@@ -104,7 +110,7 @@ async function tailMatchingLines(filePath, sessionId, keep) {
     }
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
     rl.on('line', (line) => {
-      if (!line) return;
+      if (!line || isJsonlHeaderLine(line)) return;
       // Cheap pre-filter before JSON.parse — the session_id appears verbatim.
       if (!line.includes(sessionId)) return;
       const raw = safeJsonParse(line);

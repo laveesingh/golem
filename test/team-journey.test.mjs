@@ -8,6 +8,7 @@
 // fake pi first, so no real Pi boots). Cleanup in finally: live workers
 // killed, throwaway session stopped and deleted, zero server processes left.
 
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import { parseManagementList } from './_management-list.mjs';
 import { spawn, spawnSync } from 'node:child_process';
@@ -192,7 +193,7 @@ async function main() {
   // Two teams, created from an unbound shell: no owner, own workspaces.
   const alphaCreated = await runCli(['team', 'create', 'Alpha Team', '--project', project, '--json']);
   assert.equal(alphaCreated.status, 0, alphaCreated.stderr);
-  const alpha = JSON.parse(alphaCreated.stdout);
+  const alpha = parseCliEnvelope(alphaCreated.stdout);
   assert.equal(alpha.slug, 'alpha-team');
   assert.equal(alpha.owner, null);
   assert.deepEqual(alpha.members, []);
@@ -200,7 +201,7 @@ async function main() {
 
   const betaCreated = await runCli(['team', 'create', 'Beta Team', '--project', project, '--json']);
   assert.equal(betaCreated.status, 0, betaCreated.stderr);
-  const beta = JSON.parse(betaCreated.stdout);
+  const beta = parseCliEnvelope(betaCreated.stdout);
   assert.equal(beta.slug, 'beta-team');
   assert.notEqual(beta.herdr_workspace_id, alpha.herdr_workspace_id, 'each team has its own workspace');
 
@@ -211,14 +212,14 @@ async function main() {
   // Two teams in one project each get builder1 through the real CLI.
   const alphaSpawned = await runCli(['agent', 'create', 'builder', '--team', 'alpha-team', '--project', project, '--json']);
   assert.equal(alphaSpawned.status, 0, alphaSpawned.stderr);
-  const alphaAgent = JSON.parse(alphaSpawned.stdout);
+  const alphaAgent = parseCliEnvelope(alphaSpawned.stdout);
   assert.equal(alphaAgent.name, 'builder1');
   assert.equal(alphaAgent.team, 'alpha-team');
   assert.equal(alphaAgent.host, 'herdr');
   assert.equal(alphaAgent.dispatchable, true);
   const betaSpawned = await runCli(['agent', 'create', 'builder', '--team', 'beta-team', '--project', project, '--json']);
   assert.equal(betaSpawned.status, 0, betaSpawned.stderr);
-  const betaAgent = JSON.parse(betaSpawned.stdout);
+  const betaAgent = parseCliEnvelope(betaSpawned.stdout);
   assert.equal(betaAgent.name, 'builder1');
   assert.equal(betaAgent.team, 'beta-team');
 
@@ -320,7 +321,7 @@ async function main() {
 
   const closed = await runCli(['team', 'close', 'alpha-team', '--project', project, '--json']);
   assert.equal(closed.status, 0, closed.stderr || closed.stdout);
-  const closeResult = JSON.parse(closed.stdout);
+  const closeResult = parseCliEnvelope(closed.stdout);
   assert.equal(closeResult.state, 'closed');
   assert.deepEqual(closeResult.stopped, ['builder1']);
   assert.equal(closeResult.workspace_closed, true);
@@ -356,7 +357,7 @@ async function main() {
   updateWorker(betaBuilder.worker_id,{pane_shell_ownership:null});
   const betaClosed = await runCli(['team', 'close', 'beta-team', '--project', project, '--json']);
   assert.equal(betaClosed.status, 0, betaClosed.stderr);
-  const betaResult = JSON.parse(betaClosed.stdout);
+  const betaResult = parseCliEnvelope(betaClosed.stdout);
   assert.deepEqual(betaResult.stopped, ['builder1']);
   assert.equal(betaResult.workspace_closed, false, 'workspace stays open for the unmanaged agent');
   const betaUnmanaged = [...panesAfter.values()].filter(p => p.workspace_id === beta.herdr_workspace_id && p.pane_id !== betaBuilder.herdr_pane_id).map(p => p.pane_id);
@@ -365,7 +366,7 @@ async function main() {
   assert.equal(betaResult.targets[0].pane_retained,false);
   assert.ok(!paneList(herdrSession).some((pane) => pane.pane_id === betaBuilder.herdr_pane_id), 'the explicitly selected agent terminal closes regardless of shell ownership metadata');
   const retriedBeta=await runCli(['team','close',beta.team_id,'--project',project,'--json']); assert.equal(retriedBeta.status,0,retriedBeta.stderr);
-  assert.deepEqual(JSON.parse(retriedBeta.stdout).workspace_kept_for.slice().sort(),betaResult.workspace_kept_for.slice().sort(),'actual native retry retains all residual panes');
+  assert.deepEqual(parseCliEnvelope(retriedBeta.stdout).workspace_kept_for.slice().sort(),betaResult.workspace_kept_for.slice().sort(),'actual native retry retains all residual panes');
 
   const listed = await runCli(['agent', 'list', '--scope', 'project', '--project', project, '--json', '--ended']);
   assert.equal(listed.status, 0, listed.stderr);

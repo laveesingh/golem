@@ -1,0 +1,50 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": [
+      "node",
+      "vite/client",
+      "vitest/globals",
+      "@testing-library/jest-dom",
+      "react",
+      "react-dom"
+    ],
+    "noEmit": true,
+    "strict": true
+  },
+  "include": [
+    "dashboard/web/src/ui/atoms/Button.tsx",
+    "dashboard/web/src/ui/atoms/Button.stories.tsx",
+    "test/component/Button.test.tsx",
+    "dashboard/web/src/ui/atoms/IconButton.tsx",
+    "dashboard/web/src/ui/atoms/IconButton.stories.tsx",
+    "test/component/IconButton.test.tsx",
+    "dashboard/web/src/ui/atoms/Input.tsx",
+    "dashboard/web/src/ui/atoms/Input.stories.tsx",
+    "test/component/Input.test.tsx",
+    "dashboard/web/src/ui/atoms/Pill.tsx",
+    "dashboard/web/src/ui/atoms/Pill.stories.tsx",
+    "test/component/Pill.test.tsx",
+    "dashboard/web/src/ui/atoms/Badge.tsx",
+    "dashboard/web/src/ui/atoms/Badge.stories.tsx",
+    "test/component/Badge.test.tsx",
+    "dashboard/web/src/ui/atoms/action.ts",
+    "dashboard/web/src/ui/workshop/StoryFrame.tsx",
+    "test/support/component-setup.ts",
+    "test/e2e/playwright.atoms.config.ts",
+    "test/e2e/atoms.fixture.ts",
+    "test/e2e/atoms.spec.ts",
+    "dashboard/web/src/ui/molecules/**/*.tsx",
+    "test/component/Card.test.tsx",
+    "test/component/ListRow.test.tsx",
+    "test/component/Menu.test.tsx",
+    "test/component/EmptyState.test.tsx",
+    "test/e2e/playwright.molecules.config.ts",
+    "test/e2e/molecules.fixture.ts",
+    "test/e2e/molecules.spec.ts"
+  ]
+}

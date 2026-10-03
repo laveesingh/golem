@@ -1,0 +1,16 @@
+{
+  "name": "Golem CI parity",
+  "init": true,
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "node",
+  "postCreateCommand": "npm ci",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

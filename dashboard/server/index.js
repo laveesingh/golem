@@ -6,10 +6,14 @@ import { spawnSync } from 'node:child_process';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
+import swagger from '@fastify/swagger';
+import { installContractPolicy } from './contract-policy.ts';
+import { registerContractPilot } from './contract-pilot.ts';
+import { packageRoot } from '../../lib/package-root.ts';
 import { CONFIG } from './config.js';
 import { createState } from './state.js';
 import { roleMetaMap } from './roles.js';
-import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, channelHealth, listChannels } from './brief.js';
+import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, listChannels } from './brief.js';
 import { createChat } from './chat.js';
 import { readNativeSessionPeek } from './native-session-peek.js';
 import { openTrackerDb } from './tracker-db.js';
@@ -30,9 +34,11 @@ import { initDispatchDrainer } from './dispatch-queue.js';
 import { registerSubstrateRoutes } from './substrate.js';
 import { teamAssists } from './team-assist.js';
 import { golemHome, dashboardJsonPath, journalDirFor, projectsJsonPath, sessionsJsonPath } from '../../lib/golem-home.js';
+import { saveDashboardStore } from '../../lib/dashboard-store.ts';
+import { appendJsonl } from '../../lib/jsonl-header.ts';
 import { projectIdFor } from '../../lib/project-id.js';
 import { buildDispatchBrief } from './dispatch-brief.js';
-import { createRole, defaultSessionRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.js';
+import { createRole, defaultSessionRole, deleteRole, getRole, listRoleCards, roleChangeBrief, roleMission, setSessionRole, updateRoleMeta, writeRoleCard } from '../../lib/session-role.ts';
 import { enrichDispatchableRows, peekSessionTerminal, sendWorkerKeys } from '../../lib/worker-manager.js';
 import { managementRosterSnapshot } from '../../lib/management-capabilities.js';
 import { acceptedDelivery, publishDurableEnvelope, settleDurableEnvelope } from './envelope-delivery.js';
@@ -56,15 +62,15 @@ import {
 } from './model-catalog.js';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
-const WEB_SOURCE_ROOT = path.resolve(__dirname, '..', 'web');
-const WEB_DIST_ROOT = path.resolve(__dirname, '..', 'dist');
+const ASSET_ROOT = packageRoot(import.meta.url);
+const WEB_SOURCE_ROOT = path.join(ASSET_ROOT, 'dashboard', 'web');
+const WEB_DIST_ROOT = path.join(ASSET_ROOT, 'dashboard', 'dist');
 const WEB_ROOT = fs.existsSync(path.join(WEB_DIST_ROOT, 'index.html')) ? WEB_DIST_ROOT : WEB_SOURCE_ROOT;
 // The tracker genre templates live OUTSIDE dashboard/, in the substrate
 // source tree at substrate/skills/tracker/templates/ (TKT-0574 — plugin/ is
-// now a generated render of substrate/, not the SoT). Resolve the repo root
-// two levels up from this file (dashboard/server/index.js → dashboard/ →
-// repo root) and point at that dir. Used by GET /api/templates.
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+// generated, not the SoT). Caller-based packageRoot survives mirrored dist/
+// paths and never inherits a parent render's source root. Used by /api/templates.
+const REPO_ROOT = ASSET_ROOT;
 const TEMPLATES_DIR = path.join(REPO_ROOT, 'substrate', 'skills', 'tracker', 'templates');
 
 function modelProfilesPayload() {
@@ -247,15 +253,13 @@ function firstClosingBriefLine(comment) {
 function recordSpecClosedMilestone(existing, ticket, actor = 'system') {
   if (!existing || !ticket || existing.kind !== 'spec' || ticket.kind !== 'spec' || existing.state === 'done' || ticket.state !== 'done') return;
   try {
-    const journalDir = journalDirFor(ticket.project_id);
-    fs.mkdirSync(journalDir, { recursive: true });
-    fs.appendFileSync(path.join(journalDir, 'hook.jsonl'), `${JSON.stringify({
+    appendJsonl(path.join(journalDirFor(ticket.project_id), 'hook.jsonl'), 'journal', {
       ts: new Date().toISOString(),
       event: 'milestone',
       session_id: actor,
       project_id: ticket.project_id,
       text: `Spec ${ticket.display_id || ticket.id} closed: ${ticket.title}`,
-    })}\n`, 'utf8');
+    });
   } catch { /* the journal is best-effort */ }
 }
 
@@ -370,6 +374,8 @@ async function notifyGateResolved(tracker, comment, patchBody) {
 
 async function main() {
   const fastify = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
+  installContractPolicy(fastify);
+  await fastify.register(swagger, { openapi: { info: { title: 'Golem pilot contracts', version: '5.26.0' } } });
   const state = createState();
   // TKT-0107: tracker is opened BEFORE state.init() so the composite
   // last_activity_at signal in the sidebar can read maxTicketUpdatedAt.
@@ -620,12 +626,8 @@ async function main() {
 
   // ---- REST API ----
 
-  fastify.get('/api/health', async () => ({
-    ok: true,
-    projects_root: CONFIG.projectsRoot,
-    project_count: state.projects().length,
-    server_time: new Date().toISOString(),
-  }));
+  // Health and ticket creation are registered together by the typed pilot
+  // below, after their existing dependencies/error mapper are defined.
 
   fastify.get('/api/meta', async () => ({
     roles: roleMetaMap(),
@@ -893,29 +895,6 @@ async function main() {
       ok, queued: result.retry_queued, envelope_id: result.envelope.id, delivery: result.delivery,
     });
   });
-  // v4: brief / interrupt / halt are delivered over per-session channels.
-  // Gate verdicts (v3 docs/agent-notes/gates/ flow) were removed in TKT-0009.
-  fastify.get('/api/channel/health', async (req) => channelHealth(typeof req.query?.session === 'string' ? req.query.session : null));
-  fastify.get('/api/channels', async () => listChannels());
-
-  fastify.get('/api/projects/:id', async (req, reply) => {
-    const p = state.project(req.params.id);
-    if (!p) return reply.code(404).send({ error: 'not_found' });
-    return state
-      .projects()
-      .find((x) => x.id === req.params.id);
-  });
-
-  // v4: PLAN.md progress for a single project. Returns {total, done, items}
-  // (+ title). 404 if the project is unknown; {total:0,...} if it has no plan.
-  fastify.get('/api/projects/:id/plan', async (req, reply) => {
-    const p = state.project(req.params.id);
-    if (!p) return reply.code(404).send({ error: 'not_found' });
-    const plan = state.projectPlan(req.params.id);
-    if (!plan) return { title: null, total: 0, done: 0, items: [] };
-    return plan;
-  });
-
   // TKT-0194: apply a human verdict to a gate (approve | deny | cancel).
   // Writes the new status to the gate file and returns the new state. The
   // dashboard refreshes the projects list (which re-reads gates on the
@@ -1091,30 +1070,18 @@ async function main() {
     return reply.code(400).send({ error: String(err?.message ?? err) });
   };
 
-  // POST /api/tickets — create. 400 on validation error.
-  fastify.post('/api/tickets', async (req, reply) => {
-    const b = req.body ?? {};
-    const attribution = enforceAttribution(reply, b, 'created_by', 'createTicket');
-    if (attribution) return attribution;
-    try {
-      const ticket = tracker.createTicket({
-        project_id: b.project_id,
-        kind: b.kind,
-        title: b.title,
-        body: b.body,
-        body_format: b.body_format,
-        priority: b.priority,
-        labels: b.labels,
-        parent_id: resolveTicketIdField(b.parent_id),
-        assignee: b.assignee,
-        created_by: b.created_by,
-        source_ref: b.source_ref,
-      });
-      broadcastWS({ type: 'ticket-created', ticket });
-      return reply.code(201).send(ticket);
-    } catch (err) {
-      return sendTrackerError(reply, err);
-    }
+  registerContractPilot(fastify, {
+    projectsRoot: CONFIG.projectsRoot,
+    projectCount: () => state.projects().length,
+    enforceAttribution: (reply, body) => enforceAttribution(reply, body, 'created_by', 'createTicket'),
+    createTicket: (b) => tracker.createTicket({
+      project_id: b.project_id, kind: b.kind, title: b.title, body: b.body,
+      body_format: b.body_format, priority: b.priority, labels: b.labels,
+      parent_id: resolveTicketIdField(b.parent_id), assignee: b.assignee,
+      created_by: b.created_by, source_ref: b.source_ref,
+    }),
+    broadcast: (ticket) => broadcastWS({ type: 'ticket-created', ticket }),
+    sendTrackerError,
   });
 
   // GET /api/tickets/:id — ticket (+ comments/links from getTicket) plus its
@@ -1291,30 +1258,6 @@ async function main() {
 
   // GOL-150: POST /api/tickets/:id/transition is gone with the phase machine.
   // PATCH /api/tickets/:id with {state} is the lifecycle path.
-
-  // TKT-0105: POST /api/tickets/:id/move — atomic state + rank change used by
-  // drag-and-drop. Body: { state, before_id?, after_id?, actor? }. The endpoint
-  // computes the new rank from the neighbour tickets (midpoint if both given,
-  // otherwise appends to the target state). Replaces the old "PATCH with
-  // {state}" path for drag operations (Phase B tracker-board.jsx still calls
-  // PATCH; follow-up ticket will switch it to /move).
-  fastify.post('/api/tickets/:id/move', async (req, reply) => {
-    const existing = resolveTicketRef(req.params.id);
-    if (!existing) return reply.code(404).send({ error: 'not_found' });
-    try {
-      const patch = { ...(req.body ?? {}) };
-      const attribution = enforceAttribution(reply, patch, 'actor', 'moveTicket');
-      if (attribution) return attribution;
-      if (Object.prototype.hasOwnProperty.call(patch, 'before_id')) patch.before_id = resolveTicketIdField(patch.before_id);
-      if (Object.prototype.hasOwnProperty.call(patch, 'after_id')) patch.after_id = resolveTicketIdField(patch.after_id);
-      const ticket = tracker.moveTicket(existing.id, patch);
-      recordSpecClosedMilestone(existing, ticket, patch.actor || 'human');
-      broadcastWS({ type: 'ticket-updated', ticket });
-      return ticket;
-    } catch (err) {
-      return reply.code(400).send({ error: String(err?.message ?? err) });
-    }
-  });
 
   // TKT-0105: POST /api/tickets/auto-archive/sweep — manual trigger for the
   // 14-day done → archived sweep. Returns the list of archived ticket ids.
@@ -2646,15 +2589,37 @@ async function main() {
   // resolves to 127.0.0.1 — no /etc/hosts edit needed).
   const boundPort = await tryListen(CONFIG.port);
 
+  // Build tooling exports only from an explicitly owned private fixture.
+  // No public route and no inherited checkout-root override are introduced.
+  if (process.env.GOLEM_OPENAPI_EXPORT) {
+    const owner = process.env.GOLEM_W2_SANDBOX;
+    const target = path.resolve(process.env.GOLEM_OPENAPI_EXPORT);
+    if (!owner || !target.startsWith(path.resolve(owner) + path.sep)) throw new Error('OpenAPI export requires an owned private path');
+    const document = fastify.swagger();
+    // Swagger8 leaves recursive additionalProperties refs in JSON-Schema
+    // definitions form. Map only existing component references, fail closed.
+    const mapRefs = (value) => {
+      if (Array.isArray(value)) return value.map(mapRefs);
+      if (!value || typeof value !== 'object') return value;
+      if (value.type === 'null') return { type: 'string', nullable: true, enum: [null] };
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+        if (key === '$ref' && typeof item === 'string' && item.startsWith('#/definitions/')) {
+          const name = item.slice('#/definitions/'.length);
+          if (!document.components?.schemas?.[name]) throw new Error(`unresolved OpenAPI reference: ${item}`);
+          return [key, `#/components/schemas/${name}`];
+        }
+        return [key, mapRefs(item)];
+      }));
+    };
+    fs.writeFileSync(target, JSON.stringify(mapRefs(document), null, 2) + '\n');
+  }
+
   // WS2: self-register so WS3's MCP discovery can find the live dashboard.
-  // Atomic write (tmp + rename) into ~/.golem/dashboard.json. Best-effort
+  // Versioned atomic write into ~/.golem/dashboard.json. Best-effort
   // — a write failure logs a warning and must NOT crash the server. We LEAVE the
   // file on shutdown (a stale entry is harmless: consumers health-check the URL).
   try {
-    const dir = golemHome();
-    fs.mkdirSync(dir, { recursive: true });
     const target = dashboardJsonPath();
-    const tmp = path.join(dir, `.dashboard.json.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
     const doc = {
       url:
         CONFIG.host === '127.0.0.1' && boundPort === 7420
@@ -2665,8 +2630,7 @@ async function main() {
       pid: process.pid,
       started_at: new Date().toISOString(),
     };
-    fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
-    fs.renameSync(tmp, target);
+    saveDashboardStore(doc, target);
     fastify.log.info(`self-registered at ${target}`);
   } catch (err) {
     fastify.log.warn({ err }, 'dashboard self-registration failed (non-fatal)');

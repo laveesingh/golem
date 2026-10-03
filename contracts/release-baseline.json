@@ -1,0 +1,9 @@
+{
+  "mode": "initial-6.0-bootstrap",
+  "released_version": "5.26.0",
+  "released_source_commit": "20a5cf5b2a2a7f72fb08029b88cc6c1c7e00871a",
+  "released_schema_path": null,
+  "evidence": "release source package.json/version and git tree; repository has no release tags/canonical schema artefact; not a current PR baseline",
+  "target_breaking_wave": "6.0",
+  "compatibility_claim": "none; actual released-schema comparison is required after bootstrap"
+}

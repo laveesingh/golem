@@ -2,6 +2,7 @@
 // GOL-371: team registry, team-scoped worker naming, and caller-team
 // resolution. Temp GOLEM_HOME only; no herdr, no tmux, no dashboard.
 
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import { parseManagementList } from './_management-list.mjs';
 import fs from 'node:fs';
@@ -263,7 +264,7 @@ assert.throws(
     workspaceRename: pair => { effects.push(['rename', pair]); if (failRename) throw new Error('display rejected'); nativeRows.find(w => w.workspace_id === pair.workspaceId).label = pair.label; return true; },
     sessionAttach: (session, options) => { effects.push(['attach', session, options]); return failAttach ? 1 : 0; },
   };
-  const run = async args => { const out = []; const exit = await runTeam('team', [...args, '--json'], { cwd: temp, env: {}, herdr: native, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
+  const run = async args => { const out = []; const exit = await runTeam('team', [...args, '--json'], { cwd: temp, env: {}, herdr: native, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: parseCliEnvelope(out.join('')) }; };
   const inspected = await run(['inspect', target.team_id]); assert.equal(inspected.exit, 0); assert.equal(inspected.value.owner.session_id, 'external-team-member'); assert.equal(inspected.value.capabilities.focus.state, 'available'); assert.equal(effects.length, 0);
   const bytes = () => JSON.stringify(['teams.json', 'herdr-mappings.json', 'workers.json', 'sessions.json'].map(name => { const file = path.join(process.env.GOLEM_HOME, name); return [name, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null]; })); const before = bytes();
   for (const args of [['focus', target.team_id], ['attach', target.team_id], ['rename', target.team_id, 'Renamed Control'], ['leave', target.team_id, '--agent', 'external-team-member'], ['adopt', 'New Adopted', '--workspace', 'free-w', '--project', projectA]]) {
@@ -294,11 +295,11 @@ assert.throws(
   assert.equal((await run(['focus', target.team_id, '--session', 'foreign-session'])).exit, 2);
   assert.equal((await run(['leave', '--agent', 'sess-builder-1', '--project', projectB])).exit, 2);
   assert.equal((await run(['adopt', 'Steal Workspace', '--workspace', 'control-w', '--project', projectA])).exit, 2);
-  const absent = await run(['adopt', 'Absent Workspace', '--workspace', 'missing-w', '--project', projectA]); assert.equal(absent.exit, 1); assert.match(absent.value.error, /absent/);
+  const absent = await run(['adopt', 'Absent Workspace', '--workspace', 'missing-w', '--project', projectA]); assert.equal(absent.exit, 1); assert.match(absent.value.error.message, /absent/);
   assert.equal((await run(['rename', target.team_id, 'New Adopted'])).exit, 2);
   failInventory = true;
   const unknown = await run(['inspect', target.team_id]); assert.equal(unknown.exit, 0); assert.equal(unknown.value.capabilities.focus.state, 'unavailable'); assert.match(unknown.value.capabilities.focus.reason, /probe failed/);
-  const unavailable = await run(['focus', target.team_id]); assert.equal(unavailable.exit, 1); assert.match(unavailable.value.error, /probe failed/);
+  const unavailable = await run(['focus', target.team_id]); assert.equal(unavailable.exit, 1); assert.match(unavailable.value.error.message, /probe failed/);
 }
 // One failed target must not prevent independent stops or close metadata.
 {
@@ -307,7 +308,7 @@ assert.throws(
   const rows = [{ worker_id: 'close-a', name: 'first', project_id: projectA, state: 'live' }, { worker_id: 'close-b', name: 'second', project_id: projectA, state: 'live' }];
   const calls = []; let fail = true;
   const workers = { listWorkers: () => rows, killWorker: async (name, options) => { calls.push(name); assert.equal(options.constraints.teamId, team.team_id); if (name === 'first' && fail) throw new Error('birth evidence mismatch'); rows.find(r => r.name === name).state = 'dead'; return { name }; } };
-  const run = async () => { const out = []; const exit = await runTeam('team', ['close', team.team_id, '--json'], { workers, cwd: temp, env: {}, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: JSON.parse(out.join('')) }; };
+  const run = async () => { const out = []; const exit = await runTeam('team', ['close', team.team_id, '--json'], { workers, cwd: temp, env: {}, resolveContext: () => null, stdout: t => out.push(t), stderr: () => {} }); return { exit, value: parseCliEnvelope(out.join('')) }; };
   const partial = await run(); assert.equal(partial.exit, 1); assert.deepEqual(calls, ['first', 'second']); assert.deepEqual(partial.value.targets.map(t => t.status), ['failed', 'completed']); assert.equal(findTeam(team.team_id).closed_at, null);
   fail = false; calls.length = 0;
   const retried = await run(); assert.equal(retried.exit, 0); assert.deepEqual(calls, ['first']); assert.equal(retried.value.operation_id, partial.value.operation_id); assert.ok(findTeam(team.team_id).closed_at);

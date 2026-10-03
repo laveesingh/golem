@@ -1,3 +1,4 @@
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 // Physical herdr containers; logical membership is retained by stop.
 import { NotificationError } from '../lib/notification-contract.js';
 import { formatTable } from '../lib/cli-table.js';
@@ -57,10 +58,10 @@ export async function runSession(family, args, { stdout = text => process.stdout
   cwd = process.cwd(), env = process.env, resolveContext = resolveCliSessionContext,
   herdr = { sessionList, sessionAttach, sessionStop, sessionDelete, ensureSession, paneList },
   workers = { listWorkers, killWorker }, sleep = ms => new Promise(r => setTimeout(r, ms)), timeoutMs = 30000, ...collector } = {}) {
-  let resolution = null; const json = args.includes('--json');
+  let resolution = null; const json = wantsJson(args);
   try {
     const parsed = parse(args);
-    if (parsed.help) { stdout(json ? JSON.stringify({ help: parsed.help }) : parsed.help); return 0; }
+    if (parsed.help) { stdout(json ? formatJson({ help: parsed.help }) : parsed.help); return 0; }
     const { verb, options: o, positional } = parsed;
     if (o['--scope'] && !['team', 'project', 'all'].includes(o['--scope'])) throw new NotificationError(`invalid scope: ${o['--scope']}`);
     const query = await managementQuery({ operation: `session ${verb}`, kind: 'session', target: positional[0], options: o, cwd, env, resolveContext,
@@ -74,7 +75,7 @@ export async function runSession(family, args, { stdout = text => process.stdout
     requireManagementResolution(resolution);
     const inventory = query.evidence.sources.nativeSessions;
     const name = resolution.target?.herdr_session ?? resolution.session;
-    const output = result => stdout(json ? JSON.stringify({ ...result, resolution }) : result.error ?? `session ${result.session} ${result.lifecycle ?? (result.adopted ? 'adopted' : 'inspected')}${result.noop ? ' (no-op)' : ''}`);
+    const output = result => stdout(json ? formatJson({ ...result, resolution }) : result.error ?? `session ${result.session} ${result.lifecycle ?? (result.adopted ? 'adopted' : 'inspected')}${result.noop ? ' (no-op)' : ''}`);
     if (verb === 'inspect') {
       output(inspectManagedSession(name, { inventory: inventory.status === 'resolved' ? inventory.value : null, snapshot: query.evidence.snapshot })); return 0;
     }
@@ -82,7 +83,7 @@ export async function runSession(family, args, { stdout = text => process.stdout
     if (verb === 'list') {
       const selected = inventory.value.filter(row => resolution.scope === 'global' || (resolution.session && row.name === resolution.session));
       const items = sessionViews(selected, query.evidence);
-      stdout(json ? JSON.stringify(listReceipt(items, resolution)) : items.length ? formatTable(columns, items) : 'No herdr sessions.'); return 0;
+      stdout(json ? formatJson(listReceipt(items, resolution)) : items.length ? formatTable(columns, items) : 'No herdr sessions.'); return 0;
     }
     if (verb === 'start') {
       const result = await startManagedSession(resolution.project_id, { session: positional[0] ?? o['--session'] ?? null, inventory: inventory.value, native: herdr }); output(result); return result.ok ? 0 : 1;
@@ -90,7 +91,7 @@ export async function runSession(family, args, { stdout = text => process.stdout
     if (verb === 'adopt') { output(adoptManagedSession(resolution.project_id, name, { inventory: inventory.value })); return 0; }
     if (verb === 'attach') {
       if (!inventory.value.some(row => row.name === name)) throw new NotificationError(`unknown native session: ${name}; start explicitly`);
-      const status = herdr.sessionAttach(name, { outputToStderr: json }); if (json) output({ attached: status === 0, status, session: name }); return status;
+      const status = herdr.sessionAttach(name, { outputToStderr: json }); if (json) output({ ok: status === 0, attached: status === 0, status, session: name }); return status;
     }
     if (verb === 'close' && env.HERDR_SESSION === name && !o['--force']) throw new NotificationError(`refusing to close ${name}: this terminal runs inside it (pass --force to close it anyway)`);
     if (['close', 'stop'].includes(verb)) {
@@ -102,7 +103,7 @@ export async function runSession(family, args, { stdout = text => process.stdout
     }
     throw new NotificationError(`unknown command: session ${verb}`);
   } catch (error) {
-    if (json) stdout(JSON.stringify({ ok: false, error: error.message, resolution: error.resolution ?? resolution })); else stderr(`golem session: ${error.message}`);
+    if (json) stdout(formatJson({ ok: false, error: error.message, resolution: error.resolution ?? resolution })); else stderr(`golem session: ${error.message}`);
     return error.exitCode === 2 || error instanceof NotificationError ? 2 : 1;
   }
 }

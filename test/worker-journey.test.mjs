@@ -6,6 +6,7 @@
 // rows (G14) keep their own handling: reconcile by the recorded pid group,
 // stop/read refuse with the exact tmux command.
 
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import { parseManagementList } from './_management-list.mjs';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -279,7 +280,7 @@ try {
   }).trim().split('\n')[0];
   linkPiTui(piRender, realPiCli);
   fs.copyFileSync(path.join(piRender, 'golem.ts'), path.join(piRender, 'golem.mjs'));
-  const { createRole, readRoleRegistry } = await import('../lib/session-role.js');
+  const { createRole, readRoleRegistry } = await import('../lib/session-role.ts');
   const {
     WORKER_TOMBSTONE_TTL_MS,
     pruneWorkerTombstones,
@@ -318,7 +319,7 @@ try {
   if (!receiptsOnly) {
   const claimed = await Promise.all(Array.from({ length: 5 }, () => claimChild()));
   assert.ok(claimed.every((result) => result.code === 0), JSON.stringify(claimed));
-  const claimedNames = claimed.map((result) => JSON.parse(result.stdout).name);
+  const claimedNames = claimed.map((result) => parseCliEnvelope(result.stdout).name);
   assert.equal(new Set(claimedNames).size, 5, JSON.stringify(claimed));
   assert.deepEqual(readWorkers({ file: path.join(lockState, 'workers.json') }).map((row) => row.name).sort(), claimedNames.slice().sort());
   const claimedRows = JSON.parse(fs.readFileSync(path.join(lockState, 'workers.json'), 'utf8')).workers;
@@ -343,7 +344,7 @@ try {
   assert.equal(cliSpawnedTable.state, 'live');
   const cliSpawnJson = await runCli(['agent', 'create', 'golemtest-t2', '--name', 'gt2-cli-json', '--project', project, '--team', journeyTeam.slug, '--json']);
   assert.equal(cliSpawnJson.status, 0, cliSpawnJson.stderr);
-  const cliSpawned = JSON.parse(cliSpawnJson.stdout);
+  const cliSpawned = parseCliEnvelope(cliSpawnJson.stdout);
   assert.equal(cliSpawned.state, 'live');
   assert.equal(cliSpawned.name, 'gt2-cli-json');
   assert.equal(cliSpawned.team_id, journeyTeam.team_id);
@@ -392,14 +393,14 @@ try {
   // New controls on a real native/fake-Pi runtime: logical rename cannot
   // change process ownership or stable native handle; physical move keeps team.
   const inspectedCli = await runCli(['agent', 'inspect', cliSpawnedTable.session_id, '--project', project, '--json']);
-  assert.equal(inspectedCli.status, 0, inspectedCli.stderr); assert.equal(JSON.parse(inspectedCli.stdout).capabilities.stop.state, 'available');
+  assert.equal(inspectedCli.status, 0, inspectedCli.stderr); assert.equal(parseCliEnvelope(inspectedCli.stdout).capabilities.stop.state, 'available');
   const originalNativeHandle = cliSpawnedTable.herdr_agent_name;
   const renamedCli = await runCli(['agent', 'rename', cliSpawnedTable.session_id, 'renamed-native-agent', '--project', project, '--json']);
-  assert.equal(renamedCli.status, 0, renamedCli.stderr); const renamedRow = JSON.parse(renamedCli.stdout); assert.equal(renamedRow.herdr_agent_name, originalNativeHandle);
+  assert.equal(renamedCli.status, 0, renamedCli.stderr); const renamedRow = parseCliEnvelope(renamedCli.stdout); assert.equal(renamedRow.herdr_agent_name, originalNativeHandle);
   const { workspaceCreate: createMoveDestination } = await import('../lib/herdr-driver.js');
   const moveDestination = createMoveDestination({ session: herdrSession, label: 'Physical move destination' });
   const movedCli = await runCli(['agent', 'move', cliSpawnedTable.session_id, '--workspace', moveDestination.workspace_id, '--project', project, '--team', journeyTeam.team_id, '--json']);
-  assert.equal(movedCli.status, 0, movedCli.stderr); const movedRow = JSON.parse(movedCli.stdout); assert.equal(movedRow.herdr_workspace_id, moveDestination.workspace_id); assert.equal(movedRow.team_id, journeyTeam.team_id); assert.equal(movedRow.herdr_agent_name, originalNativeHandle); assert.notEqual(movedRow.herdr_pane_id, cliSpawnedTable.herdr_pane_id);
+  assert.equal(movedCli.status, 0, movedCli.stderr); const movedRow = parseCliEnvelope(movedCli.stdout); assert.equal(movedRow.herdr_workspace_id, moveDestination.workspace_id); assert.equal(movedRow.team_id, journeyTeam.team_id); assert.equal(movedRow.herdr_agent_name, originalNativeHandle); assert.notEqual(movedRow.herdr_pane_id, cliSpawnedTable.herdr_pane_id);
   cliSpawnedTable.name = 'renamed-native-agent';
   console.log(JSON.stringify({ agent_controls: 'real native inspect/rename/move; exact new IDs; stable handle/team/process ownership' }));
   const cliKillTable = await runCli(['agent', 'stop', cliSpawnedTable.name, '--project', project]);
@@ -409,7 +410,7 @@ try {
   assertNoStrayPi(cliSpawnedTable.name); assertNoStrayPi('gt2-cli-table'); assert.deepEqual(processIdsInGroup(cliSpawnedTable.pid), []);
   const cliKillJson = await runCli(['agent', 'stop', cliSpawned.name, '--project', project, '--json']);
   assert.equal(cliKillJson.status, 0, cliKillJson.stderr);
-  const killedByCli = JSON.parse(cliKillJson.stdout);
+  const killedByCli = parseCliEnvelope(cliKillJson.stdout);
   assert.equal(killedByCli.state, 'dead');
   assertNoStrayPi(cliSpawned.name);
   console.log(JSON.stringify({ cli_kill: [cliSpawnedTable.name, cliSpawned.name], table_default: true, json_stable: true, survivors: [] }));

@@ -6,13 +6,12 @@
 // Unlike journal.js, this module does NOT synthesize agents or tool hooks — it
 // only surfaces the v4 milestone feed that the command-center home renders.
 
-import fs from 'node:fs/promises';
-import { safeJsonParse, tsMs } from './util.js';
+import { readJournalValues } from '../../lib/jsonl-header.ts';
+import { tsMs } from './util.js';
 
 const EVENT_CAP = 200;
 
-function milestoneFromLine(line) {
-  const raw = safeJsonParse(line);
+function milestoneFromValue(raw) {
   if (!raw || typeof raw !== 'object') return null;
   if (raw.event !== 'milestone') return null;
   let text = '';
@@ -28,15 +27,13 @@ function milestoneFromLine(line) {
   return { t, text, session_id: raw.session_id ?? null };
 }
 
+// Feed policy lives in the typed owner: missing/unreadable files read empty,
+// version and data errors refuse.
 async function readMilestoneFile(filePath, out) {
-  let raw;
-  try {
-    raw = await fs.readFile(filePath, 'utf8');
-  } catch {
-    return;
-  }
-  for (const line of raw.split('\n')) {
-    const m = milestoneFromLine(line);
+  const values = readJournalValues(filePath, 'journal');
+  if (!values) return;
+  for (const raw of values) {
+    const m = milestoneFromValue(raw);
     if (m) out.push(m);
   }
 }

@@ -1,0 +1,40 @@
+{
+  "$id": "StatusLine",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "description": "D-07 a: one line per agent, alongside milestones; raw journal hidden by default.",
+  "$comment": "provisional: true; schema_version 1; revise through explicit migration, no storage implemented in Stage 0",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "type": "number"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "milestone_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "session_id",
+    "text",
+    "updated_at"
+  ]
+}

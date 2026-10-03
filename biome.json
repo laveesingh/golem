@@ -1,0 +1,83 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "files": {
+    "includes": [
+      "cli/bootstrap.ts",
+      "tools/**",
+      "test/support/**",
+      "test/unit/**",
+      "test/integration/**",
+      "vitest.config.mjs",
+      "tsconfig.json",
+      "biome.json",
+      "test/fixtures/w2-safety-probe.mjs",
+      "test/cli-verb-help.test.mjs",
+      "test/model-providers.test.mjs",
+      "dashboard/scripts/_scratch.mjs",
+      "test/sim/**",
+      "lib/contracts/**",
+      "lib/cli-envelope.ts",
+      "test/fixtures/cli-envelope-probe.mjs",
+      "!lib/contracts/config-validator.js",
+      "!lib/contracts/store-validator.js",
+      "!lib/contracts/pilot-api.d.ts",
+      "lib/versioned-store.ts",
+      "lib/dashboard-store.ts",
+      "lib/share-tunnel-store.ts",
+      "lib/jsonl-header.ts",
+      "!lib/pilot-client.ts",
+      "dashboard/server/contract-*.ts",
+      "dashboard/web/src/api/pilot-client.ts",
+      "test/fixtures/w3-*.mjs",
+      "lib/package-root.ts",
+      "lib/compiler/runtime-source.ts",
+      "lib/compiler/render-runtime.ts",
+      "lib/compiler/render-types.ts",
+      "test/artefact/**",
+      "tsconfig.ui.json",
+      "dashboard/web/src/ui/atoms/{Button,IconButton,Input,Pill,Badge}.{tsx,stories.tsx}",
+      "dashboard/web/src/ui/atoms/action.ts",
+      "dashboard/web/src/ui/atoms/atoms.css",
+      "dashboard/web/src/ui/workshop/StoryFrame.tsx",
+      "dashboard/web/src/ui/workshop/workshop.css",
+      "test/component/{Button,IconButton,Input,Pill,Badge}.test.tsx",
+      "test/e2e/{playwright.atoms.config,atoms.fixture,atoms.spec}.ts",
+      ".ladle/config.mjs",
+      ".ladle/vite.config.mjs",
+      "dashboard/web/src/ui/molecules/**",
+      "test/component/{Card,ListRow,Menu,EmptyState}.test.tsx",
+      "lib/read-versioned.ts",
+      "lib/golem-config.ts",
+      "lib/session-role.ts",
+      "lib/config-role-default.ts",
+      "lib/clock.ts",
+      "lib/scenario-recorder.ts",
+      "lib/scenario-format.ts",
+      "lib/scenario-scrub-core.ts",
+      "lib/scenario-io.ts"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

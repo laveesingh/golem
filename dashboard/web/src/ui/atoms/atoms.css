@@ -1,0 +1,226 @@
+.g-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box; /* token-lint-disable-line: border box sizing */
+  gap: var(--g-component-button-gap);
+  min-height: var(--g-component-button-target);
+  padding: var(--g-component-button-paddingY) var(--g-component-button-paddingX);
+  border: var(--g-component-button-borderWidth) solid
+    var(--g-component-button-borderColor);
+  border-radius: var(--g-component-button-radius);
+  font: var(--g-component-button-type);
+  letter-spacing: var(--g-component-button-type-letterSpacing);
+  background: var(--g-component-button-background);
+  color: var(--g-component-button-foreground);
+  outline: none;
+  opacity: 1;
+  filter: none;
+  white-space: normal;
+  max-width: 100%; /* token-lint-disable-line: action layout containment is exact container geometry, not a spacing scale */
+  overflow-wrap: anywhere; /* token-lint-disable-line: long accessible action labels wrap within their container; CSS grammar not a token value */
+}
+.g-button:hover {
+  background: var(--g-component-button-hover);
+  color: var(--g-component-button-foreground);
+}
+.g-button:active {
+  background: var(--g-component-button-active);
+  color: var(--g-component-button-selectedForeground);
+}
+.g-button:focus-visible {
+  outline: var(--g-component-button-focusWidth) solid
+    var(--g-component-button-focusColor);
+  outline-offset: var(--g-component-button-focusOffset);
+}
+.g-button[data-busy="true"] {
+  background: var(--g-component-button-busyBackground);
+  color: var(--g-component-button-busyForeground);
+}
+.g-button:disabled {
+  background: var(--g-component-button-disabledBackground);
+  color: var(--g-component-button-disabledForeground);
+}
+.g-button[data-variant="primary"] {
+  background: var(--g-component-button-primary-default-background);
+  color: var(--g-component-button-primary-default-foreground);
+}
+.g-button[data-variant="primary"]:hover {
+  background: var(--g-component-button-primary-hover-background);
+  color: var(--g-component-button-primary-hover-foreground);
+}
+.g-button[data-variant="primary"]:active {
+  background: var(--g-component-button-primary-active-background);
+  color: var(--g-component-button-primary-active-foreground);
+}
+.g-button[data-variant="primary"]:focus-visible:not(:hover):not(:active):not(
+  [data-busy="true"]
+):not(:disabled) {
+  background: var(--g-component-button-primary-focus-background);
+  color: var(--g-component-button-primary-focus-foreground);
+}
+.g-button[data-variant="primary"][data-busy="true"] {
+  background: var(--g-component-button-primary-busy-background);
+  color: var(--g-component-button-primary-busy-foreground);
+}
+.g-button[data-variant="primary"]:disabled {
+  background: var(--g-component-button-primary-disabled-background);
+  color: var(--g-component-button-primary-disabled-foreground);
+}
+.g-icon-button {
+  width: var(--g-component-iconButton-target);
+  height: var(--g-component-iconButton-target);
+  padding: 0;
+}
+.g-icon-glyph {
+  display: inline-flex;
+  position: relative;
+  width: var(--g-semantic-density-card);
+  height: var(--g-semantic-density-card);
+}
+.g-icon-original {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+}
+.g-busy-cue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--g-semantic-density-card);
+  min-width: var(--g-semantic-density-card);
+  height: var(--g-semantic-density-card);
+  visibility: hidden;
+}
+.g-busy-cue svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--g-semantic-border-width);
+}
+.g-icon-cue {
+  position: absolute;
+  inset: 0;
+}
+.g-button[data-busy="true"] .g-busy-cue {
+  visibility: visible;
+}
+.g-button[data-busy="true"] .g-icon-original {
+  visibility: hidden;
+}
+.g-icon-glyph svg {
+  width: var(--g-semantic-density-card);
+  height: var(--g-semantic-density-card);
+  fill: none;
+  stroke: currentColor;
+}
+.g-input-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--g-component-input-gap);
+}
+.g-input-label,
+.g-input-error {
+  color: var(--g-component-input-foreground);
+  font: var(--g-component-input-type);
+  letter-spacing: var(--g-component-input-type-letterSpacing);
+  min-width: 0;
+  overflow-wrap: anywhere; /* token-lint-disable-line: unbroken field label and error text reflow */
+}
+.g-input {
+  box-sizing: border-box; /* token-lint-disable-line: border box sizing */
+  width: 100%;
+  min-height: var(--g-component-input-target);
+  padding: var(--g-component-input-paddingY) var(--g-component-input-paddingX);
+  border: var(--g-component-input-borderWidth) solid
+    var(--g-component-input-borderColor);
+  border-radius: var(--g-component-input-radius);
+  background: var(--g-component-input-background);
+  color: var(--g-component-input-foreground);
+  font: var(--g-component-input-type);
+  letter-spacing: var(--g-component-input-type-letterSpacing);
+  opacity: 1;
+  filter: none;
+  outline: none;
+}
+.g-input::placeholder {
+  color: var(--g-component-input-placeholder);
+  opacity: 1;
+}
+.g-input:focus-visible {
+  outline: var(--g-component-input-focusWidth) solid
+    var(--g-component-input-focusColor);
+  outline-offset: var(--g-component-input-focusOffset);
+}
+.g-input[aria-invalid="true"] {
+  border: var(--g-component-input-borderWidth) solid
+    var(--g-component-input-invalidColor);
+}
+.g-input:disabled {
+  background: var(--g-component-input-disabledBackground);
+  color: var(--g-component-input-disabledForeground);
+}
+.g-pill,
+.g-badge {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box; /* token-lint-disable-line: border box sizing */
+  white-space: normal;
+  max-width: 100%; /* token-lint-disable-line: noninteractive labels remain inside their containing layout width */
+}
+.g-pill {
+  gap: var(--g-component-pill-gap);
+  padding: var(--g-component-pill-paddingY) var(--g-component-pill-paddingX);
+  border-radius: var(--g-component-pill-radius);
+  background: var(--g-component-pill-background);
+  color: var(--g-component-pill-foreground);
+  font: var(--g-component-pill-type);
+  letter-spacing: var(--g-component-pill-type-letterSpacing);
+  overflow-wrap: anywhere; /* token-lint-disable-line: long status labels wrap without a spacing or color literal */
+}
+.g-status-dot {
+  width: var(--g-component-pill-gap);
+  height: var(--g-component-pill-gap);
+  min-width: var(--g-component-pill-gap);
+  border-radius: var(--g-component-pill-gap);
+  background: var(--g-semantic-text-primary);
+}
+.g-pill[data-status="working"] .g-status-dot {
+  background: var(--g-semantic-status-working);
+}
+.g-pill[data-status="idle"] .g-status-dot {
+  background: var(--g-semantic-status-idle);
+}
+.g-pill[data-status="review"] .g-status-dot {
+  background: var(--g-semantic-status-review);
+}
+.g-pill[data-status="blocked"] .g-status-dot {
+  background: var(--g-semantic-status-blocked);
+}
+.g-pill[data-status="done"] .g-status-dot {
+  background: var(--g-semantic-status-done);
+}
+.g-pill[data-status="triage"] .g-status-dot {
+  background: var(--g-semantic-status-triage);
+}
+.g-pill[data-status="open"] .g-status-dot {
+  background: var(--g-semantic-status-open);
+}
+.g-badge {
+  padding: var(--g-component-badge-paddingY) var(--g-component-badge-paddingX);
+  border-radius: var(--g-component-badge-radius);
+  background: var(--g-component-badge-background);
+  color: var(--g-component-badge-foreground);
+  font: var(--g-component-badge-type);
+  letter-spacing: var(--g-component-badge-type-letterSpacing);
+  min-width: 0;
+  overflow-wrap: anywhere; /* token-lint-disable-line: unbroken badge text reflow */
+}
+.g-visually-hidden {
+  position: absolute;
+  width: var(--g-semantic-border-width);
+  height: var(--g-semantic-border-width);
+  overflow: hidden;
+  clip-path: inset(50%); /* token-lint-disable-line: full count clip */
+}

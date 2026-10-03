@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Target selection is the only authorization boundary. Own real native session.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -31,12 +32,12 @@ try {
   updateWorker(worker.worker_id,{state:'live',session_id:`sid-${label}`,herdr_pane_id:tab.pane.pane_id,herdr_tab_id:tab.tab.tab_id,herdr_workspace_id:ws.workspace_id,process_ownership:{pgid:99999,members:[{pid:99999,birth:'expired'}]}});
  }
  const ambiguous=await invoke(runAgent,'agent',['stop','builder1','--session',session,'--json']);
- assert.equal(ambiguous.exit,2,ambiguous.out);const result=JSON.parse(ambiguous.out);assert.equal(result.code,'TARGET_AMBIGUOUS');assert.equal(result.state,'needs_selection');assert.equal(result.candidates.length,2);assert.deepEqual(new Set(result.candidates.map(c=>c.team_id)),new Set(teams.map(t=>t.team_id)));
+ assert.equal(ambiguous.exit,2,ambiguous.out);const result=parseCliEnvelope(ambiguous.out);assert.equal(result.code,'TARGET_AMBIGUOUS');assert.equal(result.state,'needs_selection');assert.equal(result.candidates.length,2);assert.deepEqual(new Set(result.candidates.map(c=>c.team_id)),new Set(teams.map(t=>t.team_id)));
  assert.ok(children.some(alive),'ambiguous command changes nothing');
  const text=await invoke(runAgent,'agent',['stop','builder1','--session',session]);assert.equal(text.exit,2);assert.match(text.out,/More than one agent matches/);assert.equal(text.err,'');
- const selected=await invoke(runAgent,'agent',['stop','builder1','--team',teams[0].team_id,'--json']);assert.equal(selected.exit,0,selected.out+selected.err);assert.equal(JSON.parse(selected.out).state,'dead');
+ const selected=await invoke(runAgent,'agent',['stop','builder1','--team',teams[0].team_id,'--json']);assert.equal(selected.exit,0,selected.out+selected.err);assert.equal(parseCliEnvelope(selected.out).state,'dead');
  const retry=await invoke(runAgent,'agent',['stop','sid-Alpha','--json']);assert.equal(retry.exit,0,retry.out);
- const closed=await invoke(runTeam,'team',['close',teams[1].team_id,'--json']);assert.equal(closed.exit,0,closed.out+closed.err);assert.equal(JSON.parse(closed.out).targets.length,1);
+ const closed=await invoke(runTeam,'team',['close',teams[1].team_id,'--json']);assert.equal(closed.exit,0,closed.out+closed.err);assert.equal(parseCliEnvelope(closed.out).targets.length,1);
  assert.ok(readWorkers().every(w=>w.state==='dead'));
  for(let i=0;i<50&&children.some(alive);i++)await new Promise(r=>setTimeout(r,50));
  assert.ok(children.every(pid=>!alive(pid)),`native pane close left children: ${children.filter(alive)}`);

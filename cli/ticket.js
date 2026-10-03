@@ -13,6 +13,7 @@
 // Output contract: stdout carries only result JSON (compact); diagnostics go
 // to stderr; failures exit non-zero with the server's machine-readable error
 // payload (code plus current revision/outline when relevant) on stdout.
+import { formatJson, wantsJson } from '../lib/cli-envelope.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createGolemClient, resolveGolemDashboardBaseUrl } from '../lib/golem-client.js';
@@ -28,7 +29,7 @@ const OPS = {
 
 Usage: list tickets, most recently updated first.
 Input: defaults to the caller's project; --project takes a contract id or a project path.
-Output: JSON array of compact ticket summaries (id, display_id, title, kind,
+Output: envelope with items containing compact ticket summaries (id, display_id, title, kind,
 state, assignee, body_format, body_revision) — no body echo; golem ticket get
 is the deliberate full-body read.
 Examples:
@@ -264,7 +265,7 @@ async function buildSingleOp(options, stdin, operation) {
 }
 
 function exitPayload(payload) {
-  return JSON.stringify(payload, null, 2);
+  return formatJson(payload);
 }
 
 // GOL-349 response shaping: machine-facing ticket outputs are compact
@@ -298,13 +299,14 @@ export async function runTicket(args, {
 } = {}) {
   const jsonOut = (payload) => stdout(exitPayload(payload));
   const fail = (_code, payload, err) => {
-    jsonOut(payload);
+    jsonOut({ ...payload, ok: false });
     stderr(`${payload.code ?? payload.error}: ${payload.message ?? ''}`.trim());
     return 2;
   };
   try {
     if (!args.length || ['--help', '-h', 'help'].includes(args[0])) {
-      stdout([...Object.entries(OPS).map(([name, op]) => op.help)].join('\n\n'));
+      const help = [...Object.entries(OPS).map(([name, op]) => op.help)].join('\n\n');
+      stdout(wantsJson(args) ? formatJson({ help }) : help);
       return 0;
     }
     const operation = args[0];
@@ -316,7 +318,7 @@ export async function runTicket(args, {
     }
     const { options, positional } = parseArgs(args.slice(1));
     if (options['--help'] || options['-h']) {
-      stdout(spec.help);
+      stdout(options['--json'] ? formatJson({ help: spec.help }) : spec.help);
       return 0;
     }
     const minPositional = spec.minArgs ?? spec.args;
@@ -532,7 +534,7 @@ export async function runTicket(args, {
       || (err?.status != null && err.status >= 400 && err.status < 500 && err.status !== 409 ? true : false);
     const isConflict = payload.code === 'revision_conflict' || err?.status === 409;
     stderr(`${payload.code ?? payload.error}: ${payload.message ?? payload.error ?? ''}`.trim());
-    jsonOut(payload);
+    jsonOut({ ...payload, ok: false });
     return isConflict || conflictClass ? 2 : 1;
   }
 }

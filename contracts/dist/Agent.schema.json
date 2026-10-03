@@ -1,0 +1,79 @@
+{
+  "$id": "Agent",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "description": "Roster identity; one native run remains a Session.",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "team_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "harness": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "state": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_id"
+  ]
+}

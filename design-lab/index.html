@@ -1,0 +1,1095 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golem design lab — Round 1 · App shell</title>
+<style>
+/* =====================================================================
+   LAB CHROME — the workshop frame around the stage. Neutral, quiet.
+   ===================================================================== */
+:root {
+  --lab-bg: #f3f3f1;
+  --lab-panel: #ffffff;
+  --lab-border: #e4e4e0;
+  --lab-text: #1d1d1b;
+  --lab-text-2: #5f5f5a;
+  --lab-text-3: #8d8d86;
+  --lab-accent: #3b6fe0;
+  --lab-accent-soft: #e9f0ff;
+  --lab-radius: 12px;
+  --lab-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --lab-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--lab-font);
+  color: var(--lab-text);
+  background: var(--lab-bg);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.45;
+}
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--lab-accent); outline-offset: 2px; }
+
+.lab { display: grid; grid-template-columns: 340px minmax(0, 1fr); min-height: 100vh; }
+
+.lab-panel {
+  background: var(--lab-panel);
+  border-right: 1px solid var(--lab-border);
+  padding: 22px 22px 32px;
+  overflow-y: auto;
+  position: sticky; top: 0; height: 100vh;
+}
+.lab-title { display: flex; align-items: baseline; gap: 10px; margin: 0 0 2px; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.lab-title small { font-size: 12px; font-weight: 500; color: var(--lab-text-3); }
+.lab-sub { margin: 0 0 22px; color: var(--lab-text-2); font-size: 13px; }
+
+.lab-h { margin: 22px 0 10px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--lab-text-2); }
+.lab-h:first-of-type { margin-top: 0; }
+
+.direction { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.direction button {
+  width: 100%; text-align: left; background: #fff;
+  border: 1.5px solid var(--lab-border); border-radius: var(--lab-radius);
+  padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center;
+  transition: border-color .12s, box-shadow .12s;
+}
+.direction button:hover { border-color: #c9c9c3; }
+.direction button[aria-pressed="true"] { border-color: var(--lab-accent); box-shadow: 0 0 0 3px var(--lab-accent-soft); }
+.direction .d-name { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+.direction .d-key { justify-self: end; font: 600 11px var(--lab-mono); color: var(--lab-text-3); border: 1px solid var(--lab-border); border-radius: 6px; padding: 2px 6px; }
+.direction button[aria-pressed="true"] .d-key { color: var(--lab-accent); border-color: var(--lab-accent); }
+.direction .d-thesis { grid-column: 1 / -1; color: var(--lab-text-2); font-size: 13px; }
+
+.field { display: grid; gap: 6px; margin-bottom: 12px; }
+.field label { font-size: 13px; color: var(--lab-text-2); }
+.field select {
+  width: 100%; padding: 9px 34px 9px 12px; border: 1px solid var(--lab-border); border-radius: 10px; background: #fff;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f5f5a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat; background-position: right 12px center;
+}
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--lab-border); border-radius: 10px; padding: 3px; background: #fff; }
+.seg button { border: 0; background: transparent; padding: 6px 10px; border-radius: 7px; font-size: 13px; color: var(--lab-text-2); }
+.seg button[aria-pressed="true"] { background: var(--lab-text); color: #fff; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--lab-text-2); margin: 8px 0; }
+.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--lab-accent); }
+
+.lab-sep { border: 0; border-top: 1px solid var(--lab-border); margin: 20px 0; }
+.tradeoff p { margin: 0 0 10px; font-size: 13.5px; color: var(--lab-text-2); }
+.tradeoff b { color: var(--lab-text); font-weight: 650; }
+details { font-size: 13px; color: var(--lab-text-2); }
+details summary { cursor: pointer; color: var(--lab-text); font-weight: 600; margin-bottom: 6px; }
+details ul { margin: 6px 0 0; padding-left: 18px; }
+details li { margin: 4px 0; }
+.lab-foot { margin-top: 18px; font-size: 12px; color: var(--lab-text-3); line-height: 1.5; }
+kbd { font: 600 11px var(--lab-mono); border: 1px solid var(--lab-border); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; background: #fff; color: var(--lab-text-2); }
+
+/* Stage */
+.lab-stage { padding: 28px 32px 40px; min-width: 0; }
+.stage-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; color: var(--lab-text-3); font-size: 12.5px; }
+.stage-top b { color: var(--lab-text); font-weight: 600; }
+.stage-wrap { position: relative; }
+.browser {
+  background: #fff; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 18px 48px -18px rgba(20,20,30,.28), 0 0 0 1px rgba(0,0,0,.05);
+  transform-origin: top left;
+}
+.browser-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 42px; padding: 0 14px; background: #f4f3f0; border-bottom: 1px solid #e6e4df; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.urlpill { font-size: 12px; color: #6a6964; background: #fff; border: 1px solid #e3e1db; border-radius: 8px; padding: 4px 12px; display: inline-flex; align-items: center; gap: 7px; }
+.urlpill i { width: 7px; height: 7px; border-radius: 50%; background: #28c840; }
+.browser-bar .clock { text-align: right; font: 500 11.5px var(--lab-mono); color: #8a8984; }
+.browser[data-theme="dark"] .browser-bar { background: #1a1b1f; border-color: #2a2c33; }
+.browser[data-theme="dark"] .urlpill { background: #24262c; border-color: #33363e; color: #a9a9a3; }
+.stage-hint { margin-top: 14px; font-size: 12.5px; color: var(--lab-text-3); }
+
+/* =====================================================================
+   PRODUCT TOKENS — the Golem app inside the browser frame.
+   Everything below .app reads only these.
+   ===================================================================== */
+.app {
+  --bg: #f7f5f0;
+  --surface: #ffffff;
+  --surface-2: #faf9f6;
+  --surface-3: #f1efe9;
+  --border: #e7e3da;
+  --border-2: #d9d4c8;
+  --text: #1b1a17;
+  --text-2: #5e5b53;
+  --text-3: #8f8c83;
+  --accent: #2f6be8;
+  --accent-ink: #1f4fb8;
+  --accent-soft: #e9f0ff;
+  --ok: #2e8b57;  --ok-soft: #e4f3ea;
+  --warn: #c07a16; --warn-soft: #fbf0db;
+  --bad: #cf3f3f; --bad-soft: #fbe7e7;
+  --busy: #2e8b57;
+  --idle: #b4b0a6;
+  --shadow: 0 1px 2px rgba(20,18,10,.04), 0 1px 0 rgba(20,18,10,.02);
+  --pop-shadow: 0 2px 6px rgba(20,18,10,.06), 0 20px 48px -16px rgba(20,18,10,.3);
+  --r: 12px; --r-sm: 8px; --r-lg: 16px;
+  --sp: 1;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  font-family: var(--font); color: var(--text); background: var(--bg);
+  font-size: 13.5px; line-height: 1.45;
+  height: 760px; display: flex; flex-direction: column; overflow: hidden; position: relative;
+}
+.browser[data-theme="dark"] .app {
+  --bg: #121316;
+  --surface: #1a1c20;
+  --surface-2: #1f2126;
+  --surface-3: #262930;
+  --border: #2a2d34;
+  --border-2: #363a43;
+  --text: #ecebe6;
+  --text-2: #aaa9a1;
+  --text-3: #76756f;
+  --accent: #6d9bff;
+  --accent-ink: #9dbbff;
+  --accent-soft: #1d2a47;
+  --ok: #4fc97f;  --ok-soft: #173123;
+  --warn: #e6a53c; --warn-soft: #352914;
+  --bad: #ff6b6b; --bad-soft: #3a1c1c;
+  --busy: #4fc97f;
+  --idle: #4b4e56;
+  --shadow: 0 1px 2px rgba(0,0,0,.3);
+  --pop-shadow: 0 2px 6px rgba(0,0,0,.4), 0 20px 48px -16px rgba(0,0,0,.7);
+}
+.browser[data-density="compact"] .app { --sp: .82; font-size: 13px; }
+
+.app * { box-sizing: border-box; }
+:where(.app) a { color: inherit; text-decoration: none; }
+:where(.app) button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.app svg.i { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.app svg.i.sm { width: 15px; height: 15px; }
+.app .mono { font-family: var(--mono); font-size: .92em; }
+.app .muted { color: var(--text-3); }
+.app .dim { color: var(--text-2); }
+
+/* frame layouts */
+.frame { flex: 1; min-height: 0; display: grid; }
+.frame-a { grid-template-columns: 252px minmax(0, 1fr); }
+.frame-b { grid-template-columns: 60px 232px minmax(0, 1fr); }
+.frame-c { grid-template-rows: auto minmax(0, 1fr); }
+
+/* shared: sidebar */
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.sidebar .scroll { flex: 1; overflow-y: auto; padding: 0 12px calc(16px * var(--sp)); }
+.ws-card {
+  margin: 12px 12px 8px; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px;
+  padding: 10px 10px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2);
+  width: calc(100% - 24px); text-align: left;
+}
+.ws-card:hover { border-color: var(--border-2); }
+.ws-card .ws-name { font-weight: 650; letter-spacing: -0.01em; }
+.ws-card .ws-sub { font-size: 11.5px; color: var(--text-3); }
+.ws-mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 14px; letter-spacing: -0.02em; }
+.ws-mark.sm { width: 22px; height: 22px; border-radius: 7px; font-size: 11px; }
+.ws-mark.lg { width: 36px; height: 36px; border-radius: 11px; font-size: 16px; }
+
+.nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.nav a, .nav button {
+  display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px;
+  padding: calc(7px * var(--sp)) 10px; border-radius: 9px; color: var(--text-2); width: 100%; text-align: left;
+}
+.nav a:hover { background: var(--surface-3); color: var(--text); }
+.nav a[aria-current="page"] { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.nav a[aria-current="page"] svg { color: var(--accent); }
+.badge { min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--text); color: var(--surface); font: 600 11px var(--font); display: inline-grid; place-items: center; }
+.badge.soft { background: var(--surface-3); color: var(--text-2); }
+.badge.warn { background: var(--warn); color: #fff; }
+.side-h { display: flex; justify-content: space-between; align-items: baseline; margin: calc(18px * var(--sp)) 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.side-h span { font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 11.5px; }
+.side-h span b { color: var(--ok); font-weight: 600; }
+
+.agent-row { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: center; padding: calc(6px * var(--sp)) 8px; border-radius: 9px; width: 100%; text-align: left; }
+.agent-row:hover, .agent-row[aria-current="true"] { background: var(--surface-3); }
+.agent-row > span:last-child { min-width: 0; display: grid; }
+.agent-row .a-name { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.agent-row .a-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.avatar { position: relative; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); border: 1px solid var(--border); font-size: 14px; }
+.avatar.lg { width: 64px; height: 64px; font-size: 30px; border-radius: 18px; }
+.avatar .st { position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--surface); background: var(--idle); }
+.avatar.lg .st { width: 14px; height: 14px; right: -3px; bottom: -3px; }
+.avatar .st.busy { background: var(--busy); }
+.team-tag { font: 500 10.5px var(--mono); color: var(--text-3); }
+
+.side-foot { border-top: 1px solid var(--border); padding: 10px 12px; }
+.me-row { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 9px; width: 100%; text-align: left; }
+.me-row:hover { background: var(--surface-3); }
+.me-row .avatar { background: #1b1a17; color: #fff; border: 0; font-weight: 700; font-size: 12px; }
+.browser[data-theme="dark"] .me-row .avatar { background: #ecebe6; color: #1b1a17; }
+.me-row > span:nth-child(2) { min-width: 0; display: grid; }
+.me-row .m-name { font-weight: 600; font-size: 13px; }
+.me-row .m-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* rail (B) */
+.rail { background: var(--surface-3); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px; }
+.rail .ws-mark { position: relative; opacity: .7; }
+.rail .ws-mark:hover { opacity: 1; }
+.rail .ws-mark[aria-current="true"] { opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+.rail .ws-mark .pip { position: absolute; top: -3px; right: -3px; min-width: 14px; height: 14px; border-radius: 7px; background: var(--warn); color: #fff; font: 600 9.5px var(--font); display: grid; place-items: center; padding: 0 3px; }
+.rail .add { width: 36px; height: 36px; border-radius: 11px; border: 1.5px dashed var(--border-2); color: var(--text-3); display: grid; place-items: center; }
+.rail .spacer { flex: 1; }
+.rail .rbtn { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--text-2); }
+.rail .rbtn:hover { background: var(--surface); color: var(--text); }
+.rail .avatar { width: 32px; height: 32px; background: #1b1a17; color: #fff; border: 0; font-weight: 700; font-size: 12px; }
+.browser[data-theme="dark"] .rail .avatar { background: #ecebe6; color: #1b1a17; }
+.sidebar .ws-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 10px; }
+.sidebar .ws-head button { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.sidebar .ws-head .ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--text-2); }
+.sidebar .ws-head .ic:hover { background: var(--surface-3); color: var(--text); }
+
+/* header (C) */
+.header { background: var(--surface); border-bottom: 1px solid var(--border); display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 20px; padding: 0 20px; height: 54px; }
+.header .ws-chooser { display: inline-flex; align-items: center; gap: 10px; padding: 6px 10px 6px 6px; border-radius: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.header .ws-chooser:hover { background: var(--surface-3); }
+.header .ws-chooser .sub { font-weight: 500; font-size: 11.5px; color: var(--text-3); display: block; line-height: 1.1; }
+.tabs { display: flex; gap: 2px; justify-content: center; }
+.tabs a { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 9px; color: var(--text-2); font-weight: 500; }
+.tabs a:hover { background: var(--surface-3); color: var(--text); }
+.tabs a[aria-current="page"] { color: var(--text); font-weight: 650; background: var(--surface-3); }
+.header .right { display: flex; align-items: center; gap: 4px; }
+.header .search-sm { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; color: var(--text-3); font-size: 12.5px; width: 190px; background: var(--surface-2); }
+.header .search-sm kbd { margin-left: auto; font: 600 10.5px var(--mono); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; background: var(--surface); color: var(--text-3); }
+.icon-btn { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: var(--text-2); position: relative; }
+.icon-btn:hover { background: var(--surface-3); color: var(--text); }
+.icon-btn .pip { position: absolute; top: 4px; right: 4px; min-width: 15px; height: 15px; border-radius: 8px; background: var(--bad); color: #fff; font: 600 10px var(--font); display: grid; place-items: center; padding: 0 4px; }
+.me-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: 10px; font-weight: 600; }
+.me-chip:hover { background: var(--surface-3); }
+.me-chip .avatar { width: 26px; height: 26px; background: #1b1a17; color: #fff; border: 0; font-weight: 700; font-size: 11px; }
+.browser[data-theme="dark"] .me-chip .avatar { background: #ecebe6; color: #1b1a17; }
+
+/* main column */
+.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.topbar { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; height: 54px; padding: 0 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.search { display: flex; align-items: center; gap: 10px; height: 34px; max-width: 460px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text-3); font-size: 13px; }
+.search kbd { margin-left: auto; font: 600 10.5px var(--mono); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; background: var(--surface); color: var(--text-3); }
+.topbar .right { display: flex; align-items: center; gap: 2px; }
+.content { flex: 1; overflow-y: auto; padding: calc(24px * var(--sp)) 28px 40px; }
+.content.narrow { max-width: 1120px; width: 100%; margin: 0 auto; }
+.frame-c .content { padding-left: 32px; padding-right: 32px; }
+.page-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: calc(20px * var(--sp)); }
+.page-h h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.page-h .sub { margin-top: 2px; color: var(--text-2); }
+.actions { display: flex; gap: 8px; }
+.btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--border-2); background: var(--surface); font-weight: 600; font-size: 13px; color: var(--text); }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--text); color: var(--surface); border-color: var(--text); }
+.btn.sq { width: 36px; padding: 0; justify-content: center; }
+
+/* cards & grids */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); }
+.card-h { display: flex; justify-content: space-between; align-items: center; padding: calc(14px * var(--sp)) 16px 0; }
+.card-h h3 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.card-h a { font-size: 12.5px; color: var(--accent-ink); font-weight: 600; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; }
+.stack { display: grid; gap: 16px; align-content: start; }
+
+.stats { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin-bottom: 16px; }
+.stats > div { padding: calc(16px * var(--sp)) 8px; text-align: center; border-left: 1px solid var(--border); }
+.stats > div:first-child { border-left: 0; }
+.stats .n { font-size: 24px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.stats .l { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.stats .n.ok { color: var(--ok); } .stats .n.warn { color: var(--warn); } .stats .n.bad { color: var(--bad); } .stats .n.accent { color: var(--accent); }
+
+.list { list-style: none; margin: 0; padding: 6px 8px 8px; }
+.list li { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: calc(9px * var(--sp)) 8px; border-radius: 9px; }
+.list li:hover { background: var(--surface-2); }
+.list .t { font-weight: 600; }
+.list .s { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+.list .when { font: 500 11.5px var(--mono); color: var(--text-3); white-space: nowrap; }
+.id { font: 600 11px var(--mono); color: var(--text-3); background: var(--surface-3); padding: 2px 6px; border-radius: 6px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.pill.working { background: var(--ok-soft); color: var(--ok); }
+.pill.idle { background: var(--surface-3); color: var(--text-2); }
+.pill.review { background: var(--warn-soft); color: var(--warn); }
+.pill.blocked { background: var(--bad-soft); color: var(--bad); }
+.pill.todo { background: var(--surface-3); color: var(--text-2); }
+.pill.done { background: var(--accent-soft); color: var(--accent-ink); }
+.pill.in_progress { background: var(--accent-soft); color: var(--accent-ink); }
+.pill.role { background: var(--accent-soft); color: var(--accent-ink); text-transform: none; letter-spacing: 0; font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); display: inline-block; }
+.dot.busy { background: var(--busy); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+
+.spec-card { display: grid; gap: 8px; padding: 14px 16px; }
+.spec-card .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.spec-card .name { font-weight: 650; }
+.bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.meta { font-size: 12px; color: var(--text-3); display: flex; gap: 12px; }
+
+.teams { padding: 6px 8px 10px; display: grid; gap: 4px; }
+.team-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 8px 6px; }
+.team-row .tn { font-weight: 650; display: flex; align-items: center; gap: 8px; }
+.team-row .tn .mono { color: var(--text-3); font-weight: 500; }
+.avatars { display: flex; }
+.avatars .avatar { width: 26px; height: 26px; font-size: 12px; margin-left: -7px; border: 2px solid var(--surface); background: var(--surface-3); }
+.avatars .avatar .st { width: 9px; height: 9px; right: -2px; bottom: -2px; }
+.avatars .avatar:first-child { margin-left: 0; }
+.avatars .more { width: 24px; height: 24px; border-radius: 50%; margin-left: -6px; background: var(--surface-3); border: 2px solid var(--surface); display: grid; place-items: center; font: 600 10px var(--mono); color: var(--text-2); }
+
+.timeline { list-style: none; margin: 0; padding: 4px 16px 12px; }
+.timeline li { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; padding: calc(9px * var(--sp)) 0; border-top: 1px solid var(--border); align-items: start; }
+.timeline li:first-child { border-top: 0; }
+.timeline .dot { margin-top: 6px; }
+.timeline .when { font: 500 11px var(--mono); color: var(--text-3); white-space: nowrap; padding-top: 2px; }
+.timeline .chip { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font: 600 11px var(--font); color: var(--accent-ink); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; }
+
+.empty { padding: 28px 16px; text-align: center; color: var(--text-3); }
+.empty .ico { width: 36px; height: 36px; margin: 0 auto 8px; border-radius: 10px; background: var(--surface-3); display: grid; place-items: center; color: var(--text-2); }
+.empty b { display: block; color: var(--text); font-weight: 650; margin-bottom: 2px; }
+.empty .btn { margin-top: 12px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 16px; }
+.chip { font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 7px; background: var(--surface-3); color: var(--text-2); }
+
+/* agent profile */
+.profile { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; margin-bottom: 20px; }
+.profile h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
+.profile .sub { color: var(--text-2); margin-top: 2px; }
+.now { padding: 14px 16px; background: var(--surface-2); }
+.now .l { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); display: flex; align-items: center; gap: 7px; }
+.now .t { font-size: 15.5px; font-weight: 650; margin-top: 4px; letter-spacing: -0.01em; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; padding: 12px 16px 16px; font-size: 13px; }
+.kv dt { color: var(--text-3); margin: 0; } .kv dd { margin: 0; font-weight: 500; }
+
+/* spec reader */
+.reader { display: grid; grid-template-columns: 200px minmax(0, 1fr) 280px; gap: 20px; align-items: start; }
+.outline { position: sticky; top: 0; font-size: 12.5px; }
+.outline h4 { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.outline a { display: block; padding: 5px 8px; border-radius: 7px; color: var(--text-2); }
+.outline a.on { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.outline a.l2 { padding-left: 18px; }
+.doc { padding: 4px 28px 32px; }
+.doc .doc-h { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; }
+.doc h1 { font-size: 22px; letter-spacing: -0.02em; margin: 4px 0 14px; }
+.doc h2 { font-size: 15px; margin: 22px 0 8px; letter-spacing: -0.01em; }
+.doc p, .doc li { color: var(--text-2); font-size: 13.5px; line-height: 1.6; }
+.doc table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 8px 0; }
+.doc th, .doc td { border: 1px solid var(--border); padding: 7px 9px; text-align: left; vertical-align: top; }
+.doc th { background: var(--surface-2); font-weight: 650; }
+.doc .lock { color: var(--text-2); }
+.comment { padding: 12px 14px; }
+.comment + .comment { border-top: 1px solid var(--border); }
+.comment .who { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 12.5px; }
+.comment .who .when { margin-left: auto; font: 500 11px var(--mono); color: var(--text-3); }
+.comment p { margin: 6px 0 0; font-size: 12.5px; color: var(--text-2); }
+.comment .quote { border-left: 2px solid var(--border-2); padding-left: 8px; font-size: 12px; color: var(--text-3); margin: 6px 0; }
+.composer { padding: 10px 12px 12px; }
+.composer .box { border: 1px solid var(--border-2); border-radius: 9px; padding: 9px 11px; color: var(--text-3); font-size: 12.5px; background: var(--surface-2); }
+
+/* preferences */
+.prefs { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 24px; align-items: start; }
+.pref-nav h4 { margin: 14px 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.pref-nav h4:first-child { margin-top: 0; }
+.pref-nav a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; color: var(--text-2); }
+.pref-nav a.on { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.pref-nav a svg { color: var(--text-3); } .pref-nav a.on svg { color: var(--accent); }
+.card:has(> .table) { overflow: hidden; }
+.table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.table .mono { white-space: nowrap; }
+.table td .chip { display: inline-block; margin: 2px 4px 2px 0; }
+.table th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.table td { padding: calc(11px * var(--sp)) 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.table tr:last-child td { border-bottom: 0; }
+.table .pname { font-weight: 650; white-space: nowrap; }
+.table .psub { font-size: 12px; color: var(--text-3); }
+.harness { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+.harness i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.toggle { display: inline-block; width: 34px; height: 20px; border-radius: 10px; background: var(--border-2); position: relative; vertical-align: middle; cursor: pointer; }
+.toggle.on { background: var(--ok); }
+.toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+.toggle.on::after { left: 16px; }
+.pref-section { margin-bottom: 20px; }
+.pref-section h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -0.02em; }
+.pref-section .lead { margin: 0 0 14px; color: var(--text-2); }
+
+/* popovers */
+.scrim { position: absolute; inset: 0; z-index: 20; }
+.pop { position: absolute; z-index: 21; min-width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--pop-shadow); padding: 6px; }
+.pop .ph { padding: 10px 10px 8px; display: flex; align-items: center; gap: 10px; }
+.pop .ph .n { font-weight: 700; } .pop .ph .s { font-size: 11.5px; color: var(--text-3); }
+.pop .sep { border-top: 1px solid var(--border); margin: 6px 4px; }
+.pop .item { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; width: 100%; padding: 8px 10px; border-radius: 9px; text-align: left; color: var(--text); }
+.pop .item:hover { background: var(--surface-3); }
+.pop .item .sub { font-size: 11.5px; color: var(--text-3); }
+.pop .item kbd { font: 600 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.pop .item.on { background: var(--surface-2); }
+.pop .item.on .chk { color: var(--accent); }
+.pop .ws-mark.sm { margin-left: 2px; }
+.pop .label { padding: 8px 10px 2px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+
+/* narrow stage tweaks */
+.browser[data-vw="960"] .frame-a { grid-template-columns: 228px minmax(0, 1fr); }
+.browser[data-vw="960"] .grid-2 { grid-template-columns: 1fr; }
+.browser[data-vw="960"] .reader { grid-template-columns: minmax(0, 1fr) 260px; }
+.browser[data-vw="960"] .outline { display: none; }
+.browser[data-vw="960"] .tabs a span { display: none; }
+.browser[data-vw="960"] .header .search-sm { width: 150px; }
+.browser[data-vw="960"] .prefs { grid-template-columns: 1fr; }
+.browser[data-vw="960"] .pref-nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.browser[data-vw="960"] .pref-nav h4 { display: none; }
+
+.browser[data-motion="reduce"] .app * { transition: none !important; }
+</style>
+</head>
+<body>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></symbol>
+  <symbol id="i-spec" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 12h6M9 16h6"/></symbol>
+  <symbol id="i-task" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5z"/><path d="M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-agents" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.5a4.2 4.2 0 0 1 5 4.5"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13h4l1.5 2.5h5L16 13h4"/><path d="M4 13V6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5V13"/><path d="M4 13v4.5A1.5 1.5 0 0 0 5.5 19h13a1.5 1.5 0 0 0 1.5-1.5V13"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="m8 5-3 3 3 3"/><path d="M5 8h11"/><path d="m16 13 3 3-3 3"/><path d="M19 16H8"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-5 4v-4A2.5 2.5 0 0 1 4 14.5z"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7 9 3 3-3 3M12.5 15H17"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="m8.2 10.8 7.6-4M8.2 13.2l7.6 4"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="m15 4 5 5-4 1-3 3 .5 4-5.5-5.5L4 15l1-4 3-3z"/><path d="m8.5 15.5-4 4"/></symbol>
+</svg>
+
+<div class="lab">
+  <aside class="lab-panel" aria-label="Design lab controls">
+    <h1 class="lab-title">Golem design lab <small>Round 1 · App shell</small></h1>
+    <p class="lab-sub">Where the workspace switcher lives, and where everything above a workspace goes.</p>
+
+    <div class="lab-h">Three directions</div>
+    <ul class="direction" id="directions" role="group" aria-label="Directions"></ul>
+
+    <div class="lab-h">Inspect the design</div>
+    <div class="field">
+      <label for="screen">Screen</label>
+      <select id="screen">
+        <option value="home">Workspace home</option>
+        <option value="agent">Agent · product_lead</option>
+        <option value="spec">Doc · GOL-416</option>
+        <option value="prefs">Preferences · Model profiles</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="scenario">Scenario</label>
+      <select id="scenario">
+        <option value="quiet">Quiet morning · 1 agent working</option>
+        <option value="busy">Busy · 3 teams, 6 agents working</option>
+        <option value="needs">Needs you · 4 reviews waiting</option>
+        <option value="empty">Empty · fresh workspace</option>
+      </select>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Appearance</label>
+        <div class="seg" id="theme" role="group" aria-label="Appearance">
+          <button type="button" data-v="light" aria-pressed="true">Light</button>
+          <button type="button" data-v="dark" aria-pressed="false">Dark</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Density</label>
+        <div class="seg" id="density" role="group" aria-label="Density">
+          <button type="button" data-v="comfortable" aria-pressed="true">Cozy</button>
+          <button type="button" data-v="compact" aria-pressed="false">Compact</button>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Viewport</label>
+      <div class="seg" id="vw" role="group" aria-label="Viewport width">
+        <button type="button" data-v="1440" aria-pressed="true">1440</button>
+        <button type="button" data-v="1180" aria-pressed="false">1180</button>
+        <button type="button" data-v="960" aria-pressed="false">960</button>
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="motion"> Reduce motion</label>
+
+    <hr class="lab-sep">
+    <div class="tradeoff" id="tradeoff"></div>
+
+    <details>
+      <summary>Prototype boundaries</summary>
+      <ul>
+        <li>One HTML file. Inline CSS and JS, no build, no network, no storage beyond the URL hash.</li>
+        <li>Content uses real Golem entities (workspaces, specs, tasks, docs, agents, teams, review inbox, schedules, model profiles) with invented fixture data.</li>
+        <li>The stage is a browser simulation at a fixed width. Scroll inside it.</li>
+        <li>No production file, token, route, or store is touched. Implementing a winner is a separate go.</li>
+      </ul>
+    </details>
+
+    <p class="lab-foot">
+      <kbd>⌥1</kbd> <kbd>⌥2</kbd> <kbd>⌥3</kbd> switch direction · <kbd>⌥D</kbd> theme ·
+      <kbd>Esc</kbd> closes a menu. Click the workspace name or the account to open the menus the decision is about.
+      The URL hash carries the current state, so a link reproduces what you see.
+    </p>
+  </aside>
+
+  <main class="lab-stage">
+    <div class="stage-top"><span id="stage-label"></span><span>Browser simulation · fixture data only</span></div>
+    <div class="stage-wrap" id="stage-wrap">
+      <div class="browser" id="browser" data-theme="light" data-density="comfortable" data-vw="1440">
+        <div class="browser-bar">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div class="urlpill"><i></i><span id="url">dashboard.golem.localhost</span></div>
+          <div class="clock">Thu 07:05</div>
+        </div>
+        <div class="app" id="app"></div>
+      </div>
+    </div>
+    <p class="stage-hint">Try the workspace menu, the account menu, the review inbox badge, and the agent list. Switch screens to see how each shell carries content that is not the home page.</p>
+  </main>
+</div>
+
+<script>
+/* =====================================================================
+   FIXTURES — real Golem vocabulary, invented numbers.
+   ===================================================================== */
+const WORKSPACES = [
+  { id: 'golem',    name: 'Golem',    sub: 'main · 3 teams',     color: '#2f6be8', letter: 'G' },
+  { id: 'figur',    name: 'Figur',    sub: 'feat/share · 1 team', color: '#7c4dcc', letter: 'F' },
+  { id: 'tripguru', name: 'TripGuru', sub: 'main · idle',         color: '#d9822b', letter: 'T' },
+  { id: 'sandbox',  name: 'Sandbox',  sub: 'no tracker yet',      color: '#5c8a3a', letter: 'S' },
+];
+
+const ROLE_GLYPH = { lead: '🧭', orchestrator: '🎛️', builder: '🔧', explorer: '🔭', reviewer: '🔍', designer: '🎨' };
+
+const TEAMS = [
+  { id: 'productise', agents: [
+    { name: 'product_lead', role: 'lead', model: 'claude-opus-5-5', harness: 'Claude Code', status: 'busy', now: 'Folding seven probe returns into GOL-416' },
+    { name: 'probe1', role: 'explorer', model: 'gpt-6-luna', harness: 'Pi', status: 'idle', now: 'Returned GOL-417' },
+    { name: 'probe2', role: 'explorer', model: 'gpt-6-luna', harness: 'Pi', status: 'idle', now: 'Returned GOL-418' },
+    { name: 'probe3', role: 'explorer', model: 'gpt-6-luna', harness: 'Pi', status: 'idle', now: 'Returned GOL-419' },
+    { name: 'probe4', role: 'explorer', model: 'gpt-6-luna', harness: 'Pi', status: 'idle', now: 'Returned GOL-420' },
+  ]},
+  { id: 'uxx', agents: [
+    { name: 'uxx:lead', role: 'lead', model: 'gpt-6.1-sol', harness: 'Pi', status: 'idle', now: 'GOL-428 in review' },
+    { name: 'ux-designer', role: 'designer', model: 'gpt-6.1-sol', harness: 'Pi', status: 'idle', now: 'Sketch delivered' },
+    { name: 'ux-verifier', role: 'explorer', model: 'gpt-6-luna', harness: 'Pi', status: 'idle', now: 'GOL-429 verified' },
+  ]},
+  { id: 'management-audit', agents: [
+    { name: 'orchestrator1', role: 'orchestrator', model: 'gpt-6.1-sol', harness: 'Pi', status: 'idle', now: 'Waiting on builder1' },
+    { name: 'builder1', role: 'builder', model: 'gpt-6.1-sol', harness: 'Pi', status: 'busy', now: 'GOL-409 identity rework, round 2' },
+    { name: 'reviewer1', role: 'reviewer', model: 'gpt-6.1-sol', harness: 'Pi', status: 'idle', now: 'Review of GOL-404 done' },
+    { name: 'explorer1', role: 'explorer', model: 'gpt-6-luna', harness: 'Pi', status: 'idle', now: 'Idle' },
+  ]},
+];
+
+const INBOX = [
+  { id: 'GOL-416', kind: 'doc',  title: 'Productisation readiness assessment', from: 'product_lead', ask: 'Four decisions requested', when: '2h' },
+  { id: 'GOL-428', kind: 'task', title: 'Sketch workspace-management shell variants', from: 'uxx:lead', ask: 'Pick A, B, C, or a hybrid', when: '21h' },
+  { id: 'GOL-409', kind: 'task', title: 'Session identity and scope — durable mapping', from: 'builder1', ask: 'Blocked: needs a migration decision', when: '2d' },
+  { id: 'GOL-133', kind: 'task', title: 'Bridge custom Pi providers into managed profiles', from: 'builder1', ask: 'Review requested', when: '6d' },
+];
+
+const SPECS = [
+  { id: 'GOL-155', title: 'Shareable spec links', state: 'in_progress', done: 6, total: 9, owner: 'collab' },
+  { id: 'GOL-404', title: 'Session identity and scope', state: 'blocked', done: 3, total: 7, owner: 'management-audit' },
+  { id: 'GOL-365', title: 'Pi and Claude only: retire Codex and OpenCode', state: 'done', done: 12, total: 12, owner: 'lead' },
+];
+
+const MILESTONES = [
+  { t: 'GOL-416 moved to review — assessment folded from seven probes', who: 'product_lead', when: '2h', busy: true },
+  { t: 'GOL-429 verified the shell comparison in a real browser', who: 'ux-verifier', when: '21h' },
+  { t: 'Merged feat/share-read-link (GOL-394): minimal read-link share', who: 'lead', when: '4d' },
+  { t: '5.25.0 released — compact ticket tool responses for agents', who: 'lead', when: '5d' },
+];
+
+const PROFILES = [
+  { name: 'Lead · deep',       harness: 'claude', model: 'claude-opus-5-5',      thinking: 'high',   roles: ['lead'], on: true },
+  { name: 'Builder · steady',  harness: 'pi',     model: 'gpt-6.1-sol',         thinking: 'medium', roles: ['builder', 'orchestrator', 'reviewer', 'designer'], on: true },
+  { name: 'Explorer · fast',   harness: 'pi',     model: 'gpt-6-luna',          thinking: 'low',    roles: ['explorer'], on: true },
+  { name: 'Cheap local',       harness: 'pi',     model: 'deepseek-v4-flash',   thinking: 'low',    roles: [], on: false },
+  { name: 'Design · visual',   harness: 'claude', model: 'claude-sonnet-5-5',   thinking: 'medium', roles: [], on: false },
+];
+
+const SCENARIOS = {
+  quiet: { label: 'Quiet morning', teams: ['productise'], busy: ['product_lead'], inbox: 1, blocked: 0, inflight: 2, doneWeek: 11 },
+  busy:  { label: 'Busy',  teams: ['productise', 'uxx', 'management-audit'], busy: ['product_lead', 'probe1', 'probe2', 'ux-designer', 'builder1', 'orchestrator1'], inbox: 2, blocked: 1, inflight: 9, doneWeek: 23 },
+  needs: { label: 'Needs you', teams: ['productise', 'management-audit'], busy: ['builder1', 'product_lead'], inbox: 4, blocked: 2, inflight: 5, doneWeek: 14 },
+  empty: { label: 'Empty', teams: [], busy: [], inbox: 0, blocked: 0, inflight: 0, doneWeek: 0 },
+};
+
+const DIRECTIONS = [
+  { id: 'a', key: '1', name: 'Compact sidebar',
+    thesis: 'One sidebar. The workspace card sits on top; everything global hides in the account menu at the bottom.',
+    benefit: 'Closest to the Claude and ChatGPT pattern people already know. Workspace content gets the whole canvas; the rail of global tools disappears.',
+    cost: 'Switching workspaces costs two clicks and the switcher competes with navigation for the same column.',
+    risk: 'With four or more workspaces the card hides the others; the user loses the sense of what else is live.' },
+  { id: 'b', key: '2', name: 'Workspace rail',
+    thesis: 'A narrow rail of workspaces, a contextual sidebar for the active one, global tools at the rail foot.',
+    benefit: 'Every workspace is visible and one click away, with attention pips. Global tools have a home that is never confused with workspace navigation.',
+    cost: 'Two left columns take about 290px before content starts. Narrow laptops feel cramped.',
+    risk: 'Looks like a chat app. Golem is a work tracker; the rail invites the wrong mental model unless pips mean "needs you".' },
+  { id: 'c', key: '3', name: 'Header-led',
+    thesis: 'No persistent sidebar. The workspace chooser is the top-left identity; navigation is a row of tabs; global tools sit top-right.',
+    benefit: 'Full-width canvas for specs, boards, and readers. The quietest shell; everything above a workspace lives in one corner.',
+    cost: 'No always-visible agent roster. Live activity must move into the page or a notification surface.',
+    risk: 'Tabs stop scaling past seven items; deep pages lose their "where am I" without a sidebar.' },
+];
+
+/* =====================================================================
+   STATE — driven by the lab panel; mirrored to the URL hash.
+   ===================================================================== */
+const state = { d: 'a', screen: 'home', scenario: 'quiet', theme: 'light', density: 'comfortable', vw: '1440', motion: false, menu: null, ws: 'golem', agent: 'product_lead' };
+
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  for (const k of ['d', 'screen', 'scenario', 'theme', 'density', 'vw']) if (h.get(k)) state[k] = h.get(k);
+  state.motion = h.get('motion') === '1';
+}
+function writeHash() {
+  const h = new URLSearchParams();
+  for (const k of ['d', 'screen', 'scenario', 'theme', 'density', 'vw']) h.set(k, state[k]);
+  if (state.motion) h.set('motion', '1');
+  history.replaceState(null, '', '#' + h.toString());
+}
+
+/* =====================================================================
+   HELPERS
+   ===================================================================== */
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const icon = (n, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${n}"></use></svg>`;
+const sc = () => SCENARIOS[state.scenario];
+const ws = () => { const w = WORKSPACES.find((x) => x.id === state.ws); return state.scenario === 'empty' ? { ...w, sub: 'fresh · no teams' } : w; };
+const isBusy = (a) => sc().busy.includes(a.name);
+const liveTeams = () => TEAMS.filter((t) => sc().teams.includes(t.id));
+const liveAgents = () => liveTeams().flatMap((t) => t.agents.map((a) => ({ ...a, team: t.id })));
+const busyCount = () => liveAgents().filter(isBusy).length;
+const inbox = () => INBOX.slice(0, sc().inbox);
+
+const wsMark = (w, size = '') => `<span class="ws-mark ${size}" style="background:${w.color}">${w.letter}</span>`;
+const avatar = (a, size = '') => `<span class="avatar ${size}">${ROLE_GLYPH[a.role] || '●'}<i class="st ${isBusy(a) ? 'busy' : ''}"></i></span>`;
+
+const NAV = [
+  { id: 'home', label: 'Home', icon: 'home' },
+  { id: 'specs', label: 'Specs', icon: 'spec', badge: () => SPECS.filter((s) => s.state !== 'done').length },
+  { id: 'tasks', label: 'Tasks', icon: 'task' },
+  { id: 'docs', label: 'Docs', icon: 'doc' },
+  { id: 'agents', label: 'Agents', icon: 'agents', badge: () => busyCount() || '', soft: true },
+  { id: 'inbox', label: 'Review inbox', icon: 'inbox', badge: () => inbox().length || '', warn: true },
+  { id: 'schedules', label: 'Schedules', icon: 'clock' },
+];
+const ACTIVE_NAV = { home: 'home', agent: 'agents', spec: 'docs', prefs: null };
+
+function navList(cls = '') {
+  const active = ACTIVE_NAV[state.screen];
+  return `<ul class="nav ${cls}">${NAV.map((n) => {
+    const b = n.badge ? n.badge() : '';
+    const empty = state.scenario === 'empty';
+    return `<li><a href="#" data-nav="${n.id}" ${active === n.id ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span>${b && !empty ? `<span class="badge ${n.warn ? 'warn' : n.soft ? 'soft' : ''}">${b}</span>` : '<span></span>'}</a></li>`;
+  }).join('')}</ul>`;
+}
+
+function teamsSidebar() {
+  const agents = liveAgents();
+  if (!agents.length) return `<div class="side-h">Agents</div><div class="empty" style="padding:14px 8px"><span class="muted">No agents in this workspace yet.</span></div>`;
+  return `<div class="side-h">Agents <span><b>${busyCount()} working</b> · ${agents.length}</span></div>
+    ${liveTeams().map((t) => `<div class="team-tag" style="padding:6px 8px 2px">${t.id}</div>` + t.agents.map((a) => `
+      <button class="agent-row" data-agent="${a.name}" ${state.screen === 'agent' && state.agent === a.name ? 'aria-current="true"' : ''}>
+        ${avatar(a)}
+        <span><span class="a-name">${esc(a.name)}</span><span class="a-sub">${isBusy(a) ? esc(a.now) : a.role}</span></span>
+      </button>`).join('')).join('')}`;
+}
+
+function meRow() {
+  return `<button class="me-row" data-menu="global" aria-haspopup="menu"><span class="avatar">LS</span><span><span class="m-name">Lavee</span><span class="m-sub">Golem 5.25 · local</span></span>${icon('dots', 'sm')}</button>`;
+}
+
+/* =====================================================================
+   SHELLS — three directions. Each wraps the same screen content.
+   ===================================================================== */
+const SHELLS = {
+  a(content) {
+    const w = ws();
+    return `<div class="frame frame-a">
+      <aside class="sidebar">
+        <button class="ws-card" data-menu="ws" aria-haspopup="menu">${wsMark(w)}<span><span class="ws-name">${w.name}</span><br><span class="ws-sub">${w.sub}</span></span>${icon('swap', 'sm')}</button>
+        <div class="scroll">${navList()}${teamsSidebar()}</div>
+        <div class="side-foot">${meRow()}</div>
+      </aside>
+      <div class="main">
+        <div class="topbar">
+          <div class="search">${icon('search', 'sm')}<span>Search or jump to…</span><kbd>⌘K</kbd></div>
+          <div class="right">
+            <button class="icon-btn" title="Notifications">${icon('bell')}${inbox().length ? `<span class="pip">${inbox().length}</span>` : ''}</button>
+            <button class="icon-btn" title="Help">${icon('help')}</button>
+          </div>
+        </div>
+        <div class="content">${content}</div>
+      </div>
+    </div>`;
+  },
+  b(content) {
+    const w = ws();
+    return `<div class="frame frame-b">
+      <nav class="rail" aria-label="Workspaces">
+        ${WORKSPACES.map((x) => `<button class="ws-mark lg" style="background:${x.color}" title="${x.name}" data-ws="${x.id}" ${x.id === w.id ? 'aria-current="true"' : ''}>${x.letter}${x.id === 'figur' && state.scenario !== 'empty' ? '<span class="pip">2</span>' : ''}</button>`).join('')}
+        <button class="add" title="Add workspace">${icon('plus', 'sm')}</button>
+        <div class="spacer"></div>
+        <button class="rbtn" title="Preferences" data-nav="prefs">${icon('gear')}</button>
+        <button class="avatar" data-menu="global" aria-haspopup="menu" title="Account">LS</button>
+      </nav>
+      <aside class="sidebar">
+        <div class="ws-head"><button data-menu="ws" aria-haspopup="menu">${w.name} ${icon('chev', 'sm')}</button><button class="ic" title="New">${icon('plus', 'sm')}</button></div>
+        <div class="scroll">${navList()}${teamsSidebar()}</div>
+      </aside>
+      <div class="main">
+        <div class="topbar">
+          <div class="search">${icon('search', 'sm')}<span>Search ${w.name}…</span><kbd>⌘K</kbd></div>
+          <div class="right">
+            <button class="icon-btn" title="Notifications">${icon('bell')}${inbox().length ? `<span class="pip">${inbox().length}</span>` : ''}</button>
+            <button class="icon-btn" title="Help">${icon('help')}</button>
+          </div>
+        </div>
+        <div class="content">${content}</div>
+      </div>
+    </div>`;
+  },
+  c(content) {
+    const w = ws();
+    const active = ACTIVE_NAV[state.screen];
+    const empty = state.scenario === 'empty';
+    return `<div class="frame frame-c">
+      <header class="header">
+        <button class="ws-chooser" data-menu="ws" aria-haspopup="menu">${wsMark(w)}<span>${w.name}<span class="sub">${w.sub}</span></span>${icon('chev', 'sm')}</button>
+        <nav class="tabs" aria-label="Workspace">${NAV.map((n) => { const b = n.badge ? n.badge() : ''; return `<a href="#" data-nav="${n.id}" ${active === n.id ? 'aria-current="page"' : ''}>${icon(n.icon, 'sm')}<span>${n.label}</span>${b && !empty ? `<span class="badge ${n.warn ? 'warn' : 'soft'}">${b}</span>` : ''}</a>`; }).join('')}</nav>
+        <div class="right">
+          <div class="search-sm">${icon('search', 'sm')}<span>Jump to…</span><kbd>⌘K</kbd></div>
+          <button class="icon-btn" title="Notifications">${icon('bell')}${inbox().length ? `<span class="pip">${inbox().length}</span>` : ''}</button>
+          <button class="icon-btn" title="Help">${icon('help')}</button>
+          <button class="me-chip" data-menu="global" aria-haspopup="menu"><span class="avatar">LS</span>Lavee ${icon('chev', 'sm')}</button>
+        </div>
+      </header>
+      <div class="main"><div class="content narrow">${content}</div></div>
+    </div>`;
+  },
+};
+
+/* =====================================================================
+   SCREENS — shell-independent content.
+   ===================================================================== */
+function emptyState(what, cta) {
+  return `<div class="empty"><div class="ico">${icon('sparkle', 'sm')}</div><b>${what}</b><span>${cta}</span></div>`;
+}
+
+const SCREENS = {
+  home() {
+    const s = sc();
+    const w = ws();
+    const empty = state.scenario === 'empty';
+    const needsYou = inbox();
+    return `
+      <div class="page-h">
+        <div><h1>Good morning, Lavee</h1><div class="sub">${empty ? `${w.name} is empty. Register a project root or create the first spec.` : `${busyCount()} agent${busyCount() === 1 ? '' : 's'} working · ${needsYou.length} item${needsYou.length === 1 ? '' : 's'} waiting on you`}</div></div>
+        <div class="actions"><button class="btn">${icon('plus', 'sm')} New spec</button><button class="btn primary">${icon('agents', 'sm')} Start a team</button></div>
+      </div>
+      <div class="card stats">
+        <div><div class="n accent">${s.inflight}</div><div class="l">In flight</div></div>
+        <div><div class="n ${needsYou.length ? 'warn' : ''}">${needsYou.length}</div><div class="l">Waiting on you</div></div>
+        <div><div class="n ${s.blocked ? 'bad' : ''}">${s.blocked}</div><div class="l">Blocked</div></div>
+        <div><div class="n ok">${s.doneWeek}</div><div class="l">Done this week</div></div>
+        <div><div class="n">${busyCount()}<span class="muted" style="font-size:14px;font-weight:500">/${liveAgents().length}</span></div><div class="l">Agents working</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="stack">
+          <section class="card">
+            <div class="card-h"><h3>Needs you</h3>${needsYou.length ? '<a href="#">Open review inbox</a>' : ''}</div>
+            ${needsYou.length ? `<ul class="list">${needsYou.map((i) => `<li><span class="id">${i.id}</span><span><div class="t">${esc(i.title)}</div><div class="s">${esc(i.ask)} · from ${esc(i.from)}</div></span><span class="when">${i.when}</span></li>`).join('')}</ul>` : emptyState('All caught up', 'No reviews or decisions waiting.')}
+          </section>
+          <section class="card">
+            <div class="card-h"><h3>Active specs</h3>${empty ? '' : '<a href="#">All specs</a>'}</div>
+            ${empty ? emptyState('No specs yet', 'A spec is the living design doc for a workstream.') + '' : `<div style="padding:4px 8px 8px">${SPECS.map((p) => `<div class="spec-card"><div class="row"><span class="name"><span class="id" style="margin-right:8px">${p.id}</span>${esc(p.title)}</span><span class="pill ${p.state}">${p.state.replace('_', ' ')}</span></div><div class="bar"><i style="width:${Math.round(p.done / p.total * 100)}%"></i></div><div class="meta"><span>${p.done}/${p.total} tasks</span><span>owner ${esc(p.owner)}</span></div></div>`).join('')}</div>`}
+          </section>
+        </div>
+        <div class="stack">
+          <section class="card">
+            <div class="card-h"><h3>Teams working now</h3>${liveTeams().length ? '<a href="#">Agents</a>' : ''}</div>
+            ${liveTeams().length ? `<div class="teams">${liveTeams().map((t) => `<div class="team-row"><span><span class="tn">${esc(t.id)} <span class="mono">${t.agents.filter(isBusy).length}/${t.agents.length}</span></span><div class="s muted" style="font-size:12px;margin-top:2px">${esc(t.agents.find(isBusy)?.now || 'Idle · ' + t.agents[0].now)}</div></span><span class="avatars">${t.agents.slice(0, 4).map((a) => avatar(a)).join('')}${t.agents.length > 4 ? `<span class="more">+${t.agents.length - 4}</span>` : ''}</span></div>`).join('')}</div>` : emptyState('No team yet', 'Start a team to get a lead, builders, and reviewers.')}
+          </section>
+          <section class="card">
+            <div class="card-h"><h3>Recent milestones</h3></div>
+            ${empty ? emptyState('Nothing yet', 'Milestones appear as work lands.') : `<ul class="timeline">${MILESTONES.map((m) => `<li><span class="dot ${m.busy ? 'busy' : ''}"></span><span><div>${esc(m.t)}</div><div class="s muted" style="font-size:12px">${esc(m.who)}</div></span><span class="when">${m.when} ago</span></li>`).join('')}</ul>`}
+          </section>
+        </div>
+      </div>`;
+  },
+
+  agent() {
+    const a = liveAgents().find((x) => x.name === state.agent) || { ...TEAMS[0].agents[0], team: 'productise' };
+    const busy = isBusy(a);
+    return `
+      <a href="#" class="dim" data-nav="agents" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:14px">${icon('back', 'sm')} Back to agents</a>
+      <div class="profile">
+        ${avatar(a, 'lg')}
+        <div><h1>${esc(a.name)} <span class="pill ${busy ? 'working' : 'idle'}">${busy ? 'working' : 'idle'}</span> <span class="pill role">${a.role}</span></h1><div class="sub">${a.harness} · ${a.model} · team <span class="mono">${a.team}</span></div></div>
+        <div class="actions"><button class="btn sq" title="Message">${icon('chat')}</button><button class="btn sq" title="Attach terminal">${icon('term')}</button><button class="btn sq" title="Profile">${icon('gear')}</button><button class="btn sq" title="Stop">${icon('stop')}</button></div>
+      </div>
+      <div class="card stats">
+        <div><div class="n">7</div><div class="l">Dispatched</div></div>
+        <div><div class="n accent">${busy ? 1 : 0}</div><div class="l">In flight</div></div>
+        <div><div class="n">7</div><div class="l">Returned</div></div>
+        <div><div class="n warn">1</div><div class="l">Awaiting your read</div></div>
+        <div><div class="n ok">100%</div><div class="l">Returned on time</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="stack">
+          <section class="card now"><div class="l"><span class="dot ${busy ? 'busy' : ''}"></span>${busy ? 'Working on now' : 'Last activity'}</div><div class="t">${esc(a.now)}</div></section>
+          <section class="card">
+            <div class="card-h"><h3>Status timeline</h3><a href="#">Full journal</a></div>
+            <ul class="timeline">
+              <li><span class="dot busy"></span><span>Folded seven probe returns into GOL-416; moved it to review<span class="chip">${icon('spec', 'sm')} GOL-416</span></span><span class="when">6m ago</span></li>
+              <li><span class="dot"></span><span>Verified 14 explorer claims in source (migrate-home import, jq guard, share exposure)</span><span class="when">34m ago</span></li>
+              <li><span class="dot"></span><span>Dispatched GOL-417 to GOL-423 to probe1…probe7</span><span class="when">2h ago</span></li>
+              <li><span class="dot"></span><span>Created team <span class="mono">productise</span> with seven explorers</span><span class="when">2h ago</span></li>
+            </ul>
+          </section>
+        </div>
+        <div class="stack">
+          <section class="card">
+            <div class="card-h"><h3>Attention</h3></div>
+            ${busy ? `<ul class="list"><li><span class="dot warn"></span><span><div class="t">Self-reminder due in 41m</div><div class="s">Stay-awake tick · schedule 39c21b67</div></span><span class="when"></span></li></ul>` : emptyState('All caught up', 'No mentions or open work.')}
+          </section>
+          <section class="card">
+            <div class="card-h"><h3>Profile</h3><a href="#">Edit</a></div>
+            <dl class="kv"><dt>Harness</dt><dd>${a.harness}</dd><dt>Model</dt><dd class="mono">${a.model}</dd><dt>Thinking</dt><dd>${a.role === 'lead' ? 'high' : 'medium'}</dd><dt>Profile</dt><dd>${a.role === 'lead' ? 'Lead · deep' : a.role === 'explorer' ? 'Explorer · fast' : 'Builder · steady'}</dd><dt>Session</dt><dd class="mono">b3f1c786…</dd></dl>
+          </section>
+          <section class="card">
+            <div class="card-h"><h3>Skills loaded</h3></div>
+            <div class="chips"><span class="chip">lead</span><span class="chip">team-ops</span><span class="chip">tracker</span><span class="chip">compare-design-options</span><span class="chip">staying-awake</span></div>
+          </section>
+        </div>
+      </div>`;
+  },
+
+  spec() {
+    return `
+      <div class="reader">
+        <nav class="outline"><h4>Outline</h4><a href="#">Question</a><a href="#" class="on">Summary</a><a href="#">Findings</a><a href="#" class="l2">Probe table</a><a href="#">Implications</a><a href="#" class="l2">Stage A</a><a href="#" class="l2">Stage B</a><a href="#">Decisions</a><a href="#">Method</a></nav>
+        <article class="card doc">
+          <div class="doc-h"><span class="id">GOL-416</span><span class="pill review">review</span><span class="muted" style="font-size:12px">doc · assigned to product_lead · revision 6</span></div>
+          <h1>Productisation readiness assessment</h1>
+          <h2>Summary</h2>
+          <p><b>Answer: partly.</b> Golem can be shared with a small group of technical early users after bounded brownfield work. It cannot become a public product through hardening alone. Four things are design or policy decisions, not fixes.</p>
+          <h2>Findings</h2>
+          <table><thead><tr><th>Probe</th><th>Area verdict</th><th>Most important finding</th></tr></thead><tbody>
+            <tr><td>P1 First-run</td><td>Needs hardening</td><td>Fresh state resolves to <code>~/.config/golem</code> while the README installs from <code>~/.golem/renders</code>.</td></tr>
+            <tr><td>P3 Dashboard</td><td>Needs hardening</td><td>Share exposes the whole writable dashboard; no auth, origin, or CSRF check.</td></tr>
+            <tr><td>P5 Substrate</td><td>Redesign the user-configuration layer</td><td>Global rules carry the author's identity and workflow; no user override.</td></tr>
+            <tr><td>P7 External</td><td>Needs hardening</td><td>Channels is a research preview behind a development flag and an org Owner gate.</td></tr>
+          </tbody></table>
+          <h2>Decisions</h2>
+          <ul><li class="lock">🔒 Audience: private alpha.</li><li class="lock">🔒 Harnesses: Claude Code and Pi both stay supported.</li><li class="lock">🔒 The author's personal rules become a personalisation layer.</li><li class="lock">🔒 Direction: rebuild the UX first; backend capabilities where the new UX has gaps.</li></ul>
+        </article>
+        <aside class="stack">
+          <section class="card">
+            <div class="card-h"><h3>Comments · 3</h3><a href="#">Resolve all</a></div>
+            <div class="comment"><div class="who">${avatar({ role: 'lead', name: 'product_lead' })} product_lead <span class="when">2h</span></div><div class="quote">Four things are design or policy decisions</div><p>Decisions recorded on revision 6. Open: how my lane relates to team uxx.</p></div>
+            <div class="comment"><div class="who"><span class="avatar" style="background:#1b1a17;color:#fff;border:0;font-weight:700;font-size:11px">LS</span> Lavee <span class="when">1h</span></div><p>1. Private alpha. 2. Continue Claude Code and Pi. 3. Personalisation layer, will discuss. 4. Partial remote control.</p></div>
+            <div class="comment"><div class="who">${avatar({ role: 'lead', name: 'product_lead' })} product_lead <span class="when">58m</span></div><p>Ingested. Partial remote control puts a network boundary in scope.</p></div>
+            <div class="composer"><div class="box">Reply, or anchor a comment on a quote…</div></div>
+          </section>
+          <section class="card">
+            <div class="card-h"><h3>Children · 7</h3></div>
+            <ul class="list" style="padding-top:4px">${['GOL-417 P1 First-run path', 'GOL-418 P2 Runtime core', 'GOL-419 P3 Dashboard and tracker', 'GOL-423 P7 External'].map((t) => `<li><span class="dot"></span><span class="t" style="font-weight:500;font-size:12.5px">${t}</span><span class="pill done" style="height:18px;font-size:10px">done</span></li>`).join('')}</ul>
+          </section>
+        </aside>
+      </div>`;
+  },
+
+  prefs() {
+    const H = { claude: ['Claude Code', '#d97757'], pi: ['Pi', '#3b82f6'] };
+    return `
+      <div class="page-h"><div><h1>Preferences</h1><div class="sub">Things that live above a workspace: you, your agents, your machine.</div></div></div>
+      <div class="prefs">
+        <nav class="pref-nav">
+          <h4>You</h4>
+          <a href="#">${icon('user', 'sm')} General</a>
+          <a href="#">${icon('sun', 'sm')} Appearance</a>
+          <a href="#">${icon('bell', 'sm')} Notifications</a>
+          <a href="#">${icon('sparkle', 'sm')} Personalisation</a>
+          <h4>Agents</h4>
+          <a href="#" class="on">${icon('cpu', 'sm')} Model profiles</a>
+          <a href="#">${icon('agents', 'sm')} Roles</a>
+          <a href="#">${icon('plug', 'sm')} Harnesses</a>
+          <h4>Machine</h4>
+          <a href="#">${icon('db', 'sm')} Journals & data</a>
+          <a href="#">${icon('share', 'sm')} Remote access</a>
+          <a href="#">${icon('help', 'sm')} About · 5.25.0</a>
+        </nav>
+        <div>
+          <div class="pref-section"><h2>Model profiles</h2><p class="lead">A profile is a harness, a model, and a thinking level. Roles pick a default profile; any agent can override it at creation.</p></div>
+          <section class="card">
+            <table class="table">
+              <colgroup><col style="width:19%"><col style="width:15%"><col style="width:20%"><col style="width:11%"><col><col style="width:64px"></colgroup>
+              <thead><tr><th>Profile</th><th>Harness</th><th>Model</th><th>Thinking</th><th>Default for</th><th></th></tr></thead>
+              <tbody>${PROFILES.map((p) => `<tr><td><div class="pname">${esc(p.name)}</div></td><td><span class="harness"><i style="background:${H[p.harness][1]}"></i>${H[p.harness][0]}</span></td><td class="mono">${p.model}</td><td>${p.thinking}</td><td>${p.roles.length ? p.roles.map((r) => `<span class="chip" style="margin-right:4px">${r}</span>`).join('') : '<span class="muted">—</span>'}</td><td><span class="toggle ${p.on ? 'on' : ''}" role="switch" aria-checked="${p.on}"></span></td></tr>`).join('')}</tbody>
+            </table>
+          </section>
+          <div class="actions" style="margin-top:12px"><button class="btn">${icon('plus', 'sm')} New profile</button><button class="btn">Import from Pi catalog</button></div>
+        </div>
+      </div>`;
+  },
+};
+
+/* =====================================================================
+   MENUS — the two popovers the decision is about.
+   ===================================================================== */
+function menuHtml() {
+  if (!state.menu) return '';
+  const anchor = document.querySelector(`#app [data-menu="${state.menu}"]`);
+  const appBox = document.getElementById('app').getBoundingClientRect();
+  const r = anchor ? anchor.getBoundingClientRect() : appBox;
+  const scale = currentScale();
+  let left = (r.left - appBox.left) / scale, top = (r.bottom - appBox.top) / scale + 6;
+  let style = `left:${left}px;top:${top}px`;
+  if (state.menu === 'global') {
+    const openUp = state.d !== 'c';
+    if (openUp) style = `left:${left}px;bottom:${(appBox.bottom - r.top) / scale + 6}px`;
+    if (state.d === 'c') style = `right:${(appBox.right - r.right) / scale}px;top:${top}px`;
+  }
+  const w = ws();
+  if (state.menu === 'ws') {
+    return `<div class="scrim" data-close></div><div class="pop" role="menu" style="${style}">
+      <div class="ph">${wsMark(w)}<span><div class="n">${w.name}</div><div class="s">~/Documents/software/golem</div></span></div>
+      <div class="sep"></div>
+      <div class="label">Switch workspace</div>
+      ${WORKSPACES.map((x, i) => `<button class="item ${x.id === w.id ? 'on' : ''}" role="menuitem" data-ws="${x.id}">${wsMark(x, 'sm')}<span>${x.name}<div class="sub">${x.sub}</div></span>${x.id === w.id ? `<span class="chk">${icon('check', 'sm')}</span>` : `<kbd>⌘${i + 1}</kbd>`}</button>`).join('')}
+      <div class="sep"></div>
+      <button class="item" role="menuitem">${icon('plus', 'sm')}<span>Add a workspace<div class="sub">Register a project root</div></span><span></span></button>
+    </div>`;
+  }
+  return `<div class="scrim" data-close></div><div class="pop" role="menu" style="${style}">
+    <div class="ph"><span class="avatar" style="background:#1b1a17;color:#fff;border:0;font-weight:700;font-size:11px">LS</span><span><div class="n">Lavee</div><div class="s">Golem 5.25.0 · dashboard local only</div></span></div>
+    <div class="sep"></div>
+    <button class="item" role="menuitem" data-nav="prefs">${icon('gear', 'sm')}<span>Preferences</span><kbd>⌘,</kbd></button>
+    <button class="item" role="menuitem" data-nav="prefs">${icon('cpu', 'sm')}<span>Model profiles</span><span></span></button>
+    <button class="item" role="menuitem" data-nav="prefs">${icon('agents', 'sm')}<span>Roles</span><span></span></button>
+    <button class="item" role="menuitem" data-nav="prefs">${icon('plug', 'sm')}<span>Harnesses & sync</span><span class="dot busy"></span></button>
+    <div class="sep"></div>
+    <button class="item" role="menuitem">${icon('share', 'sm')}<span>Remote access<div class="sub">Off · local only</div></span><span></span></button>
+    <button class="item" role="menuitem">${icon('db', 'sm')}<span>Journals & data</span><span></span></button>
+    <div class="sep"></div>
+    <button class="item" role="menuitem">${icon('help', 'sm')}<span>Help & docs</span><span></span></button>
+    <button class="item" role="menuitem">${icon('stop', 'sm')}<span>Stop dashboard</span><span></span></button>
+  </div>`;
+}
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+const URLS = { home: '', agent: '/agents/product_lead', spec: '/docs/GOL-416', prefs: '/preferences/model-profiles' };
+
+function currentScale() {
+  const wrap = document.getElementById('stage-wrap');
+  const avail = wrap.clientWidth;
+  const w = parseInt(state.vw, 10);
+  return Math.min(1, avail / w);
+}
+
+function fitStage() {
+  const b = document.getElementById('browser');
+  const wrap = document.getElementById('stage-wrap');
+  const w = parseInt(state.vw, 10);
+  const s = currentScale();
+  b.style.width = w + 'px';
+  b.style.transform = s < 1 ? `scale(${s})` : '';
+  wrap.style.height = s < 1 ? (b.offsetHeight * s) + 'px' : '';
+}
+
+function render() {
+  const b = document.getElementById('browser');
+  b.dataset.theme = state.theme;
+  b.dataset.density = state.density;
+  b.dataset.vw = state.vw;
+  b.dataset.motion = state.motion ? 'reduce' : '';
+  const app = document.getElementById('app');
+  app.innerHTML = SHELLS[state.d](SCREENS[state.screen]());
+  app.insertAdjacentHTML('beforeend', menuHtml());
+  document.getElementById('url').textContent = `dashboard.golem.localhost/${ws().id}${URLS[state.screen]}`;
+  const d = DIRECTIONS.find((x) => x.id === state.d);
+  document.getElementById('stage-label').innerHTML = `<b>${d.name}</b> · ${state.vw} × 800 · ${SCENARIOS[state.scenario].label}`;
+  renderPanel();
+  fitStage();
+  writeHash();
+}
+
+function renderPanel() {
+  document.getElementById('directions').innerHTML = DIRECTIONS.map((d) => `<li><button type="button" data-d="${d.id}" aria-pressed="${state.d === d.id}"><span class="d-name">${d.name}</span><span class="d-key">⌥${d.key}</span><span class="d-thesis">${d.thesis}</span></button></li>`).join('');
+  const d = DIRECTIONS.find((x) => x.id === state.d);
+  document.getElementById('tradeoff').innerHTML = `<p><b>Benefit.</b> ${d.benefit}</p><p><b>Cost.</b> ${d.cost}</p><p><b>Risk.</b> ${d.risk}</p>`;
+  document.getElementById('screen').value = state.screen;
+  document.getElementById('scenario').value = state.scenario;
+  document.getElementById('motion').checked = state.motion;
+  for (const [id, key] of [['theme', 'theme'], ['density', 'density'], ['vw', 'vw']]) {
+    document.querySelectorAll(`#${id} button`).forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.v === state[key])));
+  }
+}
+
+/* =====================================================================
+   EVENTS
+   ===================================================================== */
+document.getElementById('directions').addEventListener('click', (e) => { const b = e.target.closest('[data-d]'); if (b) { state.d = b.dataset.d; state.menu = null; render(); } });
+document.getElementById('screen').addEventListener('change', (e) => { state.screen = e.target.value; state.menu = null; render(); });
+document.getElementById('scenario').addEventListener('change', (e) => { state.scenario = e.target.value; state.menu = null; render(); });
+document.getElementById('motion').addEventListener('change', (e) => { state.motion = e.target.checked; render(); });
+for (const [id, key] of [['theme', 'theme'], ['density', 'density'], ['vw', 'vw']]) {
+  document.getElementById(id).addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (b) { state[key] = b.dataset.v; render(); } });
+}
+
+document.getElementById('app').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-menu],[data-close],[data-ws],[data-nav],[data-agent]');
+  if (!t) return;
+  e.preventDefault();
+  if (t.hasAttribute('data-close')) { state.menu = null; }
+  else if (t.dataset.menu) { state.menu = state.menu === t.dataset.menu ? null : t.dataset.menu; }
+  else if (t.dataset.ws) { state.ws = t.dataset.ws; state.menu = null; }
+  else if (t.dataset.agent) { state.agent = t.dataset.agent; state.screen = 'agent'; state.menu = null; }
+  else if (t.dataset.nav) {
+    const map = { home: 'home', agents: 'agent', docs: 'spec', specs: 'spec', prefs: 'prefs' };
+    if (map[t.dataset.nav]) state.screen = map[t.dataset.nav];
+    state.menu = null;
+  }
+  render();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && state.menu) { state.menu = null; render(); return; }
+  if (!e.altKey) return;
+  const d = DIRECTIONS.find((x) => x.key === e.key || ('Digit' + x.key) === e.code);
+  if (d) { state.d = d.id; state.menu = null; render(); e.preventDefault(); }
+  if (e.code === 'KeyD') { state.theme = state.theme === 'light' ? 'dark' : 'light'; render(); e.preventDefault(); }
+});
+
+window.addEventListener('resize', fitStage);
+readHash();
+render();
+</script>
+</body>
+</html>

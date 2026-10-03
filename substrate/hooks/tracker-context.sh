@@ -64,10 +64,15 @@ if [ -n "$SESSION_ID" ] && command -v jq >/dev/null 2>&1; then
   if [ -z "$ROLE" ] && [ -n "$PAYLOAD" ]; then
     HOOK_EVENT="$(printf '%s' "$PAYLOAD" | jq -r '.hook_event_name // empty' 2>/dev/null || true)"
     if [ "$HOOK_EVENT" = "SessionStart" ]; then
-      if [ -f "$GOLEM_HOME_DIR/config.json" ]; then
-        ROLE="$(jq -r '(.roles // {}) | if has("default") then (.default // "") else "lead" end' "$GOLEM_HOME_DIR/config.json" 2>/dev/null || printf 'lead')"
-      else
-        ROLE="lead"
+      CONFIG_ROLE_HELPER="$SCRIPT_DIR/../../lib/config-role-default.ts"
+      [ -f "$CONFIG_ROLE_HELPER" ] || CONFIG_ROLE_HELPER="$SCRIPT_DIR/../../dist/lib/config-role-default.js"
+      [ -f "$CONFIG_ROLE_HELPER" ] || CONFIG_ROLE_HELPER="$SCRIPT_DIR/../lib/config-role-default.js"
+      if ! command -v node >/dev/null 2>&1 || [ ! -f "$CONFIG_ROLE_HELPER" ]; then
+        printf '%s\n' 'CONFIG_ROLE_DEFAULT_FAILED: configuration helper unavailable; repair the Golem installation before retrying.' >&2
+        exit 1
+      fi
+      if ! ROLE="$(GOLEM_HOME="$GOLEM_HOME_DIR" node "$CONFIG_ROLE_HELPER")"; then
+        exit 1
       fi
     fi
   fi

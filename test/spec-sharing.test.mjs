@@ -101,6 +101,11 @@ try {
     return h;
   };
   const writeReg = (home, doc) => tunnel.writeShareRegistry(home, doc);
+  // A cleared registry is versioned-empty: only the schema tag remains, and it
+  // resolves to no origin.
+  const clearedRegistry = (reg) =>
+    tunnel.registryOrigin(reg) === null &&
+    Object.keys(reg || {}).filter((key) => key !== 'schema_version').length === 0;
 
   // ---- 1. healthy owned tunnel reused, no spawn ----
   {
@@ -327,12 +332,12 @@ try {
     writeReg(home, { origin: ORIGIN, metricsPort: 20991, hostname: HOST });
     const out = await tunnel.stopOwnedTunnel(home, ORIGIN, { isProcessAlive: () => false });
     check('stop with missing pid clears + already_stopped',
-      out.already_stopped === true && Object.keys(tunnel.readShareRegistry(home) || {}).length === 0);
+      out.already_stopped === true && clearedRegistry(tunnel.readShareRegistry(home)));
     const home2 = freshHome('home-stop-dead');
     writeReg(home2, { origin: ORIGIN, metricsPort: 20991, hostname: HOST, pid: 999009 });
     const out2 = await tunnel.stopOwnedTunnel(home2, ORIGIN, { isProcessAlive: () => false });
     check('stop with dead pid clears + already_stopped',
-      out2.already_stopped === true && Object.keys(tunnel.readShareRegistry(home2) || {}).length === 0);
+      out2.already_stopped === true && clearedRegistry(tunnel.readShareRegistry(home2)));
   }
 
   // ---- 10. stop owned: SIGTERM exits, no SIGKILL, registry cleared ----
@@ -350,7 +355,7 @@ try {
       stopPollMs: 10,
     });
     check('stop owned exits on SIGTERM, registry cleared',
-      out.stopped === true && kills.join(',') === 'SIGTERM' && Object.keys(tunnel.readShareRegistry(home) || {}).length === 0);
+      out.stopped === true && kills.join(',') === 'SIGTERM' && clearedRegistry(tunnel.readShareRegistry(home)));
   }
 
   // ---- 11. SIGTERM ignored -> SIGKILL path ----

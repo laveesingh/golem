@@ -1,0 +1,74 @@
+{
+  "semantic": {
+    "type": {
+      "body": {
+        "$type": "typography",
+        "$value": "{primitive.type.body}"
+      },
+      "label": {
+        "$type": "typography",
+        "$value": "{primitive.type.label}"
+      },
+      "strong": {
+        "$type": "typography",
+        "$value": "{primitive.type.strong}"
+      },
+      "heading": {
+        "$type": "typography",
+        "$value": "{primitive.type.heading}"
+      },
+      "code": {
+        "$type": "typography",
+        "$value": "{primitive.type.code}"
+      },
+      "codeStrong": {
+        "$type": "typography",
+        "$value": "{primitive.type.codeStrong}"
+      },
+      "codeLabel": {
+        "$type": "typography",
+        "$value": "{primitive.type.codeLabel}"
+      }
+    },
+    "radius": {
+      "control": {
+        "$type": "dimension",
+        "$value": "{primitive.radius.n6}"
+      },
+      "pill": {
+        "$type": "dimension",
+        "$value": "{primitive.radius.n4}"
+      },
+      "card": {
+        "$type": "dimension",
+        "$value": "{primitive.radius.n8}"
+      }
+    },
+    "focus": {
+      "width": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n2}"
+      },
+      "offset": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n2}"
+      }
+    },
+    "border": {
+      "width": {
+        "$type": "dimension",
+        "$value": "{primitive.space.n1}"
+      }
+    },
+    "motion": {
+      "feedback": {
+        "$type": "duration",
+        "$value": "{primitive.motion.quick}"
+      },
+      "reduced": {
+        "$type": "duration",
+        "$value": "{primitive.motion.none}"
+      }
+    }
+  }
+}

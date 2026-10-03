@@ -20,6 +20,8 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import url from 'node:url';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { createScratchTicket, archiveTicket, SMOKE_PROJECT } from './_scratch.mjs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const SERVER = path.resolve(__dirname, '..', 'server', 'index.js');
@@ -31,6 +33,8 @@ const TAG = crypto.randomBytes(6).toString('hex');
 const TMP_DB = path.join(os.tmpdir(), `golem-api-smoke-${TAG}.db`);
 const TMP_XDG = fs.mkdtempSync(path.join(os.tmpdir(), `golem-api-smoke-xdg-${TAG}-`));
 
+const tickets = [];
+process.env.GOLEM_SMOKE_API = BASE;
 let failures = 0;
 function check(name, cond, detail = '') {
   const ok = !!cond;
@@ -45,9 +49,11 @@ function cleanupFiles() {
   try { fs.rmSync(TMP_XDG, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
-const child = spawn('node', [SERVER], {
+const serverEnv = { ...process.env };
+delete serverEnv.GOLEM_HOME;
+const child = spawn(process.execPath, [SERVER], {
   env: {
-    ...process.env,
+    ...serverEnv,
     PORT: String(PORT),
     HOST,
     GOLEM_TRACKER_DB: TMP_DB,
@@ -61,6 +67,7 @@ const child = spawn('node', [SERVER], {
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
+const childClosed = once(child, 'close');
 let childExited = false;
 child.on('exit', () => { childExited = true; });
 child.stderr.on('data', (d) => {
@@ -100,16 +107,20 @@ async function run() {
   await waitForHealth();
   check('server: /api/health ok', true);
 
-  const PID = 'smoke-proj-abc123'; // a canonical-ish contract id
+  const PID = SMOKE_PROJECT;
 
 
 
   // --- create tickets -------------------------------------------------
-  const mk1 = await jsend('POST', '/api/tickets', { project_id: PID, kind: 'task', title: 'First item', body: 'do it' });
+  const first = await createScratchTicket({ kind: 'task', title: 'First item', body: 'do it' });
+  tickets.push(first.id);
+  const mk1 = { status: 201, body: first };
   check('POST /api/tickets: 201 + TKT id', mk1.status === 201 && /^TKT-\d{4}$/.test(mk1.body?.id ?? ''), `status ${mk1.status} id ${mk1.body?.id}`);
   const t1 = mk1.body?.id;
 
-  const mk2 = await jsend('POST', '/api/tickets', { project_id: PID, kind: 'task', title: 'A bug', priority: 'P1', labels: ['urgent'] });
+  const second = await createScratchTicket({ kind: 'spec', title: 'A design', priority: 'P1', labels: ['urgent'] });
+  tickets.push(second.id);
+  const mk2 = { status: 201, body: second };
   check('POST /api/tickets: 201 second ticket', mk2.status === 201 && !!mk2.body?.id);
   check('POST /api/tickets: labels round-trip as array', Array.isArray(mk2.body?.labels) && mk2.body.labels[0] === 'urgent');
   const t2 = mk2.body?.id;
@@ -122,8 +133,8 @@ async function run() {
   check('GET /api/tickets: returns array of 2', Array.isArray(listAll.body) && listAll.body.length === 2, `got ${listAll.body?.length}`);
   const listProj = await jget(`/api/tickets?project=${PID}`);
   check('GET /api/tickets?project: filtered to 2', Array.isArray(listProj.body) && listProj.body.length === 2, `got ${listProj.body?.length}`);
-  const listFix = await jget(`/api/tickets?project=${PID}&kind=fix`);
-  check('GET /api/tickets?kind=fix: filtered to 1', listFix.body?.length === 1 && listFix.body[0].id === t2);
+  const listSpec = await jget(`/api/tickets?project=${PID}&kind=spec`);
+  check('GET /api/tickets?kind=spec: filtered to 1', listSpec.body?.length === 1 && listSpec.body[0].id === t2);
   const listOtherProj = await jget('/api/tickets?project=nonexistent-xyz');
   check('GET /api/tickets?project=unknown: empty array (no 500)', Array.isArray(listOtherProj.body) && listOtherProj.body.length === 0);
 
@@ -183,7 +194,7 @@ async function run() {
   const subStatusEnabled = await jget('/api/substrate/status');
   const enabledCells = subStatusEnabled.body?.global || [];
   const commandCells = enabledCells.filter((c) => c.artifact === 'commands');
-  const commandsNeutral = commandCells.length === 2 && commandCells.every((c) => ['empty', 'disabled'].includes(c.status));
+  const commandsNeutral = commandCells.length === 1 && commandCells.every((c) => ['empty', 'disabled'].includes(c.status));
   check('GET /api/substrate/status: neutral unsupported/empty cells', subStatusEnabled.status === 200 && commandsNeutral, `status ${subStatusEnabled.status}`);
 
   const syncCc = await jsend('POST', '/api/substrate/sync', { target: 'claudecode' });
@@ -247,10 +258,12 @@ try {
   failures++;
   console.log(`[FAIL] unexpected exception — ${err && err.stack ? err.stack : err}`);
 } finally {
+  for (const ticket of tickets) await archiveTicket(ticket);
   try { child.kill('SIGTERM'); } catch { /* ignore */ }
   // Give it a moment to die, then SIGKILL if needed.
   await new Promise((res) => setTimeout(res, 400));
   if (!childExited) { try { child.kill('SIGKILL'); } catch { /* ignore */ } }
+  await childClosed;
   cleanupFiles();
   if (failures === 0) {
     console.log('\nALL CHECKS PASSED');

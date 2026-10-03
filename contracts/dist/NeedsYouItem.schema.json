@@ -1,0 +1,106 @@
+{
+  "$id": "NeedsYouItem",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "description": "D-06 a: one inbox; resolving an item writes back to its source.",
+  "$comment": "provisional: true; schema_version 1; revise through explicit migration, no storage implemented in Stage 0",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "type": "number"
+    },
+    "id": {
+      "type": "string"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "anyOf": [
+        {
+          "const": "ticket",
+          "type": "string"
+        },
+        {
+          "const": "comment",
+          "type": "string"
+        },
+        {
+          "const": "gate",
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "type": "string"
+        },
+        {
+          "const": "reminder",
+          "type": "string"
+        }
+      ]
+    },
+    "source_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "action": {
+      "anyOf": [
+        {
+          "const": "decide",
+          "type": "string"
+        },
+        {
+          "const": "reply",
+          "type": "string"
+        },
+        {
+          "const": "approve",
+          "type": "string"
+        },
+        {
+          "const": "unblock",
+          "type": "string"
+        },
+        {
+          "const": "acknowledge",
+          "type": "string"
+        }
+      ]
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "resolved_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "project_id",
+    "source",
+    "source_id",
+    "title",
+    "action",
+    "created_at",
+    "resolved_at"
+  ]
+}

@@ -78,7 +78,7 @@ try {
     readRoleRegistry,
     updateRoleExec,
     updateRoleMeta,
-  } = await import('../lib/session-role.js');
+  } = await import('../lib/session-role.ts');
   const {
     GLOBAL_ROLE_EXEC_DEFAULTS,
     resolveRoleExecution,
@@ -267,7 +267,7 @@ try {
 
   // GOL-382 R1/R2: every packaged card is a registered role, and old aliases
   // such as planner are no longer rewritten to another role.
-  const { seedRoles, setSessionRole, sessionsJsonPath } = await import('../lib/session-role.js');
+  const { seedRoles, setSessionRole, sessionsJsonPath } = await import('../lib/session-role.ts');
   // Check against the source card files, not the seed function's own output:
   // a stale plugin/ copy must not hide a card that exists in substrate/.
   const substrateCards = fs.readdirSync(path.join(repo, 'substrate', 'roles'))

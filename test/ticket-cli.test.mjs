@@ -2,6 +2,7 @@
 // the compatibility revision/format gates (GOL-326 D5). The dashboard, DB and
 // project fixtures are isolated; the CLI runs through the real runTicket entry
 // with injected caller context, plus one real grandchild CLI process.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -69,7 +70,7 @@ try {
     }).then((exit) => {
       const outJoined = out.join('\n');
       let json = null;
-      try { json = JSON.parse(outJoined); } catch { /* non-JSON output */ }
+      try { json = parseCliEnvelope(outJoined); } catch { /* non-JSON output */ }
       return { exit, out: outJoined, err: err.join('\n'), json };
     });
   };
@@ -384,9 +385,9 @@ try {
     grand.on('close', (code) => resolve({ code, out }));
   });
   let grandParsed = null;
-  try { grandParsed = JSON.parse(grandOut.out); } catch { /* non-JSON */ }
+  try { grandParsed = parseCliEnvelope(grandOut.out); } catch { /* non-JSON */ }
   check('real grandchild CLI process lists tickets as pure JSON stdout', grandOut.code === 0
-    && Array.isArray(grandParsed) && grandParsed.some((t) => t.id === specId), grandOut.out.slice(0, 160));
+    && grandParsed?.ok === true && Array.isArray(grandParsed.items) && grandParsed.items.some((t) => t.id === specId), grandOut.out.slice(0, 160));
 
   console.log(failures.length === 0 ? '\nALL GOL-344 CHECKS PASS' : `\n${failures.length} FAILURE(S)`);
   process.exitCode = failures.length === 0 ? 0 : 1;

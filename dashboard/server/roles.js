@@ -1,4 +1,4 @@
-import { readRoleRegistry } from '../../lib/session-role.js';
+import { readRoleRegistry } from '../../lib/session-role.ts';
 
 export function roleMetaMap() {
   const out = {

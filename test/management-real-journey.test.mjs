@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Explicit real-app acceptance. No fake harness or silent skip/pass substitute.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import crypto from 'node:crypto'; import http from 'node:http'; import { spawn, spawnSync } from 'node:child_process'; import { once } from 'node:events'; import { fileURLToPath } from 'node:url';
 import { planRealActorSetup, verifyRealActorSetup, realActorEnvironment, createRealJourneyResources } from './_real-actor-setup.mjs';
@@ -19,9 +20,9 @@ for (const dir of [env.GOLEM_PROJECTS_ROOT,env.GOLEM_IDEAS_ROOT]) fs.mkdirSync(d
 if(setup.facilities.pi) { env.PI_CODING_AGENT_DIR=setup.facilities.pi.directory; env.PI_CODING_AGENT_SESSION_DIR=path.join(root,'pi-sessions'); }
 if(setup.facilities.claude) env.CLAUDE_CONFIG_DIR=setup.facilities.claude.directory;
 const shell = value => `'${String(value).replace(/'/g,"'\\''")}'`;
-const run = (args,{json=true,timeout=45000}={}) => { const result=spawnSync(process.execPath,[cli,...args],{cwd:project,env,encoding:'utf8',timeout}); assert.equal(result.status,0,`${args.slice(0,3).join(' ')}: ${result.error?.message ?? result.stderr} ${result.stdout}`); return json?JSON.parse(result.stdout):result.stdout; };
-const native = args => { const result=spawnSync('herdr',['--session',nativeName,...args],{env,encoding:'utf8',timeout:10000}); assert.equal(result.status,0,result.stderr||result.stdout); return result.stdout.trim() ? JSON.parse(result.stdout).result : null; };
-const waitFile = async (file,timeout=120000,log=null) => { const deadline=Date.now()+timeout; while(Date.now()<deadline){if(fs.existsSync(file)){try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{}} if(log&&fs.existsSync(log)&&/Not logged in.*Please run \/login/.test(fs.readFileSync(log,'utf8')))throw new Error('UNVERIFIED: actual Claude reports Not logged in · Please run /login'); await new Promise(r=>setTimeout(r,250));} throw new Error(`UNVERIFIED: actual actor never produced ${path.basename(file)} within ${timeout}ms`); };
+const run = (args,{json=true,timeout=45000}={}) => { const result=spawnSync(process.execPath,[cli,...args],{cwd:project,env,encoding:'utf8',timeout}); assert.equal(result.status,0,`${args.slice(0,3).join(' ')}: ${result.error?.message ?? result.stderr} ${result.stdout}`); return json?parseCliEnvelope(result.stdout):result.stdout; };
+const native = args => { const result=spawnSync('herdr',['--session',nativeName,...args],{env,encoding:'utf8',timeout:10000}); assert.equal(result.status,0,result.stderr||result.stdout); return result.stdout.trim() ? parseCliEnvelope(result.stdout).result : null; };
+const waitFile = async (file,timeout=120000,log=null) => { const deadline=Date.now()+timeout; while(Date.now()<deadline){if(fs.existsSync(file)){try{return parseCliEnvelope(fs.readFileSync(file,'utf8'));}catch{}} if(log&&fs.existsSync(log)&&/Not logged in.*Please run \/login/.test(fs.readFileSync(log,'utf8')))throw new Error('UNVERIFIED: actual Claude reports Not logged in · Please run /login'); await new Promise(r=>setTimeout(r,250));} throw new Error(`UNVERIFIED: actual actor never produced ${path.basename(file)} within ${timeout}ms`); };
 let dashboard, dashExit, dashboardLog=''; const actorLogs=[];
 try {
   const socket=http.createServer(); await new Promise(r=>socket.listen(0,'127.0.0.1',r)); const port=socket.address().port; await new Promise(r=>socket.close(r)); env.PORT=String(port); env.GOLEM_DASHBOARD_URL=`http://127.0.0.1:${port}`;

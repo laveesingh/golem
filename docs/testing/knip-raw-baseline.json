@@ -1,0 +1,1699 @@
+{
+  "issues": [
+    {
+      "file": "package.json",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [
+        {
+          "name": "@dnd-kit/sortable",
+          "line": 65,
+          "col": 6,
+          "pos": 2064
+        },
+        {
+          "name": "@dnd-kit/utilities",
+          "line": 66,
+          "col": 6,
+          "pos": 2100
+        },
+        {
+          "name": "jsonc-parser",
+          "line": 75,
+          "col": 6,
+          "pos": 2391
+        }
+      ],
+      "devDependencies": [
+        {
+          "name": "@babel/parser",
+          "line": 86,
+          "col": 6,
+          "pos": 2660
+        },
+        {
+          "name": "@playwright/test",
+          "line": 88,
+          "col": 6,
+          "pos": 2724
+        },
+        {
+          "name": "@testing-library/jest-dom",
+          "line": 89,
+          "col": 6,
+          "pos": 2758
+        },
+        {
+          "name": "@testing-library/react",
+          "line": 90,
+          "col": 6,
+          "pos": 2800
+        }
+      ],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "test/cross-harness-matrix.test.mjs",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [
+        {
+          "name": "@modelcontextprotocol/sdk",
+          "line": 9,
+          "col": 24,
+          "pos": 289
+        }
+      ],
+      "unresolved": []
+    },
+    {
+      "file": "test/management-dashboard.test.mjs",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [
+        {
+          "name": "esbuild",
+          "line": 5,
+          "col": 113,
+          "pos": 456
+        }
+      ],
+      "unresolved": []
+    },
+    {
+      "file": "plugin/mcp/channel/tracker-client.test.mjs",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [
+        {
+          "name": "zod",
+          "line": 24,
+          "col": 19,
+          "pos": 1078
+        },
+        {
+          "name": "@modelcontextprotocol/sdk",
+          "line": 22,
+          "col": 24,
+          "pos": 933
+        }
+      ],
+      "unresolved": []
+    },
+    {
+      "file": "shims/pi/golem.ts",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [
+        {
+          "name": "@earendil-works/pi-tui",
+          "line": 5,
+          "col": 47,
+          "pos": 195
+        }
+      ],
+      "unresolved": [
+        {
+          "name": "./lib/golem-home.js",
+          "line": 6,
+          "col": 27,
+          "pos": 247
+        },
+        {
+          "name": "./lib/golem-client.js",
+          "line": 8,
+          "col": 65,
+          "pos": 391
+        },
+        {
+          "name": "./lib/golem-tool-contracts.js",
+          "line": 9,
+          "col": 38,
+          "pos": 453
+        },
+        {
+          "name": "./lib/golem-tool-runtime.js",
+          "line": 10,
+          "col": 40,
+          "pos": 525
+        },
+        {
+          "name": "./lib/pi-native-adapter.js",
+          "line": 11,
+          "col": 33,
+          "pos": 588
+        },
+        {
+          "name": "./lib/session-role.js",
+          "line": 12,
+          "col": 105,
+          "pos": 722
+        }
+      ]
+    },
+    {
+      "file": "test/management-real-journey.test.mjs",
+      "binaries": [
+        {
+          "name": "herdr"
+        }
+      ],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "cli/golem.js",
+      "binaries": [
+        {
+          "name": "pi"
+        }
+      ],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "test/model-profiles.test.mjs",
+      "binaries": [
+        {
+          "name": "pgrep"
+        }
+      ],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "test/pi-journey.test.mjs",
+      "binaries": [
+        {
+          "name": "pi"
+        }
+      ],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "test/session-native.test.mjs",
+      "binaries": [
+        {
+          "name": "herdr"
+        }
+      ],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "test/team-journey.test.mjs",
+      "binaries": [
+        {
+          "name": "pgrep"
+        }
+      ],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "test/worker-journey.test.mjs",
+      "binaries": [
+        {
+          "name": "pgrep"
+        }
+      ],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "binaries": [
+        {
+          "name": "pi"
+        }
+      ],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "test/_real-actor-setup.mjs",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "selectRealActors",
+          "line": 50,
+          "col": 17,
+          "pos": 2788
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/process-group.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "processGroupProcesses",
+          "line": 13,
+          "col": 17,
+          "pos": 902
+        },
+        {
+          "name": "signalProcessGroup",
+          "line": 50,
+          "col": 17,
+          "pos": 3242
+        },
+        {
+          "name": "processGroup",
+          "line": 87,
+          "col": 14,
+          "pos": 5363
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/roles.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "roleFromSubagentType",
+          "line": 18,
+          "col": 17,
+          "pos": 391
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/brief.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "pushRoleAssign",
+          "line": 164,
+          "col": 23,
+          "pos": 8366
+        },
+        {
+          "name": "pushGateVerdict",
+          "line": 176,
+          "col": 23,
+          "pos": 8730
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/tracker-db.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "defaultDbPath",
+          "line": 57,
+          "col": 17,
+          "pos": 3161
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/share-tunnel.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "SHARE_REGISTRY_NAME",
+          "line": 14,
+          "col": 14,
+          "pos": 689
+        },
+        {
+          "name": "SHARE_TUNNEL_BUDGET_MS",
+          "line": 15,
+          "col": 14,
+          "pos": 745
+        },
+        {
+          "name": "SHARE_HOSTNAME_PATTERN",
+          "line": 16,
+          "col": 14,
+          "pos": 791
+        },
+        {
+          "name": "SHARE_STDERR_RING_MAX",
+          "line": 31,
+          "col": 14,
+          "pos": 1852
+        },
+        {
+          "name": "STOP_UNCONFIRMED",
+          "line": 39,
+          "col": 14,
+          "pos": 2169
+        },
+        {
+          "name": "SHARE_STOPPED",
+          "line": 42,
+          "col": 14,
+          "pos": 2363
+        },
+        {
+          "name": "shareStoppedError",
+          "line": 44,
+          "col": 17,
+          "pos": 2413
+        },
+        {
+          "name": "flightKeyFor",
+          "line": 54,
+          "col": 17,
+          "pos": 2851
+        },
+        {
+          "name": "registryPath",
+          "line": 58,
+          "col": 17,
+          "pos": 2936
+        },
+        {
+          "name": "clearShareRegistry",
+          "line": 94,
+          "col": 17,
+          "pos": 4260
+        },
+        {
+          "name": "parseHostname",
+          "line": 155,
+          "col": 17,
+          "pos": 7004
+        },
+        {
+          "name": "parseHaConnections",
+          "line": 160,
+          "col": 17,
+          "pos": 7196
+        },
+        {
+          "name": "parseConfigService",
+          "line": 166,
+          "col": 17,
+          "pos": 7391
+        },
+        {
+          "name": "readTunnelFacts",
+          "line": 190,
+          "col": 23,
+          "pos": 8551
+        },
+        {
+          "name": "defaultIsProcessAlive",
+          "line": 205,
+          "col": 17,
+          "pos": 9375
+        },
+        {
+          "name": "escapeRegExp",
+          "line": 210,
+          "col": 17,
+          "pos": 9544
+        },
+        {
+          "name": "isCloudflaredTunnelForOrigin",
+          "line": 218,
+          "col": 17,
+          "pos": 9896
+        },
+        {
+          "name": "commandHasMetricsPort",
+          "line": 228,
+          "col": 17,
+          "pos": 10441
+        },
+        {
+          "name": "findMetricsListenerPid",
+          "line": 237,
+          "col": 17,
+          "pos": 10855
+        },
+        {
+          "name": "processCommandForPid",
+          "line": 250,
+          "col": 17,
+          "pos": 11361
+        },
+        {
+          "name": "verifyMetricsListener",
+          "line": 256,
+          "col": 23,
+          "pos": 11645
+        },
+        {
+          "name": "defaultPsCommand",
+          "line": 270,
+          "col": 17,
+          "pos": 12314
+        },
+        {
+          "name": "stopOwnedTunnelInner",
+          "line": 358,
+          "col": 23,
+          "pos": 16995
+        },
+        {
+          "name": "pickFreePort",
+          "line": 431,
+          "col": 17,
+          "pos": 20258
+        },
+        {
+          "name": "__drainChildStderr",
+          "line": 737,
+          "col": 17,
+          "pos": 35004
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/projects.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "readGatesForProject",
+          "line": 628,
+          "col": 10,
+          "pos": 26708
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/ideas.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "IDEAS_DIR",
+          "line": 15,
+          "col": 14,
+          "pos": 681
+        },
+        {
+          "name": "readIdeaFile",
+          "line": 24,
+          "col": 23,
+          "pos": 975
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/substrate.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "listSubstrateSkills",
+          "line": 108,
+          "col": 17,
+          "pos": 4101
+        },
+        {
+          "name": "getSubstrateSkill",
+          "line": 166,
+          "col": 17,
+          "pos": 6520
+        },
+        {
+          "name": "saveSubstrateSkill",
+          "line": 208,
+          "col": 17,
+          "pos": 7887
+        },
+        {
+          "name": "deleteSubstrateSkill",
+          "line": 229,
+          "col": 17,
+          "pos": 8674
+        },
+        {
+          "name": "getSubstrateInstructions",
+          "line": 239,
+          "col": 17,
+          "pos": 9150
+        },
+        {
+          "name": "saveSubstrateInstructions",
+          "line": 255,
+          "col": 17,
+          "pos": 9656
+        },
+        {
+          "name": "listSubstrateRoles",
+          "line": 263,
+          "col": 17,
+          "pos": 9996
+        },
+        {
+          "name": "saveSubstrateRole",
+          "line": 278,
+          "col": 17,
+          "pos": 10348
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/team-assist.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "leastLoadedRoleSession",
+          "line": 9,
+          "col": 17,
+          "pos": 373
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/typed-delivery.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "acceptedTypedDelivery",
+          "line": 75,
+          "col": 17,
+          "pos": 3969
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/model-profiles.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "THINKING_LEVELS",
+          "line": 20,
+          "col": 10,
+          "pos": 955
+        },
+        {
+          "name": "readProfiles",
+          "line": 234,
+          "col": 17,
+          "pos": 8462
+        },
+        {
+          "name": "readProfileRegistry",
+          "line": 239,
+          "col": 17,
+          "pos": 8599
+        },
+        {
+          "name": "roleDefaults",
+          "line": 364,
+          "col": 17,
+          "pos": 13099
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/model-catalog.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "CATALOG_CACHE_TTL_MS",
+          "line": 105,
+          "col": 14,
+          "pos": 4330
+        },
+        {
+          "name": "modelCatalogCachePath",
+          "line": 114,
+          "col": 17,
+          "pos": 4654
+        },
+        {
+          "name": "normalizeModelCatalog",
+          "line": 149,
+          "col": 17,
+          "pos": 5781
+        },
+        {
+          "name": "CATALOG_VERSION",
+          "line": 153,
+          "col": 10,
+          "pos": 5854
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/lsp.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "claudeLspServers",
+          "line": 24,
+          "col": 17,
+          "pos": 822
+        },
+        {
+          "name": "detectLspCapability",
+          "line": 31,
+          "col": 23,
+          "pos": 1125
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/compiler/engine.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "namespace": "compiler",
+          "name": "writeLockfile",
+          "line": 58,
+          "col": 17,
+          "pos": 2367
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/dashboard-process.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "sleep",
+          "line": 73,
+          "col": 17,
+          "pos": 2502
+        },
+        {
+          "name": "isProcessAlive",
+          "line": 77,
+          "col": 17,
+          "pos": 2581
+        },
+        {
+          "name": "dashboardLogPath",
+          "line": 85,
+          "col": 17,
+          "pos": 2697
+        },
+        {
+          "name": "tailFile",
+          "line": 92,
+          "col": 17,
+          "pos": 2927
+        },
+        {
+          "name": "stopDashboardProcess",
+          "line": 178,
+          "col": 23,
+          "pos": 6281
+        },
+        {
+          "name": "dashboardRunning",
+          "line": 255,
+          "col": 17,
+          "pos": 9226
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/role-preset.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "ROLE_EXEC_DEFAULTS",
+          "line": 10,
+          "col": 10,
+          "pos": 229
+        },
+        {
+          "name": "THINKING_LEVELS",
+          "line": 10,
+          "col": 30,
+          "pos": 249
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "cli/context.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "CONTEXT_HELP",
+          "line": 2,
+          "col": 14,
+          "pos": 100
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/team-registry.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "TEAMS_REGISTRY_VERSION",
+          "line": 10,
+          "col": 14,
+          "pos": 497
+        },
+        {
+          "name": "readTeamsSnapshot",
+          "line": 28,
+          "col": 17,
+          "pos": 1605
+        },
+        {
+          "name": "readTeams",
+          "line": 34,
+          "col": 17,
+          "pos": 1840
+        },
+        {
+          "name": "teamIsOpen",
+          "line": 162,
+          "col": 17,
+          "pos": 10427
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/agent-resolve.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "callerTeamId",
+          "line": 5,
+          "col": 17,
+          "pos": 316
+        },
+        {
+          "name": "resolveAgentScope",
+          "line": 15,
+          "col": 17,
+          "pos": 1180
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/management-registry.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "MAPPINGS_VERSION",
+          "line": 11,
+          "col": 14,
+          "pos": 631
+        },
+        {
+          "name": "TEAMS_VERSION",
+          "line": 12,
+          "col": 14,
+          "pos": 666
+        },
+        {
+          "name": "MAX_MANAGEMENT_INTENTS",
+          "line": 13,
+          "col": 14,
+          "pos": 698
+        },
+        {
+          "name": "copy",
+          "line": 16,
+          "col": 14,
+          "pos": 901
+        },
+        {
+          "name": "atomicManagementWrite",
+          "line": 21,
+          "col": 17,
+          "pos": 1192
+        },
+        {
+          "name": "normalizeTeam",
+          "line": 35,
+          "col": 17,
+          "pos": 1737
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/team-herdr.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "herdrBin",
+          "line": 22,
+          "col": 17,
+          "pos": 597
+        },
+        {
+          "name": "teamWorkspaceExists",
+          "line": 52,
+          "col": 17,
+          "pos": 1987
+        },
+        {
+          "name": "stopAndDeleteSession",
+          "line": 108,
+          "col": 17,
+          "pos": 4717
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/html-body.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "BLOCK_ID_PATTERN",
+          "line": 115,
+          "col": 14,
+          "pos": 6502
+        },
+        {
+          "name": "serializeNodes",
+          "line": 149,
+          "col": 17,
+          "pos": 8016
+        },
+        {
+          "name": "outlineFromDoc",
+          "line": 317,
+          "col": 17,
+          "pos": 14497
+        },
+        {
+          "name": "findBlockNode",
+          "line": 354,
+          "col": 17,
+          "pos": 15649
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/compiler/lint.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "TOTAL_CAP",
+          "line": 17,
+          "col": 14,
+          "pos": 833
+        },
+        {
+          "name": "lintFiles",
+          "line": 32,
+          "col": 17,
+          "pos": 1287
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/management-context.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "resolved",
+          "line": 12,
+          "col": 14,
+          "pos": 691
+        },
+        {
+          "name": "unavailable",
+          "line": 13,
+          "col": 14,
+          "pos": 757
+        },
+        {
+          "name": "notApplicable",
+          "line": 14,
+          "col": 14,
+          "pos": 863
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/management-resolve.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "managementResolutionError",
+          "line": 194,
+          "col": 17,
+          "pos": 19130
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/management-cli.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "managementSelectors",
+          "line": 6,
+          "col": 17,
+          "pos": 453
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/mermaid-check.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "markdownDiagramEntries",
+          "line": 158,
+          "col": 17,
+          "pos": 5944
+        },
+        {
+          "name": "htmlDiagramEntries",
+          "line": 188,
+          "col": 17,
+          "pos": 6845
+        },
+        {
+          "name": "buildDiagramAnchor",
+          "line": 244,
+          "col": 17,
+          "pos": 8729
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/body-anchor.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "anchorNeedle",
+          "line": 35,
+          "col": 17,
+          "pos": 1672
+        },
+        {
+          "name": "findAnchorMatches",
+          "line": 44,
+          "col": 17,
+          "pos": 2200
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/pi-inbox.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "piInboxPath",
+          "line": 6,
+          "col": 17,
+          "pos": 173
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/native-sessions.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "dedupeNativeSessions",
+          "line": 353,
+          "col": 17,
+          "pos": 12922
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/project-id.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "slugify",
+          "line": 14,
+          "col": 44,
+          "pos": 740
+        },
+        {
+          "name": "GOLEM_CONFIG_DIR",
+          "line": 16,
+          "col": 14,
+          "pos": 796
+        },
+        {
+          "name": "CENTRAL_GATES_DIR",
+          "line": 18,
+          "col": 14,
+          "pos": 892
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/plan.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "parsePlan",
+          "line": 25,
+          "col": 17,
+          "pos": 1115
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/util.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "shortId",
+          "line": 11,
+          "col": 17,
+          "pos": 170
+        },
+        {
+          "name": "clampList",
+          "line": 45,
+          "col": 17,
+          "pos": 1259
+        },
+        {
+          "name": "fileExists",
+          "line": 50,
+          "col": 23,
+          "pos": 1386
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/notification-schedules.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "notificationHandedOff",
+          "line": 8,
+          "col": 17,
+          "pos": 464
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "dashboard/server/comment-dispatch.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "COMMENT_DISPATCH_STATES",
+          "line": 3,
+          "col": 14,
+          "pos": 48
+        },
+        {
+          "name": "isHumanCommentAuthor",
+          "line": 5,
+          "col": 17,
+          "pos": 152
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    },
+    {
+      "file": "lib/management-agent.js",
+      "binaries": [],
+      "catalog": [],
+      "catalogReferences": [],
+      "dependencies": [],
+      "devDependencies": [],
+      "duplicates": [],
+      "enumMembers": [],
+      "exports": [
+        {
+          "name": "managedAgentRow",
+          "line": 9,
+          "col": 17,
+          "pos": 697
+        }
+      ],
+      "files": [],
+      "namespaceMembers": [],
+      "optionalPeerDependencies": [],
+      "types": [],
+      "unlisted": [],
+      "unresolved": []
+    }
+  ]
+}

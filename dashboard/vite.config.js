@@ -8,6 +8,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(here, '..', 'package.js
 
 export default defineConfig({
   root: path.join(here, 'web'),
+  cacheDir: process.env.GOLEM_VITE_CACHE_DIR,
   define: {
     __GOLEM_PACKAGE_VERSION__: JSON.stringify(packageJson.version),
   },
@@ -17,11 +18,12 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: 5173,
+    host: process.env.GOLEM_PROFILE ? '127.0.0.1' : undefined,
+    port: Number(process.env.GOLEM_VITE_PORT ?? '5173'),
     strictPort: true,
     proxy: {
-      '/api': 'http://127.0.0.1:7421',
-      '/ws': { target: 'ws://127.0.0.1:7421', ws: true },
+      '/api': process.env.GOLEM_DASHBOARD_URL ?? 'http://127.0.0.1:7421',
+      '/ws': { target: (process.env.GOLEM_DASHBOARD_URL ?? 'http://127.0.0.1:7421').replace(/^http/, 'ws'), ws: true },
     },
   },
 });

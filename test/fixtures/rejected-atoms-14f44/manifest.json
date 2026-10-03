@@ -1,0 +1,1201 @@
+{
+  "schema": 1,
+  "kind": "initial-atom-baseline-candidates-NOT-ACCEPTED",
+  "provenance": {
+    "productionSources": {
+      ".ladle/config.mjs": "21f1162b992d1b68ce6fe231efa8a859fa817b90ab8f20462b92dc2e7ee0535b",
+      ".ladle/vite.config.mjs": "106417dc6ecaf14110babf4c8cb037c823951709df7e463d6d10dc58c44e685e",
+      "dashboard/web/src/ui/atoms/Badge.stories.tsx": "2d49f04cd8216ff75df895832e56dab9a79288a022a841236344079960ba59c6",
+      "dashboard/web/src/ui/atoms/Badge.tsx": "9a4e82bfb8278a48a8ee112cde48640c23acf4c6e6ca40a66a83477e30aac1f1",
+      "dashboard/web/src/ui/atoms/Button.stories.tsx": "e1d741f8093eef163b43ad9a4c23c96cb3c1d64c62f118c8d7395f061f215f0e",
+      "dashboard/web/src/ui/atoms/Button.tsx": "df493e40fa336cbcbc2142496785fa0ad205df909fb8c5a0f630ff821d9649ce",
+      "dashboard/web/src/ui/atoms/IconButton.stories.tsx": "a621ff1290a3c20b43305f688d8836ec5e52e988da8fc81169ecc8d81c44dae4",
+      "dashboard/web/src/ui/atoms/IconButton.tsx": "068d80b4c93f1e8464037d41cd2484c39a2df0574396bce0663ce295bea3f62e",
+      "dashboard/web/src/ui/atoms/Input.stories.tsx": "166bed24e2a099ac2404f7715c5ef979c2eb32ce3908b3f8804c50f02bb72e8a",
+      "dashboard/web/src/ui/atoms/Input.tsx": "cb6b2e3e1f1c7822ee61784a49b163ffb04e8680771665b7b856f87e3780ec3d",
+      "dashboard/web/src/ui/atoms/Pill.stories.tsx": "a1e116e6f7914049f79236cc4939bc2e1bc61a3c1c2019102114fa429e504084",
+      "dashboard/web/src/ui/atoms/Pill.tsx": "0d506132e2fb95e01554bb54845c39c3236e06184be8f5b2ff354936ffb92663",
+      "dashboard/web/src/ui/atoms/action.ts": "2325df57aa0e8da5642025b87ad2f6b1473b6cff00086f57bd258568da23fcea",
+      "dashboard/web/src/ui/atoms/atoms.css": "5a0b73c122b142e09c1df8f662ba3ae4fba41e7a436b41f372ea68ba51f73aa2",
+      "dashboard/web/src/ui/fonts/fonts.css": "9b18b5fbae8ef82e08f0fd92b47c7fc8971031c43e3b2a422089b5b349d2a855",
+      "dashboard/web/src/ui/fonts/geist-LICENSE.txt": "71609cbb5c78b5870d712eab73a31d76622635c6ed034ab5cee3b9ecbda8685f",
+      "dashboard/web/src/ui/fonts/geist-latin-400-normal.woff2": "ead637fd0b6b887d829b3ce3f25fdc242b1de0cfb69c0d97987933675d1315ba",
+      "dashboard/web/src/ui/fonts/geist-latin-500-normal.woff2": "6145bf6706dbc1b6686f04f871489cf724951f00b752745896ccdcac07639a53",
+      "dashboard/web/src/ui/fonts/geist-latin-600-normal.woff2": "edde7cc4e2719898f981a6d970a756030fff75a8ed36dd6a457a60181b889ebf",
+      "dashboard/web/src/ui/fonts/geist-latin-700-normal.woff2": "728e76ff0b76212419e83011f5202c2fd1144da9d7915a4fa787561f5a3f334d",
+      "dashboard/web/src/ui/fonts/inventory.json": "c30bcf2adce8e7cce07f01eb3e45483e3d19869adfc66254adb298a12f805dc3",
+      "dashboard/web/src/ui/fonts/jetbrains-mono-LICENSE.txt": "403581b69dac5cff4079205e01c6b467e56af449ecbd7247693ddb1baafa005b",
+      "dashboard/web/src/ui/fonts/jetbrains-mono-latin-400-normal.woff2": "14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb",
+      "dashboard/web/src/ui/fonts/jetbrains-mono-latin-500-normal.woff2": "cb182feeed4d798ff6961d3c79f7026279448fca0676438aaecb21f3fc39553a",
+      "dashboard/web/src/ui/fonts/jetbrains-mono-latin-600-normal.woff2": "400c6bfda18d5d14acad1c15d6dcb9f8e13c015e7286317e0b9a482539bef147",
+      "dashboard/web/src/ui/tokens/.generations/g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a/contrast.json": "0e5b5914c7425de399ff8ada79fb2273ec1c579b6396b0ed08678e0bce51e438",
+      "dashboard/web/src/ui/tokens/.generations/g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a/registry.json": "156b89d12bfe0c12cc95ffba06d8b8f7c08a6ddca717d0e6647c9a12284be581",
+      "dashboard/web/src/ui/tokens/.generations/g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a/tokens.css": "068e64a327435c3543fdfaa044e49c22a25e202c79d69d0f2c592bd5957d1233",
+      "dashboard/web/src/ui/tokens/.generations/g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a/tokens.ts": "c0cb26ba1266a126451bf121f10279f394c308d517ce30a077dade6663d7341f",
+      "dashboard/web/src/ui/tokens/contrast-pairs.json": "837083015cbe36258f5bc607ac2c04a865e6513d870168b547aec43c391d9409",
+      "dashboard/web/src/ui/tokens/entry.css": "1e3148d954f1463b6511b979478cb7e013a8ce8f67d79c757dba2ab13be84ee1",
+      "dashboard/web/src/ui/tokens/generated": "b8c7535707a6b9c577fce6672554b8c6538702f0d2a952e526ea0832e1a18cf7",
+      "dashboard/web/src/ui/tokens/provenance.json": "1eda48df268731838e872fef5a47d85293a4b56c50db4ee29479ac63be794d8d",
+      "dashboard/web/src/ui/tokens/source/compact.tokens.json": "d4a464754c0500eafc0f4bcfe8e627f1ee67e7968772d2960af50ec26d99289f",
+      "dashboard/web/src/ui/tokens/source/component.tokens.json": "1e1caa262eedf92c8746828e6d3cd1d2f154e289236c723086f2d0f1299223c3",
+      "dashboard/web/src/ui/tokens/source/cozy.tokens.json": "51aa8876a1d4bac18df78c96c8ea995f607e9204f05dca0a90ba4488a151b191",
+      "dashboard/web/src/ui/tokens/source/dark.tokens.json": "e53ff1487c927bdda575c5c459c5cfdab1e33ad4c7c60868e3151417a3cf7645",
+      "dashboard/web/src/ui/tokens/source/light.tokens.json": "ec948e0b4bb562b418fa85dd0815ab5c0ee59201b682ed645f6e0ab31c457ff0",
+      "dashboard/web/src/ui/tokens/source/primitive.tokens.json": "20ffd16f177b45b811dccf90269fd3922356c7011eb5ef5e2365bf8c4f30da2c",
+      "dashboard/web/src/ui/tokens/source/semantic.tokens.json": "f558ce9293f2569e9865e099e7dce17447f80148ae82b211fa4083f969218b69",
+      "dashboard/web/src/ui/workshop/StoryFrame.tsx": "97ba5c1831bcd12a762421ea5389a1b79e6d807743e3c8fc2fc0830462817042",
+      "dashboard/web/src/ui/workshop/workshop.css": "cf9a4868518239171dc8dcead2b29828615f3d312862507d5c0dfa11f54d1ea2",
+      "package-lock.json": "e2916614fa9d8c758b2052af5f6bf6970b756499f8481989cbf348dda4f63d0d",
+      "package.json": "a9ea5c8775878d763750af3b63a078235f0ecf53e87b8c71bb73a2eeee2d9298",
+      "test/e2e/atoms.fixture.ts": "a2b47bbe1d82503ec058f249c6077ac2c60cd95bc561bfd8cc0ae9aa972c8acf",
+      "test/e2e/atoms.spec.ts": "5cffd33ea0d3e56a1b208a8f4446650b9faa3bc9f5ff731f1e9f4ec1a36bb806",
+      "test/e2e/playwright.atoms.config.ts": "cda63d39969b69ee542bb9679a86b8954ebed5fb0cf89fff6b63c6a358bb0f9a",
+      "test/integration/atoms-candidates.mjs": "5b1e1421d3050b5468899a8d0ebf201d4e80e77313a4e12285e354f75861a282",
+      "test/integration/atoms-linux-entry.mjs": "d55a2068259b945a2b5a01394f472bc41ea880380794d3c27d99acecec9ed63d",
+      "test/integration/atoms-linux-probe.mjs": "93ff99dae675fee1f1fcb0d1fc499aad4ab32b56a5094b250576143c0dd8ee1a",
+      "test/integration/atoms-workshop-probe.mjs": "80350f643773bf0067171303773d802ba3f1384f81b575d73e267d31dc677d1a"
+    },
+    "sourceCommit": "fb13de1e2f66e0e931224c82251d4aa4f25795f6",
+    "sourceTree": "3635852d7d36bd4a898ba4fb4c4757964e7ea5cd",
+    "archiveSha256": "175d47326e548a76b165b00172c811d7a4d71b88bd75eaa7c1bf6a9b16508286",
+    "platform": "linux/amd64",
+    "imageDigest": "sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7",
+    "imageId": "sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7",
+    "imageObserved": true,
+    "playwright": "1.63.0",
+    "chromiumRevision": "1243",
+    "chromiumVersion": "153.0.8010.12",
+    "executable": "/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "executableSha256": "8c599d43aec53f2460a31ae2f4af6bd863f8258b34ff519564bc5d4726bfaa1e",
+    "executableObserved": true,
+    "registrySha256": "545d52f8382c391e605562c330e9c1c534a16045898203037a49bb8bd769a946",
+    "nodeVersion": "v24.20.0",
+    "browsersPath": "/ms-playwright",
+    "functionalGreen": true,
+    "generation": "g-256b355fda9950321b2461508d5d27ed9cd8933f7183bcc30782b80017dda64a",
+    "fontInventorySha256": "c30bcf2adce8e7cce07f01eb3e45483e3d19869adfc66254adb298a12f805dc3",
+    "fonts": [
+      {
+        "file": "geist-latin-400-normal.woff2",
+        "sha256": "ead637fd0b6b887d829b3ce3f25fdc242b1de0cfb69c0d97987933675d1315ba",
+        "bytes": 12956
+      },
+      {
+        "file": "geist-latin-500-normal.woff2",
+        "sha256": "6145bf6706dbc1b6686f04f871489cf724951f00b752745896ccdcac07639a53",
+        "bytes": 13296
+      },
+      {
+        "file": "geist-latin-600-normal.woff2",
+        "sha256": "edde7cc4e2719898f981a6d970a756030fff75a8ed36dd6a457a60181b889ebf",
+        "bytes": 13372
+      },
+      {
+        "file": "geist-latin-700-normal.woff2",
+        "sha256": "728e76ff0b76212419e83011f5202c2fd1144da9d7915a4fa787561f5a3f334d",
+        "bytes": 13364
+      },
+      {
+        "file": "jetbrains-mono-latin-400-normal.woff2",
+        "sha256": "14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb",
+        "bytes": 21168
+      },
+      {
+        "file": "jetbrains-mono-latin-500-normal.woff2",
+        "sha256": "cb182feeed4d798ff6961d3c79f7026279448fca0676438aaecb21f3fc39553a",
+        "bytes": 21832
+      },
+      {
+        "file": "jetbrains-mono-latin-600-normal.woff2",
+        "sha256": "400c6bfda18d5d14acad1c15d6dcb9f8e13c015e7286317e0b9a482539bef147",
+        "bytes": 21860
+      }
+    ],
+    "clock": "2026-10-01T00:00:00Z",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "scale": 1
+  },
+  "files": [
+    {
+      "name": "badge-dark-compact-320.png",
+      "width": 320,
+      "height": 426,
+      "sha256": "878b07b38c9964bf87819467b7307e35e1cf5bb6b2510a2ac2caf61afd73fd6e",
+      "record": {
+        "name": "badge-dark-compact-320.png",
+        "atom": "badge",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 426
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "badge-dark-compact-640.png",
+      "width": 640,
+      "height": 383,
+      "sha256": "0844f26724e39d2225f573655df5ed8328fdf504d060be599510599baa23b2ad",
+      "record": {
+        "name": "badge-dark-compact-640.png",
+        "atom": "badge",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 383
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "badge-dark-cozy-320.png",
+      "width": 320,
+      "height": 526,
+      "sha256": "4cd5a3563e70b67d5524c73d29bb57cb9554ade382fed59851b431aee1d50492",
+      "record": {
+        "name": "badge-dark-cozy-320.png",
+        "atom": "badge",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 526
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "badge-dark-cozy-640.png",
+      "width": 640,
+      "height": 479,
+      "sha256": "b3513150c68ef5d9570a21489f4d3a324954ee163992153caaf041d71a4b2568",
+      "record": {
+        "name": "badge-dark-cozy-640.png",
+        "atom": "badge",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 479
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "badge-light-compact-320.png",
+      "width": 320,
+      "height": 426,
+      "sha256": "90df56e87e1f6838c654322c9d16366524c7db4242606ba71287ac7fce821fe0",
+      "record": {
+        "name": "badge-light-compact-320.png",
+        "atom": "badge",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 426
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "badge-light-compact-640.png",
+      "width": 640,
+      "height": 383,
+      "sha256": "320cceb56ebfd1e0d3d7df49373bf72372d2d0b936413edfec284db40b23eb38",
+      "record": {
+        "name": "badge-light-compact-640.png",
+        "atom": "badge",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 383
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "badge-light-cozy-320.png",
+      "width": 320,
+      "height": 526,
+      "sha256": "98d339345d3550c8c4c0fe0b8a53f8857eb61de6413b341a144b5878a598ec1f",
+      "record": {
+        "name": "badge-light-cozy-320.png",
+        "atom": "badge",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 526
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "badge-light-cozy-640.png",
+      "width": 640,
+      "height": 479,
+      "sha256": "7813ef2f158f796e2fb4c3cecd8dfad763f8e6698207210e53f42f331a71ec4c",
+      "record": {
+        "name": "badge-light-cozy-640.png",
+        "atom": "badge",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 479
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "button-dark-compact-320.png",
+      "width": 320,
+      "height": 634,
+      "sha256": "9f517a6a12f9c47ffd89da01102cc92bd79d5bcd3adc337c9cffd60418a85188",
+      "record": {
+        "name": "button-dark-compact-320.png",
+        "atom": "button",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 634
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "button-dark-compact-640.png",
+      "width": 640,
+      "height": 571,
+      "sha256": "2ba55a6e28d3b720574d74d7d9e4406fa306323821fcd4308d3d5a3e810fa185",
+      "record": {
+        "name": "button-dark-compact-640.png",
+        "atom": "button",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 571
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "button-dark-cozy-320.png",
+      "width": 320,
+      "height": 786,
+      "sha256": "ab3f73b58d3e4d07e15f23210d40faf6afaa4324498e7f087dc8c696f68adfad",
+      "record": {
+        "name": "button-dark-cozy-320.png",
+        "atom": "button",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 786
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "button-dark-cozy-640.png",
+      "width": 640,
+      "height": 723,
+      "sha256": "3017113b0838914f9d904880441ee56b28d7da2f14a779fb16efa71a8af1bfb4",
+      "record": {
+        "name": "button-dark-cozy-640.png",
+        "atom": "button",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 723
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "button-light-compact-320.png",
+      "width": 320,
+      "height": 634,
+      "sha256": "0519c6893236e1d5ea0621c8c15a41e8d9c3aee42102a27b1439c6f0645785ad",
+      "record": {
+        "name": "button-light-compact-320.png",
+        "atom": "button",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 634
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "button-light-compact-640.png",
+      "width": 640,
+      "height": 571,
+      "sha256": "46def806b70ada735e53679f807bb6c45cef82546f0341fb07d655ce4e0e34bd",
+      "record": {
+        "name": "button-light-compact-640.png",
+        "atom": "button",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 571
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "button-light-cozy-320.png",
+      "width": 320,
+      "height": 786,
+      "sha256": "403fe4dab4be855648dd1027deac01ec830f04fa829b095c9df623cd36245a3c",
+      "record": {
+        "name": "button-light-cozy-320.png",
+        "atom": "button",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 786
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "button-light-cozy-640.png",
+      "width": 640,
+      "height": 723,
+      "sha256": "26c8b3c118f944be14c3941f9694ebfbdbfbf8a2a1a44bf345123eea3f84ea3f",
+      "record": {
+        "name": "button-light-cozy-640.png",
+        "atom": "button",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 723
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "iconbutton-dark-compact-320.png",
+      "width": 320,
+      "height": 364,
+      "sha256": "24af76a4389df404430ce8928c4b3618d0ac64b7494a6665ce6c768d7d4666f6",
+      "record": {
+        "name": "iconbutton-dark-compact-320.png",
+        "atom": "iconbutton",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 364
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "iconbutton-dark-compact-640.png",
+      "width": 640,
+      "height": 342,
+      "sha256": "afa58a7487de55d326b0f265f537da075e4a9e3ebaaa06e86a55ac9ea3de48b4",
+      "record": {
+        "name": "iconbutton-dark-compact-640.png",
+        "atom": "iconbutton",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 342
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "iconbutton-dark-cozy-320.png",
+      "width": 320,
+      "height": 468,
+      "sha256": "00d9546f1e35eb49b5a339411c8ee62fb07e394b4d812d4c6b40f3d94006acf3",
+      "record": {
+        "name": "iconbutton-dark-cozy-320.png",
+        "atom": "iconbutton",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 468
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "iconbutton-dark-cozy-640.png",
+      "width": 640,
+      "height": 442,
+      "sha256": "6e97f2d41b86dc4bbc21a4de89465856580aabbdbce157c0ddfc2300d03ff803",
+      "record": {
+        "name": "iconbutton-dark-cozy-640.png",
+        "atom": "iconbutton",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 442
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "iconbutton-light-compact-320.png",
+      "width": 320,
+      "height": 364,
+      "sha256": "eca8e8ef38663264de8b51f0494cfb6b603446264ad7743095b4e6a13e3c2574",
+      "record": {
+        "name": "iconbutton-light-compact-320.png",
+        "atom": "iconbutton",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 364
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "iconbutton-light-compact-640.png",
+      "width": 640,
+      "height": 342,
+      "sha256": "4b169d59198e7088347e087e503368b342dd4aa529e1ceaacba25014de8ccde7",
+      "record": {
+        "name": "iconbutton-light-compact-640.png",
+        "atom": "iconbutton",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 342
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "iconbutton-light-cozy-320.png",
+      "width": 320,
+      "height": 468,
+      "sha256": "0755a2d49daa671e09f04449df749da3af39aa50de8bd0adbc7a0f0d46556188",
+      "record": {
+        "name": "iconbutton-light-cozy-320.png",
+        "atom": "iconbutton",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 468
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "iconbutton-light-cozy-640.png",
+      "width": 640,
+      "height": 442,
+      "sha256": "723ba234fb8a02bf3f0871ad2e48f6755bd528e5149aa84fc1350b041e5e89c8",
+      "record": {
+        "name": "iconbutton-light-cozy-640.png",
+        "atom": "iconbutton",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 442
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "busy+keyboard-focus"
+      }
+    },
+    {
+      "name": "input-dark-compact-320.png",
+      "width": 320,
+      "height": 647,
+      "sha256": "294ae70e3d1f936bd0493828da2d9e14c46ac2fa91e8159b7a19e71d1acf5428",
+      "record": {
+        "name": "input-dark-compact-320.png",
+        "atom": "input",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 647
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "invalid+keyboard-focus"
+      }
+    },
+    {
+      "name": "input-dark-compact-640.png",
+      "width": 640,
+      "height": 604,
+      "sha256": "9da641866212810cdcef413420928e7cced3b8aaff27847eaa6021ec8a77ce44",
+      "record": {
+        "name": "input-dark-compact-640.png",
+        "atom": "input",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 604
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "invalid+keyboard-focus"
+      }
+    },
+    {
+      "name": "input-dark-cozy-320.png",
+      "width": 320,
+      "height": 807,
+      "sha256": "7895d2a0843ad4a4fc8560bf605ad102b50ade97db537546c2ef28646970941a",
+      "record": {
+        "name": "input-dark-cozy-320.png",
+        "atom": "input",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 807
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "invalid+keyboard-focus"
+      }
+    },
+    {
+      "name": "input-dark-cozy-640.png",
+      "width": 640,
+      "height": 760,
+      "sha256": "7930b058ee9650055e94b16187fa80c0f932d122002d6c864a7dfd4bfe65fe6a",
+      "record": {
+        "name": "input-dark-cozy-640.png",
+        "atom": "input",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 760
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "invalid+keyboard-focus"
+      }
+    },
+    {
+      "name": "input-light-compact-320.png",
+      "width": 320,
+      "height": 647,
+      "sha256": "d32c8da56b0087c4e257a0a3e81745cea0a8166cc207dcc9a07e712e74225c78",
+      "record": {
+        "name": "input-light-compact-320.png",
+        "atom": "input",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 647
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "invalid+keyboard-focus"
+      }
+    },
+    {
+      "name": "input-light-compact-640.png",
+      "width": 640,
+      "height": 604,
+      "sha256": "4b99faa68e420ebc60c930b6c3bed855d1b4e2ac0acd21b5b3048a19b32e57c5",
+      "record": {
+        "name": "input-light-compact-640.png",
+        "atom": "input",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 604
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "invalid+keyboard-focus"
+      }
+    },
+    {
+      "name": "input-light-cozy-320.png",
+      "width": 320,
+      "height": 807,
+      "sha256": "2f7a80f46e97b757aaf7f73e8068a332d29241f1d506bd30fdf3367474495d5c",
+      "record": {
+        "name": "input-light-cozy-320.png",
+        "atom": "input",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 807
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "invalid+keyboard-focus"
+      }
+    },
+    {
+      "name": "input-light-cozy-640.png",
+      "width": 640,
+      "height": 760,
+      "sha256": "e649f88d75998ff3c940f06bcad1489581b29315165fb84c355ddf41e57785fe",
+      "record": {
+        "name": "input-light-cozy-640.png",
+        "atom": "input",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 760
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "invalid+keyboard-focus"
+      }
+    },
+    {
+      "name": "pill-dark-compact-320.png",
+      "width": 320,
+      "height": 508,
+      "sha256": "d1f43bcb1479c100a6126ec9ebbba1e6ca0531b5c68e4847df265f3d26160634",
+      "record": {
+        "name": "pill-dark-compact-320.png",
+        "atom": "pill",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 508
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "pill-dark-compact-640.png",
+      "width": 640,
+      "height": 465,
+      "sha256": "9d189f3619de7ca3ea842339930e75fcc1c293bd7cd1282d1d04fbafa81305b3",
+      "record": {
+        "name": "pill-dark-compact-640.png",
+        "atom": "pill",
+        "theme": "dark",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 465
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "pill-dark-cozy-320.png",
+      "width": 320,
+      "height": 632,
+      "sha256": "bf0ec1a50339131f706963cc1c137f36675417ec25ba825319076253515155bb",
+      "record": {
+        "name": "pill-dark-cozy-320.png",
+        "atom": "pill",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 632
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "pill-dark-cozy-640.png",
+      "width": 640,
+      "height": 585,
+      "sha256": "79bf89e867ea88fcbd8706d7ebc5b3b175d6984e3ba6b696fe3ec01676b82c3a",
+      "record": {
+        "name": "pill-dark-cozy-640.png",
+        "atom": "pill",
+        "theme": "dark",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 585
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "pill-light-compact-320.png",
+      "width": 320,
+      "height": 508,
+      "sha256": "6f6db497d4bb90e2a471bea6bf40c14d863344cc6de851f81cc1dad8c5dd2615",
+      "record": {
+        "name": "pill-light-compact-320.png",
+        "atom": "pill",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 508
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "pill-light-compact-640.png",
+      "width": 640,
+      "height": 465,
+      "sha256": "14c9820c29671ea77f9bef478b060961835f203b58f8f9b29b508e663e6e7e55",
+      "record": {
+        "name": "pill-light-compact-640.png",
+        "atom": "pill",
+        "theme": "light",
+        "density": "compact",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 465
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "pill-light-cozy-320.png",
+      "width": 320,
+      "height": 632,
+      "sha256": "6683ba5a961777c0e8bce85cf07e0586b2265db3144a8a89926132c6d58787fb",
+      "record": {
+        "name": "pill-light-cozy-320.png",
+        "atom": "pill",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 320,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 632
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    },
+    {
+      "name": "pill-light-cozy-640.png",
+      "width": 640,
+      "height": 585,
+      "sha256": "8dd78354917b4f2d8f56c6ddd943c184e0fb196e5746f366a55c0c67a137e0c2",
+      "record": {
+        "name": "pill-light-cozy-640.png",
+        "atom": "pill",
+        "theme": "light",
+        "density": "cozy",
+        "viewport": {
+          "width": 640,
+          "height": 1200
+        },
+        "panel": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 585
+        },
+        "scale": 1,
+        "axeViolations": 0,
+        "fontsReady": true,
+        "browserVersion": "153.0.8010.12",
+        "focusState": "noninteractive"
+      }
+    }
+  ]
+}

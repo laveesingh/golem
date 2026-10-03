@@ -1,0 +1,100 @@
+{
+  "semantic": {
+    "surface": {
+      "page": {
+        "$type": "color",
+        "$value": "{primitive.color.light.page}"
+      },
+      "panel": {
+        "$type": "color",
+        "$value": "{primitive.color.light.panel}"
+      },
+      "raised": {
+        "$type": "color",
+        "$value": "{primitive.color.light.raised}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{primitive.color.light.hover}"
+      },
+      "selected": {
+        "$type": "color",
+        "$value": "{primitive.color.light.selected}"
+      },
+      "disabled": {
+        "$type": "color",
+        "$value": "{primitive.color.light.raised}"
+      }
+    },
+    "text": {
+      "primary": {
+        "$type": "color",
+        "$value": "{primitive.color.light.primary}"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "{primitive.color.light.secondary}"
+      },
+      "muted": {
+        "$type": "color",
+        "$value": "{primitive.color.light.muted}"
+      },
+      "disabled": {
+        "$type": "color",
+        "$value": "{primitive.color.light.muted}"
+      }
+    },
+    "status": {
+      "working": {
+        "$type": "color",
+        "$value": "{primitive.color.light.working}"
+      },
+      "idle": {
+        "$type": "color",
+        "$value": "{primitive.color.light.idle}"
+      },
+      "review": {
+        "$type": "color",
+        "$value": "{primitive.color.light.review}"
+      },
+      "blocked": {
+        "$type": "color",
+        "$value": "{primitive.color.light.blocked}"
+      },
+      "done": {
+        "$type": "color",
+        "$value": "{primitive.color.light.done}"
+      },
+      "triage": {
+        "$type": "color",
+        "$value": "{primitive.color.light.triage}"
+      },
+      "open": {
+        "$type": "color",
+        "$value": "{primitive.color.light.open}"
+      }
+    },
+    "accent": {
+      "fill": {
+        "$type": "color",
+        "$value": "{primitive.color.light.accent}"
+      },
+      "ink": {
+        "$type": "color",
+        "$value": "{primitive.color.light.panel}"
+      }
+    },
+    "focus": {
+      "color": {
+        "$type": "color",
+        "$value": "{primitive.color.light.accent}"
+      }
+    },
+    "border": {
+      "control": {
+        "$type": "color",
+        "$value": "{primitive.color.light.primary}"
+      }
+    }
+  }
+}

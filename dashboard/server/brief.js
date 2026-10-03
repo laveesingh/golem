@@ -143,7 +143,7 @@ function renderAuthenticatedContext(body, metadata = null) {
 // (Pi) receive it through their durable /brief adapter; Claude channels
 // receive it through the ordinary brief transport with the authenticated
 // sender context rendered.
-export async function pushControlEnvelope({ envelope, content, metadata: suppliedMetadata = null } = {}, sessionId) {
+export async function pushControlEnvelope({ envelope, content, legacy = null, metadata: suppliedMetadata = null } = {}, sessionId) {
   if (!envelope?.id || !envelope?.sender_session_id || !envelope?.target_session_id) {
     return { ok: false, status: 400, body: '', error: 'durable control envelope is missing canonical sender, target, or id', failure_stage: 'before_native', retryable: false };
   }
@@ -177,12 +177,7 @@ export async function pushGateVerdict(gateId, verdict, body, sessionId) {
   return forward('POST', `/gates/${encodeURIComponent(gateId)}/${verdict}`, body, sessionId);
 }
 
-export async function channelHealth(sessionId) {
-  return forward('GET', '/healthz', null, sessionId);
-}
-
-// Used by /api/channel/list — exposes the live channels so the frontend can
-// label tabs / pickers with their target endpoints.
+// Shared delivery discovery; snapshot consumers use state.channels().
 export async function listChannels() {
   return readChannels();
 }

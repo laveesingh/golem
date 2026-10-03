@@ -1,45 +1,46 @@
 # REPO-MAP.md
-> Last verified: 2026-10-02 @ 20a5cf5 — maintained via golem:docs-maintenance.
+> Last verified: 2026-10-03 @ 5bb4fe5 — maintained via golem:docs-maintenance.
 
 ## Directory structure
 
-- `cli/` — CLI entry points and command dispatch.
-- `lib/` — shared runtime, compiler, delivery, and harness helpers.
+- `cli/` — JS bins → native/emitted bootstrap → commands.
+- `lib/` — runtime/compiler plus leaf TypeBox `contracts/`.
 - `substrate/` — instruction, role, skill, hook, and plugin sources.
 - `plugin/` — generated CC rollback copy; never hand-edit.
 - `dashboard/` — Fastify tracker/API, web source, and built UI.
 - `mcp/channel/` — tracker MCP server and REST client.
 - `shims/` — Pi extension.
+- `contracts/` — generated pilot schemas + release provenance.
+- `tools/`, `test/` — gates/Vitest; `docs/testing-runner.md`.
 
 ## Key modules & entry points
 
 ### CLI and collaboration
 
-Management: `lib/management-{context,resolve,registry,session,team,agent,capabilities}.js`.
-Controls target native panes, not process ownership.
-`cli/collaboration.js` schedules/messages; `cli/ticket.js` tracker authoring.
-`lib/session-role.js` defines roles; retired names only migrate.
+`lib/management-*.js` controls native panes, not process ownership.
+`cli/collaboration.js` schedules/messages; `cli/ticket.js` authors tracker.
+`lib/session-role.ts`: roles; retired names only migrate.
+Config: `lib/golem-config.ts` uses `read-versioned.ts`; hooks use `config-role-default.ts`.
 
 ### Instructions
 
-`substrate/skills/`: `spec-driven-development/` (spec method), `lead/`, `spec-writing/`,
-`tracker/` (records, templates, ticket CLI), `team-ops/` (teams, agents, reminders).
+`substrate/skills/`: spec methods, role methods, tracker authoring and team operations.
 
 ### Dashboard
 
-`dashboard/server/index.js` owns admin REST/WS; `tracker-db.js` owns SQLite tickets.
-`share-tunnel.js` owns one Golem-owned cloudflared quick tunnel to the dashboard via
+`index.js` owns REST/WS; `contract-pilot.ts` owns health/create; `tracker-db.js` owns SQLite.
+`share-tunnel.js` owns one cloudflared quick tunnel to the dashboard via
 `~/.golem/share-tunnel.json`: Share hands out `/read/<id>` links, Stop kills the tunnel.
 `html-body.js`/`md-body.js` patch strict anchors via `body-anchor.js`; `mermaid-check.js`
 validates diagrams. `notification-schedule*.js` schedules; `comment-dispatch.js` routes feedback.
-Agents never touch SQLite directly.
+Agents never write SQLite directly.
 
 ### Compiler and delivery
 
-`lib/compiler/` renders substrate with drift/tamper checks; `lint.js` only reports word count.
+`lib/compiler/` renders substrate with drift/tamper checks; instruction-size lint is retired.
 `lib/typed-worker-endpoint.js` owns Pi envelopes; `lib/herdr-driver.js` native hosting.
 `lib/team-registry.js` never treats worker cache as membership authority.
-`lib/runtime-compatibility.js` separates policy warnings from initialization/native outcomes.
+`lib/runtime-compatibility.js` keeps policy warnings separate from native outcomes.
 
 ## Data flow
 
@@ -50,7 +51,7 @@ native/typed dispatch. Sharing tunnels the dashboard itself; Stop ends every sha
 
 - Project rules come from `AGENTS.md`; shared rules come from `substrate/`, never renders.
 - Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
-- Pi 0.99.1 / Node.js 22.19+ are tested baselines; version/provider labels warn, not veto delivery.
+- Pi 0.99.1 / Node 22.19+ baselines; labels warn, never veto delivery.
 - Pi and Claude Code are the only harnesses. No test or lint check inspects instruction content.
 - Herdr tests must `session stop` before deleting a temp HOME; a deleted socket dir leaks a live server.
 
@@ -59,7 +60,7 @@ native/typed dispatch. Sharing tunnels the dashboard itself; Stop ends every sha
 | Work | Check |
 |---|---|
 | CLI | `node cli/golem.js help` |
-| Instructions/templates | `node test/instruction-workflow.test.mjs` |
+| Source check/tests | `npm run check` / `npm test` |
 | Installed render drift | `golem sync --check --all` |
 | Dashboard | `npm run check:dashboard` |
 | Collaboration | `npm run test:collaboration` |

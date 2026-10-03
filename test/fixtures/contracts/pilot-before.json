@@ -1,0 +1,195 @@
+{
+  "baseline_commit": "a82ad10ed22289519b8ad6c8dd0056d1fe2ed052",
+  "cases": [
+    {
+      "name": "health",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "projects_root": "<private-projects>",
+        "project_count": 0,
+        "server_time": "<timestamp>"
+      }
+    },
+    {
+      "name": "created-markdown",
+      "status": 201,
+      "body": {
+        "id": "TKT-0001",
+        "seq": 1,
+        "project_id": "smoketests-000000",
+        "kind": "task",
+        "title": "SMOKE-baseline valid",
+        "body": "",
+        "body_format": "markdown",
+        "body_revision": 1,
+        "state": "todo",
+        "priority": null,
+        "labels": [
+          "known"
+        ],
+        "parent_id": null,
+        "assignee": null,
+        "created_by": "smoke",
+        "dispatched_to": null,
+        "dispatched_at": null,
+        "source_ref": "github:example/repo#1",
+        "created_at": "<timestamp>",
+        "updated_at": "<timestamp>",
+        "pseq": 1,
+        "display_id": "SMO-1"
+      }
+    },
+    {
+      "name": "created-html",
+      "status": 201,
+      "body": {
+        "id": "TKT-0002",
+        "seq": 2,
+        "project_id": "smoketests-000000",
+        "kind": "spec",
+        "title": "SMOKE-baseline html",
+        "body": "<h2 data-block-id=\"b-e21e5d5935a2\">fixture</h2><p data-block-id=\"b-81301cc6031e\">body</p>",
+        "body_format": "html",
+        "body_revision": 1,
+        "state": "todo",
+        "priority": null,
+        "labels": [],
+        "parent_id": null,
+        "assignee": null,
+        "created_by": "smoke",
+        "dispatched_to": null,
+        "dispatched_at": null,
+        "source_ref": null,
+        "created_at": "<timestamp>",
+        "updated_at": "<timestamp>",
+        "pseq": 2,
+        "display_id": "SMO-2",
+        "outline": [
+          {
+            "id": "b-e21e5d5935a2",
+            "parent_id": null,
+            "kind": "h2",
+            "tag": "h2",
+            "heading": "fixture",
+            "short_text": "fixture",
+            "hash": "9058904a18387438756515ce282c3ab135508ad49b47b8b368f46eea4a341a06"
+          },
+          {
+            "id": "b-81301cc6031e",
+            "parent_id": null,
+            "kind": "p",
+            "tag": "p",
+            "heading": null,
+            "short_text": "body",
+            "hash": "1e99eb6d8f7b9a963de870d9168e96c8337220be90663f702ab135c3f44966f1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing-project",
+      "status": 400,
+      "body": {
+        "error": "createTicket: project_id is required",
+        "code": "invalid_input"
+      }
+    },
+    {
+      "name": "missing-title",
+      "status": 400,
+      "body": {
+        "error": "createTicket: title is required",
+        "code": "invalid_input"
+      }
+    },
+    {
+      "name": "invalid-kind",
+      "status": 400,
+      "body": {
+        "error": "createTicket: invalid kind 'nonsense'",
+        "code": "invalid_input"
+      }
+    },
+    {
+      "name": "unsupported-html",
+      "status": 400,
+      "body": {
+        "error": "html body_format is supported for specs only, not 'task'",
+        "code": "unsupported_format"
+      }
+    },
+    {
+      "name": "malformed-html",
+      "status": 400,
+      "body": {
+        "error": "malformed data-block-id 'wrong'",
+        "code": "malformed_block_id",
+        "block_id": "wrong"
+      }
+    },
+    {
+      "name": "numeric-title",
+      "status": 201,
+      "body": {
+        "id": "TKT-0003",
+        "seq": 3,
+        "project_id": "smoketests-000000",
+        "kind": "task",
+        "title": 123,
+        "body": "",
+        "body_format": "markdown",
+        "body_revision": 1,
+        "state": "todo",
+        "priority": null,
+        "labels": [],
+        "parent_id": null,
+        "assignee": null,
+        "created_by": "smoke",
+        "dispatched_to": null,
+        "dispatched_at": null,
+        "source_ref": null,
+        "created_at": "<timestamp>",
+        "updated_at": "<timestamp>",
+        "pseq": 3,
+        "display_id": "SMO-3"
+      }
+    },
+    {
+      "name": "numeric-project",
+      "status": 201,
+      "body": {
+        "id": "TKT-0004",
+        "seq": 4,
+        "project_id": 123,
+        "kind": "task",
+        "title": "SMOKE-numeric-project",
+        "body": "",
+        "body_format": "markdown",
+        "body_revision": 1,
+        "state": "todo",
+        "priority": null,
+        "labels": [],
+        "parent_id": null,
+        "assignee": null,
+        "created_by": "smoke",
+        "dispatched_to": null,
+        "dispatched_at": null,
+        "source_ref": null,
+        "created_at": "<timestamp>",
+        "updated_at": "<timestamp>",
+        "pseq": 1,
+        "display_id": "123-1"
+      }
+    },
+    {
+      "name": "malformed-json",
+      "status": 400,
+      "body": {
+        "statusCode": 400,
+        "error": "Bad Request",
+        "message": "Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+      }
+    }
+  ]
+}

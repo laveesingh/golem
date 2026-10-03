@@ -1,0 +1,150 @@
+{
+  "source": "/tmp/gol458-delta-linux-full.log",
+  "command": "docker run --rm --network none --name golem-gol458-delta-<epoch> golem-gol458-ci:delta",
+  "platform": "Linux arm64 Node22.22.3",
+  "runtimeExit": 0,
+  "fullFiles": 10,
+  "fullTests": 90,
+  "receipts": [
+    {
+      "case": "test/integration/adapter-safety.test.mjs > absent-fake fails closed before any native/default connection",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "pipeDrainTimedOut": false,
+      "stdout": "safety proof: absent-fake\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-oC6aRv",
+      "ownedGroups": [],
+      "cleanupErrors": []
+    },
+    {
+      "case": "test/integration/adapter-safety.test.mjs > production-port fails closed before any native/default connection",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "pipeDrainTimedOut": false,
+      "stdout": "safety proof: production-port\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-syesYU",
+      "ownedGroups": [],
+      "cleanupErrors": []
+    },
+    {
+      "case": "test/integration/adapter-safety.test.mjs > fail-group preserves nonzero/timeout evidence and cleans detached groups",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "pipeDrainTimedOut": false,
+      "stdout": "",
+      "stderr": "file:///work/golem/test/fixtures/w2-safety-probe.mjs:65\n  if (mode === 'fail-group') throw Error('deliberate adapter failure');\n                                   ^\n\nError: deliberate adapter failure\n    at file:///work/golem/test/fixtures/w2-safety-probe.mjs:65:36\n\nNode.js v22.22.3\n",
+      "sandboxRoot": "/tmp/gol458-PoMYhd",
+      "ownedGroups": [
+        {
+          "pid": 191,
+          "birth": "Thu Oct  1 18:10:53 2026"
+        }
+      ],
+      "cleanupErrors": []
+    },
+    {
+      "case": "test/integration/adapter-safety.test.mjs > timeout-group preserves nonzero/timeout evidence and cleans detached groups",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": null,
+      "signal": "SIGKILL",
+      "timedOut": true,
+      "pipeDrainTimedOut": false,
+      "stdout": "",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-otf8mf",
+      "ownedGroups": [
+        {
+          "pid": 208,
+          "birth": "Thu Oct  1 18:10:53 2026"
+        }
+      ],
+      "cleanupErrors": []
+    },
+    {
+      "case": "test/integration/adapter-safety.test.mjs > timeout-pipe-group preserves nonzero/timeout evidence and cleans detached groups",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": null,
+      "signal": "SIGKILL",
+      "timedOut": true,
+      "pipeDrainTimedOut": false,
+      "stdout": "owned-detached-pid:226\ninherited-pipe-ready\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-sj1YrS",
+      "ownedGroups": [
+        {
+          "pid": 226,
+          "birth": "Thu Oct  1 18:10:54 2026"
+        }
+      ],
+      "cleanupErrors": []
+    },
+    {
+      "case": "test/integration/adapter-safety.test.mjs > exit-pipe-group preserves nonzero/timeout evidence and cleans detached groups",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "pipeDrainTimedOut": false,
+      "stdout": "owned-detached-pid:244\ninherited-pipe-ready\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-jfOfMJ",
+      "ownedGroups": [
+        {
+          "pid": 244,
+          "birth": "Thu Oct  1 18:10:55 2026"
+        }
+      ],
+      "cleanupErrors": []
+    },
+    {
+      "case": "test/integration/html-mutation-safety.test.mjs > mutation timeout cannot leave checkout residue",
+      "file": "test/fixtures/w2-html-mutation-probe.mjs",
+      "code": null,
+      "signal": "SIGKILL",
+      "timedOut": true,
+      "pipeDrainTimedOut": false,
+      "stdout": "{\"mirror\":\"/tmp/gol458-f8jrHw/html-mutation-bfWrvU\",\"mutant\":\"/tmp/gol458-f8jrHw/html-mutation-bfWrvU/.gol343-mutant.mjs\",\"ordinarySafe\":true,\"mutantUnsafe\":true}\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-f8jrHw",
+      "ownedGroups": [],
+      "cleanupErrors": []
+    },
+    {
+      "case": "test/integration/html-mutation-safety.test.mjs > mutation interrupt cannot leave checkout residue",
+      "file": "test/fixtures/w2-html-mutation-probe.mjs",
+      "code": null,
+      "signal": "SIGTERM",
+      "timedOut": false,
+      "pipeDrainTimedOut": false,
+      "stdout": "{\"mirror\":\"/tmp/gol458-RUrEEV/html-mutation-ZWPvZ4\",\"mutant\":\"/tmp/gol458-RUrEEV/html-mutation-ZWPvZ4/.gol343-mutant.mjs\",\"ordinarySafe\":true,\"mutantUnsafe\":true}\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-RUrEEV",
+      "ownedGroups": [],
+      "cleanupErrors": []
+    },
+    {
+      "case": "test/integration/retained-root.test.mjs > uncertain subgroup identity bounds pipe draining and retains owned roots",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": null,
+      "signal": "SIGKILL",
+      "timedOut": true,
+      "pipeDrainTimedOut": true,
+      "stdout": "owned-detached-pid:383\ninherited-pipe-ready\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-9cz5r8",
+      "ownedGroups": [],
+      "cleanupErrors": [
+        "owned detached group identity indeterminate; retain /tmp/gol458-9cz5r8",
+        "pipe drain indeterminate; retained /tmp/gol458-9cz5r8"
+      ]
+    }
+  ]
+}

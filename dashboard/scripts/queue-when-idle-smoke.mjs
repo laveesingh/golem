@@ -10,7 +10,7 @@ import url from 'node:url';
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const run = promisify(execFile);
 try {
-  const { stdout, stderr } = await run(process.execPath, [path.join(here, 'dispatch-smoke.mjs')]);
+  const { stdout, stderr } = await run(process.execPath, [path.join(here, 'dispatch-smoke.mjs')], { timeout: 60000 });
   process.stdout.write(stdout);
   process.stderr.write(stderr);
   if (!stdout.includes('when_idle: envelope is undelivered without relying on status')) throw new Error('queue assertions did not run');

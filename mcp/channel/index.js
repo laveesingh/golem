@@ -20,6 +20,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { URL, fileURLToPath } from 'node:url';
+import { packageLocation } from '../../lib/package-root.ts';
 import { execFile, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -36,9 +37,10 @@ import { compactDispatch, compactTicket, compactTicketList, compactTicketRead } 
 const GOLEM_TOOL_LIST = GOLEM_TOOL_CONTRACTS.map((c) => ({ name: c.name, description: c.description, inputSchema: c.inputSchema }));
 import { resolveCallerSessionId, resolveProjectCwd, sessionsForParent } from './identity.js';
 import { readClaudeSessionRecord } from '../../lib/claude-session-context.js';
-import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../../lib/session-role.js';
+import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../../lib/session-role.ts';
 import { releaseEndpointLeases, renewEndpointLease, upsertSessionFact } from '../../lib/session-facts.js';
 import { claudeConsumerStatus, submitClaudeChannelNotification } from '../../lib/runtime-compatibility.js';
+import { tryRecordScenarioProjection } from '../../lib/scenario-recorder.ts';
 
 const VERSION = '0.1.0';
 // Port selection (multi-CEO safe by default):
@@ -360,6 +362,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
     }
     broadcast('ack', payload);
+    tryRecordScenarioProjection({ boundary: 'mcp', direction: 'out', operation: 'mcp-return', fields: { tool_name: 'ack', ...(payload.envelope_id ? { envelope_id: payload.envelope_id } : {}), ok: true, state: 'acknowledged' } });
     return { content: [{ type: 'text', text: 'ack broadcast' }] };
   }
 
@@ -386,11 +389,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     // "what does a session need to know" would drift, and the drift would be
     // invisible because each looks correct on its own.
     try {
-      const here = path.dirname(fileURLToPath(import.meta.url));
-      const script = [
-        path.join(here, '..', '..', 'hooks', 'tracker-context.sh'),
-        path.join(here, '..', '..', 'substrate', 'hooks', 'tracker-context.sh'),
-      ].find((p) => fs.existsSync(p));
+      const location = packageLocation(import.meta.url);
+      const candidate = path.join(location.root, location.kind === 'render' ? 'hooks' : 'substrate/hooks', 'tracker-context.sh');
+      const script = fs.existsSync(candidate) ? candidate : null;
       if (!script) {
         return { isError: true, content: [{ type: 'text', text: 'project_context: tracker-context.sh not found relative to this server.' }] };
       }
@@ -536,7 +537,17 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           status: args.status,
           parent_id: args.parent_id,
         };
-        return await jsonResult(await tracker.addComment(args.id, comment));
+        // The return is recorded only after the store confirms it, from the
+        // actual result. A failure records ok:false and never 'returned'.
+        let stored;
+        try {
+          stored = await tracker.addComment(args.id, comment);
+        } catch (error) {
+          tryRecordScenarioProjection({ boundary: 'mcp', direction: 'out', operation: 'mcp-return', fields: { tool_name: 'ticket_comment', id: args.id, ok: false, error_message: String(error?.message ?? error).slice(0, 200) } });
+          throw error;
+        }
+        tryRecordScenarioProjection({ boundary: 'mcp', direction: 'out', operation: 'mcp-return', fields: { tool_name: 'ticket_comment', id: stored?.ticket_id ?? stored?.id ?? args.id, ok: true, state: 'returned' } });
+        return await jsonResult(stored);
       }
 
       if (name === 'ticket_comment_update') {

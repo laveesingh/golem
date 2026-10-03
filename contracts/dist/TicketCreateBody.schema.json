@@ -1,0 +1,131 @@
+{
+  "$id": "TicketCreateBody",
+  "additionalProperties": true,
+  "type": "object",
+  "properties": {
+    "project_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "kind": {
+      "default": "task",
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "const": "spec",
+              "type": "string"
+            },
+            {
+              "const": "task",
+              "type": "string"
+            },
+            {
+              "const": "doc",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "default": "",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body_format": {
+      "default": "markdown",
+      "anyOf": [
+        {
+          "const": "markdown",
+          "type": "string"
+        },
+        {
+          "const": "html",
+          "type": "string"
+        },
+        {
+          "const": "",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "priority": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "labels": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "parent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "assignee": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "created_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "project_id",
+    "title"
+  ]
+}

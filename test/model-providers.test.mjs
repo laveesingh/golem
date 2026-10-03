@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { build } from 'vite';
+import { test } from 'vitest';
 import {
   providerForId,
   providerForModel,
@@ -27,7 +27,10 @@ test('model ids used under Pi resolve to the family icon', () => {
 test('unknown transport ids do not hide a known model family', () => {
   assert.equal(resolveProvider('openai-codex', 'gpt-5.6-luna').id, 'openai');
   assert.equal(resolveProvider('xai', 'grok-4.6').id, 'grok');
-  assert.equal(resolveProvider('ollama', 'deepseek-v4-flash:0731-cloud').id, 'deepseek');
+  assert.equal(
+    resolveProvider('ollama', 'deepseek-v4-flash:0731-cloud').id,
+    'deepseek',
+  );
   assert.equal(resolveProvider('ollama', 'qwen3.6:27b-mlx').id, 'qwen');
   assert.equal(resolveProvider('ollama', 'gemma4:12b-mlx').id, 'gemma');
   assert.equal(resolveProvider('omlx', 'Muse-Glimmer-30B-4bit').id, 'fallback');
@@ -43,7 +46,9 @@ test('the browser asset resolver gives only exact gpt-6-astra the approved B/B.0
       write: false,
       minify: false,
       lib: {
-        entry: fileURLToPath(new URL('../dashboard/web/src/model-providers.js', import.meta.url)),
+        entry: fileURLToPath(
+          new URL('../dashboard/web/src/model-providers.js', import.meta.url),
+        ),
         name: 'ModelProvidersTest',
         formats: ['iife'],
       },
@@ -51,7 +56,9 @@ test('the browser asset resolver gives only exact gpt-6-astra the approved B/B.0
   });
   const window = {};
   const output = Array.isArray(bundle) ? bundle[0].output : bundle.output;
-  runInNewContext(output.find((entry) => entry.type === 'chunk').code, { window });
+  runInNewContext(output.find((entry) => entry.type === 'chunk').code, {
+    window,
+  });
   const api = window.ModelProviders;
   const family = api.providerForId('openai');
   const astra = api.providerForModel('gpt-6-astra');
@@ -72,22 +79,44 @@ test('the browser asset resolver gives only exact gpt-6-astra the approved B/B.0
   assert.match(activeSvg, /2\.8s/);
   assert.match(activeSvg, /prefers-reduced-motion/);
 
-  for (const transport of ['openai', 'openai-codex', 'ollama', 'unknown-host', null]) {
+  for (const transport of [
+    'openai',
+    'openai-codex',
+    'ollama',
+    'unknown-host',
+    null,
+  ]) {
     const resolved = api.resolveProvider(transport, 'gpt-6-astra');
     assert.equal(resolved.id, 'openai');
     assert.equal(resolved.iconIdleSrc, astra.iconIdleSrc);
     assert.equal(resolved.iconActiveSrc, astra.iconActiveSrc);
   }
   for (const model of [
-    'gpt-6', 'gpt-5.6-luna', 'gpt-6-astra-preview', 'gpt-6-astra:latest',
-    'GPT-6-ASTRA', ' gpt-6-astra ', 'openai/gpt-6-astra', '', null,
+    'gpt-6',
+    'gpt-5.6-luna',
+    'gpt-6-astra-preview',
+    'gpt-6-astra:latest',
+    'GPT-6-ASTRA',
+    ' gpt-6-astra ',
+    'openai/gpt-6-astra',
+    '',
+    null,
   ]) {
     const resolved = api.resolveProvider('openai-codex', model);
     assert.equal(resolved.iconIdleSrc, family.iconIdleSrc, String(model));
     assert.equal(resolved.iconActiveSrc, family.iconActiveSrc, String(model));
   }
-  assert.equal(api.providerForId('openai-codex').iconIdleSrc, family.iconIdleSrc);
-  assert.equal(api.providers.find((entry) => entry.id === 'openai').iconActiveSrc, family.iconActiveSrc);
-  assert.equal(api.providerForModel('claude-fable-5').iconIdleSrc, api.providerForId('anthropic').iconIdleSrc);
+  assert.equal(
+    api.providerForId('openai-codex').iconIdleSrc,
+    family.iconIdleSrc,
+  );
+  assert.equal(
+    api.providers.find((entry) => entry.id === 'openai').iconActiveSrc,
+    family.iconActiveSrc,
+  );
+  assert.equal(
+    api.providerForModel('claude-fable-5').iconIdleSrc,
+    api.providerForId('anthropic').iconIdleSrc,
+  );
   assert.equal(api.providerForModel('not-a-model').iconSrc, null);
 });

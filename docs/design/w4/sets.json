@@ -1,0 +1,18 @@
+{
+  "format": "DTCG 2025.10 authoring subset; not full interchange parser",
+  "primitive": "tokens/primitive.tokens.json",
+  "semantic": "tokens/semantic.tokens.json",
+  "themes": {
+    "light": "tokens/light.tokens.json",
+    "dark": "tokens/dark.tokens.json"
+  },
+  "densities": {
+    "cozy": "tokens/cozy.tokens.json",
+    "compact": "tokens/compact.tokens.json"
+  },
+  "component": "tokens/component.tokens.json",
+  "default": {
+    "theme": "dark",
+    "density": "cozy"
+  }
+}

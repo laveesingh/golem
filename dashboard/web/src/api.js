@@ -1,5 +1,6 @@
 // Browser-side REST + WebSocket client for the dashboard backend.
-// Plain JS so it loads before babel-transformed JSX components.
+// Legacy islands retain JS; the health/create pilot uses generated types.
+import { createPilotTicket, pilotHealth } from './api/pilot-client.ts';
 
 (function () {
   const base = ''; // same-origin
@@ -197,7 +198,6 @@
     listMessageEnvelopes: (params) => getJSON(`/api/message-envelopes${qs(params)}`),
     getMessageEnvelope: (id) => getJSON(`/api/message-envelopes/${encodeURIComponent(id)}`),
     projects: () => getJSON('/api/projects'),
-    workspaces: () => getJSON('/api/workspaces'),
     // v4 (fix round 2): peek payload for one native session — recent central-
     // journal events + milestones + best-effort transcript path.
     nativeSessionPeek: (sessionId) =>
@@ -209,9 +209,6 @@
       postJSON('/api/interrupt', { text, session_id: sessionId ?? null }),
     pushHalt: (reason, sessionId) =>
       postJSON('/api/halt', { reason: reason ?? '', session_id: sessionId ?? null }),
-    channels: () => getJSON('/api/channels'),
-    channelHealth: (sessionId) =>
-      getJSON(`/api/channel/health${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`),
     setSessionRole: (sessionId, role) =>
       postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/role`, { role }),
     listRoles: () => getJSON('/api/roles'),
@@ -270,7 +267,8 @@
     // title_match, match_start, match_len }[] — snippet carries the first body
     // match ±80 chars with offsets so the client can <mark> it. q <2 chars → 400.
     searchTickets: (params) => getJSON(`/api/tickets/search${qs(params)}`),
-    createTicket: (body) => postJSON('/api/tickets', body),
+    createTicket: createPilotTicket,
+    health: pilotHealth,
     getTicket: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}`),
     getShareStatus: (id) => getJSON(`/api/tickets/${encodeURIComponent(id)}/share`),
     shareTicket: (id) => postJSON(`/api/tickets/${encodeURIComponent(id)}/share`, {}),
@@ -337,11 +335,6 @@
     updateSubstrateInstructions: (body) => putJSON('/api/substrate/instructions', body),
     listSubstrateRoles: () => getJSON('/api/substrate/roles'),
     updateSubstrateRole: (role, body) => putJSON(`/api/substrate/roles/${encodeURIComponent(role)}`, body),
-    // Ticket links (WS5b). `from` is the ticket id the link hangs off of.
-    addLink: (id, { to_ticket, type }) =>
-      postJSON(`/api/tickets/${encodeURIComponent(id)}/links`, { to_ticket, type }),
-    removeLink: (id, { to_ticket, type }) =>
-      delJSON(`/api/tickets/${encodeURIComponent(id)}/links`, { to_ticket, type }),
     // TKT-0106: image asset upload. Posts the file as base64 alongside
     // filename + mime. Server validates, stores content-addressed under
     // ~/.config/golem/ticket-assets/<hash>.<ext>, returns {url, ...}.

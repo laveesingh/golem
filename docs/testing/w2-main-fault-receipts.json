@@ -1,0 +1,85 @@
+{
+  "source": "/tmp/gol458-main-linux-full.log",
+  "platform": "Linux arm64 Node22.22.3",
+  "command": "docker run --rm --network none --name golem-gol458-main-<epoch> golem-gol458-ci:main-fence",
+  "fullFiles": 11,
+  "fullTests": 93,
+  "runtimeExit": 0,
+  "receipts": [
+    {
+      "case": "test/integration/main-ownership.test.mjs > main stale incarnation refuses signal and retains exact owned recovery",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": null,
+      "signal": null,
+      "timedOut": true,
+      "pipeDrainTimedOut": true,
+      "stdout": "main-fence-ready\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-gVrdFy",
+      "ownedGroups": [],
+      "mainOwnership": {
+        "pgid": 171,
+        "members": [
+          {
+            "pid": 171,
+            "birth": "Thu Oct  1 18:43:09 2026"
+          }
+        ],
+        "captured_at": "2026-10-01T18:43:10.835Z"
+      },
+      "cleanupErrors": [
+        "main group incarnation changed or indeterminate; no signal; retain /tmp/gol458-gVrdFy",
+        "pipe drain indeterminate; retained /tmp/gol458-gVrdFy"
+      ]
+    },
+    {
+      "case": "test/integration/main-ownership.test.mjs > main indeterminate incarnation refuses signal and retains exact owned recovery",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": null,
+      "signal": null,
+      "timedOut": true,
+      "pipeDrainTimedOut": true,
+      "stdout": "main-fence-ready\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-TJfRSv",
+      "ownedGroups": [],
+      "mainOwnership": {
+        "pgid": 198,
+        "members": [
+          {
+            "pid": 198,
+            "birth": "Thu Oct  1 18:43:11 2026"
+          }
+        ],
+        "captured_at": "2026-10-01T18:43:12.391Z"
+      },
+      "cleanupErrors": [
+        "controlled main identity probe unavailable",
+        "pipe drain indeterminate; retained /tmp/gol458-TJfRSv"
+      ]
+    },
+    {
+      "case": "test/integration/main-ownership.test.mjs > leader exit preserves captured ownership of genuine own residual members",
+      "file": "test/fixtures/w2-safety-probe.mjs",
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "pipeDrainTimedOut": false,
+      "stdout": "owned-main-residual-pid:233\nmain-residual-ready\n",
+      "stderr": "",
+      "sandboxRoot": "/tmp/gol458-S5J5v0",
+      "ownedGroups": [],
+      "mainOwnership": {
+        "pgid": 224,
+        "members": [
+          {
+            "pid": 224,
+            "birth": "Thu Oct  1 18:43:13 2026"
+          }
+        ],
+        "captured_at": "2026-10-01T18:43:13.942Z"
+      },
+      "cleanupErrors": []
+    }
+  ]
+}

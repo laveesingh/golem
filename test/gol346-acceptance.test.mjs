@@ -5,6 +5,7 @@
 // caller limits (A16), and — when the local native Pi toolchain is reachable —
 // a real native Pi caller-binding probe. Everything is isolated; scratch
 // tickets are archived in `finally`.
+import { parseCliEnvelope } from './_cli-envelope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -117,7 +118,7 @@ try {
       client, resolveContext: () => context, ...extra,
     });
     let json = null;
-    try { json = JSON.parse(out.join('\n')); } catch { /* non-JSON */ }
+    try { json = parseCliEnvelope(out.join('\n')); } catch { /* non-JSON */ }
     return { exit, out: out.join('\n'), err: err.join('\n'), json };
   };
   const cliOutline = await run(['get-outline', scratchSpec.display_id || scratchSpec.id]);
@@ -153,7 +154,7 @@ try {
   });
   check('A16 unbound-caller CLI mutation → stable unsupported_caller naming limits',
     unboundCaller.exit === 2 && unboundCaller.json.code === 'unsupported_caller'
-      && /Pi\/Claude/.test(unboundCaller.json.error) && /trusted Pi\/Claude session/.test(unboundCaller.json.message),
+      && /Pi\/Claude/.test(unboundCaller.json.error.message) && /trusted Pi\/Claude session/.test(unboundCaller.json.message),
     unboundCaller.out.slice(0, 200));
   const unboundCallerRead = await run(['get-outline', scratchSpec.display_id], {
     resolveContext: () => { throw unboundCallerError; },
@@ -236,8 +237,8 @@ try {
             grand.on('close', (code) => resolve({ code, out }));
           });
           let list = null;
-          try { list = JSON.parse(grandOut.out); } catch { /* not JSON */ }
-          const bound = grandOut.code === 0 && Array.isArray(list);
+          try { list = parseCliEnvelope(grandOut.out); } catch { /* not JSON */ }
+          const bound = grandOut.code === 0 && list?.ok === true && Array.isArray(list.items);
           nativePi = bound ? 'pass' : `fail: grandchild exit ${grandOut.code} out=${grandOut.out.slice(0, 160)}`;
         }
       } finally {
