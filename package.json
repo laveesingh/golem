@@ -68,9 +68,11 @@
     "check:contract-diff": "node tools/contracts-compatibility.mjs",
     "check:ui": "tsc --noEmit -p tsconfig.ui.json",
     "test:atoms": "vitest run --project component",
-    "ui:workshop:build": "ladle build --config .ladle --viteConfig .ladle/vite.config.mjs --stories 'dashboard/web/src/ui/atoms/*.stories.tsx' --outDir .test-results/atoms-workshop",
+    "ui:workshop:build": "ladle build --config .ladle --viteConfig .ladle/vite.config.mjs --stories 'dashboard/web/src/ui/{atoms,molecules}/*.stories.tsx' --outDir .test-results/atoms-workshop",
     "test:atoms:browser": "playwright test --config test/e2e/playwright.atoms.config.ts --project atoms-functional",
-    "test:atoms:visual": "playwright test --config test/e2e/playwright.atoms.config.ts --project atoms-visual"
+    "test:atoms:visual": "playwright test --config test/e2e/playwright.atoms.config.ts --project atoms-visual",
+    "test:molecules:browser": "playwright test --config test/e2e/playwright.molecules.config.ts --project molecules-functional",
+    "test:molecules:visual": "playwright test --config test/e2e/playwright.molecules.config.ts --project molecules-visual"
   },
   "dependencies": {
     "@babel/parser": "7.29.9",

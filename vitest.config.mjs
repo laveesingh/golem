@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 console.error(
-  'component project: five atom suites admitted; browser acceptance is separate',
+  'component project: atoms and molecules admitted; browser acceptance is separate',
 );
 
 export default defineConfig({
@@ -33,13 +33,7 @@ export default defineConfig({
         test: {
           name: 'component',
           environment: 'jsdom',
-          include: [
-            'test/component/Button.test.tsx',
-            'test/component/IconButton.test.tsx',
-            'test/component/Input.test.tsx',
-            'test/component/Pill.test.tsx',
-            'test/component/Badge.test.tsx',
-          ],
+          include: ['test/component/**/*.test.{mjs,tsx}'],
           setupFiles: ['test/support/component-setup.ts'],
           fileParallelism: false,
           maxWorkers: 1,

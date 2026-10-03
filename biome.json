@@ -35,7 +35,9 @@
       "test/component/{Button,IconButton,Input,Pill,Badge}.test.tsx",
       "test/e2e/{playwright.atoms.config,atoms.fixture,atoms.spec}.ts",
       ".ladle/config.mjs",
-      ".ladle/vite.config.mjs"
+      ".ladle/vite.config.mjs",
+      "dashboard/web/src/ui/molecules/**",
+      "test/component/{Card,ListRow,Menu,EmptyState}.test.tsx"
     ]
   },
   "formatter": {
