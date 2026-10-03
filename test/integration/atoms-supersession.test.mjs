@@ -1,6 +1,7 @@
-// Real rejected artifact bytes are read from immutable git history into owned temp facilities.
+// The rejected-candidate bytes and superseded helper sources below are committed
+// fixtures under test/fixtures; this test never reads git history, so it runs on
+// any checkout, including a CI single-commit checkout.
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -13,31 +14,17 @@ import {
   validateExactRejected,
 } from './atoms-candidates.mjs';
 
-const repo = fileURLToPath(new URL('../../', import.meta.url));
+const fixtureDir = fileURLToPath(new URL('../fixtures/', import.meta.url));
 async function setup(callback) {
   const root = fs.mkdtempSync(
       path.join(process.env.GOLEM_W2_SANDBOX, 'rejected-control-'),
     ),
     work = path.join(root, 'work'),
     target = path.join(work, 'test/e2e/__screenshots__/atoms');
-  fs.mkdirSync(work);
-  const archive = spawnSync(
-    'git',
-    [
-      'archive',
-      '--format=tar',
-      rejectedInitialTuple.candidateCommit,
-      'test/e2e/__screenshots__/atoms',
-    ],
-    { cwd: repo, timeout: 10000, maxBuffer: 5 * 1024 * 1024 },
-  );
-  assert.equal(archive.status, 0);
-  const tar = path.join(root, 'old.tar');
-  fs.writeFileSync(tar, archive.stdout);
-  assert.equal(
-    spawnSync('tar', ['-xf', tar, '-C', work], { timeout: 10000 }).status,
-    0,
-  );
+  fs.mkdirSync(work, { recursive: true });
+  fs.cpSync(path.join(fixtureDir, 'rejected-atoms-14f44'), target, {
+    recursive: true,
+  });
   const candidate = path.join(root, 'new');
   fs.cpSync(target, candidate, { recursive: true });
   const file = path.join(candidate, 'manifest.json'),
@@ -143,18 +130,9 @@ for (const defect of [
       assert.equal(fs.existsSync(target), true);
     }));
 
-async function oldHelper(
-  root,
-  pin = '2ab9c6fa62f71b5de4d20bef579b49107abfabb4',
-) {
-  const value = spawnSync(
-    'git',
-    ['show', pin + ':test/integration/atoms-candidates.mjs'],
-    { cwd: repo, timeout: 10000, maxBuffer: 2 * 1024 * 1024 },
-  );
-  assert.equal(value.status, 0);
-  const file = path.join(root, 'original-helper-' + pin + '.mjs');
-  fs.writeFileSync(file, value.stdout);
+async function oldHelper(root, name = 'before-transaction-fences') {
+  const file = path.join(root, `original-helper-${name}.mjs`);
+  fs.copyFileSync(path.join(fixtureDir, `atoms-helper-${name}.mjs.txt`), file);
   return import(pathToFileURL(file).href);
 }
 function journalFault(evidence, phase, callback) {
@@ -176,14 +154,10 @@ function journalFault(evidence, phase, callback) {
     assert.equal(fired, true, 'Actual transaction phase fault must execute');
 }
 test('approved two-plane bridge preserves all nontransaction helper sections byte-identically', () => {
-  const old = spawnSync(
-    'git',
-    [
-      'show',
-      '2ab9c6fa62f71b5de4d20bef579b49107abfabb4:test/integration/atoms-candidates.mjs',
-    ],
-    { cwd: repo, encoding: 'utf8', timeout: 10000 },
-  ).stdout;
+  const old = fs.readFileSync(
+    path.join(fixtureDir, 'atoms-helper-before-transaction-fences.mjs.txt'),
+    'utf8',
+  );
   const current = fs.readFileSync(
     new URL('./atoms-candidates.mjs', import.meta.url),
     'utf8',
@@ -360,7 +334,7 @@ test('missing rollback path aggregates primary/fence failures and retains known 
   }));
 
 test('replaced evidence parent fails without touching replacement or deleting original backup', () =>
-  setup(({ root, target, candidate, evidence }) => {
+  setup(({ root, target, candidate }) => {
     const parent = path.join(root, 'evidence-parent');
     fs.mkdirSync(parent);
     const receipt = path.join(parent, 'receipt');
@@ -414,10 +388,7 @@ function aggregationFault(target, evidence) {
 }
 test('original1e3 aggregation defect reproduces raw stage error and lost named primary', async () =>
   setup(async ({ root, target, candidate, evidence }) => {
-    const old = await oldHelper(
-        root,
-        '1e3e7809dfdeee03206d377bad5aef304a5e5147',
-      ),
+    const old = await oldHelper(root, 'before-aggregation-fix'),
       checked = aggregationFault(target, evidence);
     let observed;
     try {
