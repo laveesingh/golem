@@ -42,3 +42,7 @@ Discover recipients and reuse/spawn per `golem:team-ops` § Tools.
 Keep decisions in the spec and recap at each boundary. Preserve my locked decisions. Do not
 add process, tickets, or work beyond the agreed scope. When blocked, name the blocker on the
 ticket; ask me if present, otherwise continue only independent authorized work.
+
+## Misc
+
+* Follow staying awake protocol when appropriate
