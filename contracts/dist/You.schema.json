@@ -1,0 +1,57 @@
+{
+  "$id": "You",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "description": "D-09 a: one local identity under this instance home; no account/auth implementation.",
+  "$comment": "provisional: true; schema_version 1; revise through explicit migration, no storage implemented in Stage 0",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "type": "number"
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "preferences": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "$ref": "JsonValue"
+        }
+      }
+    },
+    "devices": {
+      "type": "array",
+      "items": {
+        "additionalProperties": {
+          "$ref": "JsonValue"
+        },
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "name",
+    "preferences",
+    "devices"
+  ]
+}

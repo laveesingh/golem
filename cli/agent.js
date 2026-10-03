@@ -26,7 +26,7 @@ import {
   parseNotificationDuration,
   normalizeNotificationTiming,
 } from '../lib/notification-contract.js';
-import { roleNamesSnapshot, pushRoleBriefDirect, setSessionRole } from '../lib/session-role.js';
+import { roleNamesSnapshot, pushRoleBriefDirect, setSessionRole } from '../lib/session-role.ts';
 import { listTeams } from '../lib/team-registry.js';
 import { normalizeName } from '../lib/worker-registry.js';
 import * as nativeDriver from '../lib/herdr-driver.js';

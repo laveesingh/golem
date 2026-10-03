@@ -5,10 +5,10 @@ import { spawnSync } from 'node:child_process';
 import { packageRoot } from '../../lib/package-root.ts';
 import * as compiler from '../../lib/compiler/engine.js';
 import * as ccAdapter from '../../lib/compiler/adapters/cc.js';
-import { loadConfig, saveConfig } from '../../lib/golem-config.js';
+import { loadConfig, saveConfig } from '../../lib/golem-config.ts';
 import { golemHome, projectsJsonPath, renderDirFor } from '../../lib/golem-home.js';
 import { projectIdFor } from '../../lib/project-id.js';
-import { listRoleCards, writeRoleCard } from '../../lib/session-role.js';
+import { listRoleCards, writeRoleCard } from '../../lib/session-role.ts';
 
 const REPO_ROOT = packageRoot(import.meta.url);
 const SUBSTRATE_ROOT = path.join(REPO_ROOT, 'substrate');

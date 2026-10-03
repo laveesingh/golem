@@ -17,10 +17,10 @@
 
 ### CLI and collaboration
 
-Management: `lib/management-{context,resolve,registry,session,team,agent,capabilities}.js`.
-Controls target native panes, not process ownership.
-`cli/collaboration.js` schedules/messages; `cli/ticket.js` tracker authoring.
-`lib/session-role.js` defines roles; retired names only migrate.
+`lib/management-*.js` controls native panes, not process ownership.
+`cli/collaboration.js` schedules/messages; `cli/ticket.js` authors tracker.
+`lib/session-role.ts`: roles; retired names only migrate.
+Config: `lib/golem-config.ts` uses `read-versioned.ts`; hooks use `config-role-default.ts`.
 
 ### Instructions
 

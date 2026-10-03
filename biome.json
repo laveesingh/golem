@@ -18,6 +18,14 @@
       "lib/contracts/**",
       "lib/cli-envelope.ts",
       "test/fixtures/cli-envelope-probe.mjs",
+      "!lib/contracts/config-validator.js",
+      "!lib/contracts/store-validator.js",
+      "!lib/contracts/pilot-api.d.ts",
+      "lib/versioned-store.ts",
+      "lib/dashboard-store.ts",
+      "lib/share-tunnel-store.ts",
+      "lib/jsonl-header.ts",
+      "!lib/pilot-client.ts",
       "dashboard/server/contract-*.ts",
       "dashboard/web/src/api/pilot-client.ts",
       "test/fixtures/w3-*.mjs",
@@ -37,7 +45,11 @@
       ".ladle/config.mjs",
       ".ladle/vite.config.mjs",
       "dashboard/web/src/ui/molecules/**",
-      "test/component/{Card,ListRow,Menu,EmptyState}.test.tsx"
+      "test/component/{Card,ListRow,Menu,EmptyState}.test.tsx",
+      "lib/read-versioned.ts",
+      "lib/golem-config.ts",
+      "lib/session-role.ts",
+      "lib/config-role-default.ts"
     ]
   },
   "formatter": {

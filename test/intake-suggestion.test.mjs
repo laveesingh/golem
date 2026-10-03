@@ -12,7 +12,7 @@ process.env.GOLEM_HOME = temp;
 
 try {
   const { teamAssists } = await import('../dashboard/server/team-assist.js');
-  const { defaultSessionRole } = await import('../lib/session-role.js');
+  const { defaultSessionRole } = await import('../lib/session-role.ts');
   const rows = [
     { session_id: 'lead-busy', role: 'lead', alive: true, in_progress_tickets: [1, 2] },
     { session_id: 'lead-free', role: 'lead', alive: true, in_progress_tickets: [] },

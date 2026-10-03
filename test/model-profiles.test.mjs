@@ -223,7 +223,7 @@ const profilesFile = () => path.join(state, 'profiles.json');
 
 try {
   await startDashboard();
-  const { readRoleRegistry, updateRoleExec } = await import('../lib/session-role.js');
+  const { readRoleRegistry, updateRoleExec } = await import('../lib/session-role.ts');
   const { resolveRoleExecution, resolveRolePreset } = await import('../lib/role-preset.js');
   const {
     createProfile, deleteProfile, getProfile, getRoleDefault, listProfiles,

@@ -32,7 +32,7 @@ import { updateProjectLsp } from '../lib/lsp.js';
 import * as compiler from '../lib/compiler/engine.js';
 import * as ccAdapter from '../lib/compiler/adapters/cc.js';
 import * as piAdapter from '../lib/compiler/adapters/pi.js';
-import { isHarnessEnabled, loadConfig, saveConfig } from '../lib/golem-config.js';
+import { isHarnessEnabled, loadConfig, saveConfig } from '../lib/golem-config.ts';
 import { dashboardUrl, probeDashboard, startDashboardDetached, stopDashboard } from '../lib/dashboard-process.js';
 import { MIN_PI_NODE, SUPPORTED_PI_VERSION, piNodeSupported } from '../lib/pi-compatibility.js';
 import { resolveRolePreset } from '../lib/role-preset.js';

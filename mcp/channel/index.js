@@ -37,7 +37,7 @@ import { compactDispatch, compactTicket, compactTicketList, compactTicketRead } 
 const GOLEM_TOOL_LIST = GOLEM_TOOL_CONTRACTS.map((c) => ({ name: c.name, description: c.description, inputSchema: c.inputSchema }));
 import { resolveCallerSessionId, resolveProjectCwd, sessionsForParent } from './identity.js';
 import { readClaudeSessionRecord } from '../../lib/claude-session-context.js';
-import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../../lib/session-role.js';
+import { SESSION_ROLES, pushRoleBriefDirect, setSessionRole } from '../../lib/session-role.ts';
 import { releaseEndpointLeases, renewEndpointLease, upsertSessionFact } from '../../lib/session-facts.js';
 import { claudeConsumerStatus, submitClaudeChannelNotification } from '../../lib/runtime-compatibility.js';
 

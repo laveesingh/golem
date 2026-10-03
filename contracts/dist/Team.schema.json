@@ -1,0 +1,47 @@
+{
+  "$id": "Team",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "type": "object",
+  "properties": {
+    "team_id": {
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "owner_session_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "team_id",
+    "project_id",
+    "label",
+    "slug",
+    "members"
+  ]
+}

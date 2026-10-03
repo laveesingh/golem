@@ -223,6 +223,12 @@ try {
     `import assert from 'node:assert/strict'; import {createRequire} from 'node:module'; const require=createRequire(${JSON.stringify(pathToFileURL(path.join(installed, 'dist/mcp/channel/index.js')).href)}); assert.ok(require.resolve('@modelcontextprotocol/sdk/server/index.js').includes('/dist/mcp/channel/node_modules/')); assert.throws(() => require.resolve('typescript'), {code:'MODULE_NOT_FOUND'});`,
   ]);
   console.log(
+    run([
+      path.join(repo, 'test/fixtures/w3-config-consumers.mjs'),
+      installed,
+    ]).trim(),
+  );
+  console.log(
     'INSTALLED PACKAGE PASS: CLI/npm dashboard/profile/occupied-port refusal/invalid-profile refusal/no-profile child failure1/body400/roles/templates/web/private CC generation/dist deps/render parent child; no dev compiler',
   );
   console.log(`Checkout source untouched by installed resolution: ${repo}`);

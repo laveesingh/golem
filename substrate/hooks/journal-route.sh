@@ -247,6 +247,12 @@ else
   ENTRY="{\"ts\":\"$(esc "$TS")\",\"event\":\"$(esc "$EVENT_TYPE")\",\"session_id\":\"$(esc "$SESSION_ID")\",\"cwd\":\"$(esc "$CWD")\",\"project_id\":\"$(esc "$PROJECT_ID")\",\"project_path\":\"$(esc "$ROOT")\",\"payload\":\"$(esc "$PAYLOAD")\"}"
 fi
 
+# S1: a new journal is published atomically with its v1 header already
+# inside (temp + hard link wins exactly once); existing files are never
+# truncated here, so a concurrent writer loses nothing.
+_journal_tmp="$JOURNAL_FILE.header.$$"
+printf '%s\n' '{"schema_version":1,"kind":"journal"}' > "$_journal_tmp" 2>/dev/null && ln "$_journal_tmp" "$JOURNAL_FILE" 2>/dev/null || true
+rm -f "$_journal_tmp" 2>/dev/null || true
 printf '%s\n' "$ENTRY" >> "$JOURNAL_FILE" 2>/dev/null || {
   echo "journal-route: could not write to $JOURNAL_FILE" >&2
 }
@@ -283,8 +289,23 @@ forward_bus_spool() {
   spool_file="$spool_dir/$SESSION_ID.jsonl"
   lock="$spool_file.lock"
   cls="$(bus_event_class)"
+  # S1: a future spool header refuses before any append, forward, or clear:
+  # the bytes stay untouched, nothing is submitted, exit stays non-fatal.
+  _spool_first="$(head -c 512 "$spool_file" 2>/dev/null | head -n 1 || true)"
+  case "$_spool_first" in
+    *'"schema_version"'*)
+      _spool_version="$(printf '%s' "$_spool_first" | jq -r '.schema_version // empty' 2>/dev/null || true)"
+      case "$_spool_version" in ''|1) ;; *) echo "journal-route: refusing unsupported spool version in $spool_file" >&2; return 0;; esac
+      ;;
+  esac
   local event_uuid
   event_uuid="$(sha256 "$PROJECT_ID|$SESSION_ID|$TS|$EVENT_TYPE|$ENTRY")"
+  # S1: a new spool file is published atomically with its v1 header already
+  # inside (temp + hard link wins exactly once); existing files are never
+  # truncated here, so a concurrent writer loses nothing.
+  _spool_tmp="$spool_file.header.$$"
+  printf '%s\n' '{"schema_version":1,"kind":"spool"}' > "$_spool_tmp" 2>/dev/null && ln "$_spool_tmp" "$spool_file" 2>/dev/null || true
+  rm -f "$_spool_tmp" 2>/dev/null || true
   jq -cn --arg uuid "$event_uuid" --arg cls "$cls" --argjson entry "$ENTRY" '$entry + {uuid: $uuid, class: $cls}' >> "$spool_file" 2>/dev/null || return 0
 
   lines="$(wc -l < "$spool_file" 2>/dev/null | tr -d ' ' || echo 0)"
@@ -297,7 +318,8 @@ forward_bus_spool() {
   fi
   tmp="$spool_file.sending.$$"
   cp "$spool_file" "$tmp" 2>/dev/null || { rmdir "$lock" 2>/dev/null || true; return 0; }
-  body="$(jq -cs '{events: .}' "$tmp" 2>/dev/null || true)"
+  # The v1 header line is metadata, never a bus event; legacy files need no filtering.
+  body="$(jq -cs '{events: [.[] | select(.schema_version == null)]}' "$tmp" 2>/dev/null || true)"
   url="${GOLEM_DASHBOARD_URL:-http://127.0.0.1:7420}/api/bus/ingest"
   if [ -n "$body" ] && curl -fsS --max-time 1 -H 'content-type: application/json' -d "$body" "$url" >/dev/null 2>&1; then
     : > "$spool_file" 2>/dev/null || true
