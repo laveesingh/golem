@@ -1,0 +1,19 @@
+{
+  "$id": "JournalHeader",
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "type": "number"
+    },
+    "kind": {
+      "const": "journal",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind"
+  ]
+}

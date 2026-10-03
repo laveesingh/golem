@@ -1,0 +1,237 @@
+{
+  "$id": "Spec",
+  "additionalProperties": {
+    "$ref": "JsonValue"
+  },
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "seq": {
+      "type": "integer"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "kind": {
+      "const": "spec",
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "body_format": {
+      "anyOf": [
+        {
+          "const": "markdown",
+          "type": "string"
+        },
+        {
+          "const": "html",
+          "type": "string"
+        }
+      ]
+    },
+    "body_revision": {
+      "type": "integer"
+    },
+    "state": {
+      "anyOf": [
+        {
+          "const": "todo",
+          "type": "string"
+        },
+        {
+          "const": "in_progress",
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "type": "string"
+        },
+        {
+          "const": "review",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "type": "string"
+        },
+        {
+          "const": "archived",
+          "type": "string"
+        }
+      ]
+    },
+    "priority": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "parent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "assignee": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "created_by": {
+      "type": "string"
+    },
+    "dispatched_to": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dispatched_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "pseq": {
+      "type": "integer"
+    },
+    "display_id": {
+      "type": "string"
+    },
+    "outline": {
+      "type": "array",
+      "items": {
+        "additionalProperties": true,
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "heading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "short_text": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "mermaid_error": {
+            "$ref": "JsonValue"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "kind",
+          "tag",
+          "heading",
+          "short_text",
+          "hash"
+        ]
+      }
+    },
+    "mermaid_errors": {
+      "type": "array",
+      "items": {
+        "$ref": "JsonValue"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "seq",
+    "project_id",
+    "kind",
+    "title",
+    "body",
+    "body_format",
+    "body_revision",
+    "state",
+    "priority",
+    "labels",
+    "parent_id",
+    "assignee",
+    "created_by",
+    "dispatched_to",
+    "dispatched_at",
+    "source_ref",
+    "created_at",
+    "updated_at",
+    "pseq",
+    "display_id"
+  ]
+}
