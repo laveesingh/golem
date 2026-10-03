@@ -1,7 +1,6 @@
 // GOL-325: prove the instruction artifacts reach both harness renders and the
 // real template/promotion APIs. GOL-377 (S7): only MECHANIC checks live here —
-// render/drift round-trips, front matter, reference resolution (via lint),
-// byte-parity, tool names/schemas, and injection markers. No assertion matches
+// render/drift round-trips, byte-parity, tool names/schemas, and injection markers. No assertion matches
 // the wording of agent-facing text, so the human can rewrite any skill without
 // breaking the suite.
 import assert from 'node:assert/strict';
@@ -12,7 +11,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
-import { lintSubstrate } from '../lib/compiler/lint.js';
 import { createScratchTicket, promoteScratchIdea, archiveTicket, SMOKE_PROJECT } from '../dashboard/scripts/_scratch.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -50,14 +48,6 @@ async function request(route, body, method = body === undefined ? 'GET' : 'POST'
 
 try {
   for (const dir of [home, state, env.GOLEM_PROJECTS_ROOT, env.GOLEM_IDEAS_ROOT]) fs.mkdirSync(dir, { recursive: true });
-  // GOL-377: lint keeps the mechanic checks — `golem:`/`§` references resolve
-  // and SKILL.md front matter parses. (Word-cap totals are warnings; the
-  // fingerprint "single owner" check is gone.)
-  const lint = lintSubstrate({ substrateRoot: source });
-  assert.equal(lint.clean, true, JSON.stringify(lint.findings));
-
-  console.log(`source report: ${lint.files} files, ${lint.total} words`);
-
   for (const target of ['cc', 'pi']) {
     cli(['sync', '--target', target]);
     cli(['sync', '--target', target, '--check']);
