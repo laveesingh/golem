@@ -138,6 +138,8 @@
     "test/pi-journey.test.mjs|binaries||pi",
     "test/session-native.test.mjs|binaries||herdr",
     "test/team-journey.test.mjs|binaries||pgrep",
-    "test/worker-journey.test.mjs|binaries||pgrep"
+    "test/worker-journey.test.mjs|binaries||pgrep",
+    "tools/record-restart-scenario.ts|binaries||pi",
+    "tools/record-scenarios.ts|binaries||pi"
   ]
 }
