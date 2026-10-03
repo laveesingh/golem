@@ -135,7 +135,7 @@ try {
   assert.equal(record.pi_version, '0.99.1');
   assert.doesNotMatch(launched.stderr, /WARN: Golem tested on Pi/);
   assert.equal(launched.stdout, '', 'diagnostics never pollute native machine-readable stdout');
-  assert.match(record.extension_version, /^5\./);
+  assert.equal(record.extension_version, JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
   assert.match(record.launch_nonce, /^[0-9a-f-]{36}$/);
   assert.equal(record.args.includes('--no-extensions'), false, 'native Pi extension discovery remains enabled');
   assert.equal(fs.readFileSync(sourceModels, 'utf8'), sourceModelsText, 'golem pi never rewrites the Pi profile');
