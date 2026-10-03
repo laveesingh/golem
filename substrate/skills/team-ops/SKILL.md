@@ -92,5 +92,8 @@ reference, to the sender id: findings, risks, a recommended approach, what you c
 Never take the peer's ticket or edit its repo. Treat a reply you receive as advice: verify what
 matters, keep what holds.
 
+CLI `--json` results are flat envelopes. Check `ok` before reading fields; lists use `items`,
+and failures use `error.code` and `error.message`. Keep the returned `schema_version`.
+
 Use command `--help` for parameters. A failed CLI identity check is not permission to switch
 to a compatibility tool or `--human`.
