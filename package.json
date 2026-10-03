@@ -69,8 +69,6 @@
   "dependencies": {
     "@babel/parser": "7.29.9",
     "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
     "@fastify/static": "^7.0.4",
     "@fastify/swagger": "8.15.0",
     "@fastify/type-provider-typebox": "4.1.0",
@@ -91,8 +89,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "turndown": "^7.2.4",
-    "turndown-plugin-gfm": "^1.0.2",
-    "ws": "^8.21.0"
+    "turndown-plugin-gfm": "^1.0.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
