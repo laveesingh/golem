@@ -534,7 +534,7 @@ function syncTarget({ harness, project = null, force = false }) {
       const outDir = renderDirFor('cc');
       const items = ccAdapter.buildPlan({ substrateRoot: root, repoRoot: REPO_ROOT, packageVersion: pkg });
       const res = compiler.render({ target: 'cc', outDir, items, packageVersion: pkg, force });
-      ccAdapter.syncMcpChannelDeps({ repoRoot: REPO_ROOT, outDir });
+      ccAdapter.pruneLegacyChannelDeps({ outDir, tampered: res.tampered });
       results.push({ artifact: 'global', out_dir: outDir, ...renderSummary(res) });
       const instructionItems = ccAdapter.buildInstructionPlan({ substrateRoot: root });
       const instructionOutDir = ccAdapter.instructionOutDir();

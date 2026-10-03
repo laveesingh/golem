@@ -28,6 +28,8 @@
     "dashboard/web/src/api/pilot-client.ts",
     "lib/package-root.ts",
     "lib/compiler/runtime-source.ts",
+    "lib/compiler/render-runtime.ts",
+    "lib/compiler/render-types.ts",
     "tools/tokens-core.ts",
     "tools/tokens-io.ts",
     "tools/tokens-build.ts",

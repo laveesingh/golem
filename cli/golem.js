@@ -465,7 +465,7 @@ async function cmdSync(args) {
     ? compiler.render({ target: instructionLockTarget, outDir: instructionOutDir, items: instructionItems, packageVersion: readPackageVersion(), force })
     : { written: [], unchanged: [], tampered: [], pruned: [] };
   if (target === 'cc') {
-    ccAdapter.syncMcpChannelDeps({ repoRoot: GOLEM_ROOT, outDir });
+    ccAdapter.pruneLegacyChannelDeps({ outDir, tampered: main.tampered });
   }
   if (target === 'cc-marketplace') {
     ccAdapter.ensureMarketplacePluginLink({ ccPluginDir: renderDirFor('cc'), marketplaceOutDir: outDir });

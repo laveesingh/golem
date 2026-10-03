@@ -9,6 +9,18 @@ export default defineConfig({
     projects: [
       {
         test: {
+          name: 'artefact',
+          environment: 'node',
+          include: ['test/artefact/**/*.test.mjs'],
+          fileParallelism: false,
+          maxWorkers: 1,
+          testTimeout: 120000,
+          hookTimeout: 120000,
+          setupFiles: ['test/support/vitest-isolation.mjs'],
+        },
+      },
+      {
+        test: {
           name: 'unit',
           environment: 'node',
           include: ['test/unit/**/*.test.mjs'],
