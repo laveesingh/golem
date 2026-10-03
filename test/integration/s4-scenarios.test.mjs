@@ -274,8 +274,28 @@ test('herdr worker lifecycle replays through the driver and simulator', async ()
 
 test('restart reconciles the stranded envelope on the test clock in under a wall second', async () => {
   const scenario = load('dashboard-restart-stranded-envelope.json');
-  assert.ok(operations(scenario).includes('typed-submit'));
-  assert.ok(operations(scenario).includes('typed-accepted'));
+  // The fixture holds two lineages: a stranded submit with no consequence
+  // and a live submit followed by accepted and settled for one envelope.
+  const submits = scenario.events.filter(
+    (event) => event.operation === 'typed-submit',
+  );
+  assert.equal(submits.length, 2);
+  assert.notEqual(submits[0].fields.envelope_id, submits[1].fields.envelope_id);
+  const liveSymbol = submits[1].fields.envelope_id;
+  assert.ok(
+    scenario.events.some(
+      (event) =>
+        event.operation === 'typed-accepted' &&
+        event.fields.envelope_id === liveSymbol,
+    ),
+  );
+  assert.ok(
+    scenario.events.some(
+      (event) =>
+        event.operation === 'typed-settled' &&
+        event.fields.envelope_id === liveSymbol,
+    ),
+  );
   const dir = simDir();
   const ext = path.join(dir, 'ext.ts');
   const replayed = invokeSim(
@@ -312,26 +332,29 @@ test('restart reconciles the stranded envelope on the test clock in under a wall
   const tracker = openTrackerDb(path.join(home, 'tracker.db'));
   const wallStart = Date.now();
   const clock = createTestClock(1_700_000_000_000);
-  const ticket = tracker.createTicket({
+  // Seed mirrors the fixture: E1 stranded with a dead publishing owner and
+  // a pre-acceptance claim, E2 a fresh live dispatch. Separate envelopes.
+  const offlineSession = 's4-stranded-session';
+  const liveSession = 's4-live-session';
+  const strandedTicket = tracker.createTicket({
     project_id: 's4-restart-000000',
     title: 'stranded',
     created_by: 'test',
   });
-  const sessionId = 's4-restart-session';
-  const queued = tracker.queueDispatch(ticket.id, {
-    session_id: sessionId,
+  const strandedQueued = tracker.queueDispatch(strandedTicket.id, {
+    session_id: offlineSession,
     payload: 'strand',
     actor: 'test',
   });
-  const envelope = tracker.getEnvelope(queued.envelope_id);
-  tracker.claimQueuePublishing(queued.id, { ownerToken: 'dead-owner' });
-  tracker.enqueueEnvelopeRetry(envelope.id, {
-    session_id: sessionId,
+  const stranded = tracker.getEnvelope(strandedQueued.envelope_id);
+  tracker.claimQueuePublishing(strandedQueued.id, { ownerToken: 'dead-owner' });
+  tracker.enqueueEnvelopeRetry(stranded.id, {
+    session_id: offlineSession,
     content: 'strand',
-    settlement: { queue: { id: queued.id, owner_token: 'dead-owner' } },
+    settlement: { queue: { id: strandedQueued.id, owner_token: 'dead-owner' } },
     require_typed: true,
   });
-  tracker.recordTypedEnvelopeLifecycle(envelope.id, {
+  tracker.recordTypedEnvelopeLifecycle(stranded.id, {
     state: 'claimed',
     attempt_id: 'dead-owner',
   });
@@ -340,46 +363,128 @@ test('restart reconciles the stranded envelope on the test clock in under a wall
     .prepare(
       "UPDATE dispatch_queue SET publishing_expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?",
     )
-    .run(queued.id);
-  let publishes = 0;
-  const drainer = initDispatchDrainer({
-    tracker,
-    state: {
-      nativeSessions: () => [
-        { session_id: sessionId, alive: true, status: 'idle' },
-      ],
-    },
-    chat: { record: () => {} },
-    pushBrief: async () => {
-      publishes += 1;
-      return {
-        ok: true,
-        status: 202,
-        typed_worker: true,
-        body: JSON.stringify({
-          accepted: true,
-          envelope_id: envelope.id,
-          attempt_id: 'dead-owner',
-          accepted_attempt_id: 'dead-owner',
-          delivery_state: 'accepted',
-        }),
-      };
-    },
-    buildDispatchBrief: () => 'strand',
-    broadcastWS: () => {},
-    listChannels: async () => [
-      { session_id: sessionId, kind: 'typed-worker', delivery_ready: true },
-    ],
-    clock,
-    nowMs: () => clock.now(),
+    .run(strandedQueued.id);
+  const liveTicket = tracker.createTicket({
+    project_id: 's4-restart-000000',
+    title: 'live',
+    created_by: 'test',
   });
+  const liveQueued = tracker.queueDispatch(liveTicket.id, {
+    session_id: liveSession,
+    payload: 'live',
+    actor: 'test',
+  });
+  const liveEnvelope = tracker.getEnvelope(liveQueued.envelope_id);
+  tracker.claimQueuePublishing(liveQueued.id, { ownerToken: 'dead-owner' });
+  tracker.enqueueEnvelopeRetry(liveEnvelope.id, {
+    session_id: liveSession,
+    content: 'live',
+    settlement: { queue: { id: liveQueued.id, owner_token: 'dead-owner' } },
+    require_typed: true,
+  });
+  tracker.recordTypedEnvelopeLifecycle(liveEnvelope.id, {
+    state: 'claimed',
+    attempt_id: 'dead-owner',
+  });
+  tracker
+    .raw()
+    .prepare(
+      "UPDATE dispatch_queue SET publishing_expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?",
+    )
+    .run(liveQueued.id);
+  // The live session appears only after the restart, like the run where
+  // nothing was delivered before the dashboard came back.
+  let liveOnline = false;
+  const sessions = () =>
+    liveOnline
+      ? [{ session_id: liveSession, alive: true, status: 'idle' }]
+      : [];
+  // The offline session is never advertised, so the stranded row is held,
+  // never pushed: any other target is a test bug, not a retry.
+  let publishes = 0;
+  const startDrainer = () =>
+    initDispatchDrainer({
+      tracker,
+      state: { nativeSessions: sessions },
+      chat: { record: () => {} },
+      pushBrief: async (_content, sessionId, metadata) => {
+        assert.equal(sessionId, liveSession);
+        publishes += 1;
+        return {
+          ok: true,
+          status: 202,
+          typed_worker: true,
+          body: JSON.stringify({
+            accepted: true,
+            envelope_id: metadata.envelope_id,
+            attempt_id: metadata.attempt_id,
+            accepted_attempt_id: metadata.attempt_id,
+            delivery_state: 'settled',
+          }),
+        };
+      },
+      buildDispatchBrief: (ticket) => ticket.title,
+      broadcastWS: () => {},
+      listChannels: async () => [
+        { session_id: liveSession, kind: 'typed-worker', delivery_ready: true },
+      ],
+      clock,
+    });
+  const queueState = (id) =>
+    tracker
+      .raw()
+      .prepare('SELECT status FROM dispatch_queue WHERE id = ?')
+      .get(id).status;
+  const queueOwner = (id) =>
+    tracker
+      .raw()
+      .prepare('SELECT publishing_owner FROM dispatch_queue WHERE id = ?')
+      .get(id).publishing_owner;
+  const waitFor = async (predicate, label) => {
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      try {
+        if (await predicate()) return;
+      } catch {}
+      if (Date.now() > deadline) throw new Error(`${label} timed out`);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+  // First incarnation: both sessions offline, so clock ticks hold every row
+  // and publish nothing. The stranded lineage is preserved, as recorded.
+  const first = startDrainer();
+  clock.advance(6000);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(publishes, 0);
+  assert.equal(tracker.getEnvelope(stranded.id).delivery_state, 'claimed');
+  assert.equal(tracker.getEnvelope(liveEnvelope.id).delivery_state, 'claimed');
+  // Kill: closing the drainer cancels its clock timer, so advancing time
+  // fires nothing and changes nothing.
+  first.close();
+  clock.advance(6000);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(publishes, 0);
+  // Restart: the live session appears. Its stale dead-owner claim is
+  // reconciled back to pending and republished to settled; the stranded
+  // row stays held for its still-offline session, never delivered.
+  liveOnline = true;
+  const second = startDrainer();
   try {
-    await drainer.tick();
+    clock.advance(6000);
+    await waitFor(async () => publishes === 1, 'live publish');
+    await waitFor(
+      async () =>
+        tracker.getEnvelope(liveEnvelope.id).delivery_state === 'settled',
+      'live settled',
+    );
+    assert.equal(queueState(liveQueued.id), 'delivered');
+    assert.notEqual(queueOwner(liveQueued.id), 'dead-owner');
+    assert.equal(tracker.getEnvelope(stranded.id).delivery_state, 'claimed');
+    assert.notEqual(queueState(strandedQueued.id), 'delivered');
+    assert.equal(publishes, 1);
   } finally {
-    drainer.close();
+    second.close();
   }
-  assert.equal(publishes, 1);
-  clock.advance(61 * 60_000);
   assert.ok(
     Date.now() - wallStart < 1000,
     'restart reconciliation stays under one wall second',

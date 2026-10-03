@@ -681,10 +681,15 @@ export function initDispatchDrainer({
     return runningTick;
   }
 
-  timer = setInterval(() => {
+  // C4: the drainer tick runs on the injected clock. Recurring scheduling is
+  // built from clock.setTimeout so a test clock fires it deterministically.
+  const fire = () => {
+    if (stopped) return;
+    timer = clock.setTimeout(fire, TICK_MS);
     tick().catch((err) => console.error('[dispatch-drainer] tick threw:', err));
-  }, TICK_MS);
-  timer.unref();
+  };
+  timer = clock.setTimeout(fire, TICK_MS);
+  if (timer && typeof timer.unref === 'function') timer.unref();
 
   return {
     // Exposed for deterministic journey coverage; production still runs it on
@@ -693,7 +698,7 @@ export function initDispatchDrainer({
     close() {
       stopped = true;
       if (timer) {
-        clearInterval(timer);
+        clock.clearTimeout(timer);
         timer = null;
       }
     },

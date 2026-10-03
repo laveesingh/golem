@@ -29,5 +29,5 @@ cwd (the main checkout) and answers the dev-channel list with option 1.
 
 Scrub note: the recorder extends the provisional argv/scrub grammar only from
 these accepted recordings (herdr envelope keys, `terminal_id`, dashboard
-replay states); see `tools/scenario-scrub-core.ts`. No credential, prompt,
+replay states); see `lib/scenario-scrub-core.ts` (DTO in `lib/scenario-format.ts`, I/O in `lib/scenario-io.ts`). No credential, prompt,
 transcript, or raw payload bytes are retained anywhere in these files.

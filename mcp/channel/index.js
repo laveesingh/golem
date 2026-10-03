@@ -537,8 +537,17 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           status: args.status,
           parent_id: args.parent_id,
         };
-        tryRecordScenarioProjection({ boundary: 'mcp', direction: 'out', operation: 'mcp-return', fields: { tool_name: 'ticket_comment', id: args.id, ok: true, state: 'returned' } });
-        return await jsonResult(await tracker.addComment(args.id, comment));
+        // The return is recorded only after the store confirms it, from the
+        // actual result. A failure records ok:false and never 'returned'.
+        let stored;
+        try {
+          stored = await tracker.addComment(args.id, comment);
+        } catch (error) {
+          tryRecordScenarioProjection({ boundary: 'mcp', direction: 'out', operation: 'mcp-return', fields: { tool_name: 'ticket_comment', id: args.id, ok: false, error_message: String(error?.message ?? error).slice(0, 200) } });
+          throw error;
+        }
+        tryRecordScenarioProjection({ boundary: 'mcp', direction: 'out', operation: 'mcp-return', fields: { tool_name: 'ticket_comment', id: stored?.ticket_id ?? stored?.id ?? args.id, ok: true, state: 'returned' } });
+        return await jsonResult(stored);
       }
 
       if (name === 'ticket_comment_update') {
