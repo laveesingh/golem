@@ -557,10 +557,12 @@ async function main() {
     };
   }
 
-  function buildTeamRows(projectId, { channels = state.channels(), aliveOnly = false } = {}) {
+  function buildTeamRows(projectId, { channels = state.channels(), aliveOnly = false, enriched = null } = {}) {
     const wanted = resolveProjectId(projectId);
     const roles = roleMetaMap();
-    return enrichSessionRows(state.nativeSessions(), channels)
+    // #56: the dispatchable handler enriches once and shares the rows; the
+    // default preserves standalone behavior for any future caller.
+    return (enriched ?? enrichSessionRows(state.nativeSessions(), channels))
       .filter((s) => (!aliveOnly || s.alive) && (!wanted || s.project_id === wanted))
       .map((s) => {
         const inProgress = tracker
@@ -2057,16 +2059,26 @@ async function main() {
   // when-idle queueing (delivered when the channel re-registers). Fact-backed
   // rows still require an authenticated healthy endpoint, but not immediate
   // delivery readiness: healthy busy/waiting targets are queueable. `project`
-  // omitted → all dispatchable sessions (each annotated with its project_id).
+  // Omitted → all dispatchable sessions (each annotated with its project_id).
+  // #56: serve the 3s tick snapshot instead of refreshing per call. A synchronous
+  // refresh runs only with no snapshot yet (cold start) or a stale one (tick stuck).
+  const DISPATCHABLE_SNAPSHOT_MAX_AGE_MS = 30_000;
   fastify.get('/api/sessions/dispatchable', async (req) => {
-    // This endpoint is the just-in-time roster authority used immediately
-    // before every new handoff or session notification. Do not make callers
-    // wait for the normal three-second background refresh to discover a peer
-    // that was created after their session started.
-    try {
-      await state.refreshNativeSessions();
-    } catch (err) {
-      console.error('[dispatchable] synchronous session refresh failed:', err);
+    // New peers become visible on the next background refresh (normally 3s).
+    // Revalidate channel health below before advertising dispatchability.
+    const snapshotAge = state.snapshotAgeMs();
+    if (snapshotAge == null || snapshotAge > DISPATCHABLE_SNAPSHOT_MAX_AGE_MS) {
+      try {
+        await state.refreshNativeSessions();
+      } catch (err) {
+        console.error('[dispatchable] synchronous session refresh failed:', err);
+      }
+    }
+    const refreshedAge = state.snapshotAgeMs();
+    if (refreshedAge == null || refreshedAge > DISPATCHABLE_SNAPSHOT_MAX_AGE_MS) {
+      const error = new Error('dispatchable session snapshot is unavailable or stale');
+      error.statusCode = 503;
+      throw error;
     }
     const wanted = req.query?.project != null ? resolveProjectId(req.query.project) : null;
     let channels = [];
@@ -2081,10 +2093,12 @@ async function main() {
     }
     const channelBySession = new Map();
     for (const c of channels) if (c.session_id) channelBySession.set(c.session_id, c);
-    const teamBySession = new Map(buildTeamRows(wanted, { channels, aliveOnly: true }).map((row) => [row.session_id, row]));
+    // #56: one enrich pass per request, shared by team rows and the roster loop.
+    const sharedEnriched = enrichSessionRows(state.nativeSessions(), channels);
+    const teamBySession = new Map(buildTeamRows(wanted, { channels, aliveOnly: true, enriched: sharedEnriched }).map((row) => [row.session_id, row]));
 
     const out = [];
-    for (const s of enrichSessionRows(state.nativeSessions(), channels)) {
+    for (const s of sharedEnriched) {
       if (!s.alive) continue;
       if (wanted != null && s.project_id !== wanted) continue;
       const ch = channelBySession.get(s.session_id);

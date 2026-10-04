@@ -399,6 +399,9 @@ export function openTrackerDb(dbPath = defaultDbPath()) {
       );
       CREATE INDEX IF NOT EXISTS idx_events_ticket  ON events(ticket_id);
       CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id);
+      -- Warning/delivery lookups filter on type over hundreds of thousands of
+      -- rows (#56); without this every dispatchable poll full-scans events twice.
+      CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
       -- idx_events_uuid depends on the v11 event_uuid column. It is created in
       -- the migration block after the ALTER TABLE for existing DBs.
 
@@ -1648,11 +1651,18 @@ WHERE state_changed_at IS NULL`).run();
       return { rows_per_class, oldest_seq: oldest?.oldest_seq ?? null, oldest_created_at: oldest?.oldest_created_at ?? null };
     },
 
-    pruneBus({ nowTs = now(), lifecycleDays = 30, activityDays = 7, activityProjectCap = 100000, actor = 'system:bus-prune' } = {}) {
+    pruneBus({ nowTs = now(), lifecycleDays = 30, activityDays = 7, trackerDays = null, activityProjectCap = 100000, actor = 'system:bus-prune' } = {}) {
       const ts = nowTs;
       const lifecycleCutoff = new Date(Date.parse(ts) - Number(lifecycleDays || 30) * 86400_000).toISOString();
       const activityCutoff = new Date(Date.parse(ts) - Number(activityDays || 7) * 86400_000).toISOString();
+      // Tracker history is retained by default. Explicit retention is an admin
+      // operation: it also removes historical delivery/audit evidence.
+      if (trackerDays != null && (!Number.isFinite(Number(trackerDays)) || Number(trackerDays) <= 0)) {
+        throw new Error('trackerDays must be a positive number');
+      }
+      const trackerCutoff = trackerDays == null ? null : new Date(Date.parse(ts) - Number(trackerDays) * 86400_000).toISOString();
       const txn = db.transaction(() => {
+        const tracker = trackerCutoff == null ? 0 : db.prepare("DELETE FROM events WHERE class = 'tracker' AND created_at < ?").run(trackerCutoff).changes;
         const lifecycle = db.prepare("DELETE FROM events WHERE class = 'lifecycle' AND created_at < ?").run(lifecycleCutoff).changes;
         let activityAge = db.prepare("DELETE FROM events WHERE class = 'activity' AND created_at < ?").run(activityCutoff).changes;
         let activityCap = 0;
@@ -1670,7 +1680,7 @@ WHERE state_changed_at IS NULL`).run();
             )
           `).run({ project_id: p.project_id, over }).changes;
         }
-        const deleted = lifecycle + activityAge + activityCap;
+        const deleted = tracker + lifecycle + activityAge + activityCap;
         if (deleted > 0) {
           recordEvent({
             project_id: null,
@@ -1678,10 +1688,10 @@ WHERE state_changed_at IS NULL`).run();
             class: 'lifecycle',
             type: 'bus_pruned',
             actor,
-            data: { lifecycle, activity_age: activityAge, activity_cap: activityCap, deleted },
+            data: { tracker, lifecycle, activity_age: activityAge, activity_cap: activityCap, deleted },
           });
         }
-        return { deleted, lifecycle, activity_age: activityAge, activity_cap: activityCap };
+        return { deleted, ...(trackerDays == null ? {} : { tracker }), lifecycle, activity_age: activityAge, activity_cap: activityCap };
       });
       return txn();
     },

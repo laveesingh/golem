@@ -48,6 +48,9 @@ export function createState() {
   let nativeSessions = [];
   /** @type {any[]} */
   let channels = [];
+  // Epoch ms of the last successful snapshot refresh; 0 = never (#56). The
+  // dispatchable handler serves this snapshot instead of refreshing per call.
+  let lastRefreshAt = 0;
 
   let watcher = null;
   let lastWatchedPathsFingerprint = null;
@@ -172,6 +175,7 @@ export function createState() {
       const sessions = await readNativeSessions(registeredIdForPath, chans);
       nativeSessions = sessions;
       channels = Array.isArray(chans) ? chans : [];
+      lastRefreshAt = Date.now();
       // TKT-0266: persist durable session-name labels. Keyed off nativeSessions
       // (NOT dispatchable) — a named session without a channel still deserves a
       // persisted name. Only alive sessions with a name are upserted; the upsert
@@ -341,5 +345,8 @@ export function createState() {
     nativeSessions: () => nativeSessions,
     refreshNativeSessions,
     channels: () => channels,
+    // Null until the first successful refresh; the dispatchable handler uses
+    // it to decide between the tick snapshot and a synchronous refresh (#56).
+    snapshotAgeMs: () => (lastRefreshAt ? Date.now() - lastRefreshAt : null),
   };
 }
