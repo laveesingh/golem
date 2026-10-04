@@ -31,6 +31,19 @@ export function stableWatchedPaths(paths) {
   return [...new Set(paths)].sort();
 }
 
+// Request admission uses snapshot age, not refresh completion alone: refresh
+// owns its errors and may leave a cold or stale snapshot unchanged.
+export async function requireFreshSessionSnapshot(state, maxAgeMs = 30_000) {
+  const age = state.snapshotAgeMs();
+  if (age == null || age > maxAgeMs) await state.refreshNativeSessions();
+  const refreshedAge = state.snapshotAgeMs();
+  if (refreshedAge == null || refreshedAge > maxAgeMs) {
+    const error = new Error('dispatchable session snapshot is unavailable or stale');
+    error.statusCode = 503;
+    throw error;
+  }
+}
+
 export function createState() {
   const ee = new EventEmitter();
   ee.setMaxListeners(64);
@@ -48,6 +61,10 @@ export function createState() {
   let nativeSessions = [];
   /** @type {any[]} */
   let channels = [];
+  // Epoch ms of the last successful snapshot refresh; 0 = never (#56). The
+  // dispatchable handler serves this snapshot instead of refreshing per call.
+  let lastRefreshAt = 0;
+  let nativeSessionsRefreshFlight = null;
 
   let watcher = null;
   let lastWatchedPathsFingerprint = null;
@@ -166,12 +183,24 @@ export function createState() {
     ee.emit('event', { type: 'project-update', project: projectSummary(p) });
   }
 
-  async function refreshNativeSessions() {
+  function refreshNativeSessions() {
+    // Tick, cold start, and stale requests share the same discovery burst.
+    // Clear on either settlement so a failed refresh can be retried.
+    if (!nativeSessionsRefreshFlight) {
+      nativeSessionsRefreshFlight = refreshNativeSessionsSnapshot().finally(() => {
+        nativeSessionsRefreshFlight = null;
+      });
+    }
+    return nativeSessionsRefreshFlight;
+  }
+
+  async function refreshNativeSessionsSnapshot() {
     try {
       const chans = await readChannels().catch(() => []);
       const sessions = await readNativeSessions(registeredIdForPath, chans);
       nativeSessions = sessions;
       channels = Array.isArray(chans) ? chans : [];
+      lastRefreshAt = Date.now();
       // TKT-0266: persist durable session-name labels. Keyed off nativeSessions
       // (NOT dispatchable) — a named session without a channel still deserves a
       // persisted name. Only alive sessions with a name are upserted; the upsert
@@ -341,5 +370,8 @@ export function createState() {
     nativeSessions: () => nativeSessions,
     refreshNativeSessions,
     channels: () => channels,
+    // Null until the first successful refresh; the dispatchable handler uses
+    // it to decide between the tick snapshot and a synchronous refresh (#56).
+    snapshotAgeMs: () => (lastRefreshAt ? Date.now() - lastRefreshAt : null),
   };
 }
