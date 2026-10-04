@@ -11,7 +11,7 @@ import { installContractPolicy } from './contract-policy.ts';
 import { registerContractPilot } from './contract-pilot.ts';
 import { packageRoot } from '../../lib/package-root.ts';
 import { CONFIG } from './config.js';
-import { createState } from './state.js';
+import { createState, requireFreshSessionSnapshot } from './state.js';
 import { roleMetaMap } from './roles.js';
 import { pushBrief, pushInterrupt, pushHalt, pushControlEnvelope, listChannels } from './brief.js';
 import { createChat } from './chat.js';
@@ -2062,24 +2062,10 @@ async function main() {
   // Omitted → all dispatchable sessions (each annotated with its project_id).
   // #56: serve the 3s tick snapshot instead of refreshing per call. A synchronous
   // refresh runs only with no snapshot yet (cold start) or a stale one (tick stuck).
-  const DISPATCHABLE_SNAPSHOT_MAX_AGE_MS = 30_000;
   fastify.get('/api/sessions/dispatchable', async (req) => {
     // New peers become visible on the next background refresh (normally 3s).
     // Revalidate channel health below before advertising dispatchability.
-    const snapshotAge = state.snapshotAgeMs();
-    if (snapshotAge == null || snapshotAge > DISPATCHABLE_SNAPSHOT_MAX_AGE_MS) {
-      try {
-        await state.refreshNativeSessions();
-      } catch (err) {
-        console.error('[dispatchable] synchronous session refresh failed:', err);
-      }
-    }
-    const refreshedAge = state.snapshotAgeMs();
-    if (refreshedAge == null || refreshedAge > DISPATCHABLE_SNAPSHOT_MAX_AGE_MS) {
-      const error = new Error('dispatchable session snapshot is unavailable or stale');
-      error.statusCode = 503;
-      throw error;
-    }
+    await requireFreshSessionSnapshot(state);
     const wanted = req.query?.project != null ? resolveProjectId(req.query.project) : null;
     let channels = [];
     try {

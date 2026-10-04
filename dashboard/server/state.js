@@ -31,6 +31,19 @@ export function stableWatchedPaths(paths) {
   return [...new Set(paths)].sort();
 }
 
+// Request admission uses snapshot age, not refresh completion alone: refresh
+// owns its errors and may leave a cold or stale snapshot unchanged.
+export async function requireFreshSessionSnapshot(state, maxAgeMs = 30_000) {
+  const age = state.snapshotAgeMs();
+  if (age == null || age > maxAgeMs) await state.refreshNativeSessions();
+  const refreshedAge = state.snapshotAgeMs();
+  if (refreshedAge == null || refreshedAge > maxAgeMs) {
+    const error = new Error('dispatchable session snapshot is unavailable or stale');
+    error.statusCode = 503;
+    throw error;
+  }
+}
+
 export function createState() {
   const ee = new EventEmitter();
   ee.setMaxListeners(64);
@@ -51,6 +64,7 @@ export function createState() {
   // Epoch ms of the last successful snapshot refresh; 0 = never (#56). The
   // dispatchable handler serves this snapshot instead of refreshing per call.
   let lastRefreshAt = 0;
+  let nativeSessionsRefreshFlight = null;
 
   let watcher = null;
   let lastWatchedPathsFingerprint = null;
@@ -169,7 +183,18 @@ export function createState() {
     ee.emit('event', { type: 'project-update', project: projectSummary(p) });
   }
 
-  async function refreshNativeSessions() {
+  function refreshNativeSessions() {
+    // Tick, cold start, and stale requests share the same discovery burst.
+    // Clear on either settlement so a failed refresh can be retried.
+    if (!nativeSessionsRefreshFlight) {
+      nativeSessionsRefreshFlight = refreshNativeSessionsSnapshot().finally(() => {
+        nativeSessionsRefreshFlight = null;
+      });
+    }
+    return nativeSessionsRefreshFlight;
+  }
+
+  async function refreshNativeSessionsSnapshot() {
     try {
       const chans = await readChannels().catch(() => []);
       const sessions = await readNativeSessions(registeredIdForPath, chans);
