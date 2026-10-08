@@ -9,8 +9,8 @@
 </head>
 <body>
 <h1>Pi responsiveness: verified boundaries</h1>
-<p>Pi 0.99.1 · extension baseline <code>113679a</code> · S1 infrastructure preparation. No optimized result is reported.</p>
-<div class="notice"><strong>Correction of the original draft.</strong> Independent verification rejected its startup attribution and speedup guarantees. The observations below have different measurement boundaries and must not be added or subtracted as a causal timeline. New baseline and candidate measurements are pending.</div>
+<p>Pi 0.99.1 · extension baseline <code>113679a</code> · S2/S3 builder checks. Independent S4 acceptance is pending.</p>
+<div class="notice"><strong>Correction of the original draft.</strong> Independent verification rejected its startup attribution and speedup guarantees. The observations below have different measurement boundaries and must not be added or subtracted as a causal timeline. A reproducible baseline and one S2 candidate CPU comparison are recorded below. Full live input and independent candidate verification remain pending.</div>
 <nav class="tabs" aria-label="Report sections">
 <button class="tab-btn active" aria-controls="observations" onclick="showTab(event,'observations')">Observations</button>
 <button class="tab-btn" aria-controls="startup" onclick="showTab(event,'startup')">Startup boundaries</button>
@@ -20,7 +20,14 @@
 <button class="tab-btn" aria-controls="protocol" onclick="showTab(event,'protocol')">Reproduction and safety</button>
 </nav>
 <section id="observations" class="tab-content active">
-<h2>Independently recorded observations</h2>
+<h2>S2 reproducible fixture comparison (builder self-check)</h2>
+<p>Same committed workload, actual bundled Pi 0.99.1 and instrumentation; expanded 1000 payload lines, width 120, settled-only. Each boundary has one warmup and 30 raw samples. Baseline is an earlier independent run; candidate is one fresh process. Timing variation and observer overhead apply.</p>
+<div class="table-wrap"><table><thead><tr><th>CPU boundary</th><th>Baseline median / p95</th><th>S2 candidate median / p95</th></tr></thead><tbody>
+<tr><td>RunGroup render</td><td>68.134646 / 70.036458 ms</td><td>0.045562 / 0.056375 ms</td></tr>
+<tr><td>Native layout + paint + diff + mock sink</td><td>68.398980 / 70.301125 ms</td><td>0.200417 / 0.293416 ms</td></tr>
+</tbody></table></div>
+<p>Observed representative render-median reduction: 99.93%, above the 50% engineering target for this fixture. All 24 cells retain identical row counts, output byte counts and settled-child render counts; the representative has 1008 rows and one settled-child render. These are CPU observations, not terminal pixels, live click latency, FPS, portable constants or a guaranteed user-visible ratio. Independent S4 rerun remains required. Raw metadata is committed under <code>scripts/profiling/evidence/baseline/</code> and <code>scripts/profiling/evidence/s2-candidate/</code>.</p>
+<h2>Earlier independently recorded observations</h2>
 <p>Source: “Verify Pi performance profiling findings and claims” (GOL-528), corroborated by the lead. These are historical verification samples, not the new reproducible baseline, not portable timing constants, and not candidate gains.</p>
 <div class="table-wrap"><table>
 <thead><tr><th>Observation</th><th>Reviewer</th><th>Lead repeat</th><th>Boundary</th></tr></thead>
@@ -65,7 +72,7 @@
 </section>
 <section id="fixtures" class="tab-content">
 <h2>Fixture-result selector</h2>
-<p>This replaces the draft's calculated simulator. It does not invent latency or frame-rate outcomes. The selected workload maps to committed synthetic fixtures; measured results will be attached after independent collection.</p>
+<p>This replaces the draft's calculated simulator. It does not invent latency or frame-rate outcomes. The selected workload maps to committed synthetic fixtures. The representative comparison is recorded above; the selector remains a workload description, not a formula or automatic latency prediction.</p>
 <label>Payload lines <select id="lines" onchange="updateFixture()"><option>100</option><option selected>1000</option><option>5000</option></select></label>
 <label>Width <select id="width" onchange="updateFixture()"><option>80</option><option selected>120</option></select></label>
 <label>Run state <select id="expanded" onchange="updateFixture()"><option>collapsed</option><option selected>expanded</option></select></label>
@@ -95,10 +102,10 @@ python3 scripts/profiling/run.py fullscreen --baseline --repo "$EXT" --lines 100
 python3 scripts/profiling/run.py startup --samples 5 --out "$RESULTS/direct"
 python3 scripts/profiling/run.py startup --samples 5 --disable-transform-cache --out "$RESULTS/direct-no-transform-cache"</pre>
 <ul>
-<li>Fail before launch if inherited identity isolation or exact controller roster/delivery is uncertain. Clear Golem/Pi session and native pane/session/socket identities; inventory key names only.</li>
+<li>Fail before launch if inherited identity isolation or fresh canonical/native/process/lease/authenticated readiness proof is uncertain. Roster projection is diagnostic only. Health uses one request per controller before/after, a 3000 ms maximum, no retries and no redirects. Clear Golem/Pi session and native pane/session/socket identities; inventory key names only.</li>
 <li>One fresh owned process at a time. Deadlines run outside output-read branches. Finally cleanup kills only the owned process group, including silent-timeout and exited-leader cases.</li>
 <li>Managed probes record unique owned intent, resolve exact new IDs, then use <code>golem agent stop &lt;exact-id&gt;</code>. Never stop by name or clear shared registries.</li>
-<li>Check exact controller IDs, native placements and delivery readiness before/after. Raw terminal output, prompts, tool results, credentials and auth files are not persisted in traces.</li>
+<li>Check exact controller IDs, native placements, immutable worker PID/birth, unique unexpired typed Pi lease and current authenticated delivery readiness before/after. Raw terminal output, prompts, tool results, credentials and auth files are not persisted in traces.</li>
 <li>One warmup plus 30 raw samples for component workloads; report median/p95 separately per boundary. Sequential variants, same configuration. Mock output-sink CPU is not live fullscreen latency.</li>
 <li>Actual fullscreen acceptance still requires all target gestures and exclusions, load orders, subscribers, streaming, resize/theme/reload and noninteractive checks. Missing checks block performance closure.</li>
 </ul>
@@ -113,7 +120,7 @@ function showTab(event,id){
 }
 function updateFixture(){
   const value=id=>document.getElementById(id).value;
-  document.getElementById('fixture-state').textContent=`${value('lines')} payload lines · width ${value('width')} · ${value('expanded')} · ${value('sibling')}. Measurement pending; no calculated timing or gain.`;
+  document.getElementById('fixture-state').textContent=`${value('lines')} payload lines · width ${value('width')} · ${value('expanded')} · ${value('sibling')}. Workload selection only; observed CPU comparison is above. No calculated timing or gain.`;
 }
 updateFixture();
 </script>
