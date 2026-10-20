@@ -194,7 +194,7 @@ missing-prerequisite/no-copy boundaries using only owned metadata fixtures.
 
 ## Runtime compatibility
 
-Pi 0.99.1 and Node.js 22.19+ are the tested baseline. `golem pi` warns on
+Pi 1.3.0 and Node.js 22.19+ are the tested baseline. `golem pi` warns on
 other versions, then attempts the normal launch. Missing executables/renders,
 process failures, invalid arguments and actual protocol errors still fail.
 Warnings go to stderr, not machine-readable stdout.

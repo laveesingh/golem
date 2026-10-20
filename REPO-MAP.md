@@ -51,7 +51,7 @@ native/typed dispatch. Sharing tunnels the dashboard itself; Stop ends every sha
 
 - Project rules come from `AGENTS.md`; shared rules come from `substrate/`, never renders.
 - Claude installs from `~/.golem/renders/`; rendering does not update or reload the plugin.
-- Pi 0.99.1 / Node 22.19+ baselines; labels warn, never veto delivery.
+- Pi 1.3.0 / Node 22.19+ baselines; labels warn, never veto delivery.
 - Pi and Claude Code are the only harnesses. No test or lint check inspects instruction content.
 - Herdr tests must `session stop` before deleting a temp HOME; a deleted socket dir leaks a live server.
 

@@ -80,7 +80,7 @@ try {
   mkdirSync(fakeBin, { recursive: true });
 writeFileSync(path.join(fakeBin, 'pi'), `#!${process.execPath}
 const fs = require('node:fs');
-if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(process.env.GOLEM_FAKE_PI_VERSION || '0.99.1'); process.exit(0); }
+if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(process.env.GOLEM_FAKE_PI_VERSION || '1.3.0'); process.exit(0); }
 if (process.env.GOLEM_FAKE_PI_FAIL) process.exit(12);
 fs.writeFileSync(process.env.GOLEM_PI_RELEASE_CAPTURE, JSON.stringify({ args: process.argv.slice(2), profile: process.env.PI_CODING_AGENT_DIR, sessions: process.env.PI_CODING_AGENT_SESSION_DIR }));
 `, { mode: 0o700 });
@@ -97,7 +97,7 @@ fs.writeFileSync(process.env.GOLEM_PI_RELEASE_CAPTURE, JSON.stringify({ args: pr
   assert.equal(existsSync(path.join(env.GOLEM_HOME, 'pi-sessions')), false, 'installed launcher does not create a managed Pi session directory');
   const advisory = runResult(process.execPath, [cli, 'pi'], installDir, { GOLEM_FAKE_PI_VERSION: '0.80.9' });
   assert.equal(advisory.status, 0, advisory.stderr);
-  assert.match(advisory.stderr, /WARN: Golem tested on Pi 0\.99\.1; you have 0\.80\.9 — continuing/);
+  assert.match(advisory.stderr, /WARN: Golem tested on Pi 1\.3\.0; you have 0\.80\.9 — continuing/);
   assert.equal(readFileSync(path.join(sourcePiProfile, 'models.json'), 'utf8'), sourceModels, 'nonbaseline installed Pi leaves canonical profile untouched');
   assert.equal(runResult(process.execPath,[cli,'pi'],installDir,{GOLEM_FAKE_PI_FAIL:'1'}).status,12,'actual installed execution failure is not advisory');
   for(const family of ['agent','team','session']) { const receipt=parseCliEnvelope(run(process.execPath,[cli,family,'list','--scope','all','--json'],installDir)); assert.equal(receipt.schema_version,2); assert.ok(Array.isArray(receipt.items)); assert.ok(receipt.resolution); }

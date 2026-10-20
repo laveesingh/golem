@@ -14,14 +14,14 @@ single writer; hooks, shims, and MCP tools connect live sessions to it.
 | Harness | Current support | Start with |
 | --- | --- | --- |
 | Claude Code | Tier A development-channel delivery; plain `claude` can pull work only | `golem claude` |
-| Pi | Tier A worker with typed delivery; tested baseline Pi 0.99.1 and Node.js 22.19+ | `golem pi` |
+| Pi | Tier A worker with typed delivery; tested baseline Pi 1.3.0 and Node.js 22.19+ | `golem pi` |
 | Gemini CLI | Unsupported; no adapter or release contract is shipped | — |
 
 The built-in roles are `lead`, `builder`, `explorer`, and `reviewer`.
 
 ## Requirements
 
-- Use Node.js 22.19 or newer and npm. The tested Pi baseline is `@earendil-works/pi-coding-agent` 0.99.1. Other Pi versions and older Node versions warn before a launch attempt; actual runtime errors still fail.
+- Use Node.js 22.19 or newer and npm. The tested Pi baseline is `@earendil-works/pi-coding-agent` 1.3.0. Other Pi versions and older Node versions warn before a launch attempt; actual runtime errors still fail.
 - Git.
 - At least one supported coding harness installed separately.
 

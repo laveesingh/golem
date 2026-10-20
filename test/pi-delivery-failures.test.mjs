@@ -65,6 +65,27 @@ async function make(id = crypto.randomUUID()) {
 }
 
 try {
+  // Pi 1.2+ before_agent_start is a user/custom union. A custom start has
+  // no prompt, even if its message content happens to match the pending input.
+  const startKinds = await make();
+  await startKinds.post('start-kind');
+  const pendingStart = startKinds.adapter.pendingAcceptance;
+  assert.ok(pendingStart, 'fixture must reserve a real pending typed delivery');
+  startKinds.adapter.input({ source: 'extension', text: 'input-start-kind' }, startKinds.ctx);
+  assert.equal(pendingStart.inputSeen, true);
+  startKinds.adapter.beforeAgentStart({ type: 'before_agent_start', messageType: 'custom',
+    message: { role: 'custom', customType: 'synthetic', content: 'input-start-kind', display: false, timestamp: Date.now() } }, startKinds.ctx);
+  assert.equal(pendingStart.nextStartOwned, false, 'custom start without prompt must not own pending delivery');
+  startKinds.adapter.beforeAgentStart({ type: 'before_agent_start', messageType: 'user', prompt: 'unrelated' }, startKinds.ctx);
+  assert.equal(pendingStart.nextStartOwned, false, 'user variant alone is not sufficient');
+  startKinds.adapter.beforeAgentStart({ type: 'before_agent_start', messageType: 'user', prompt: 'input-start-kind' }, startKinds.ctx);
+  assert.equal(pendingStart.nextStartOwned, true, 'matching user prompt owns the native start');
+  await startKinds.adapter.agentStart({}, startKinds.ctx);
+  assert.equal(startKinds.adapter.pendingAcceptance, null);
+  assert.equal(startKinds.adapter.readRecord().inbox.deliveries[0].lifecycle_state, 'accepted');
+  await startKinds.settle();
+  console.log('before_agent_start custom has no ownership; matching user prompt owns delivery: passed');
+
   const h = await make();
   const read = h.adapter.readRecord.bind(h.adapter);
   let locked = false;
