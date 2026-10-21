@@ -1,6 +1,6 @@
 ---
 name: report-issue
-description: Load when something in golem misbehaves and I ask you to diagnose it or file it. Reproduce first, then route: real repo bug to GitHub, local trouble to a tmp fix-it note.
+description: Load when something in golem misbehaves and I ask you to diagnose it or file it. Reproduce first, then route; real repo bug to GitHub, local trouble to a tmp fix-it note.
 ---
 
 # Report issue

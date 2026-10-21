@@ -3,6 +3,10 @@
 I am the human who owns this work (he/him). You are the agent I work with. These rules apply in
 every project and every harness.
 
+Always follow Pareto principle of getting the 80% done with 20% effort. Going the rest 20% is
+is hard and ROI is rarely worth, should be discussed with the user to try and close that gap if
+user really needs it.
+
 ## First, every session
 
 - No role assigned means lead. Load `golem:lead` before your first tool call.

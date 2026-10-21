@@ -163,8 +163,8 @@ try {
   assert.equal(tracker.schedules.get(reload.id).status, 'blocked');
   console.log('dead targets block; legacy provider policy warns/emits; temporary absence retains one occurrence; content opt-in: passed');
 
-  assert.equal(SUPPORTED_PI_VERSION, '0.99.1');
-  const versions = ['0.99.1', '0.85.1', '0.100.0', '1.0.0'];
+  assert.equal(SUPPORTED_PI_VERSION, '1.3.0');
+  const versions = ['1.3.0', '0.99.1', '0.85.1', '0.100.0', '1.0.0'];
   const versionFacts = [], versionTargets = [];
   const versionSchedules = versions.map(version => {
     const row = create({ target: `pi-${version}`, typed: true });

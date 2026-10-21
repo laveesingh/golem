@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pi responsiveness — verified boundaries and baseline protocol</title>
+<style>
+:root{color-scheme:dark;font:15px/1.55 system-ui,sans-serif;background:#0d1117;color:#c9d1d9}body{max-width:1100px;margin:auto;padding:24px}h1,h2{color:#f0f6fc;line-height:1.25}p{max-width:90ch;overflow-wrap:anywhere}.notice{border-left:4px solid #d29922;padding:12px 18px;background:#161b22}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}button,select,input{font:inherit;color:inherit;background:#161b22;border:1px solid #30363d;border-radius:4px;padding:8px}button{cursor:pointer}button.active{border-color:#58a6ff}.tab-content{display:none}.tab-content.active{display:block}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;margin:16px 0}th,td{text-align:left;vertical-align:top;border:1px solid #30363d;padding:10px}th{background:#161b22}code,pre{font:13px/1.5 ui-monospace,monospace}pre{overflow:auto;background:#161b22;padding:16px}label{display:inline-block;margin:8px 16px 8px 0}.status{padding:16px;border:1px solid #30363d}a{color:#58a6ff}@media(max-width:600px){body{padding:12px}th,td{min-width:130px}}
+</style>
+</head>
+<body>
+<h1>Pi responsiveness: verified boundaries</h1>
+<p>Pi 0.99.1 · extension baseline <code>113679a</code> · S2/S3 builder checks. Independent S4 acceptance is pending.</p>
+<div class="notice"><strong>Correction of the original draft.</strong> Independent verification rejected its startup attribution and speedup guarantees. The observations below have different measurement boundaries and must not be added or subtracted as a causal timeline. A reproducible baseline and one S2 candidate CPU comparison are recorded below. Full live input and independent candidate verification remain pending.</div>
+<nav class="tabs" aria-label="Report sections">
+<button class="tab-btn active" aria-controls="observations" onclick="showTab(event,'observations')">Observations</button>
+<button class="tab-btn" aria-controls="startup" onclick="showTab(event,'startup')">Startup boundaries</button>
+<button class="tab-btn" aria-controls="rendering" onclick="showTab(event,'rendering')">Rendering and input</button>
+<button class="tab-btn" aria-controls="fixtures" onclick="showTab(event,'fixtures')">Fixture selector</button>
+<button class="tab-btn" aria-controls="plan" onclick="showTab(event,'plan')">Bounded plan</button>
+<button class="tab-btn" aria-controls="protocol" onclick="showTab(event,'protocol')">Reproduction and safety</button>
+</nav>
+<section id="observations" class="tab-content active">
+<h2>S2 reproducible fixture comparison (builder self-check)</h2>
+<p>Same committed workload, actual bundled Pi 0.99.1 and instrumentation; expanded 1000 payload lines, width 120, settled-only. Each boundary has one warmup and 30 raw samples. Baseline is an earlier independent run; candidate is one fresh process. Timing variation and observer overhead apply.</p>
+<div class="table-wrap"><table><thead><tr><th>CPU boundary</th><th>Baseline median / p95</th><th>S2 candidate median / p95</th></tr></thead><tbody>
+<tr><td>RunGroup render</td><td>68.134646 / 70.036458 ms</td><td>0.045562 / 0.056375 ms</td></tr>
+<tr><td>Native layout + paint + diff + mock sink</td><td>68.398980 / 70.301125 ms</td><td>0.200417 / 0.293416 ms</td></tr>
+</tbody></table></div>
+<p>Observed representative render-median reduction: 99.93%, above the 50% engineering target for this fixture. All 24 cells retain identical row counts, output byte counts and settled-child render counts; the representative has 1008 rows and one settled-child render. These are CPU observations, not terminal pixels, live click latency, FPS, portable constants or a guaranteed user-visible ratio. Independent S4 rerun remains required. Raw metadata is committed under <code>scripts/profiling/evidence/baseline/</code> and <code>scripts/profiling/evidence/s2-candidate/</code>.</p>
+<h2>Earlier independently recorded observations</h2>
+<p>Source: “Verify Pi performance profiling findings and claims” (GOL-528), corroborated by the lead. These are historical verification samples, not the new reproducible baseline, not portable timing constants, and not candidate gains.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Observation</th><th>Reviewer</th><th>Lead repeat</th><th>Boundary</th></tr></thead>
+<tbody>
+<tr><td>Direct fullscreen entry</td><td>894.2 / 873.8 / 897.2 ms</td><td>660.35 / 582.43 / 602.69 ms</td><td>First alt-screen bytes in an owned PTY; not prompt ready or managed admission.</td></tr>
+<tr><td>Managed creation</td><td>3238.3 / 5871.0 / 6022.3 ms</td><td>Not repeated here</td><td>Creation receipts from shared native/dashboard runtime; stage attribution unknown.</td></tr>
+<tr><td>Bundled CLI Visor imports</td><td>71 / 70 / 71 ms</td><td>55 / 44 / 47 ms</td><td>Resolution, transform and module execution combined, not isolated compilation.</td></tr>
+<tr><td>Bundled CLI viewport-mouse imports</td><td>22 / 21 / 21 ms</td><td>17 / 13 / 14 ms</td><td>Actual CLI module-import timer; factory cost was 0–1 ms.</td></tr>
+<tr><td>Expanded native RunGroup layout fixture</td><td>Median 34.589 ms; p95 36.140 ms</td><td>Median 23.056 ms; p95 23.671 ms</td><td>30 warm component/layout CPU samples; 1011 rendered rows, width 120, viewport 40. No terminal output latency measurement.</td></tr>
+<tr><td>Legacy mapComponents fixture</td><td>Median 69.964 ms; p95 72.072 ms</td><td>Median 47.662 ms; p95 49.471 ms</td><td>Actual native tool/group geometry walk, not a live user's click latency.</td></tr>
+<tr><td>Settled raw child caching</td><td colspan="2">One child render over 31 group frames</td><td>Existing cross-frame cache works. Final framing still repeats.</td></tr>
+<tr><td>Standalone tool click</td><td colspan="2">Native: one toggle, expanded. Legacy plus native: two toggles, collapsed.</td><td>Real-component press/release integration probe, not a captured user session.</td></tr>
+<tr><td>Standalone managed thought</td><td colspan="2">Native alone leaves it collapsed; legacy expands it.</td><td>Existing ownership gap. Removing the legacy consumer now loses this target.</td></tr>
+</tbody></table></div>
+</section>
+<section id="startup" class="tab-content">
+<h2>Startup boundaries, not an additive timeline</h2>
+<div class="table-wrap"><table><thead><tr><th>Stage</th><th>Observer</th><th>Current status</th></tr></thead><tbody>
+<tr><td>CLI launch</td><td>Parent monotonic timestamp before owned spawn</td><td>Harness available; new samples pending.</td></tr>
+<tr><td>First alt-screen</td><td>PTY arrival of fullscreen-entry sequence</td><td>Historical observations above. Not input readiness.</td></tr>
+<tr><td>Prompt frame / input ready</td><td>No reliable marker yet</td><td>Unknown. Do not use a generic output frame as proof.</td></tr>
+<tr><td>session_start</td><td>Opt-in synthetic observer in isolated CLI process</td><td>Instrumentable in controlled probes; configured managed path remains unknown.</td></tr>
+<tr><td>Native detection</td><td>Shared native management path</td><td>Unknown; no shared-runtime instrumentation.</td></tr>
+<tr><td>Dispatchability</td><td>Dashboard admission path</td><td>Unknown independently of receipt.</td></tr>
+<tr><td>Role assignment POST</td><td>Management/dashboard path</td><td>Unknown independently of receipt.</td></tr>
+<tr><td>Creation receipt</td><td>Parent observes successful managed CLI response</td><td>Historical observations above. Stage breakdown pending.</td></tr>
+</tbody></table></div>
+<p>JITI's filesystem transform cache can survive processes. Disabling <code>JITI_FS_CACHE</code> is a controlled transform-cache experiment, not machine-cold startup. Same-process factory caching is a separate boundary. The probe must report any managed-child cache state it cannot control as unknown.</p>
+<p>Successful current Visor patching uses its statically imported host class. Filesystem discovery and <code>which pi</code> belong to fallback paths; no unconditional synchronous-scan startup attribution is established. No QuickJS WASM boot milestone is established.</p>
+</section>
+<section id="rendering" class="tab-content">
+<h2>Verified mechanisms and ownership</h2>
+<ul>
+<li>Native layout visits full content before viewport clipping. Text, Markdown and settled RunGroup raw-child caches still survive frames.</li>
+<li>Expanded RunGroup child framing and fitLine repeat even when the raw-child cache hits. The bounded optimization extends this cache; it does not replace cascade or theme invalidation.</li>
+<li>Legacy walking runs on eligible left releases only. Drag, link, chat-boundary, height and empty-registry guards matter. Recursive renders vary with tree structure; there is no fixed “twice per click” rule.</li>
+<li>Native routing traverses intersecting layout boxes and child row ranges. No constant-time claim or native latency ratio is established.</li>
+<li>RunGroup owns its chrome, tools, thoughts and existing commentary note regions. Commentary and its nested thought expansion remain independent. Native tools retain their own call/result regions.</li>
+<li>Standalone managed thinking must acquire a native owner before Visor's legacy subscription can be removed. viewport-mouse stays installed; its public registry and other subscribers stay intact.</li>
+</ul>
+<p>Component CPU, layout/paint/diff CPU, PTY first changed-output arrival, and ANSI synchronized-frame completion are different measurements. None measures terminal pixels or scrolling FPS. Scheduling and render coalescing remain visible limits.</p>
+</section>
+<section id="fixtures" class="tab-content">
+<h2>Fixture-result selector</h2>
+<p>This replaces the draft's calculated simulator. It does not invent latency or frame-rate outcomes. The selected workload maps to committed synthetic fixtures. The representative comparison is recorded above; the selector remains a workload description, not a formula or automatic latency prediction.</p>
+<label>Payload lines <select id="lines" onchange="updateFixture()"><option>100</option><option selected>1000</option><option>5000</option></select></label>
+<label>Width <select id="width" onchange="updateFixture()"><option>80</option><option selected>120</option></select></label>
+<label>Run state <select id="expanded" onchange="updateFixture()"><option>collapsed</option><option selected>expanded</option></select></label>
+<label>Sibling <select id="sibling" onchange="updateFixture()"><option>settled only</option><option>live partial sibling</option></select></label>
+<p id="fixture-state" class="status" aria-live="polite"></p>
+<p>ANSI backgrounds/foregrounds, wide characters and combining text are present. Payload line count is not rendered row count; native wrapping and chrome determine the latter.</p>
+</section>
+<section id="plan" class="tab-content">
+<h2>Approved bounded sequence</h2>
+<ol>
+<li><strong>S1:</strong> commit repeatable fixtures, isolated safety checks, actual-loader probes and this correction. A read-only explorer collects baseline before optimization.</li>
+<li><strong>S2:</strong> cache complete settled child frames by weak identity, normalized widths, post-render revision and theme. Preserve cascade reconciliation, child theme invalidation, fresh parent chrome/geometry, narrow clipping, detach and live/auxiliary bypass.</li>
+<li><strong>S3:</strong> add bounds-checked native primary-click handling to managed thoughts through their existing owner. Prove grouped/standalone gestures, then remove only Visor's legacy subscriber and private bridge.</li>
+<li><strong>S4:</strong> independent review and acceptance across actual loader, fullscreen transcript, mouse regions, streaming, resize, theme, reload and noninteractive paths.</li>
+</ol>
+<p><strong>Engineering target, not observed result:</strong> reduce expanded 1000-line framing median by at least 50%, subject to correctness. A missed target is reported without widening scope. No blanket no-regression or speedup guarantee.</p>
+<p>No speculative bundling, startup/core fix, settings change, shared sync/restart, publication or activation is authorized by this report. Any startup remedy needs a separate measured proposal.</p>
+</section>
+<section id="protocol" class="tab-content">
+<h2>Reproduction and safety</h2>
+<p>Implementation harness: <code>awesome-pi-extensions/scripts/profiling/README.md</code> on <code>fix/pi-responsiveness</code>. Extension baseline is exactly <code>113679afa2ee8e35d15efc99db432a335d5f70ed</code>; candidate source is loaded from its explicit worktree, never installed over the active checkout.</p>
+<pre>python3 scripts/profiling/run.py preflight
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/profiling -p 'test_*.py' -v
+# Explorer-only after baseline release; choose fresh result directories:
+python3 scripts/profiling/run.py components --baseline --repo "$EXT" --timeout 180 --out "$RESULTS/component-baseline"
+python3 scripts/profiling/run.py fullscreen --baseline --repo "$EXT" --lines 1000 --width 120 --out "$RESULTS/fullscreen-baseline"
+python3 scripts/profiling/run.py startup --samples 5 --out "$RESULTS/direct"
+python3 scripts/profiling/run.py startup --samples 5 --disable-transform-cache --out "$RESULTS/direct-no-transform-cache"</pre>
+<ul>
+<li>Fail before launch if inherited identity isolation or fresh canonical/native/process/lease/authenticated readiness proof is uncertain. Roster projection is diagnostic only. Health uses one request per controller before/after, a 3000 ms maximum, no retries and no redirects. Clear Golem/Pi session and native pane/session/socket identities; inventory key names only.</li>
+<li>One fresh owned process at a time. Deadlines run outside output-read branches. Finally cleanup kills only the owned process group, including silent-timeout and exited-leader cases.</li>
+<li>Managed probes record unique owned intent, resolve exact new IDs, then use <code>golem agent stop &lt;exact-id&gt;</code>. Never stop by name or clear shared registries.</li>
+<li>Check exact controller IDs, native placements, immutable worker PID/birth, unique unexpired typed Pi lease and current authenticated delivery readiness before/after. Raw terminal output, prompts, tool results, credentials and auth files are not persisted in traces.</li>
+<li>One warmup plus 30 raw samples for component workloads; report median/p95 separately per boundary. Sequential variants, same configuration. Mock output-sink CPU is not live fullscreen latency.</li>
+<li>Actual fullscreen acceptance still requires all target gestures and exclusions, load orders, subscribers, streaming, resize/theme/reload and noninteractive checks. Missing checks block performance closure.</li>
+</ul>
+<p>Original draft preserved outside the checkout at <code>~/.golem/handoffs/2026-10-08_pi-profiling-original.html</code>, SHA-256 <code>fe6610ab217ede2f7a9fda54b763681eacea9da6d956f2bdb212dafeb468e709</code>. It is an unverified historical input, not a baseline result.</p>
+</section>
+<script>
+function showTab(event,id){
+  document.querySelectorAll('.tab-btn').forEach(button=>{button.classList.remove('active');button.setAttribute('aria-selected','false');});
+  document.querySelectorAll('.tab-content').forEach(section=>section.classList.remove('active'));
+  event.currentTarget.classList.add('active');event.currentTarget.setAttribute('aria-selected','true');
+  document.getElementById(id).classList.add('active');
+}
+function updateFixture(){
+  const value=id=>document.getElementById(id).value;
+  document.getElementById('fixture-state').textContent=`${value('lines')} payload lines · width ${value('width')} · ${value('expanded')} · ${value('sibling')}. Workload selection only; observed CPU comparison is above. No calculated timing or gain.`;
+}
+updateFixture();
+</script>
+</body>
+</html>

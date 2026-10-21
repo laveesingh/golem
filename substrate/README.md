@@ -23,7 +23,7 @@ dependencies. Keep the dashboard running before using tracker tools or dispatch.
   development channel. A plain `claude` session can pull tracker work but does
   not receive channel pushes.
 - **Pi** — `golem sync --target pi` renders the native extension. `golem pi`
-  provides typed-worker delivery, tested on Pi 0.99.1 with Node.js 22.19+.
+  provides typed-worker delivery, tested on Pi 1.3.0 with Node.js 22.19+.
   Other versions warn and attempt execution; actual runtime failures remain failures.
 
 The built-in roles are `lead`, `builder`, `explorer`, and `reviewer`. Role

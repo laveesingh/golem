@@ -18,9 +18,9 @@ const { TYPED_WORKER_PROTOCOL_VERSION } = await import('../lib/typed-worker-endp
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let server;
 try {
-  assert.equal(SUPPORTED_PI_VERSION, '0.99.1');
-  assert.equal(piCompatibility('0.99.1').status, 'supported');
-  for (const version of ['0.85.1', '0.100.0', '1.0.0', null]) assert.equal(piCompatibility(version).status, 'unverified');
+  assert.equal(SUPPORTED_PI_VERSION, '1.3.0');
+  assert.equal(piCompatibility('1.3.0').status, 'supported');
+  for (const version of ['0.99.1', '0.85.1', '0.100.0', '1.0.0', null]) assert.equal(piCompatibility(version).status, 'unverified');
   const providers = [
     { CLAUDE_CODE_USE_BEDROCK: '1' }, { CLAUDE_CODE_USE_VERTEX: '1' }, { CLAUDE_CODE_USE_FOUNDRY: '1' },
     { ANTHROPIC_BASE_URL: 'https://secret:credential@example.invalid/private' },
